@@ -69,36 +69,6 @@ export function SubmitSolution({
     const isError = status && !isSuccess && !isSubmitting && !uploading;
     const hasResult = inputMode === "file" ? !!resultFile : !!resultText.trim();
 
-    async function pinAndSubmit(content: string) {
-        // 1) Pin result to IPFS
-        setStatus("Pinning result to IPFS...");
-        const pinRes = await fetch("/api/pin-data", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ data: content }),
-        });
-        if (!pinRes.ok) throw new Error(await pinRes.text());
-        const { cid } = (await pinRes.json()) as { cid: string };
-
-        // 2) Hash the CID for on-chain storage
-        const resultHash = keccak256(toHex(cid));
-
-        // 3) Submit on-chain
-        setStatus("Submitting on-chain — confirm in your wallet...");
-        const tx = await writeContractAsync({
-            account: address,
-            address: challengeAddress as `0x${string}`,
-            abi: HermesChallengeAbi,
-            functionName: "submit",
-            args: [resultHash],
-        });
-
-        setStatus("Waiting for confirmation...");
-        await publicClient!.waitForTransactionReceipt({ hash: tx });
-
-        return tx;
-    }
-
     async function handleSubmit() {
         if (!isConnected) {
             setStatus("Connect your wallet first.");
@@ -148,8 +118,32 @@ export function SubmitSolution({
                 setStatus("Waiting for confirmation...");
                 await publicClient!.waitForTransactionReceipt({ hash: tx });
             } else {
-                // Text input — pin text content
-                tx = await pinAndSubmit(resultText.trim());
+                // Text input — wrap in a file and pin as FormData
+                setStatus("Pinning result to IPFS...");
+                const blob = new Blob([resultText.trim()], { type: "text/plain" });
+                const textFile = new File([blob], "result.txt", { type: "text/plain" });
+                const formData = new FormData();
+                formData.append("file", textFile);
+                const pinRes = await fetch("/api/pin-data", {
+                    method: "POST",
+                    body: formData,
+                });
+                if (!pinRes.ok) throw new Error(await pinRes.text());
+                const { cid } = (await pinRes.json()) as { cid: string };
+
+                const resultHash = keccak256(toHex(cid));
+
+                setStatus("Submitting on-chain — confirm in your wallet...");
+                tx = await writeContractAsync({
+                    account: address,
+                    address: challengeAddress as `0x${string}`,
+                    abi: HermesChallengeAbi,
+                    functionName: "submit",
+                    args: [resultHash],
+                });
+
+                setStatus("Waiting for confirmation...");
+                await publicClient!.waitForTransactionReceipt({ hash: tx });
             }
 
             setTxHash(tx);
