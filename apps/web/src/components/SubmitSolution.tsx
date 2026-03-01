@@ -1,7 +1,6 @@
 "use client";
 
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
-import { isValidPinnedSpecCid } from "@hermes/common";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useState } from "react";
 import type { Abi } from "viem";
@@ -14,9 +13,10 @@ import {
     AlertCircle,
     Wallet,
     ArrowRight,
+    FileUp,
+    FileCheck,
 } from "lucide-react";
 import { CHAIN_ID } from "../lib/config";
-import { createSubmissionRecord } from "../lib/api";
 
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 
@@ -37,7 +37,9 @@ export function SubmitSolution({
     const publicClient = usePublicClient();
     const { writeContractAsync } = useWriteContract();
 
-    const [resultCid, setResultCid] = useState("");
+    const [resultFile, setResultFile] = useState<File | null>(null);
+    const [resultText, setResultText] = useState("");
+    const [inputMode, setInputMode] = useState<"file" | "text">("file");
     const [uploading, setUploading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [status, setStatus] = useState("");
@@ -64,7 +66,38 @@ export function SubmitSolution({
     }
 
     const isSuccess = status.startsWith("success:");
-    const isError = status && !isSuccess && !isSubmitting;
+    const isError = status && !isSuccess && !isSubmitting && !uploading;
+    const hasResult = inputMode === "file" ? !!resultFile : !!resultText.trim();
+
+    async function pinAndSubmit(content: string) {
+        // 1) Pin result to IPFS
+        setStatus("Pinning result to IPFS...");
+        const pinRes = await fetch("/api/pin-data", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ data: content }),
+        });
+        if (!pinRes.ok) throw new Error(await pinRes.text());
+        const { cid } = (await pinRes.json()) as { cid: string };
+
+        // 2) Hash the CID for on-chain storage
+        const resultHash = keccak256(toHex(cid));
+
+        // 3) Submit on-chain
+        setStatus("Submitting on-chain — confirm in your wallet...");
+        const tx = await writeContractAsync({
+            account: address,
+            address: challengeAddress as `0x${string}`,
+            abi: HermesChallengeAbi,
+            functionName: "submit",
+            args: [resultHash],
+        });
+
+        setStatus("Waiting for confirmation...");
+        await publicClient!.waitForTransactionReceipt({ hash: tx });
+
+        return tx;
+    }
 
     async function handleSubmit() {
         if (!isConnected) {
@@ -79,45 +112,45 @@ export function SubmitSolution({
             setStatus("Wallet client not ready. Reconnect and retry.");
             return;
         }
-        const cid = resultCid.trim();
-        if (!cid) {
-            setStatus("Provide a result CID or upload a result file.");
-            return;
-        }
-        if (!cid.startsWith("ipfs://")) {
-            setStatus("Result CID must start with ipfs://");
-            return;
-        }
-        if (!isValidPinnedSpecCid(cid)) {
-            setStatus("Result CID is invalid.");
+        if (!hasResult) {
+            setStatus("Upload a result file or enter your answer.");
             return;
         }
 
         try {
             setIsSubmitting(true);
-            setStatus("Preparing submission...");
 
-            // Contract stores keccak256(resultCid), while DB stores raw CID.
-            const resultHash = keccak256(toHex(cid));
+            let tx: `0x${string}`;
 
-            setStatus("Submitting on-chain...");
-            const tx = await writeContractAsync({
-                account: address,
-                address: challengeAddress as `0x${string}`,
-                abi: HermesChallengeAbi,
-                functionName: "submit",
-                args: [resultHash],
-            });
+            if (inputMode === "file" && resultFile) {
+                // Upload file to IPFS via FormData
+                setStatus("Uploading result file to IPFS...");
+                const formData = new FormData();
+                formData.append("file", resultFile);
+                const pinRes = await fetch("/api/pin-data", {
+                    method: "POST",
+                    body: formData,
+                });
+                if (!pinRes.ok) throw new Error(await pinRes.text());
+                const { cid } = (await pinRes.json()) as { cid: string };
 
-            setStatus("Waiting for confirmation...");
-            await publicClient.waitForTransactionReceipt({ hash: tx });
+                const resultHash = keccak256(toHex(cid));
 
-            setStatus("Recording submission metadata...");
-            await createSubmissionRecord({
-                challengeId,
-                resultCid: cid,
-                txHash: tx,
-            });
+                setStatus("Submitting on-chain — confirm in your wallet...");
+                tx = await writeContractAsync({
+                    account: address,
+                    address: challengeAddress as `0x${string}`,
+                    abi: HermesChallengeAbi,
+                    functionName: "submit",
+                    args: [resultHash],
+                });
+
+                setStatus("Waiting for confirmation...");
+                await publicClient!.waitForTransactionReceipt({ hash: tx });
+            } else {
+                // Text input — pin text content
+                tx = await pinAndSubmit(resultText.trim());
+            }
 
             setTxHash(tx);
             setStatus(`success: Submission confirmed! tx=${tx}`);
@@ -128,37 +161,13 @@ export function SubmitSolution({
                 setStatus("Deadline has passed. Cannot submit.");
             } else if (message.includes("InvalidStatus")) {
                 setStatus("Challenge is no longer accepting submissions.");
+            } else if (message.includes("User rejected") || message.includes("user rejected")) {
+                setStatus("Transaction cancelled.");
             } else {
                 setStatus(message);
             }
         } finally {
             setIsSubmitting(false);
-        }
-    }
-
-    async function handleFileUpload(file: File) {
-        setUploading(true);
-        try {
-            const formData = new FormData();
-            formData.append("file", file);
-            const response = await fetch("/api/pin-data", {
-                method: "POST",
-                body: formData,
-            });
-            if (!response.ok) {
-                throw new Error(await response.text());
-            }
-            const json = (await response.json()) as { cid: string };
-            setResultCid(json.cid);
-            setStatus("Result file pinned to IPFS.");
-        } catch (error) {
-            setStatus(
-                error instanceof Error
-                    ? `Upload failed: ${error.message}`
-                    : "Upload failed.",
-            );
-        } finally {
-            setUploading(false);
         }
     }
 
@@ -185,54 +194,100 @@ export function SubmitSolution({
                         <span className="font-mono">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
                     </div>
 
-                    {/* Result input */}
-                    <div>
-                        <label className="block text-xs font-medium text-secondary mb-1.5">
-                            Result CID
-                        </label>
-                        <textarea
-                            className="w-full px-3 py-2.5 text-sm border border-border-default rounded-md bg-surface-default text-primary placeholder:text-muted font-mono resize-none input-focus"
-                            rows={2}
-                            placeholder="ipfs://... (required for oracle scoring and verification)"
-                            value={resultCid}
-                            onChange={(e) => setResultCid(e.target.value)}
-                            disabled={isSubmitting || uploading}
-                        />
-                        <p className="text-[11px] text-muted mt-1">
-                            The contract stores keccak256(CID). The full CID is recorded off-chain for scoring and verification.
-                        </p>
-                        <div className="mt-2">
-                            <label className="inline-flex items-center gap-2 text-xs text-secondary cursor-pointer">
+                    {/* Input mode toggle */}
+                    <div className="flex gap-1 p-0.5 rounded-md bg-surface-inset w-fit">
+                        <button
+                            type="button"
+                            onClick={() => setInputMode("file")}
+                            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${inputMode === "file"
+                                ? "bg-surface-default text-primary shadow-sm"
+                                : "text-muted hover:text-secondary"
+                                }`}
+                        >
+                            Upload File
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setInputMode("text")}
+                            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${inputMode === "text"
+                                ? "bg-surface-default text-primary shadow-sm"
+                                : "text-muted hover:text-secondary"
+                                }`}
+                        >
+                            Text Answer
+                        </button>
+                    </div>
+
+                    {/* File upload */}
+                    {inputMode === "file" && (
+                        <div>
+                            <label
+                                className={`flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${resultFile
+                                    ? "border-cobalt-200 bg-cobalt-100/30"
+                                    : "border-border-default hover:border-cobalt-200 hover:bg-surface-inset"
+                                    }`}
+                            >
                                 <input
                                     type="file"
                                     className="hidden"
-                                    disabled={isSubmitting || uploading}
+                                    disabled={isSubmitting}
                                     onChange={(e) => {
                                         const file = e.target.files?.[0];
-                                        if (file) void handleFileUpload(file);
+                                        if (file) {
+                                            setResultFile(file);
+                                            setStatus("");
+                                        }
                                         e.currentTarget.value = "";
                                     }}
                                 />
-                                {uploading ? (
+                                {resultFile ? (
                                     <>
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                        Uploading to IPFS...
+                                        <FileCheck className="w-6 h-6 text-cobalt-200" />
+                                        <span className="text-sm font-medium text-primary">{resultFile.name}</span>
+                                        <span className="text-[11px] text-muted">
+                                            {(resultFile.size / 1024).toFixed(1)} KB — click to change
+                                        </span>
                                     </>
                                 ) : (
                                     <>
-                                        <Upload className="w-3.5 h-3.5" />
-                                        Upload result file
+                                        <FileUp className="w-6 h-6 text-muted" />
+                                        <span className="text-sm text-secondary">
+                                            Drop your result file here or <span className="text-cobalt-200 font-medium">browse</span>
+                                        </span>
+                                        <span className="text-[11px] text-muted">
+                                            CSV, JSON, or any file format
+                                        </span>
                                     </>
                                 )}
                             </label>
                         </div>
-                    </div>
+                    )}
+
+                    {/* Text input */}
+                    {inputMode === "text" && (
+                        <div>
+                            <label className="block text-xs font-medium text-secondary mb-1.5">
+                                Your answer
+                            </label>
+                            <textarea
+                                className="w-full px-3 py-2.5 text-sm border border-border-default rounded-md bg-surface-default text-primary placeholder:text-muted resize-none input-focus"
+                                rows={3}
+                                placeholder="Type your answer here (e.g., a number, JSON object, prediction result...)"
+                                value={resultText}
+                                onChange={(e) => { setResultText(e.target.value); setStatus(""); }}
+                                disabled={isSubmitting}
+                            />
+                            <p className="text-[11px] text-muted mt-1">
+                                Your answer will be stored on IPFS and its hash recorded on-chain.
+                            </p>
+                        </div>
+                    )}
 
                     {/* Submit button */}
                     <button
                         type="button"
                         onClick={handleSubmit}
-                        disabled={isSubmitting || uploading || !resultCid.trim()}
+                        disabled={isSubmitting || uploading || !hasResult}
                         className="btn-primary w-full flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isSubmitting ? (
@@ -247,6 +302,13 @@ export function SubmitSolution({
                             </>
                         )}
                     </button>
+
+                    {/* How it works */}
+                    {!isSuccess && !isError && (
+                        <p className="text-[11px] text-muted text-center">
+                            Your result is pinned to IPFS automatically. Only the hash is stored on-chain.
+                        </p>
+                    )}
 
                     {/* Status messages */}
                     {isSuccess && (
