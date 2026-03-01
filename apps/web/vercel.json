@@ -1,5 +1,5 @@
 {
   "framework": "nextjs",
   "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
-  "buildCommand": "cd ../.. && pnpm turbo build --filter=@hermes/web..."
+  "buildCommand": "cd ../.. && pnpm --filter @hermes/common build && pnpm --filter @hermes/ipfs build && pnpm --filter @hermes/web build"
 }
