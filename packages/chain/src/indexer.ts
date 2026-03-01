@@ -59,6 +59,7 @@ class RetryableIndexerError extends Error {
 type RetryEventState = {
   attempts: number;
   nextAttemptAt: number;
+  blockNumber: bigint;
 };
 
 const retryEventState = new Map<string, RetryEventState>();
@@ -67,12 +68,14 @@ function retryKey(txHash: string, logIndex: number) {
   return `${txHash}:${logIndex}`;
 }
 
-function onRetryableEvent(key: string) {
+function onRetryableEvent(key: string, blockNumber: bigint) {
   const now = Date.now();
   const state = retryEventState.get(key) ?? {
     attempts: 0,
     nextAttemptAt: now,
+    blockNumber,
   };
+  state.blockNumber = blockNumber;
 
   if (state.nextAttemptAt > now) {
     return {
@@ -107,6 +110,17 @@ function onRetryableEvent(key: string) {
 
 function clearRetryableEvent(key: string) {
   retryEventState.delete(key);
+}
+
+function getDueReplayBlock(now: number): bigint | null {
+  let minBlock: bigint | null = null;
+  for (const state of retryEventState.values()) {
+    if (state.nextAttemptAt > now) continue;
+    if (minBlock === null || state.blockNumber < minBlock) {
+      minBlock = state.blockNumber;
+    }
+  }
+  return minBlock;
 }
 
 function isRetryableError(error: unknown): boolean {
@@ -372,7 +386,10 @@ export async function runIndexer() {
         } catch (error) {
           if (isRetryableError(error)) {
             const key = retryKey(txHash, logIndex);
-            const retry = onRetryableEvent(key);
+            const retry = onRetryableEvent(
+              key,
+              log.blockNumber ?? fromBlock,
+            );
             if (!retry.shouldRetryNow) {
               continue;
             }
@@ -590,7 +607,10 @@ export async function runIndexer() {
           } catch (error) {
             if (isRetryableError(error)) {
               const key = retryKey(txHash, logIndex);
-              const retry = onRetryableEvent(key);
+              const retry = onRetryableEvent(
+                key,
+                log.blockNumber ?? fromBlock,
+              );
               if (!retry.shouldRetryNow) {
                 continue;
               }
@@ -645,12 +665,15 @@ export async function runIndexer() {
       }
 
       const nextBlock = toBlock + BigInt(1);
-      const shouldReplayWindow = retryEventState.size > 0;
-      fromBlock = shouldReplayWindow
-        ? (nextBlock > RETRY_REPLAY_WINDOW_BLOCKS
-          ? nextBlock - RETRY_REPLAY_WINDOW_BLOCKS
-          : BigInt(0))
-        : nextBlock;
+      const dueReplayBlock = getDueReplayBlock(Date.now());
+      if (dueReplayBlock !== null) {
+        fromBlock =
+          dueReplayBlock > RETRY_REPLAY_WINDOW_BLOCKS
+            ? dueReplayBlock - RETRY_REPLAY_WINDOW_BLOCKS
+            : BigInt(0);
+      } else {
+        fromBlock = nextBlock;
+      }
 
       await setIndexerCursor(db, cursorKey, fromBlock);
     } catch (error) {

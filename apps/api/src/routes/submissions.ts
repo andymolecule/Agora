@@ -10,7 +10,7 @@ import {
 } from "@hermes/db";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
-import { type Abi, parseEventLogs } from "viem";
+import { type Abi, keccak256, parseEventLogs, toHex } from "viem";
 import { z } from "zod";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import type { ApiEnv } from "../types.js";
@@ -53,6 +53,7 @@ router.post(
   zValidator("json", createSubmissionBodySchema),
   async (c) => {
     const { challengeId, resultCid, txHash } = c.req.valid("json");
+    const normalizedResultCid = resultCid.trim();
     const sessionAddress = c.get("sessionAddress");
 
     const db = createSupabaseClient(true);
@@ -98,6 +99,14 @@ router.post(
       subId,
     );
 
+    const expectedHash = keccak256(toHex(normalizedResultCid));
+    if (onChain.resultHash.toLowerCase() !== expectedHash.toLowerCase()) {
+      return c.json(
+        { error: "Provided resultCid does not match on-chain result hash." },
+        400,
+      );
+    }
+
     // Authorization:
     // 1) If SIWE session exists, solver must match session address.
     // 2) Otherwise, fall back to transaction sender match.
@@ -120,7 +129,7 @@ router.post(
       on_chain_sub_id: Number(subId),
       solver_address: onChain.solver,
       result_hash: onChain.resultHash,
-      result_cid: resultCid,
+      result_cid: normalizedResultCid,
       proof_bundle_hash: onChain.proofBundleHash,
       score: onChain.scored ? onChain.score.toString() : null,
       scored: onChain.scored,
@@ -128,7 +137,12 @@ router.post(
       tx_hash: txHash,
     });
 
-    await setSubmissionResultCid(db, challengeId, Number(subId), resultCid);
+    await setSubmissionResultCid(
+      db,
+      challengeId,
+      Number(subId),
+      normalizedResultCid,
+    );
 
     return c.json({ ok: true, submission: row });
   },
