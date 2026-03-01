@@ -80,10 +80,17 @@ export function ChallengeCard({
         </span>
       </div>
 
-      {/* Submissions count */}
-      <div className="flex items-center gap-1 mt-2 text-[11px] text-muted">
-        <FileText className="w-3 h-3" />
-        {challenge.submissions_count ?? 0} submissions
+      {/* Footer row: submissions + participate CTA */}
+      <div className="flex items-center justify-between mt-2">
+        <div className="flex items-center gap-1 text-[11px] text-muted">
+          <FileText className="w-3 h-3" />
+          {challenge.submissions_count ?? 0} submissions
+        </div>
+        {challenge.status === "active" && (
+          <span className="text-[11px] font-semibold text-cobalt-200 group-hover:underline">
+            Participate →
+          </span>
+        )}
       </div>
     </Link>
   );

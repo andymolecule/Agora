@@ -7,6 +7,7 @@ export type Challenge = {
   reward_amount: number | string;
   deadline: string;
   challenge_type: string;
+  contract_address: string;
   submissions_count?: number;
   dataset_train_cid?: string | null;
   dataset_test_cid?: string | null;

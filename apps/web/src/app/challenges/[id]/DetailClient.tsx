@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Layers, Trophy, Database, Container } from "lucide-react";
 import Link from "next/link";
 import { LeaderboardTable } from "../../../components/LeaderboardTable";
+import { SubmitSolution } from "../../../components/SubmitSolution";
 import { TimelineStatus } from "../../../components/TimelineStatus";
 import { getChallenge } from "../../../lib/api";
 import { formatUsdc } from "../../../lib/format";
@@ -113,6 +114,13 @@ export function DetailClient({ id }: { id: string }) {
             </h3>
             <LeaderboardTable rows={leaderboard} />
           </div>
+
+          {/* Submit Solution */}
+          <SubmitSolution
+            challengeAddress={challenge.contract_address}
+            challengeStatus={challenge.status}
+            deadline={challenge.deadline}
+          />
         </div>
 
         {/* Right column: Timeline */}
