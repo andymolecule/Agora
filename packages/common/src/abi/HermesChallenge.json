@@ -802,5 +802,10 @@
     "type": "error",
     "name": "SubmissionsExist",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TransferFailed",
+    "inputs": []
   }
 ]

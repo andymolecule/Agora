@@ -42,11 +42,11 @@ contract HermesFactoryTest is Test {
     }
 
     function testCreateChallengeWithLabTBA() public {
-        address labTBA = address(0xBEEF);
+        address labTba = address(0xBEEF);
         vm.prank(poster);
         (uint256 id,) = factory.createChallenge(
             "cid", 10e6, uint64(block.timestamp + 1 days), 168, 0,
-            uint8(IHermesChallenge.DistributionType.WinnerTakeAll), labTBA
+            uint8(IHermesChallenge.DistributionType.WinnerTakeAll), labTba
         );
         assertEq(id, 0);
     }
@@ -156,6 +156,20 @@ contract HermesFactoryTest is Test {
             0,
             bytes32(0),
             bytes32(0)
+        );
+    }
+
+    function testCreateChallengeRevertsOnInvalidDistributionType() public {
+        vm.prank(poster);
+        vm.expectRevert(HermesErrors.InvalidDistribution.selector);
+        factory.createChallenge(
+            "cid",
+            10e6,
+            uint64(block.timestamp + 1 days),
+            168,
+            0,
+            99,
+            address(0)
         );
     }
 }

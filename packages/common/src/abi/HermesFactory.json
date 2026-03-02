@@ -354,6 +354,11 @@
   },
   {
     "type": "error",
+    "name": "InvalidDistribution",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "OwnableInvalidOwner",
     "inputs": [
       {
@@ -373,5 +378,10 @@
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "TransferFromFailed",
+    "inputs": []
   }
 ]
