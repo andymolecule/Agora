@@ -1,9 +1,6 @@
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { createSupabaseClient, getChallengeById, listSubmissionsForChallenge } from "@hermes/db";
-import { downloadToPath } from "@hermes/ipfs";
-import { runScorer } from "@hermes/scorer";
+import { readFeaturePolicy } from "@hermes/common";
+import { executeScoringPipeline, scoreToWad } from "@hermes/scorer";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -19,21 +16,9 @@ const bodySchema = z.object({
     }),
 });
 
-const WAD_SCALE = 1_000_000_000_000_000_000n;
 const PREVIEW_LIMIT = 10;
 const PREVIEW_WINDOW_MS = 60 * 60 * 1000;
 const previewBuckets = new Map<string, { count: number; resetAt: number }>();
-
-function scoreToWad(score: number): bigint {
-  if (!Number.isFinite(score) || score < 0) {
-    throw new Error(`Invalid score: ${score}`);
-  }
-  // Use fixed-decimal normalization to handle scientific notation safely.
-  const normalized = score.toFixed(18);
-  const [wholePart, fractionRaw = ""] = normalized.split(".");
-  const fraction = fractionRaw.padEnd(18, "0").slice(0, 18);
-  return BigInt(wholePart || "0") * WAD_SCALE + BigInt(fraction);
-}
 
 function scoreRank(previewWad: bigint, scoredWads: bigint[]) {
   const strictlyHigher = scoredWads.filter((score) => score > previewWad).length;
@@ -70,10 +55,13 @@ const router = new Hono<ApiEnv>();
 router.post(
   "/",
   async (c, next) => {
-    const enabled = process.env.HERMES_ENABLE_SCORE_PREVIEW === "true";
+    const enabled = readFeaturePolicy().scorePreviewEnabled;
     if (!enabled) {
       return c.json(
-        { error: "Score preview is disabled for v0 to protect challenge integrity. Submit to get scored by the oracle." },
+        {
+          error:
+            "Score preview is disabled in v0 core mode. Enable HERMES_ENABLE_NON_CORE_FEATURES=true and HERMES_ENABLE_SCORE_PREVIEW=true to use it.",
+        },
         403,
       );
     }
@@ -100,23 +88,13 @@ router.post(
       return c.json({ error: "Challenge is missing scoring container." }, 400);
     }
 
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-score-preview-"));
+    const run = await executeScoringPipeline({
+      image: challenge.scoring_container as string,
+      groundTruth: { cid: challenge.dataset_test_cid },
+      submission: { cid: resultCid },
+    });
     try {
-      const inputDir = path.join(root, "input");
-      await fs.mkdir(inputDir, { recursive: true });
-
-      await downloadToPath(
-        challenge.dataset_test_cid,
-        path.join(inputDir, "ground_truth.csv"),
-      );
-      await downloadToPath(resultCid, path.join(inputDir, "submission.csv"));
-
-      const result = await runScorer({
-        image: challenge.scoring_container as string,
-        inputDir,
-      });
-
-      const previewWad = scoreToWad(result.score);
+      const previewWad = scoreToWad(run.result.score);
       const submissions = await listSubmissionsForChallenge(db, challengeId);
       const scoredWads = submissions
         .filter((row: { score: unknown }) => row.score !== null)
@@ -126,14 +104,14 @@ router.post(
 
       return c.json({
         data: {
-          score: result.score,
+          score: run.result.score,
           scoreWad: previewWad.toString(),
           estimatedRank,
           comparedScoredSubmissions: scoredWads.length,
         },
       });
     } finally {
-      await fs.rm(root, { recursive: true, force: true });
+      await run.cleanup();
     }
   },
 );

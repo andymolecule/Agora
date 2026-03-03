@@ -4,10 +4,26 @@ import {
   listChallengesWithDetails,
   listSubmissionsForChallenge,
 } from "@hermes/db";
+import {
+  CHALLENGE_DB_STATUS,
+  CHALLENGE_STATUS,
+  deriveDisplayStatus,
+  isChallengeDbStatus,
+  type ChallengeDbStatus,
+  type ChallengeDisplayStatus,
+} from "@hermes/common";
 import { z } from "zod";
 
 export const listChallengesQuerySchema = z.object({
-  status: z.string().optional(),
+  status: z
+    .enum([
+      CHALLENGE_STATUS.active,
+      CHALLENGE_STATUS.scoring,
+      CHALLENGE_STATUS.finalized,
+      CHALLENGE_STATUS.disputed,
+      CHALLENGE_STATUS.cancelled,
+    ])
+    .optional(),
   domain: z.string().optional(),
   poster_address: z.string().optional(),
   limit: z
@@ -36,28 +52,58 @@ export function sortByScoreDesc<T extends { score: unknown; scored?: unknown }>(
     });
 }
 
+function withDerivedDisplayStatus<T extends Record<string, unknown>>(row: T) {
+  const rawStatus = row.status;
+  const dbStatus = isChallengeDbStatus(rawStatus)
+    ? rawStatus
+    : CHALLENGE_DB_STATUS.active;
+  const deadline =
+    typeof row.deadline === "string" ? row.deadline : undefined;
+  const status = deriveDisplayStatus({
+    dbStatus,
+    deadline,
+  });
+  return {
+    ...row,
+    db_status: dbStatus,
+    status,
+  };
+}
+
 export async function listChallengesFromQuery(
   query: z.output<typeof listChallengesQuerySchema>,
 ) {
   const db = createSupabaseClient(false);
+  const dbStatusFilter: ChallengeDbStatus | undefined =
+    query.status === CHALLENGE_STATUS.scoring
+      ? CHALLENGE_DB_STATUS.active
+      : query.status;
   const rows = await listChallengesWithDetails(db, {
-    status: query.status,
+    status: dbStatusFilter,
     domain: query.domain,
     posterAddress: query.poster_address,
     limit: query.limit,
   });
+  const displayRows = rows.map((row) => withDerivedDisplayStatus(row));
+
+  const statusFilteredRows = query.status
+    ? displayRows.filter(
+        (row) =>
+          (row.status as ChallengeDisplayStatus) === query.status,
+      )
+    : displayRows;
 
   const minReward = query.min_reward;
   return minReward === undefined
-    ? rows
-    : rows.filter(
+    ? statusFilteredRows
+    : statusFilteredRows.filter(
       (row: Record<string, unknown>) => Number(row.reward_amount) >= minReward,
     );
 }
 
 export async function getChallengeWithLeaderboard(challengeId: string) {
   const db = createSupabaseClient(false);
-  const challenge = await getChallengeById(db, challengeId);
+  const challenge = withDerivedDisplayStatus(await getChallengeById(db, challengeId));
   const submissions = await listSubmissionsForChallenge(db, challengeId);
   const leaderboard = sortByScoreDesc(submissions);
   return { challenge, submissions, leaderboard };

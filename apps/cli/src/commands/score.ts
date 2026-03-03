@@ -9,7 +9,7 @@ import {
   upsertProofBundle,
 } from "@hermes/db";
 import { pinFile } from "@hermes/ipfs";
-import { buildProofBundle, runScorer } from "@hermes/scorer";
+import { buildProofBundle, executeScoringPipeline } from "@hermes/scorer";
 import { Command } from "commander";
 import { keccak256, toBytes } from "viem";
 import {
@@ -19,10 +19,7 @@ import {
 } from "../lib/config-store";
 import { printJson, printSuccess, printWarning } from "../lib/output";
 import {
-  createScoringWorkspace,
   scoreToWad,
-  stageGroundTruth,
-  stageSubmissionFromCid,
 } from "../lib/scoring";
 import { createSpinner } from "../lib/spinner";
 import { ensurePrivateKey } from "../lib/wallet";
@@ -88,94 +85,88 @@ export function buildScoreCommand() {
           throw new Error("Challenge missing test dataset CID.");
         }
 
-        const stageSpinner = createSpinner("Preparing scoring inputs...");
-        const workspace = await createScoringWorkspace();
-        const groundTruthPath = await stageGroundTruth(
-          workspace.inputDir,
-          challenge.dataset_test_cid,
-        );
-        const submissionPath = await stageSubmissionFromCid(
-          workspace.inputDir,
-          submission.result_cid,
-        );
-        stageSpinner.succeed("Inputs ready");
-
         const runSpinner = createSpinner("Running scorer container...");
-        const result = await runScorer({
+        const run = await executeScoringPipeline({
           image: challenge.scoring_container,
-          inputDir: workspace.inputDir,
+          groundTruth: { cid: challenge.dataset_test_cid },
+          submission: { cid: submission.result_cid },
+          keepWorkspace: true,
         });
-        runSpinner.succeed(`Scored submission: ${result.score}`);
+        runSpinner.succeed(`Scored submission: ${run.result.score}`);
 
-        const proof = await buildProofBundle({
-          challengeId: challenge.id,
-          submissionId: submission.id,
-          score: result.score,
-          scorerLog: result.log,
-          containerImageDigest: result.containerImageDigest,
-          inputPaths: [groundTruthPath, submissionPath],
-          outputPath: result.outputPath,
-        });
+        try {
+          const proof = await buildProofBundle({
+            challengeId: challenge.id,
+            submissionId: submission.id,
+            score: run.result.score,
+            scorerLog: run.result.log,
+            containerImageDigest: run.result.containerImageDigest,
+            inputPaths: run.inputPaths,
+            outputPath: run.result.outputPath,
+          });
 
-        const proofPath = path.join(workspace.root, "proof-bundle.json");
-        await fs.writeFile(proofPath, JSON.stringify(proof, null, 2), "utf8");
+          const proofPath = path.join(run.workspaceRoot, "proof-bundle.json");
+          await fs.writeFile(proofPath, JSON.stringify(proof, null, 2), "utf8");
 
-        const pinSpinner = createSpinner("Pinning proof bundle...");
-        const proofCid = await pinFile(
-          proofPath,
-          `proof-${submission.id}.json`,
-        );
-        pinSpinner.succeed(`Proof pinned: ${proofCid}`);
+          const pinSpinner = createSpinner("Pinning proof bundle...");
+          const proofCid = await pinFile(
+            proofPath,
+            `proof-${submission.id}.json`,
+          );
+          pinSpinner.succeed(`Proof pinned: ${proofCid}`);
 
-        const proofHash = keccak256(toBytes(proofCid.replace("ipfs://", "")));
-        const scoreWad = scoreToWad(result.score);
+          const proofHash = keccak256(toBytes(proofCid.replace("ipfs://", "")));
+          const scoreWad = scoreToWad(run.result.score);
 
-        const chainSpinner = createSpinner("Posting score on-chain...");
-        const txHash = await postScore(
-          challenge.contract_address as `0x${string}`,
-          BigInt(submission.on_chain_sub_id),
-          scoreWad,
-          proofHash,
-        );
-        const publicClient = getPublicClient();
-        await publicClient.waitForTransactionReceipt({ hash: txHash });
-        chainSpinner.succeed(`Score posted: ${txHash}`);
+          const chainSpinner = createSpinner("Posting score on-chain...");
+          const txHash = await postScore(
+            challenge.contract_address as `0x${string}`,
+            BigInt(submission.on_chain_sub_id),
+            scoreWad,
+            proofHash,
+          );
+          const publicClient = getPublicClient();
+          await publicClient.waitForTransactionReceipt({ hash: txHash });
+          chainSpinner.succeed(`Score posted: ${txHash}`);
 
-        await upsertProofBundle(db, {
-          submission_id: submission.id,
-          cid: proofCid,
-          input_hash: proof.inputHash,
-          output_hash: proof.outputHash,
-          container_image_hash: proof.containerImageDigest,
-          scorer_log: proof.scorerLog,
-          reproducible: true,
-        });
+          await upsertProofBundle(db, {
+            submission_id: submission.id,
+            cid: proofCid,
+            input_hash: proof.inputHash,
+            output_hash: proof.outputHash,
+            container_image_hash: proof.containerImageDigest,
+            scorer_log: proof.scorerLog,
+            reproducible: true,
+          });
 
-        await updateScore(db, {
-          submission_id: submission.id,
-          score: scoreWad.toString(),
-          proof_bundle_cid: proofCid,
-          proof_bundle_hash: proofHash,
-          scored_at: new Date().toISOString(),
-        });
+          await updateScore(db, {
+            submission_id: submission.id,
+            score: scoreWad.toString(),
+            proof_bundle_cid: proofCid,
+            proof_bundle_hash: proofHash,
+            scored_at: new Date().toISOString(),
+          });
 
-        const output = {
-          submissionId: submission.id,
-          score: result.score,
-          scoreWad: scoreWad.toString(),
-          proofCid,
-          proofHash,
-          txHash,
-        };
+          const output = {
+            submissionId: submission.id,
+            score: run.result.score,
+            scoreWad: scoreWad.toString(),
+            proofCid,
+            proofHash,
+            txHash,
+          };
 
-        if (opts.format === "json") {
-          printJson(output);
-          return;
+          if (opts.format === "json") {
+            printJson(output);
+            return;
+          }
+
+          printSuccess(`Scored: ${output.score}`);
+          printWarning(`Proof CID: ${proofCid}`);
+          printWarning(`Tx: ${txHash}`);
+        } finally {
+          await run.cleanup();
         }
-
-        printSuccess(`Scored: ${output.score}`);
-        printWarning(`Proof CID: ${proofCid}`);
-        printWarning(`Tx: ${txHash}`);
       },
     );
 

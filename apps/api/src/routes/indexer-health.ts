@@ -8,6 +8,11 @@ const WARN_LAG_BLOCKS = Number(process.env.HERMES_INDEXER_LAG_WARN_BLOCKS ?? 20)
 const CRITICAL_LAG_BLOCKS = Number(
   process.env.HERMES_INDEXER_LAG_CRITICAL_BLOCKS ?? 120,
 );
+const INDEXER_CONFIRMATION_DEPTH = (() => {
+  const parsed = Number(process.env.HERMES_INDEXER_CONFIRMATION_DEPTH ?? 3);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.floor(parsed);
+})();
 
 type LagStatus = "ok" | "warning" | "critical" | "empty" | "error";
 
@@ -28,7 +33,7 @@ router.get("/", async (c) => {
 
     // Build the cursor key the indexer uses
     const factoryAddress = config.HERMES_FACTORY_ADDRESS.toLowerCase();
-    const chainId = config.HERMES_CHAIN_ID ?? 84532;
+    const chainId = config.HERMES_CHAIN_ID;
     const cursorKey = `factory:${chainId}:${factoryAddress}`;
 
     // Source of truth: read from indexer_cursors only.
@@ -52,18 +57,24 @@ router.get("/", async (c) => {
       ? Number(cursorRow.block_number)
       : null;
     const chainHeadNumber = Number(chainHead);
+    const finalizedHead = Math.max(
+      chainHeadNumber - INDEXER_CONFIRMATION_DEPTH,
+      0,
+    );
     const lagBlocks =
       indexedHead === null
-        ? chainHeadNumber
-        : Math.max(chainHeadNumber - Number(indexedHead), 0);
+        ? finalizedHead
+        : Math.max(finalizedHead - Number(indexedHead), 0);
     const status = toLagStatus(lagBlocks, indexedHead !== null);
 
     const body = {
       ok: status === "ok" || status === "warning" || status === "empty",
       status,
       chainHead: chainHeadNumber,
+      finalizedHead,
       indexedHead,
       lagBlocks,
+      confirmationDepth: INDEXER_CONFIRMATION_DEPTH,
       thresholds: {
         warning: WARN_LAG_BLOCKS,
         critical: CRITICAL_LAG_BLOCKS,

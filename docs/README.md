@@ -14,6 +14,8 @@ Documentation index for the Hermes repository.
 
 ## Operations
 - `testnet-ops-runbook.md` — Testnet launch, monitoring, and incident handling
+- `operations-runbook.md` — Production-style incident response and replay procedures
+- `v0-feature-policy.md` — Single-gate policy for non-core feature toggles
 - `agent-guide.md` — Getting started guide for AI agents solving challenges
 
 ## Archive

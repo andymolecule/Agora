@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { readFeaturePolicy } from "@hermes/common";
 import { z } from "zod";
 import { hermesGetChallenge } from "./tools/get-challenge.js";
 import { hermesGetLeaderboard } from "./tools/get-leaderboard.js";
@@ -22,14 +23,6 @@ function asToolResult(payload: unknown) {
       },
     ],
   };
-}
-
-function parseBoolean(value: string | undefined, fallback: boolean) {
-  if (value === undefined) return fallback;
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off"].includes(normalized)) return false;
-  return fallback;
 }
 
 function createServer(options?: { allowRemotePrivateKey?: boolean }) {
@@ -175,10 +168,7 @@ async function startStdioMode() {
 
 function startHttpMode() {
   const port = Number(process.env.HERMES_MCP_PORT ?? 3001);
-  const allowRemotePrivateKey = parseBoolean(
-    process.env.HERMES_MCP_ALLOW_REMOTE_PRIVATE_KEYS,
-    false,
-  );
+  const allowRemotePrivateKey = readFeaturePolicy().allowMcpRemotePrivateKeys;
   const sessions = new Map<string, HttpMcpSession>();
 
   const gcTimer = setInterval(() => {

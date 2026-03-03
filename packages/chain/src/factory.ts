@@ -18,7 +18,7 @@ export interface CreateChallengeParams {
 export async function createChallenge(params: CreateChallengeParams) {
   const config = loadConfig();
   const walletClient = getWalletClient();
-  const factoryAddress = config.HERMES_FACTORY_ADDRESS as `0x${string}`;
+  const factoryAddress = config.HERMES_FACTORY_ADDRESS;
   const reward = parseUnits(params.rewardAmount.toString(), 6);
 
   return walletClient.writeContract({

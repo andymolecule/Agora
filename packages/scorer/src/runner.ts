@@ -1,14 +1,23 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
+const DEFAULT_RUNNER_LIMITS = {
+  memory: "256m",
+  cpus: "0.5",
+  pids: 32,
+} as const;
 
 export interface RunScorerInput {
   image: string;
   inputDir: string;
   timeoutMs?: number;
+  limits?: {
+    memory?: string;
+    cpus?: string;
+    pids?: number;
+  };
 }
 
 export interface ScoreResult {
@@ -141,9 +150,11 @@ export async function runScorer(input: RunScorerInput): Promise<ScoreResult> {
 
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const inputDir = path.resolve(input.inputDir);
-  const outputDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), "hermes-score-output-"),
-  );
+  // Keep output under the scoring workspace so executeScoringPipeline cleanup
+  // removes it reliably (prevents /tmp leak across runs).
+  const outputDir = path.join(path.dirname(inputDir), "output");
+  await fs.rm(outputDir, { recursive: true, force: true });
+  await fs.mkdir(outputDir, { recursive: true });
   const containerName = `hermes-score-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const pull = await runCommand("docker", ["pull", input.image], timeoutMs);
@@ -173,9 +184,11 @@ export async function runScorer(input: RunScorerInput): Promise<ScoreResult> {
     "--user",
     "65532:65532",
     "--memory",
-    "8g",
+    input.limits?.memory ?? DEFAULT_RUNNER_LIMITS.memory,
     "--cpus",
-    "4",
+    input.limits?.cpus ?? DEFAULT_RUNNER_LIMITS.cpus,
+    "--pids-limit",
+    String(input.limits?.pids ?? DEFAULT_RUNNER_LIMITS.pids),
     "--mount",
     `type=bind,src=${inputDir},dst=/input,readonly`,
     "--mount",

@@ -1,0 +1,71 @@
+import assert from "node:assert/strict";
+import {
+  defaultMinimumScoreForChallengeType,
+  defaultPresetIdForChallengeType,
+  findPresetIdsByContainer,
+  inferPresetIdByContainer,
+  lookupPreset,
+  validatePresetIntegrity,
+} from "../presets";
+
+const regression = lookupPreset("regression_v1");
+if (!regression) {
+  throw new Error("regression_v1 preset must exist");
+}
+
+const uniqueIds = findPresetIdsByContainer(regression.container);
+assert.equal(uniqueIds.length, 1, "regression container should map to a single preset");
+assert.equal(uniqueIds[0], "regression_v1");
+assert.equal(inferPresetIdByContainer(regression.container), "regression_v1");
+
+assert.equal(
+  defaultPresetIdForChallengeType("reproducibility"),
+  "csv_comparison_v1",
+);
+assert.equal(defaultPresetIdForChallengeType("prediction"), "regression_v1");
+assert.equal(defaultPresetIdForChallengeType("custom"), "custom");
+assert.equal(defaultPresetIdForChallengeType("docking"), null);
+
+assert.equal(defaultMinimumScoreForChallengeType("reproducibility"), 0);
+assert.equal(defaultMinimumScoreForChallengeType("prediction"), 0);
+assert.equal(defaultMinimumScoreForChallengeType("custom"), 0);
+assert.equal(defaultMinimumScoreForChallengeType("docking"), 0);
+
+const csvPreset = lookupPreset("csv_comparison_v1");
+const numberPreset = lookupPreset("number_absdiff_v1");
+if (!csvPreset || !numberPreset) {
+  throw new Error("csv_comparison_v1 and number_absdiff_v1 must exist");
+}
+
+assert.equal(
+  inferPresetIdByContainer(csvPreset.container),
+  null,
+  "container shared by multiple presets should not infer a preset id",
+);
+
+const mismatchError = validatePresetIntegrity("regression_v1", csvPreset.container);
+assert.ok(
+  mismatchError?.includes("Container mismatch"),
+  "mismatched preset/container should be rejected",
+);
+
+const unpinnedCustomError = validatePresetIntegrity(
+  "custom",
+  numberPreset.container,
+);
+assert.ok(
+  unpinnedCustomError?.includes("pinned digest"),
+  "custom preset must require pinned digest",
+);
+
+const unpinnedPresetError = validatePresetIntegrity(
+  "regression_v1",
+  regression.container,
+  { requirePinnedPresetDigest: true },
+);
+assert.ok(
+  unpinnedPresetError?.includes("pinned digest"),
+  "preset validation should enforce pinned digests when strict mode is enabled",
+);
+
+console.log("preset registry validation passed");

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { challengeSpecSchema } from "@hermes/common";
-import { runScorer } from "@hermes/scorer";
+import { executeScoringPipeline } from "@hermes/scorer";
 import { Command } from "commander";
 import yaml from "yaml";
 import { printSuccess, printWarning, printJson } from "../lib/output";
@@ -54,38 +54,20 @@ export function buildValidateCommand() {
             const dockerSpinner = createSpinner(
                 `Pulling and testing scorer container: ${container}`,
             );
-            let tmpDir: string | null = null;
             try {
-                // Create a minimal input dir with empty data files for the dry-run
-                const os = await import("node:os");
-                tmpDir = await fs.mkdtemp(
-                    path.join(os.tmpdir(), "hermes-validate-"),
-                );
-                const inputDir = path.join(tmpDir, "input");
-                await fs.mkdir(inputDir, { recursive: true });
-
-                // Create minimal placeholder files so the container has something to work with
-                await fs.writeFile(
-                    path.join(inputDir, "ground_truth.csv"),
-                    "id,value\n1,0.5\n",
-                );
-                await fs.writeFile(
-                    path.join(inputDir, "submission.csv"),
-                    "id,value\n1,0.5\n",
-                );
-
-                const result = await runScorer({
+                const run = await executeScoringPipeline({
                     image: container,
-                    inputDir,
+                    groundTruth: { content: "id,value\n1,0.5\n" },
+                    submission: { content: "id,value\n1,0.5\n" },
                     timeoutMs: 5 * 60 * 1000, // 5 min for dry-run
                 });
 
                 dockerSpinner.succeed("Scorer container ran successfully");
-                printSuccess(`Dry-run score: ${result.score}`);
+                printSuccess(`Dry-run score: ${run.result.score}`);
                 printJson({
-                    score: result.score,
-                    details: result.details,
-                    containerDigest: result.containerImageDigest,
+                    score: run.result.score,
+                    details: run.result.details,
+                    containerDigest: run.result.containerImageDigest,
                 });
             } catch (err) {
                 dockerSpinner.fail("Scorer container failed");
@@ -99,10 +81,6 @@ export function buildValidateCommand() {
                     "Ensure the image is pullable: docker pull " + container,
                 );
                 process.exit(1);
-            } finally {
-                if (tmpDir) {
-                    await fs.rm(tmpDir, { recursive: true, force: true });
-                }
             }
         });
 

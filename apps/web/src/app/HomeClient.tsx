@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { ArrowUpDown, Search as SearchIcon } from "lucide-react";
+import { CHALLENGE_STATUS } from "@hermes/common";
 import { ChallengeCard } from "../components/ChallengeCard";
 import {
   type ChallengeFilterState,
@@ -46,7 +47,7 @@ export function HomeClient() {
 
   /* Derived stats */
   const activeChallenges = challenges.filter(
-    (c) => c.status?.toLowerCase() === "active",
+    (c) => c.status?.toLowerCase() === CHALLENGE_STATUS.active,
   );
   const totalPool = challenges.reduce(
     (s, c) => s + Number(c.reward_amount || 0),

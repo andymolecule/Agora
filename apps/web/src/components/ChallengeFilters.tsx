@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Search, SlidersHorizontal, X } from "lucide-react";
+import { ON_CHAIN_STATUS_ORDER } from "@hermes/common";
 
 export type ChallengeFilterState = {
   domain: string;
@@ -11,7 +12,7 @@ export type ChallengeFilterState = {
 };
 
 const DOMAINS = ["longevity", "drug_discovery", "omics", "protein_design", "neuroscience", "other"];
-const STATUSES = ["active", "scoring", "disputed", "finalized", "cancelled"];
+const STATUSES = [...ON_CHAIN_STATUS_ORDER];
 
 function Pill({
   label,
