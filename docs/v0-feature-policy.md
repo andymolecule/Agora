@@ -1,0 +1,30 @@
+# Hermes V0 Feature Policy
+
+This repository runs in **v0 core mode** by default.
+
+## Single Gate
+
+All non-core features are disabled unless this is set:
+
+```bash
+HERMES_ENABLE_NON_CORE_FEATURES=true
+```
+
+## Non-Core Features
+
+When the gate is enabled, these feature-specific flags apply:
+
+- `HERMES_ENABLE_SCORE_PREVIEW=true` enables `/api/score-preview`.
+- `HERMES_X402_ENABLED=true` enables x402 payment enforcement.
+- `HERMES_X402_REPORT_ONLY=true` enables x402 report-only mode.
+- `HERMES_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true` allows private keys over MCP HTTP (high risk; use only in trusted, TLS-protected environments).
+
+If `HERMES_ENABLE_NON_CORE_FEATURES=false`, all of the above are forced off regardless of their individual values.
+
+## V0 Recommendation
+
+For a lightweight, stable v0 deployment, keep:
+
+```bash
+HERMES_ENABLE_NON_CORE_FEATURES=false
+```

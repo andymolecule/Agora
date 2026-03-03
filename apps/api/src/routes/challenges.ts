@@ -1,6 +1,7 @@
 import { getPublicClient } from "@hermes/chain";
 import {
   CHALLENGE_LIMITS,
+  ON_CHAIN_STATUS_ORDER,
   challengeSpecSchema,
   isValidPinnedSpecCid,
   loadConfig,
@@ -131,10 +132,10 @@ router.post(
       return c.json({ error: `Invalid scoring container: ${containerError}` }, 400);
     }
 
-    await upsertChallenge(
-      db,
-      buildChallengeInsert({
-        chainId: config.HERMES_CHAIN_ID ?? 84532,
+    let challengeInsert;
+    try {
+      challengeInsert = buildChallengeInsert({
+        chainId: config.HERMES_CHAIN_ID,
         contractAddress: challengeAddress,
         factoryChallengeId: Number(challengeId),
         posterAddress,
@@ -145,8 +146,13 @@ router.post(
           spec.dispute_window_hours ??
           CHALLENGE_LIMITS.defaultDisputeWindowHours,
         txHash,
-      }),
-    );
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json({ error: message }, 400);
+    }
+
+    await upsertChallenge(db, challengeInsert);
 
     return c.json({ data: { ok: true, challengeAddress } });
   },
@@ -205,9 +211,6 @@ router.get("/:id/claimable", async (c) => {
     return c.json({ error: "Invalid on-chain status value." }, 500);
   }
 
-  // Status enum: Active=0, Scoring=1, Finalized=2, Disputed=3, Cancelled=4
-  const statusNames = ["active", "scoring", "finalized", "disputed", "cancelled"];
-
   // Compute finalization timestamp from on-chain fields.
   const finalizableAfterSeconds =
     onChainDeadline + (onChainDisputeWindowHours * 3600n);
@@ -236,7 +239,7 @@ router.get("/:id/claimable", async (c) => {
 
   return c.json({
     data: {
-      onChainStatus: statusNames[onChainStatus] ?? "unknown",
+      onChainStatus: ON_CHAIN_STATUS_ORDER[onChainStatus] ?? "unknown",
       finalizableAfter,
       claimable,
     },

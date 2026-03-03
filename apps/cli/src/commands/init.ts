@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CHALLENGE_LIMITS, SCORER_PRESETS, OFFICIAL_IMAGES } from "@hermes/common";
+import {
+  CHALLENGE_LIMITS,
+  lookupPreset,
+  OFFICIAL_IMAGES,
+  SUBMISSION_LIMITS,
+} from "@hermes/common";
 import { Command } from "commander";
 import { printSuccess } from "../lib/output";
 
@@ -11,6 +16,11 @@ const bundledTemplatesDir = path.resolve(
   "../../../../challenges/templates",
 );
 const repoTemplatesDir = path.resolve(process.cwd(), "challenges/templates");
+const reproducibilityPreset = lookupPreset("csv_comparison_v1");
+const predictionPreset = lookupPreset("regression_v1");
+if (!reproducibilityPreset || !predictionPreset) {
+  throw new Error("Required presets are missing from PRESET_REGISTRY.");
+}
 
 const templateMap: Record<string, string> = {
   reproducibility: "reproducibility.yaml",
@@ -42,7 +52,7 @@ dataset:
 
 scoring:
   # OCI image reference for the scorer container
-  container: "${SCORER_PRESETS.reproducibility.container}"
+  container: "${reproducibilityPreset.container}"
   # rmse | mae | r2 | pearson | spearman | custom
   metric: rmse
 
@@ -60,7 +70,9 @@ tags:
   - longevity
 
 # Optional settings
-minimum_score: 0.0
+minimum_score: ${reproducibilityPreset.defaultMinimumScore}
+max_submissions_total: ${SUBMISSION_LIMITS.maxPerChallenge}
+max_submissions_per_solver: ${SUBMISSION_LIMITS.maxPerSolverPerChallenge}
 # Dispute window in hours (${CHALLENGE_LIMITS.disputeWindowMinHours}-${CHALLENGE_LIMITS.disputeWindowMaxHours}, i.e. 7-90 days)
 dispute_window_hours: ${CHALLENGE_LIMITS.defaultDisputeWindowHours}
 
@@ -90,7 +102,7 @@ dataset:
 
 scoring:
   # OCI image reference for the scorer container
-  container: "${SCORER_PRESETS.prediction.container}"
+  container: "${predictionPreset.container}"
   # rmse | mae | r2 | pearson | spearman | custom
   metric: r2
 
@@ -108,7 +120,9 @@ tags:
   - omics
 
 # Optional settings
-minimum_score: 0.0
+minimum_score: ${predictionPreset.defaultMinimumScore}
+max_submissions_total: ${SUBMISSION_LIMITS.maxPerChallenge}
+max_submissions_per_solver: ${SUBMISSION_LIMITS.maxPerSolverPerChallenge}
 # Dispute window in hours (${CHALLENGE_LIMITS.disputeWindowMinHours}-${CHALLENGE_LIMITS.disputeWindowMaxHours}, i.e. 7-90 days)
 dispute_window_hours: ${CHALLENGE_LIMITS.defaultDisputeWindowHours}
 
@@ -157,6 +171,8 @@ tags:
 
 # Optional settings
 minimum_score: 0.0
+max_submissions_total: ${SUBMISSION_LIMITS.maxPerChallenge}
+max_submissions_per_solver: ${SUBMISSION_LIMITS.maxPerSolverPerChallenge}
 # Dispute window in hours (${CHALLENGE_LIMITS.disputeWindowMinHours}-${CHALLENGE_LIMITS.disputeWindowMaxHours}, i.e. 7-90 days)
 dispute_window_hours: ${CHALLENGE_LIMITS.defaultDisputeWindowHours}
 # Optional lab TBA address

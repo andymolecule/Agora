@@ -10,6 +10,7 @@ import { buildGetCommand } from "./commands/get";
 import { buildInitCommand } from "./commands/init";
 import { buildListCommand } from "./commands/list";
 import { buildPostCommand } from "./commands/post";
+import { buildReindexCommand } from "./commands/reindex";
 import { buildScoreCommand } from "./commands/score";
 import { buildScoreLocalCommand } from "./commands/score-local";
 import { buildStatusCommand } from "./commands/status";
@@ -29,6 +30,7 @@ async function main() {
   program.addCommand(buildConfigCommand());
   program.addCommand(buildInitCommand());
   program.addCommand(buildPostCommand());
+  program.addCommand(buildReindexCommand());
   program.addCommand(buildListCommand());
   program.addCommand(buildGetCommand());
   program.addCommand(buildStatusCommand());

@@ -1,0 +1,180 @@
+import {
+  completeJob,
+  failJob,
+  getChallengeById,
+  markScoreJobSkipped,
+  getSubmissionById,
+  requeueJobWithoutAttemptPenalty,
+  updateScore,
+  upsertProofBundle,
+  type createSupabaseClient,
+} from "@hermes/db";
+import { getPublicClient } from "@hermes/chain";
+import {
+  handlePreviouslyPostedScoreTx,
+  postScoreAndWaitForConfirmation,
+  reconcileScoredSubmission,
+} from "./chain.js";
+import { isDockerInfrastructureError } from "./policy.js";
+import { scoreSubmissionAndBuildProof } from "./scoring.js";
+import type { ChallengeRow, ScoreJobRow, SubmissionRow, WorkerLogFn } from "./types.js";
+
+type DbClient = ReturnType<typeof createSupabaseClient>;
+
+export async function processJob(
+  db: DbClient,
+  job: ScoreJobRow,
+  log: WorkerLogFn,
+) {
+  try {
+    const challenge = (await getChallengeById(db, job.challenge_id)) as ChallengeRow;
+    const submission = (await getSubmissionById(db, job.submission_id)) as SubmissionRow;
+    const challengeAddress = challenge.contract_address as `0x${string}`;
+    const publicClient = getPublicClient();
+
+    if (
+      await reconcileScoredSubmission(
+        db,
+        submission,
+        challengeAddress,
+        job.score_tx_hash,
+        job.id,
+      )
+    ) {
+      log("info", "Submission already scored on-chain; reconciled and completed job", {
+        jobId: job.id,
+        submissionId: submission.id,
+      });
+      return;
+    }
+
+    if (
+      await handlePreviouslyPostedScoreTx(
+        db,
+        job,
+        submission,
+        challengeAddress,
+        publicClient,
+        log,
+      )
+    ) {
+      return;
+    }
+
+    if (!submission.result_cid) {
+      log(
+        "warn",
+        "Submission missing result_cid — cannot score (on-chain-only submission)",
+        {
+          submissionId: submission.id,
+          challengeId: challenge.id,
+        },
+      );
+      await failJob(
+        db,
+        job.id,
+        "missing_result_cid_onchain_submission",
+        job.max_attempts,
+        job.max_attempts,
+      );
+      return;
+    }
+
+    const scoringOutcome = await scoreSubmissionAndBuildProof(
+      db,
+      challenge,
+      submission,
+      log,
+    );
+    if (!scoringOutcome.ok) {
+      if (scoringOutcome.kind === "skipped") {
+        log("warn", "Submission scoring skipped by configured limits", {
+          submissionId: submission.id,
+          challengeId: challenge.id,
+          reason: scoringOutcome.reason,
+        });
+        await markScoreJobSkipped(
+          db,
+          {
+            submission_id: submission.id,
+            challenge_id: challenge.id,
+          },
+          scoringOutcome.reason,
+        );
+        return;
+      }
+
+      log("warn", "Submission invalid — not posting score on-chain", {
+        submissionId: submission.id,
+        challengeId: challenge.id,
+        error: scoringOutcome.reason,
+      });
+      await failJob(
+        db,
+        job.id,
+        `invalid_submission: ${scoringOutcome.reason}`,
+        job.max_attempts,
+        job.max_attempts,
+      );
+      return;
+    }
+
+    const txHash = await postScoreAndWaitForConfirmation(
+      db,
+      job,
+      challengeAddress,
+      submission,
+      scoringOutcome.scoreWad,
+      scoringOutcome.proofHash,
+      publicClient,
+      log,
+    );
+
+    await upsertProofBundle(db, {
+      submission_id: submission.id,
+      cid: scoringOutcome.proofCid,
+      input_hash: scoringOutcome.proof.inputHash,
+      output_hash: scoringOutcome.proof.outputHash,
+      container_image_hash: scoringOutcome.proof.containerImageDigest,
+      scorer_log: scoringOutcome.proof.scorerLog,
+      reproducible: true,
+    });
+
+    await updateScore(db, {
+      submission_id: submission.id,
+      score: scoringOutcome.scoreWad.toString(),
+      proof_bundle_cid: scoringOutcome.proofCid,
+      proof_bundle_hash: scoringOutcome.proofHash,
+      scored_at: new Date().toISOString(),
+    });
+
+    await completeJob(db, job.id, txHash);
+    log("info", `✓ Job complete for submission ${submission.id}`, {
+      txHash,
+      score: scoringOutcome.score,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (isDockerInfrastructureError(message)) {
+      log("error", "Docker unavailable — requeuing job without penalty", {
+        jobId: job.id,
+        submissionId: job.submission_id,
+      });
+      await requeueJobWithoutAttemptPenalty(
+        db,
+        job.id,
+        job.attempts,
+        `docker_unavailable: ${message}`,
+      );
+      return;
+    }
+    log("error", `Job failed for submission ${job.submission_id}`, {
+      jobId: job.id,
+      submissionId: job.submission_id,
+      attempts: job.attempts,
+      maxAttempts: job.max_attempts,
+      error: message,
+    });
+    await failJob(db, job.id, message, job.attempts, job.max_attempts);
+  }
+}

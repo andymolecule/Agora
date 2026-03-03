@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx src/tests/pinata-roundtrip.ts"
+    "test": "node --import tsx src/tests/fetch-resilience.ts && node --import tsx src/tests/pinata-roundtrip.ts"
   },
   "dependencies": {
     "@hermes/common": "workspace:*",

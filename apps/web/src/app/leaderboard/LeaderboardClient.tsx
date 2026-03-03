@@ -2,16 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Trophy } from "lucide-react";
-import { HatchedDivider } from "../../components/HatchedDivider";
+import { CHALLENGE_STATUS } from "@hermes/common";
 import { listChallenges } from "../../lib/api";
-import { shortAddress } from "../../lib/format";
-
-type SolverStats = {
-    address: string;
-    challenges: number;
-    submissions: number;
-    bestScore: string | null;
-};
 
 export function LeaderboardClient() {
     const query = useQuery({
@@ -99,7 +91,7 @@ export function LeaderboardClient() {
                                         </td>
                                         <td className="py-3 px-4 border-r border-black">
                                             <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider">
-                                                <span className={`w-1.5 h-1.5 rounded-full ${c.status === 'active' ? 'bg-green-500' : 'bg-black/40'}`} />
+                                                <span className={`w-1.5 h-1.5 rounded-full ${c.status === CHALLENGE_STATUS.active ? 'bg-green-500' : 'bg-black/40'}`} />
                                                 {c.status}
                                             </span>
                                         </td>

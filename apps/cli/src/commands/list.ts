@@ -1,4 +1,11 @@
 import { createSupabaseClient, listChallengesWithDetails } from "@hermes/db";
+import {
+  CHALLENGE_DB_STATUS,
+  CHALLENGE_STATUS,
+  deriveDisplayStatus,
+  isChallengeDbStatus,
+  type ChallengeDbStatus,
+} from "@hermes/common";
 import { Command } from "commander";
 import {
   applyConfigToEnv,
@@ -45,14 +52,39 @@ export function buildListCommand() {
         ]);
 
         const db = createSupabaseClient();
+        const requestedStatus = opts.status?.toLowerCase();
+        const dbStatusFilter: ChallengeDbStatus | undefined =
+          requestedStatus === CHALLENGE_STATUS.scoring
+            ? CHALLENGE_DB_STATUS.active
+            : requestedStatus && isChallengeDbStatus(requestedStatus)
+              ? requestedStatus
+              : undefined;
+        if (requestedStatus && !dbStatusFilter && requestedStatus !== CHALLENGE_STATUS.scoring) {
+          throw new Error(`Invalid status filter: ${opts.status}`);
+        }
+
         const challenges = (await listChallengesWithDetails(db, {
           domain: opts.domain,
-          status: opts.status,
+          status: dbStatusFilter,
           posterAddress: opts.poster,
           limit: opts.limit ? Number(opts.limit) : undefined,
         })) as ChallengeRecord[];
 
-        let filtered = challenges;
+        let filtered = challenges.map((challenge: ChallengeRecord) => {
+          const dbStatus = isChallengeDbStatus(challenge.status)
+            ? challenge.status
+            : CHALLENGE_DB_STATUS.active;
+          const status = deriveDisplayStatus({
+            dbStatus,
+            deadline: challenge.deadline,
+          });
+          return { ...challenge, db_status: dbStatus, status };
+        });
+
+        if (requestedStatus) {
+          filtered = filtered.filter((challenge: { status: string }) => challenge.status === requestedStatus);
+        }
+
         if (opts.minReward) {
           const min = Number(opts.minReward);
           if (Number.isNaN(min)) {

@@ -11,6 +11,7 @@ import {
 } from "@hermes/chain";
 import {
   CHALLENGE_LIMITS,
+  defaultMinimumScoreForChallengeType,
   type ChallengeSpecOutput,
   challengeSpecSchema,
 } from "@hermes/common";
@@ -104,6 +105,10 @@ function decimalToWad(value: number): bigint {
     : raw;
   const decimal = normalized === "" ? "0" : normalized;
   return parseUnits(decimal, 18);
+}
+
+function defaultMinimumScoreForType(type: ChallengeSpecOutput["type"]) {
+  return defaultMinimumScoreForChallengeType(type);
 }
 
 export function buildPostCommand() {
@@ -251,10 +256,9 @@ export function buildPostCommand() {
         }
 
         const createSpinnerInstance = createSpinner("Creating challenge...");
-        const minimumScoreWad =
-          spec.minimum_score !== undefined
-            ? decimalToWad(spec.minimum_score)
-            : 0n;
+        const minimumScoreWad = decimalToWad(
+          spec.minimum_score ?? defaultMinimumScoreForType(spec.type),
+        );
         const txHash = await createChallenge({
           specCid,
           rewardAmount,

@@ -1,5 +1,14 @@
 import type { HermesDbClient } from "../index";
-import type { ChallengeSpecOutput } from "@hermes/common";
+import {
+  defaultMinimumScoreForChallengeType,
+  findPresetIdsByContainer,
+  inferPresetIdByContainer,
+  SUBMISSION_LIMITS,
+  CHALLENGE_STATUS,
+  validatePresetIntegrity,
+  type ChallengeDbStatus,
+  type ChallengeSpecOutput,
+} from "@hermes/common";
 
 export interface ChallengeInsert {
   chain_id: number;
@@ -15,12 +24,15 @@ export interface ChallengeInsert {
   dataset_test_cid?: string | null;
   scoring_container: string;
   scoring_metric: string;
+  scoring_preset_id?: string | null;
   minimum_score?: number | null;
+  max_submissions_total?: number | null;
+  max_submissions_per_solver?: number | null;
   reward_amount: number;
   distribution_type: string;
   deadline: string;
   dispute_window_hours: number;
-  status: string;
+  status: ChallengeDbStatus;
   tx_hash: string;
 }
 
@@ -39,6 +51,42 @@ export interface BuildChallengeInsertInput {
 export function buildChallengeInsert(
   input: BuildChallengeInsertInput,
 ): ChallengeInsert {
+  const requirePinnedPresetDigest =
+    process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS === "1" ||
+    process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS === "true" ||
+    process.env.NODE_ENV === "production";
+  const explicitPresetId =
+    typeof input.spec.preset_id === "string" && input.spec.preset_id.trim().length > 0
+      ? input.spec.preset_id.trim()
+      : null;
+  const effectivePresetId = explicitPresetId ?? (input.spec.type === "custom" ? "custom" : null);
+  const inferredPresetId =
+    effectivePresetId ?? inferPresetIdByContainer(input.spec.scoring.container);
+  const presetIdsForContainer = findPresetIdsByContainer(input.spec.scoring.container);
+
+  if (!inferredPresetId && input.spec.type !== "custom" && presetIdsForContainer.length > 1) {
+    throw new Error(
+      `Ambiguous scoring preset for container ${input.spec.scoring.container}. Set preset_id explicitly.`,
+    );
+  }
+
+  if (!inferredPresetId && input.spec.type !== "custom" && presetIdsForContainer.length === 0) {
+    throw new Error(
+      `Unknown scorer container for non-custom challenge: ${input.spec.scoring.container}. Use a registered preset container or set type to custom with a pinned digest.`,
+    );
+  }
+
+  if (inferredPresetId) {
+    const integrityError = validatePresetIntegrity(
+      inferredPresetId,
+      input.spec.scoring.container,
+      { requirePinnedPresetDigest },
+    );
+    if (integrityError) {
+      throw new Error(`Invalid scoring preset configuration: ${integrityError}`);
+    }
+  }
+
   return {
     chain_id: input.chainId,
     contract_address: input.contractAddress,
@@ -53,12 +101,21 @@ export function buildChallengeInsert(
     dataset_test_cid: input.spec.dataset?.test ?? null,
     scoring_container: input.spec.scoring.container,
     scoring_metric: input.spec.scoring.metric,
-    minimum_score: input.spec.minimum_score ?? null,
+    scoring_preset_id: inferredPresetId,
+    minimum_score:
+      input.spec.minimum_score ??
+      defaultMinimumScoreForChallengeType(input.spec.type) ??
+      null,
+    max_submissions_total:
+      input.spec.max_submissions_total ?? SUBMISSION_LIMITS.maxPerChallenge,
+    max_submissions_per_solver:
+      input.spec.max_submissions_per_solver ??
+      SUBMISSION_LIMITS.maxPerSolverPerChallenge,
     reward_amount: input.rewardAmountUsdc,
     distribution_type: input.spec.reward.distribution,
     deadline: input.spec.deadline,
     dispute_window_hours: input.disputeWindowHours,
-    status: "active",
+    status: CHALLENGE_STATUS.active,
     tx_hash: input.txHash,
   };
 }
@@ -95,7 +152,9 @@ export async function getChallengeById(db: HermesDbClient, id: string) {
 export async function listChallenges(db: HermesDbClient) {
   const { data, error } = await db
     .from("challenges")
-    .select("id, contract_address, tx_hash");
+    .select(
+      "id, contract_address, tx_hash, max_submissions_total, max_submissions_per_solver",
+    );
   if (error) {
     throw new Error(`Failed to list challenges: ${error.message}`);
   }
@@ -103,7 +162,7 @@ export async function listChallenges(db: HermesDbClient) {
 }
 
 export interface ChallengeListFilters {
-  status?: string;
+  status?: ChallengeDbStatus;
   domain?: string;
   posterAddress?: string;
   limit?: number;
@@ -145,7 +204,7 @@ export async function listChallengesWithDetails(
 export async function updateChallengeStatus(
   db: HermesDbClient,
   challengeId: string,
-  status: string,
+  status: ChallengeDbStatus,
 ) {
   const { data, error } = await db
     .from("challenges")
@@ -169,7 +228,7 @@ export async function setChallengeFinalized(
   const { data, error } = await db
     .from("challenges")
     .update({
-      status: "finalized",
+      status: CHALLENGE_STATUS.finalized,
       finalized_at: finalizedAt,
       winner_on_chain_sub_id: winnerOnChainSubId,
       winner_submission_id: winnerSubmissionId,

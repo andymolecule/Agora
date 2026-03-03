@@ -2,6 +2,7 @@ import { challengeSpecSchema } from "../schemas/challenge-spec";
 
 const sample = {
   id: "ch-001",
+  preset_id: "csv_comparison_v1",
   title: "Reproduce Figure 3 from Gladyshev 2024 longevity clock",
   domain: "longevity",
   type: "reproducibility",
@@ -25,6 +26,24 @@ const sample = {
 const result = challengeSpecSchema.safeParse(sample);
 if (!result.success) {
   console.error(result.error.format());
+  process.exit(1);
+}
+
+if (result.data.preset_id !== "csv_comparison_v1") {
+  console.error("preset_id should be preserved by challengeSpecSchema");
+  process.exit(1);
+}
+
+const invalidLimits = challengeSpecSchema.safeParse({
+  ...sample,
+  id: "ch-002",
+  max_submissions_total: 2,
+  max_submissions_per_solver: 3,
+});
+if (invalidLimits.success) {
+  console.error(
+    "max_submissions_per_solver > max_submissions_total should fail validation",
+  );
   process.exit(1);
 }
 

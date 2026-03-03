@@ -2,9 +2,10 @@
 
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
 import {
-  SCORER_PRESETS,
+  defaultPresetIdForChallengeType,
+  PRESET_REGISTRY,
+  validatePresetIntegrity,
   validateScoringContainer,
-  type ChallengePresetType,
 } from "@hermes/common";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useMemo, useState } from "react";
@@ -13,7 +14,7 @@ import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "w
 import {
   Wallet, ArrowRight, Coins, AlertCircle, Loader2, CheckCircle,
   FlaskConical, BarChart3, Settings2, ChevronRight, Check,
-  Upload, Eye, X,
+  Upload, Eye, X, Database,
 } from "lucide-react";
 import { buildPinSpecMessage, computeSpecHash } from "../../lib/pin-spec-auth";
 import { accelerateChallengeIndex } from "../../lib/api";
@@ -58,12 +59,103 @@ const erc20Abi = [
   },
 ] as const;
 
+type PostChallengeType = "reproducibility" | "prediction" | "custom";
+
 // ─── Icon mapping for presets ───────────────────────
-const TYPE_ICONS: Record<ChallengePresetType, typeof FlaskConical> = {
+const TYPE_ICONS: Record<PostChallengeType, typeof FlaskConical> = {
   reproducibility: FlaskConical,
   prediction: BarChart3,
   custom: Settings2,
 };
+
+const METRIC_OPTIONS = [
+  { value: "rmse", label: "RMSE", hint: "Lower is better" },
+  { value: "r2", label: "R²", hint: "Higher is better" },
+  { value: "accuracy", label: "Accuracy", hint: "Higher is better" },
+  { value: "f1", label: "F1 Score", hint: "Higher is better" },
+  { value: "mae", label: "MAE", hint: "Lower is better" },
+  { value: "custom", label: "Custom metric", hint: "" },
+];
+
+const WINNER_LABELS: Record<string, string> = {
+  winner_take_all: "Winner takes entire reward pool",
+  top_3: "Reward split among top 3 scorers",
+  proportional: "Reward distributed proportionally by score",
+};
+
+const REGISTRY_PRESETS = Object.values(PRESET_REGISTRY);
+const REPRODUCIBILITY_PRESET_ID =
+  defaultPresetIdForChallengeType("reproducibility");
+const PREDICTION_PRESET_ID = defaultPresetIdForChallengeType("prediction");
+const reproducibilityPreset =
+  REPRODUCIBILITY_PRESET_ID &&
+  REPRODUCIBILITY_PRESET_ID !== "custom"
+    ? PRESET_REGISTRY[REPRODUCIBILITY_PRESET_ID]
+    : undefined;
+const predictionPreset =
+  PREDICTION_PRESET_ID && PREDICTION_PRESET_ID !== "custom"
+    ? PRESET_REGISTRY[PREDICTION_PRESET_ID]
+    : undefined;
+
+if (!reproducibilityPreset || !predictionPreset) {
+  throw new Error(
+    "Required presets (reproducibility/prediction) are missing from PRESET_REGISTRY.",
+  );
+}
+
+const TYPE_CONFIG = {
+  reproducibility: {
+    label: "Deterministic",
+    description: "Same input -> same score, fully reproducible",
+    defaultDomain: "other",
+    metricHint: "custom",
+    container: reproducibilityPreset.container,
+    defaultMinimumScore: reproducibilityPreset.defaultMinimumScore,
+    presetId: reproducibilityPreset.id,
+    scoringTemplate: reproducibilityPreset.scoringDescription,
+  },
+  prediction: {
+    label: "Metric-Based",
+    description: "Submissions scored by a numerical metric (RMSE, R2, etc.)",
+    defaultDomain: "omics",
+    metricHint: "r2",
+    container: predictionPreset.container,
+    defaultMinimumScore: predictionPreset.defaultMinimumScore,
+    presetId: predictionPreset.id,
+    scoringTemplate: predictionPreset.scoringDescription,
+  },
+  custom: {
+    label: "Custom",
+    description: "Bring your own scorer and rules",
+    defaultDomain: "other",
+    metricHint: "custom",
+    container: "",
+    defaultMinimumScore: 0,
+    presetId: "custom",
+    scoringTemplate: "",
+  },
+} as const;
+
+const TYPE_OPTIONS = Object.keys(TYPE_CONFIG) as PostChallengeType[];
+
+function engineDisplayName(container: string): string {
+  const linkedPresets = REGISTRY_PRESETS.filter((preset) => preset.container === container);
+  if (linkedPresets.length === 0) {
+    return container.length > 40 ? container.slice(0, 40) + "…" : container;
+  }
+  const names = Array.from(new Set(linkedPresets.map((preset) => preset.label)));
+  if (names.length === 1) return `${names[0]} (official)`;
+  return `${names[0]} (+${names.length - 1} preset${names.length > 2 ? "s" : ""})`;
+}
+
+const SUBMISSION_TYPES = [
+  { value: "number", label: "🔢 Number", desc: "Solvers submit a numeric answer.", format: '{"answer": <number>}' },
+  { value: "text", label: "📝 Text", desc: "Solvers submit a text response.", format: '{"answer": <string>}' },
+  { value: "json", label: "📄 JSON Object", desc: "Solvers submit a structured JSON file.", format: "JSON object (define schema in validation rules)" },
+  { value: "csv", label: "📊 CSV", desc: "Solvers submit a CSV file with results.", format: "CSV file" },
+  { value: "file", label: "📦 File Upload", desc: "Solvers upload a file (model, archive, etc).", format: "File upload (ZIP, tar.gz, or binary)" },
+  { value: "custom", label: "⚙️ Custom", desc: "Define your own submission format.", format: "" },
+] as const;
 
 // ─── Form State ─────────────────────────────────────
 
@@ -71,7 +163,7 @@ type FormState = {
   title: string;
   description: string;
   domain: string;
-  type: ChallengePresetType;
+  type: PostChallengeType;
   train: string;
   test: string;
   metric: string;
@@ -81,12 +173,13 @@ type FormState = {
   deadline: string;
   minimumScore: string;
   disputeWindow: string;
+  submissionType: string;
   submissionFormat: string;
   evaluationCriteria: string;
   successDefinition: string;
 };
 
-const defaultPreset = SCORER_PRESETS.reproducibility;
+const defaultPreset = TYPE_CONFIG.reproducibility;
 
 const initialState: FormState = {
   title: "",
@@ -96,13 +189,14 @@ const initialState: FormState = {
   train: "",
   test: "",
   metric: defaultPreset.metricHint,
-  container: defaultPreset.container ?? "",
+  container: defaultPreset.container,
   reward: "10",
   distribution: "winner_take_all",
   deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-  minimumScore: "0",
+  minimumScore: String(defaultPreset.defaultMinimumScore),
   disputeWindow: "168",
-  submissionFormat: "",
+  submissionType: "number",
+  submissionFormat: '{"answer": <number>}',
   evaluationCriteria: "",
   successDefinition: "",
 };
@@ -118,8 +212,11 @@ function buildSpec(state: FormState) {
       }
       : undefined;
 
+  const presetId = TYPE_CONFIG[state.type].presetId;
+
   return {
     id: `web-${Date.now()}`,
+    preset_id: presetId,
     title: state.title,
     domain: state.domain,
     type: state.type,
@@ -208,6 +305,7 @@ export function PostClient() {
   const [status, setStatus] = useState<string>("");
   const [isPosting, setIsPosting] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showData, setShowData] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [uploadingField, setUploadingField] = useState<"train" | "test" | null>(null);
 
@@ -237,14 +335,16 @@ export function PostClient() {
     }
   }
 
-  function selectType(t: ChallengePresetType) {
-    const preset = SCORER_PRESETS[t];
+  function selectType(t: PostChallengeType) {
+    const preset = TYPE_CONFIG[t];
     setState((s) => ({
       ...s,
       type: t,
-      container: preset.container ?? "",
+      container: preset.container,
       metric: preset.metricHint,
       domain: preset.defaultDomain,
+      minimumScore: String(preset.defaultMinimumScore),
+      evaluationCriteria: preset.scoringTemplate || s.evaluationCriteria,
     }));
   }
 
@@ -261,10 +361,14 @@ export function PostClient() {
     const containerError = validateScoringContainer(state.container);
     if (containerError)
       return containerError;
+    const presetId = TYPE_CONFIG[state.type].presetId;
+    const presetIntegrityError = validatePresetIntegrity(presetId, state.container);
+    if (presetIntegrityError)
+      return presetIntegrityError;
 
     const disputeWindow = Number(state.disputeWindow);
-    if (!Number.isFinite(disputeWindow) || disputeWindow < 168 || disputeWindow > 2160)
-      return "Review period must be between 168 and 2160 hours (7–90 days).";
+    if (!Number.isFinite(disputeWindow) || disputeWindow < 0 || disputeWindow > 2160)
+      return "Review period must be between 0 and 2160 hours.";
     if (new Date(state.deadline).getTime() <= Date.now())
       return "Deadline must be in the future.";
     return null;
@@ -384,13 +488,12 @@ export function PostClient() {
             Define a computational challenge and fund it with USDC.
           </p>
         </div>
-        <ConnectButton />
       </div>
 
       {/* ── Challenge Type Selector ── */}
       <div className="type-selector">
-        {(Object.entries(SCORER_PRESETS) as [ChallengePresetType, typeof SCORER_PRESETS[ChallengePresetType]][]).map(
-          ([key, preset]) => {
+        {TYPE_OPTIONS.map((key) => {
+          const preset = TYPE_CONFIG[key];
             const Icon = TYPE_ICONS[key];
             const active = state.type === key;
             return (
@@ -410,20 +513,19 @@ export function PostClient() {
                 <div className="type-card-desc">{preset.description}</div>
               </button>
             );
-          },
-        )}
+          })}
       </div>
 
-      {/* ── Section 1: Challenge Info ── */}
+      {/* ── Section 1: Problem ── */}
       <div className="form-section">
         <div className="form-section-header">
           <span className="form-section-step">1</span>
-          <span className="form-section-title">Challenge Info</span>
+          <span className="form-section-title">Problem</span>
         </div>
         <div className="form-section-body">
           <div className="form-grid">
             <FormField label="Title">
-              <input className="form-input" placeholder="e.g. Predict COVID mutations"
+              <input className="form-input" placeholder="e.g. Find the optimal protein fold"
                 value={state.title} onChange={(e) => setState((s) => ({ ...s, title: e.target.value }))} />
             </FormField>
             <FormField label="Domain">
@@ -438,86 +540,177 @@ export function PostClient() {
               </select>
             </FormField>
             <FormField label="Description" className="span-full">
-              <textarea className="form-textarea" placeholder="What are solvers trying to achieve?"
+              <textarea className="form-textarea" placeholder="What problem are you trying to solve? What should solvers achieve?"
                 value={state.description} onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))} />
             </FormField>
           </div>
         </div>
       </div>
 
-      {/* ── Section 2: Inputs ── */}
+      {/* ── Section 2: Submission & Evaluation ── */}
       <div className="form-section">
         <div className="form-section-header">
           <span className="form-section-step">2</span>
-          <span className="form-section-title">Inputs (optional)</span>
+          <span className="form-section-title">Submission &amp; Evaluation</span>
         </div>
         <div className="form-section-body">
           <div className="form-grid">
-            <FormField label="Public input" hint="Files or constants provided to solvers">
-              <DataUploadField
-                value={state.train}
-                onChange={(v) => setState((s) => ({ ...s, train: v }))}
-                uploading={uploadingField === "train"}
-                onUpload={(file) => handleFileUpload(file, "train")}
-                placeholder="ipfs://... or https://... (optional)"
-              />
+            <FormField label="Submission type" hint={SUBMISSION_TYPES.find(t => t.value === state.submissionType)?.desc ?? ""}>
+              <select className="form-select" value={state.submissionType}
+                onChange={(e) => {
+                  const st = SUBMISSION_TYPES.find(t => t.value === e.target.value);
+                  setState((s) => ({ ...s, submissionType: e.target.value, submissionFormat: st?.format ?? "" }));
+                }}>
+                {SUBMISSION_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
             </FormField>
-            <FormField label="Private reference input" hint="Optional. If pinned in spec, this link is public on IPFS.">
-              <DataUploadField
-                value={state.test}
-                onChange={(v) => setState((s) => ({ ...s, test: v }))}
-                uploading={uploadingField === "test"}
-                onUpload={(file) => handleFileUpload(file, "test")}
-                placeholder="ipfs://... or https://... (optional)"
-              />
-            </FormField>
-          </div>
-        </div>
-      </div>
+            {state.submissionType === "custom" ? (
+              <FormField label="Custom format" hint="Describe the expected submission structure">
+                <input className="form-input" placeholder="e.g. ZIP containing model.pkl and predictions.csv"
+                  value={state.submissionFormat} onChange={(e) => setState((s) => ({ ...s, submissionFormat: e.target.value }))} />
+              </FormField>
+            ) : (
+              <FormField label="Validation rules" hint="What makes a submission valid? (plain English)">
+                <input className="form-input" placeholder="e.g. Must be a positive integer"
+                  value={state.successDefinition} onChange={(e) => setState((s) => ({ ...s, successDefinition: e.target.value }))} />
+              </FormField>
+            )}
 
-      {/* ── Section 3: Evaluation & Success Criteria ── */}
-      <div className="form-section">
-        <div className="form-section-header">
-          <span className="form-section-step">3</span>
-          <span className="form-section-title">Evaluation &amp; Success Criteria</span>
-        </div>
-        <div className="form-section-body">
-          <div className="form-grid">
-            <FormField label="Submission format" hint="The scorer enforces format and validation">
-              <input className="form-input" placeholder="e.g. JSON file with required fields defined by the scorer"
-                value={state.submissionFormat} onChange={(e) => setState((s) => ({ ...s, submissionFormat: e.target.value }))} />
-            </FormField>
-            <FormField label="What does success look like?" hint="Plain English — for humans, not machines">
-              <input className="form-input" placeholder="e.g. Closest answer to target wins"
-                value={state.successDefinition} onChange={(e) => setState((s) => ({ ...s, successDefinition: e.target.value }))} />
-            </FormField>
-            <FormField label="How submissions are evaluated" hint="Describe the scoring logic" className="span-full">
-              <textarea className="form-textarea" placeholder="e.g. The scorer computes score = 100 - |answer - 42|. Highest score wins."
-                value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
-            </FormField>
-          </div>
-        </div>
-      </div>
+            <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
 
-      {/* ── Section 4: Reward & Rules ── */}
-      <div className="form-section">
-        <div className="form-section-header">
-          <span className="form-section-step">4</span>
-          <span className="form-section-title">Reward &amp; Rules</span>
-        </div>
-        <div className="form-section-body">
-          <div className="form-grid">
-            <FormField label="Reward (USDC)" hint="Between 1 and 30 USDC">
-              <input className="form-input form-input-mono" type="number" min={1} max={30}
-                value={state.reward} onChange={(e) => setState((s) => ({ ...s, reward: e.target.value }))} />
-            </FormField>
-            <FormField label="Distribution">
+            {/* Type-specific fields */}
+            {state.type === "reproducibility" && (
+              <div className="span-full" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                <FormField label="Scoring description (for humans)" hint="">
+                  <textarea className="form-textarea" placeholder="Describe the scoring logic for solvers..."
+                    value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
+                </FormField>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.75rem", fontFamily: "var(--font-mono)" }}>
+                    <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>Authoritative evaluator:</span>
+                    <span style={{ color: "var(--text-primary)" }}>{engineDisplayName(state.container)}</span>
+                  </div>
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
+                    This description is not enforced. The scorer container is the source of truth.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {state.type === "prediction" && (
+              <>
+                <FormField label="Metric" hint={METRIC_OPTIONS.find(m => m.value === state.metric)?.hint ?? ""}>
+                  <select className="form-select" value={state.metric}
+                    onChange={(e) => {
+                      const m = METRIC_OPTIONS.find(o => o.value === e.target.value);
+                      setState((s) => ({
+                        ...s,
+                        metric: e.target.value,
+                        evaluationCriteria: m ? `Evaluated by ${m.label}. ${m.hint}.` : s.evaluationCriteria,
+                      }));
+                    }}>
+                    {METRIC_OPTIONS.map((m) => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                </FormField>
+                <FormField label="Scoring detail" hint="Additional context (optional)">
+                  <input className="form-input" placeholder="e.g. Evaluated on held-out test split"
+                    value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
+                </FormField>
+                <div className="span-full" style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.75rem", fontFamily: "var(--font-mono)" }}>
+                    <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>Authoritative evaluator:</span>
+                    <span style={{ color: "var(--text-primary)" }}>{engineDisplayName(state.container)}</span>
+                  </div>
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
+                    This description is not enforced. The scorer container is the source of truth.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {state.type === "custom" && (
+              <>
+                <FormField label="Scoring container" hint="Your OCI image reference" className="span-full">
+                  <input className="form-input form-input-mono"
+                    placeholder="ghcr.io/org/scorer@sha256:..."
+                    value={state.container}
+                    onChange={(e) => setState((s) => ({ ...s, container: e.target.value }))}
+                  />
+                </FormField>
+                <FormField label="Scoring description (for humans)" hint="" className="span-full">
+                  <textarea className="form-textarea" placeholder="Explain the scoring logic for solvers..."
+                    value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
+                </FormField>
+                <p className="span-full" style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
+                  This description is not enforced. The scorer container is the source of truth.
+                </p>
+              </>
+            )}
+
+            <FormField label="Winner selection" hint={WINNER_LABELS[state.distribution] ?? ""}>
               <select className="form-select" value={state.distribution}
                 onChange={(e) => setState((s) => ({ ...s, distribution: e.target.value as FormState["distribution"] }))}>
                 <option value="winner_take_all">Winner Take All</option>
                 <option value="top_3">Top 3</option>
                 <option value="proportional">Proportional</option>
               </select>
+            </FormField>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Data (optional, collapsed) ── */}
+      <button
+        type="button"
+        className={`advanced-toggle ${showData ? "open" : ""}`}
+        onClick={() => setShowData(!showData)}
+      >
+        <Database size={14} />
+        <ChevronRight size={14} />
+        Data (optional)
+        <span className="form-hint" style={{ marginLeft: "auto" }}>
+          Public files, evaluation dataset
+        </span>
+      </button>
+
+      {showData && (
+        <div className="advanced-body" style={{ gridTemplateColumns: "1fr 1fr" }}>
+          <FormField label="Public inputs" hint="Files or data available to solvers">
+            <DataUploadField
+              value={state.train}
+              onChange={(v) => setState((s) => ({ ...s, train: v }))}
+              uploading={uploadingField === "train"}
+              onUpload={(file) => handleFileUpload(file, "train")}
+              placeholder="ipfs://... or https://... (optional)"
+            />
+          </FormField>
+          <FormField label="Evaluation dataset" hint="Used during scoring (visible on IPFS)">
+            <DataUploadField
+              value={state.test}
+              onChange={(v) => setState((s) => ({ ...s, test: v }))}
+              uploading={uploadingField === "test"}
+              onUpload={(file) => handleFileUpload(file, "test")}
+              placeholder="ipfs://... or https://... (optional)"
+            />
+          </FormField>
+        </div>
+      )}
+
+      {/* ── Section 3: Reward & Timeline ── */}
+      <div className="form-section">
+        <div className="form-section-header">
+          <span className="form-section-step">3</span>
+          <span className="form-section-title">Reward &amp; Timeline</span>
+        </div>
+        <div className="form-section-body">
+          <div className="form-grid">
+            <FormField label="Reward (USDC)" hint="Between 1 and 30 USDC">
+              <input className="form-input form-input-mono" type="number" min={1} max={30}
+                value={state.reward} onChange={(e) => setState((s) => ({ ...s, reward: e.target.value }))} />
             </FormField>
             <FormField label="Deadline">
               <input className="form-input" type="datetime-local"
@@ -527,9 +720,11 @@ export function PostClient() {
                   if (Number.isFinite(ts)) setState((s) => ({ ...s, deadline: new Date(ts).toISOString() }));
                 }} />
             </FormField>
-            <FormField label="Review period" hint="How long before payout (168–2160 hours)">
+            <FormField label="Review period" hint="Funds are locked until review period ends (0–2160 hours)">
               <select className="form-select" value={state.disputeWindow}
                 onChange={(e) => setState((s) => ({ ...s, disputeWindow: e.target.value }))}>
+                <option value="0">Instant (0h) — Testnet only</option>
+                <option value="1">1 hour — Testing</option>
                 <option value="168">7 days (168h) — Standard</option>
                 <option value="336">14 days (336h)</option>
                 <option value="720">30 days (720h)</option>
@@ -537,11 +732,17 @@ export function PostClient() {
                 <option value="2160">90 days (2160h) — Maximum</option>
               </select>
             </FormField>
+            {state.disputeWindow === "0" && (
+              <div className="span-full" style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "#fff3cd", borderRadius: "6px", fontSize: "0.75rem", color: "#856404", border: "1px solid #ffc107" }}>
+                <AlertCircle size={14} />
+                <span>⚠️ Instant review (0h) means <strong>no dispute window</strong>. Funds are released immediately after scoring. Use only for testing.</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* ── Advanced Settings ── */}
+      {/* ── Scoring Engine & Threshold ── */}
       <button
         type="button"
         className={`advanced-toggle ${showAdvanced ? "open" : ""}`}
@@ -549,15 +750,15 @@ export function PostClient() {
       >
         <Settings2 size={14} />
         <ChevronRight size={14} />
-        Advanced Settings
+        Scoring Engine &amp; Threshold
         <span className="form-hint" style={{ marginLeft: "auto" }}>
-          Scoring container, threshold
+          Container image, minimum score
         </span>
       </button>
 
       {showAdvanced && (
-        <div className="advanced-body">
-          <FormField label="Scoring container" hint={isCustomType ? "Provide your own OCI image reference. Avoid :latest for reproducibility." : "Managed by preset. Switch to Custom to override."}>
+        <div className="advanced-body" style={{ gridTemplateColumns: "1fr 1fr" }}>
+          <FormField label="Scoring container" hint={isCustomType ? "Provide your own OCI image reference." : "Managed by preset. Switch to Custom to override."}>
             <input className="form-input form-input-mono"
               placeholder="ghcr.io/org/image@sha256:..."
               value={state.container}
@@ -566,33 +767,60 @@ export function PostClient() {
               style={!isCustomType ? { opacity: 0.6, cursor: "not-allowed" } : undefined}
             />
           </FormField>
-
+          <FormField label="Minimum score" hint="Submissions below this are rejected (0 = no threshold)">
+            <input className="form-input form-input-mono" type="number" min={0} max={100}
+              placeholder="0"
+              value={state.minimumScore}
+              onChange={(e) => setState((s) => ({ ...s, minimumScore: e.target.value }))}
+            />
+          </FormField>
         </div>
       )}
 
-      {/* ── Cost Breakdown ── */}
+      {/* ── Challenge Summary ── */}
       <div className="cost-card">
         <h3 className="cost-card-title">
-          <Coins size={14} /> Cost Breakdown
+          <Eye size={14} /> Challenge Summary
         </h3>
         <div className="cost-row">
-          <span className="cost-row-label" style={{ color: "var(--text-secondary)" }}>You deposit now</span>
-          <span className="cost-row-value accent">
-            {formatUsdc(rewardValue)} USDC
-          </span>
+          <span className="cost-row-label" style={{ color: "var(--text-secondary)" }}>Type</span>
+          <span className="cost-row-value">{TYPE_CONFIG[state.type].label}</span>
         </div>
         <div className="cost-row">
-          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Protocol fee (5%, deducted from pool)</span>
-          <span className="cost-row-value" style={{ color: "var(--text-tertiary)" }}>
-            {formatUsdc(protocolFeeValue)} USDC
-          </span>
+          <span className="cost-row-label" style={{ color: "var(--text-secondary)" }}>Deposit</span>
+          <span className="cost-row-value accent">{formatUsdc(rewardValue)} USDC</span>
+        </div>
+        <div className="cost-row">
+          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Protocol fee (5%)</span>
+          <span className="cost-row-value" style={{ color: "var(--text-tertiary)" }}>{formatUsdc(protocolFeeValue)} USDC</span>
         </div>
         <div className="cost-row">
           <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Net winner payout</span>
-          <span className="cost-row-value" style={{ color: "var(--text-tertiary)" }}>
-            {formatUsdc(winnerPayoutValue)} USDC
+          <span className="cost-row-value" style={{ color: "var(--text-tertiary)" }}>{formatUsdc(winnerPayoutValue)} USDC</span>
+        </div>
+        <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.5rem 0" }} />
+        <div className="cost-row">
+          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Deadline</span>
+          <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.78rem" }}>
+            {new Date(state.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
           </span>
         </div>
+        <div className="cost-row">
+          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Review period</span>
+          <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.78rem" }}>{state.disputeWindow}h</span>
+        </div>
+        <div className="cost-row">
+          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Winner</span>
+          <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.78rem" }}>{state.distribution.replace(/_/g, " ")}</span>
+        </div>
+        {state.container && (
+          <div className="cost-row">
+            <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Engine</span>
+            <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.72rem", fontFamily: "var(--font-mono)" }}>
+              {state.container.length > 40 ? state.container.slice(0, 40) + "…" : state.container}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── Submit ── */}
@@ -648,7 +876,7 @@ export function PostClient() {
             <div className="preview-summary">
               <div className="preview-row"><span className="preview-label">Title</span><span className="preview-value">{state.title || "—"}</span></div>
               <div className="preview-row"><span className="preview-label">Domain</span><span className="preview-value">{state.domain}</span></div>
-              <div className="preview-row"><span className="preview-label">Type</span><span className="preview-value">{SCORER_PRESETS[state.type].label}</span></div>
+              <div className="preview-row"><span className="preview-label">Type</span><span className="preview-value">{TYPE_CONFIG[state.type].label}</span></div>
               {state.description && <div className="preview-row span-full"><span className="preview-label">Description</span><span className="preview-value">{state.description}</span></div>}
               <div className="preview-divider" />
               <div className="preview-row"><span className="preview-label">Container</span><span className="preview-value" style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{state.container || "—"}</span></div>

@@ -1,6 +1,5 @@
-import path from "node:path";
 import { createSupabaseClient, getChallengeById } from "@hermes/db";
-import { runScorer } from "@hermes/scorer";
+import { executeScoringPipeline } from "@hermes/scorer";
 import { Command } from "commander";
 import {
   applyConfigToEnv,
@@ -8,11 +7,6 @@ import {
   requireConfigValues,
 } from "../lib/config-store";
 import { printJson, printSuccess, printWarning } from "../lib/output";
-import {
-  createScoringWorkspace,
-  stageGroundTruth,
-  stageSubmissionFile,
-} from "../lib/scoring";
 import { createSpinner } from "../lib/spinner";
 
 type ChallengeRecord = {
@@ -46,31 +40,20 @@ export function buildScoreLocalCommand() {
           throw new Error("Challenge missing test dataset CID.");
         }
 
-        const stageSpinner = createSpinner("Preparing scoring workspace...");
-        const workspace = await createScoringWorkspace();
-        const groundTruthPath = await stageGroundTruth(
-          workspace.inputDir,
-          challenge.dataset_test_cid,
-        );
-        const submissionPath = await stageSubmissionFile(
-          workspace.inputDir,
-          path.resolve(process.cwd(), opts.submission),
-        );
-        stageSpinner.succeed("Scoring inputs staged");
-
         const runSpinner = createSpinner("Running scorer container...");
-        const result = await runScorer({
+        const run = await executeScoringPipeline({
           image: challenge.scoring_container,
-          inputDir: workspace.inputDir,
+          groundTruth: { cid: challenge.dataset_test_cid },
+          submission: { localPath: opts.submission },
         });
         runSpinner.succeed("Scorer finished");
 
         const output = {
           challengeId: challenge.id,
-          score: result.score,
-          details: result.details,
-          containerImageDigest: result.containerImageDigest,
-          inputFiles: [groundTruthPath, submissionPath],
+          score: run.result.score,
+          details: run.result.details,
+          containerImageDigest: run.result.containerImageDigest,
+          inputFiles: run.inputPaths,
         };
 
         if (opts.format === "json") {
@@ -78,9 +61,9 @@ export function buildScoreLocalCommand() {
           return;
         }
 
-        printSuccess(`Score: ${result.score}`);
-        printWarning(`Image: ${result.containerImageDigest}`);
-        printJson(result.details);
+        printSuccess(`Score: ${run.result.score}`);
+        printWarning(`Image: ${run.result.containerImageDigest}`);
+        printJson(run.result.details);
       },
     );
 

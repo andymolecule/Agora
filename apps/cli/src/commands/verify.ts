@@ -7,7 +7,7 @@ import {
   getSubmissionById,
 } from "@hermes/db";
 import { getJSON } from "@hermes/ipfs";
-import { runScorer } from "@hermes/scorer";
+import { executeScoringPipeline } from "@hermes/scorer";
 import { Command } from "commander";
 import { keccak256, toBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -18,9 +18,6 @@ import {
 } from "../lib/config-store";
 import { printJson, printSuccess, printWarning } from "../lib/output";
 import {
-  createScoringWorkspace,
-  stageGroundTruth,
-  stageSubmissionFromCid,
   wadToScore,
 } from "../lib/scoring";
 import { createSpinner } from "../lib/spinner";
@@ -178,23 +175,18 @@ export function buildVerifyCommand() {
           `On-chain score: ${wadToScore(onChainSub.score.toString())}`,
         );
 
-        const stageSpinner = createSpinner("Preparing verification inputs...");
-        const workspace = await createScoringWorkspace();
-        await stageGroundTruth(workspace.inputDir, challenge.dataset_test_cid);
-        await stageSubmissionFromCid(workspace.inputDir, submission.result_cid);
-        stageSpinner.succeed("Inputs ready");
-
         const runSpinner = createSpinner("Running scorer for verification...");
-        const result = await runScorer({
+        const run = await executeScoringPipeline({
           image:
             proofPayload.containerImageDigest ?? proof.container_image_hash,
-          inputDir: workspace.inputDir,
+          groundTruth: { cid: challenge.dataset_test_cid },
+          submission: { cid: submission.result_cid },
         });
         runSpinner.succeed("Verification scoring finished");
 
         // Compare local rescore against ON-CHAIN score (not DB score)
         const onChainScore = wadToScore(onChainSub.score.toString());
-        const delta = Math.abs(result.score - onChainScore);
+        const delta = Math.abs(run.result.score - onChainScore);
         const matches = delta <= 0.001;
 
         if (opts.key) {
@@ -208,7 +200,7 @@ export function buildVerifyCommand() {
         await createVerification(db, {
           proof_bundle_id: proof.id,
           verifier_address: verifierAddress,
-          computed_score: result.score,
+          computed_score: run.result.score,
           matches_original: matches,
           log_cid: null,
         });
@@ -216,7 +208,7 @@ export function buildVerifyCommand() {
         const output = {
           challengeId: challenge.id,
           submissionId: submission.id,
-          localScore: result.score,
+          localScore: run.result.score,
           onChainScore,
           dbScore: submission.score ? wadToScore(submission.score) : null,
           delta,

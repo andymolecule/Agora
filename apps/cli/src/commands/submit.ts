@@ -5,6 +5,7 @@ import {
   getWalletClient,
   submitChallengeResult,
 } from "@hermes/chain";
+import { CHALLENGE_STATUS } from "@hermes/common";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
 import {
   createSupabaseClient,
@@ -115,7 +116,7 @@ export function buildSubmitCommand() {
           throw new Error("Wallet client is missing an account address.");
         }
 
-        if (challenge.status !== "active") {
+        if (challenge.status !== CHALLENGE_STATUS.active) {
           throw new Error("Challenge not active.");
         }
 

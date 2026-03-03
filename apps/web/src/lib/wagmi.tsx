@@ -16,10 +16,10 @@ const chain =
   CHAIN_ID === baseSepolia.id
     ? baseSepolia
     : {
-        ...baseSepolia,
-        id: CHAIN_ID,
-        name: "Hermes Chain",
-      };
+      ...baseSepolia,
+      id: CHAIN_ID,
+      name: "Hermes Chain",
+    };
 
 const config = getDefaultConfig({
   appName: "Hermes",
@@ -40,7 +40,7 @@ export function WebProviders({ children }: { children: React.ReactNode }) {
         <RainbowKitProvider
           modalSize="compact"
           theme={darkTheme({
-            accentColor: "#35c2ff",
+            accentColor: "#000000",
             accentColorForeground: "#ffffff",
             borderRadius: "small",
           })}

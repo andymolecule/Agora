@@ -1,14 +1,6 @@
 import { z } from "zod";
-
-function parseBoolean(value: unknown) {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
-    if (["1", "true", "yes", "on"].includes(normalized)) return true;
-    if (["0", "false", "no", "off"].includes(normalized)) return false;
-  }
-  return value;
-}
+import { DEFAULT_CHAIN_ID, DEFAULT_X402_NETWORK } from "./constants.js";
+import { parseBooleanLike } from "./env.js";
 
 const configSchema = z.object({
   HERMES_RPC_URL: z.string().url(),
@@ -17,12 +9,30 @@ const configSchema = z.object({
       (value) => (typeof value === "string" ? Number(value) : value),
       z.number().int(),
     )
+    .default(DEFAULT_CHAIN_ID),
+  HERMES_FACTORY_ADDRESS: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/, "must be a valid EVM address")
+    .transform((value) => value.toLowerCase() as `0x${string}`),
+  HERMES_USDC_ADDRESS: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/, "must be a valid EVM address")
+    .transform((value) => value.toLowerCase() as `0x${string}`),
+  HERMES_TREASURY_ADDRESS: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/, "must be a valid EVM address")
+    .transform((value) => value.toLowerCase() as `0x${string}`)
     .optional(),
-  HERMES_FACTORY_ADDRESS: z.string().min(1),
-  HERMES_USDC_ADDRESS: z.string().min(1),
-  HERMES_TREASURY_ADDRESS: z.string().min(1).optional(),
-  HERMES_PRIVATE_KEY: z.string().min(1).optional(),
-  HERMES_ORACLE_KEY: z.string().min(1).optional(),
+  HERMES_PRIVATE_KEY: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{64}$/, "must be a 32-byte hex private key")
+    .transform((value) => value as `0x${string}`)
+    .optional(),
+  HERMES_ORACLE_KEY: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{64}$/, "must be a 32-byte hex private key")
+    .transform((value) => value as `0x${string}`)
+    .optional(),
   HERMES_PINATA_JWT: z.string().min(1).optional(),
   HERMES_IPFS_GATEWAY: z.string().url().optional(),
   HERMES_SUPABASE_URL: z.string().url().optional(),
@@ -43,15 +53,26 @@ const configSchema = z.object({
     )
     .optional(),
   HERMES_LOG_LEVEL: z.string().min(1).optional(),
-  HERMES_X402_ENABLED: z.preprocess(parseBoolean, z.boolean()).default(false),
+  HERMES_ENABLE_NON_CORE_FEATURES: z
+    .preprocess(parseBooleanLike, z.boolean())
+    .default(false),
+  HERMES_ENABLE_SCORE_PREVIEW: z
+    .preprocess(parseBooleanLike, z.boolean())
+    .default(false),
+  HERMES_MCP_ALLOW_REMOTE_PRIVATE_KEYS: z
+    .preprocess(parseBooleanLike, z.boolean())
+    .default(false),
+  HERMES_X402_ENABLED: z
+    .preprocess(parseBooleanLike, z.boolean())
+    .default(false),
   HERMES_X402_REPORT_ONLY: z
-    .preprocess(parseBoolean, z.boolean())
+    .preprocess(parseBooleanLike, z.boolean())
     .default(false),
   HERMES_X402_FACILITATOR_URL: z
     .string()
     .url()
     .default("https://x402.org/facilitator"),
-  HERMES_X402_NETWORK: z.string().min(1).default("eip155:84532"),
+  HERMES_X402_NETWORK: z.string().min(1).default(DEFAULT_X402_NETWORK),
 });
 
 export type HermesConfig = z.infer<typeof configSchema>;

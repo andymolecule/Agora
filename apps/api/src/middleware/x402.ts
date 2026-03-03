@@ -1,6 +1,11 @@
 import * as x402Core from "@x402/core/server";
 import * as x402Evm from "@x402/evm/exact/server";
 import * as x402Hono from "@x402/hono";
+import {
+  extractX402PaymentHeader,
+  readX402RuntimeConfig,
+  verifyAndSettleX402Payment,
+} from "@hermes/common";
 import type { Context, MiddlewareHandler, Next } from "hono";
 import type { ApiEnv } from "../types.js";
 
@@ -88,36 +93,6 @@ function toPaymentRequired(route: PaidRoute, network: string, payTo: string) {
   };
 }
 
-type X402RuntimeConfig = {
-  enabled: boolean;
-  reportOnly: boolean;
-  facilitatorUrl: string;
-  network: string;
-  payTo: string;
-};
-
-function parseBoolean(value: string | undefined, fallback: boolean) {
-  if (value === undefined) return fallback;
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off"].includes(normalized)) return false;
-  return fallback;
-}
-
-function readX402Config(): X402RuntimeConfig {
-  return {
-    enabled: parseBoolean(process.env.HERMES_X402_ENABLED, false),
-    reportOnly: parseBoolean(process.env.HERMES_X402_REPORT_ONLY, false),
-    facilitatorUrl:
-      process.env.HERMES_X402_FACILITATOR_URL ?? "https://x402.org/facilitator",
-    network: process.env.HERMES_X402_NETWORK ?? "eip155:84532",
-    payTo:
-      process.env.HERMES_TREASURY_ADDRESS ??
-      process.env.HERMES_USDC_ADDRESS ??
-      "0x0000000000000000000000000000000000000000",
-  };
-}
-
 function resolveNamedExport(
   moduleRef: Record<string, unknown>,
   names: string[],
@@ -133,7 +108,7 @@ function resolveNamedExport(
 function loadX402Middleware(enforce: boolean): MiddlewareHandler<ApiEnv> | null {
   if (!enforce) return null;
 
-  const config = readX402Config();
+  const config = readX402RuntimeConfig();
   const paymentResolved = resolveNamedExport(
     x402Hono as Record<string, unknown>,
     ["paymentMiddleware"],
@@ -203,7 +178,7 @@ function loadX402Middleware(enforce: boolean): MiddlewareHandler<ApiEnv> | null 
 }
 
 export function buildX402Metadata() {
-  const config = readX402Config();
+  const config = readX402RuntimeConfig();
   return {
     enabled: config.enabled,
     reportOnly: config.reportOnly,
@@ -221,7 +196,7 @@ export function buildX402Metadata() {
 }
 
 export function createX402Middleware(): MiddlewareHandler<ApiEnv> {
-  const config = readX402Config();
+  const config = readX402RuntimeConfig();
   const metadata = buildX402Metadata();
   const reportOnly = config.reportOnly;
   const enabled = config.enabled;
@@ -253,17 +228,42 @@ export function createX402Middleware(): MiddlewareHandler<ApiEnv> {
       return;
     }
 
+    const paymentHeader = extractX402PaymentHeader((name) => c.req.header(name));
+    if (!paymentHeader) {
+      return c.json(
+        {
+          error: "Payment Required",
+          payment: toPaymentRequired(
+            matched,
+            metadata.network,
+            metadata.payTo as string,
+          ),
+        },
+        402,
+      );
+    }
+
+    const paid = await verifyAndSettleX402Payment({
+      facilitatorUrl: metadata.facilitatorUrl,
+      paymentHeader,
+      network: metadata.network,
+      resource: {
+        method: c.req.method,
+        path: c.req.path,
+        payTo: metadata.payTo as string,
+        priceUsd: matched.priceUsd,
+      },
+    });
+    if (paid) {
+      await next();
+      return;
+    }
+
     return c.json(
       {
-        error:
-          "x402 middleware is enabled but runtime dependencies are unavailable.",
-        payment: toPaymentRequired(
-          matched,
-          metadata.network,
-          metadata.payTo as string,
-        ),
+        error: "Payment verification failed.",
       },
-      503,
+      402,
     );
   };
 }

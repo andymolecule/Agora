@@ -1,9 +1,12 @@
+import type { ChallengeStatus } from "@hermes/common";
+
 export type Challenge = {
   id: string;
   title: string;
   description: string;
   domain: string;
-  status: string;
+  status: ChallengeStatus;
+  db_status?: string;
   reward_amount: number | string;
   deadline: string;
   challenge_type: string;

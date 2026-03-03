@@ -3,7 +3,7 @@ create table if not exists score_jobs (
   id uuid primary key default gen_random_uuid(),
   submission_id uuid not null references submissions(id) on delete cascade,
   challenge_id uuid not null references challenges(id) on delete cascade,
-  status text not null default 'queued',       -- queued | running | scored | failed
+  status text not null default 'queued',       -- queued | running | scored | failed | skipped
   attempts integer not null default 0,
   max_attempts integer not null default 5,
   locked_at timestamptz,

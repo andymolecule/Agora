@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Clock, Microscope, Dna, FlaskConical, Database, BrainCircuit } from "lucide-react";
+import { CHALLENGE_STATUS } from "@hermes/common";
 import { deadlineCountdown, formatUsdc } from "../lib/format";
 import type { Challenge } from "../lib/types";
 import { IsometricIcon } from "./IsometricIcon";
@@ -44,7 +45,7 @@ export function ChallengeCard({
         {/* Status Badge Top-Right */}
         <div className="absolute top-3 right-3">
           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.5px] font-mono border border-black bg-white text-black">
-            <span className={`w-1.5 h-1.5 rounded-full ${challenge.status === 'active' ? 'bg-green-500' : 'bg-black'}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${challenge.status === CHALLENGE_STATUS.active ? 'bg-green-500' : 'bg-black'}`} />
             {challenge.status}
           </span>
         </div>
@@ -78,7 +79,7 @@ export function ChallengeCard({
               {deadlineCountdown(challenge.deadline)}
             </span>
 
-            {challenge.status === "active" && (
+            {challenge.status === CHALLENGE_STATUS.active && (
               <span className="text-[11px] font-bold font-mono uppercase tracking-[0.5px] text-black flex items-center gap-1 group-hover:translate-x-1 transition-transform">
                 Solve &gt;&gt;
               </span>
@@ -89,4 +90,3 @@ export function ChallengeCard({
     </Link>
   );
 }
-

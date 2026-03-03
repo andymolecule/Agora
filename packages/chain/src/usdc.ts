@@ -35,7 +35,7 @@ const erc20Abi = [
 export async function approve(spender: `0x${string}`, amount: number) {
   const config = loadConfig();
   const walletClient = getWalletClient();
-  const usdc = config.HERMES_USDC_ADDRESS as `0x${string}`;
+  const usdc = config.HERMES_USDC_ADDRESS;
   const value = parseUnits(amount.toString(), 6);
 
   return walletClient.writeContract({
@@ -49,7 +49,7 @@ export async function approve(spender: `0x${string}`, amount: number) {
 export async function balanceOf(owner: `0x${string}`) {
   const config = loadConfig();
   const publicClient = getPublicClient();
-  const usdc = config.HERMES_USDC_ADDRESS as `0x${string}`;
+  const usdc = config.HERMES_USDC_ADDRESS;
 
   return publicClient.readContract({
     address: usdc,
@@ -62,7 +62,7 @@ export async function balanceOf(owner: `0x${string}`) {
 export async function allowance(owner: `0x${string}`, spender: `0x${string}`) {
   const config = loadConfig();
   const publicClient = getPublicClient();
-  const usdc = config.HERMES_USDC_ADDRESS as `0x${string}`;
+  const usdc = config.HERMES_USDC_ADDRESS;
 
   return publicClient.readContract({
     address: usdc,

@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { SiweMessage } from "siwe";
 import { z } from "zod";
+import { DEFAULT_CHAIN_ID } from "@hermes/common";
 import {
   consumeNonce,
   createNonce,
@@ -47,7 +48,7 @@ router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
       ? `${requestProtocol}://${requestHost}`
       : undefined;
   const expectedDomain = apiUrl ? new URL(apiUrl).host : requestHost;
-  const expectedChainId = Number(process.env.HERMES_CHAIN_ID ?? 84532);
+  const expectedChainId = Number(process.env.HERMES_CHAIN_ID ?? DEFAULT_CHAIN_ID);
 
   if (expectedDomain && siweMessage.domain !== expectedDomain) {
     return c.json({ error: "SIWE domain mismatch." }, 401);

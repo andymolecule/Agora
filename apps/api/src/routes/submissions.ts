@@ -1,12 +1,20 @@
 import { getOnChainSubmission, getPublicClient } from "@hermes/chain";
+import {
+  getSubmissionLimitViolation,
+  resolveSubmissionLimits,
+} from "@hermes/common";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
 import {
+  countSubmissionsBySolverForChallenge,
+  countSubmissionsForChallenge,
+  createScoreJob,
   createSupabaseClient,
   getChallengeById,
   getProofBundleBySubmissionId,
   getSubmissionById,
+  markScoreJobSkipped,
   setSubmissionResultCid,
-  upsertSubmission,
+  upsertSubmissionOnChain,
 } from "@hermes/db";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
@@ -139,12 +147,11 @@ router.post(
       );
     }
 
-    const row = await upsertSubmission(db, {
+    await upsertSubmissionOnChain(db, {
       challenge_id: challengeId,
       on_chain_sub_id: Number(subId),
       solver_address: onChain.solver,
       result_hash: onChain.resultHash,
-      result_cid: normalizedResultCid,
       proof_bundle_hash: onChain.proofBundleHash,
       score: onChain.scored ? onChain.score.toString() : null,
       scored: onChain.scored,
@@ -152,12 +159,45 @@ router.post(
       tx_hash: txHash,
     });
 
-    await setSubmissionResultCid(
+    const row = await setSubmissionResultCid(
       db,
       challengeId,
       Number(subId),
       normalizedResultCid,
     );
+
+    if (!onChain.scored) {
+      const limits = resolveSubmissionLimits({
+        max_submissions_total: challenge.max_submissions_total,
+        max_submissions_per_solver: challenge.max_submissions_per_solver,
+      });
+      const [totalSubmissions, solverSubmissions] = await Promise.all([
+        countSubmissionsForChallenge(db, challengeId),
+        countSubmissionsBySolverForChallenge(db, challengeId, onChain.solver),
+      ]);
+      const violation = getSubmissionLimitViolation({
+        totalSubmissions,
+        solverSubmissions,
+        limits,
+      });
+
+      if (violation) {
+        await markScoreJobSkipped(
+          db,
+          {
+            submission_id: row.id,
+            challenge_id: challengeId,
+          },
+          violation,
+        );
+        return c.json({ ok: true, submission: row, warning: violation }, 202);
+      }
+
+      await createScoreJob(db, {
+        submission_id: row.id,
+        challenge_id: challengeId,
+      });
+    }
 
     return c.json({ ok: true, submission: row });
   },

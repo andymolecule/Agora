@@ -1,35 +1,37 @@
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import {
   getOnChainSubmission,
   getPublicClient,
   submitChallengeResult,
   submitChallengeResultWithPrivateKey,
 } from "@hermes/chain";
+import {
+  CHALLENGE_DB_STATUS,
+  CHALLENGE_STATUS,
+  deriveDisplayStatus,
+  getSubmissionLimitViolation,
+  isChallengeDbStatus,
+  resolveSubmissionLimits,
+} from "@hermes/common";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
 import {
+  countSubmissionsBySolverForChallenge,
+  countSubmissionsForChallenge,
+  createScoreJob,
   createSupabaseClient,
   getChallengeById,
   getProofBundleBySubmissionId,
   getSubmissionById,
   listSubmissionsForChallenge,
+  markScoreJobSkipped,
   setSubmissionResultCid,
-  upsertSubmission,
+  upsertSubmissionOnChain,
 } from "@hermes/db";
-import { downloadToPath, pinFile } from "@hermes/ipfs";
-import { runScorer } from "@hermes/scorer";
+import { pinFile } from "@hermes/ipfs";
+import { executeScoringPipeline, wadToScore } from "@hermes/scorer";
 import { keccak256, parseEventLogs, toBytes } from "viem";
 import type { Abi } from "viem";
 
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
-const WAD_SCALE = 1_000_000_000_000_000_000n;
-
-function wadToScore(wad: bigint): number {
-  const whole = wad / WAD_SCALE;
-  const fractional = wad % WAD_SCALE;
-  return Number(`${whole}.${fractional.toString().padStart(18, "0")}`);
-}
 
 export async function listChallenges(input: {
   status?: string;
@@ -39,24 +41,60 @@ export async function listChallenges(input: {
 }) {
   const db = createSupabaseClient(false);
   let query = db.from("challenges").select("*");
-  if (input.status) query = query.eq("status", input.status);
+  const requestedStatus = input.status?.toLowerCase();
+  if (requestedStatus === CHALLENGE_STATUS.scoring) {
+    query = query.eq("status", CHALLENGE_DB_STATUS.active);
+  } else if (requestedStatus && isChallengeDbStatus(requestedStatus)) {
+    query = query.eq("status", requestedStatus);
+  }
   if (input.domain) query = query.eq("domain", input.domain);
   if (input.limit) query = query.limit(input.limit);
   const { data, error } = await query;
   if (error) throw new Error(`Failed to list challenges: ${error.message}`);
-  const rows = data ?? [];
+  const rows = (data ?? []).map((row: Record<string, unknown>) => {
+    const dbStatus = isChallengeDbStatus(row.status)
+      ? row.status
+      : CHALLENGE_DB_STATUS.active;
+    const status = deriveDisplayStatus({
+      dbStatus,
+      deadline: typeof row.deadline === "string" ? row.deadline : undefined,
+    });
+    return {
+      ...row,
+      db_status: dbStatus,
+      status,
+    };
+  });
+  const statusFilteredRows = requestedStatus
+    ? rows.filter(
+        (row: Record<string, unknown>) => row.status === requestedStatus,
+      )
+    : rows;
   const minReward = input.minReward;
   if (minReward === undefined) {
-    return rows;
+    return statusFilteredRows;
   }
-  return rows.filter(
-    (row: { reward_amount: unknown }) => Number(row.reward_amount) >= minReward,
+  return statusFilteredRows.filter(
+    (row: Record<string, unknown>) =>
+      Number(row.reward_amount) >= minReward,
   );
 }
 
 export async function getChallenge(challengeId: string) {
   const db = createSupabaseClient(false);
   const challenge = await getChallengeById(db, challengeId);
+  const dbStatus = isChallengeDbStatus(challenge.status)
+    ? challenge.status
+    : CHALLENGE_DB_STATUS.active;
+  const displayChallenge = {
+    ...challenge,
+    db_status: dbStatus,
+    status: deriveDisplayStatus({
+      dbStatus,
+      deadline:
+        typeof challenge.deadline === "string" ? challenge.deadline : undefined,
+    }),
+  };
   const submissions = await listSubmissionsForChallenge(db, challengeId);
   const leaderboard = submissions
     .filter((row: { score: unknown }) => row.score !== null)
@@ -65,7 +103,7 @@ export async function getChallenge(challengeId: string) {
       const bScore = BigInt(String(b.score ?? "0"));
       return bScore > aScore ? 1 : bScore < aScore ? -1 : 0;
     });
-  return { challenge, submissions, leaderboard };
+  return { challenge: displayChallenge, submissions, leaderboard };
 }
 
 export async function getSubmissionStatus(submissionId: string) {
@@ -94,7 +132,7 @@ export async function submitSolution(input: {
 
   if (normalizedPrivateKey && !input.allowRemotePrivateKey) {
     throw new Error(
-      "privateKey over MCP HTTP is disabled. Use MCP stdio mode or set HERMES_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true.",
+      "privateKey over MCP HTTP is disabled. Use MCP stdio mode, or set HERMES_ENABLE_NON_CORE_FEATURES=true and HERMES_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true.",
     );
   }
 
@@ -124,24 +162,60 @@ export async function submitSolution(input: {
     throw new Error("Invalid Submitted event payload.");
 
   const onChain = await getOnChainSubmission(challengeAddress, args.subId);
-  const row = await upsertSubmission(db, {
+  await upsertSubmissionOnChain(db, {
     challenge_id: input.challengeId,
     on_chain_sub_id: Number(args.subId),
     solver_address: onChain.solver,
     result_hash: onChain.resultHash,
-    result_cid: resultCid,
     proof_bundle_hash: onChain.proofBundleHash,
     score: onChain.scored ? onChain.score.toString() : null,
     scored: onChain.scored,
     submitted_at: new Date(Number(onChain.submittedAt) * 1000).toISOString(),
     tx_hash: txHash,
   });
-  await setSubmissionResultCid(
+  const row = await setSubmissionResultCid(
     db,
     input.challengeId,
     Number(args.subId),
     resultCid,
   );
+
+  if (!onChain.scored) {
+    const limits = resolveSubmissionLimits({
+      max_submissions_total: challenge.max_submissions_total,
+      max_submissions_per_solver: challenge.max_submissions_per_solver,
+    });
+    const [totalSubmissions, solverSubmissions] = await Promise.all([
+      countSubmissionsForChallenge(db, input.challengeId),
+      countSubmissionsBySolverForChallenge(
+        db,
+        input.challengeId,
+        onChain.solver,
+      ),
+    ]);
+    const violation = getSubmissionLimitViolation({
+      totalSubmissions,
+      solverSubmissions,
+      limits,
+    });
+
+    if (violation) {
+      await markScoreJobSkipped(
+        db,
+        {
+          submission_id: row.id,
+          challenge_id: input.challengeId,
+        },
+        violation,
+      );
+      return { txHash, resultCid, submission: row, warning: violation };
+    }
+
+    await createScoreJob(db, {
+      submission_id: row.id,
+      challenge_id: input.challengeId,
+    });
+  }
 
   return { txHash, resultCid, submission: row };
 }
@@ -162,39 +236,28 @@ export async function verifySubmission(input: {
   if (submission.on_chain_sub_id == null)
     throw new Error("Submission missing on_chain_sub_id.");
 
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-mcp-verify-"));
+  const run = await executeScoringPipeline({
+    image: proof.container_image_hash,
+    groundTruth: { cid: challenge.dataset_test_cid },
+    submission: { cid: submission.result_cid },
+  });
   try {
-    const inputDir = path.join(root, "input");
-    await fs.mkdir(inputDir, { recursive: true });
-    await downloadToPath(
-      challenge.dataset_test_cid,
-      path.join(inputDir, "ground_truth.csv"),
-    );
-    await downloadToPath(
-      submission.result_cid,
-      path.join(inputDir, "submission.csv"),
-    );
-
-    const run = await runScorer({
-      image: proof.container_image_hash,
-      inputDir,
-    });
     const onChain = await getOnChainSubmission(
       challenge.contract_address as `0x${string}`,
       BigInt(submission.on_chain_sub_id),
     );
     const onChainScore = wadToScore(onChain.score);
     const tolerance = input.tolerance ?? 0.001;
-    const delta = Math.abs(run.score - onChainScore);
+    const delta = Math.abs(run.result.score - onChainScore);
 
     return {
       match: delta <= tolerance,
-      localScore: run.score,
+      localScore: run.result.score,
       onChainScore,
       delta,
       tolerance,
     };
   } finally {
-    await fs.rm(root, { recursive: true, force: true });
+    await run.cleanup();
   }
 }

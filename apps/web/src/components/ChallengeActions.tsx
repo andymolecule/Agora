@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAccount, useWriteContract, usePublicClient } from "wagmi";
 import { CheckCircle, Clock, Loader2, Coins, Gavel } from "lucide-react";
+import { CHALLENGE_STATUS } from "@hermes/common";
 import { API_BASE_URL } from "../lib/config";
 import HermesChallengeAbi from "@hermes/common/abi/HermesChallenge.json";
 import { type Abi } from "viem";
@@ -63,8 +64,8 @@ export function ChallengeActions({
     const now = Date.now();
     const finalizableAfterMs = new Date(info.finalizableAfter).getTime();
     const isPastDisputeWindow = now > finalizableAfterMs;
-    const isFinalized = info.onChainStatus === "finalized";
-    const isCancelled = info.onChainStatus === "cancelled";
+    const isFinalized = info.onChainStatus === CHALLENGE_STATUS.finalized;
+    const isCancelled = info.onChainStatus === CHALLENGE_STATUS.cancelled;
     const claimableUsdc = Number(info.claimable) / 1e6; // USDC has 6 decimals
     const hasClaimable = claimableUsdc > 0;
 

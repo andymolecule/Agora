@@ -2,7 +2,7 @@
  * End-to-end test: post → submit → score → finalize → verify claimable
  * Uses the test factory with MIN_DISPUTE_WINDOW_HOURS = 0
  */
-import { loadConfig } from "@hermes/common";
+import { CHALLENGE_STATUS, loadConfig } from "@hermes/common";
 import { getPublicClient, getWalletClient, finalizeChallenge } from "@hermes/chain";
 import { createSupabaseClient, upsertChallenge, buildChallengeInsert, createScoreJob } from "@hermes/db";
 import { pinJSON, pinFile } from "@hermes/ipfs";
@@ -16,8 +16,7 @@ import path from "node:path";
 const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 
-// E2E test factory (MIN_DISPUTE_WINDOW_HOURS = 0)
-const TEST_FACTORY = "0x0461d896e8500542bdb59ae5a6c95740a912d484";
+// Uses whichever factory is configured in .env (HERMES_FACTORY_ADDRESS)
 
 async function main() {
     const config = loadConfig();
@@ -51,7 +50,7 @@ async function main() {
 
     // ── Step 2: Approve USDC and create challenge ──
     console.log("2️⃣  Approving USDC...");
-    const usdcAddress = config.HERMES_USDC_ADDRESS as `0x${string}`;
+    const usdcAddress = config.HERMES_USDC_ADDRESS;
     const rewardAmount = parseUnits("1", 6); // 1 USDC
 
     const usdcAbi = [
@@ -62,7 +61,7 @@ async function main() {
         address: usdcAddress,
         abi: usdcAbi,
         functionName: "approve",
-        args: [TEST_FACTORY as `0x${string}`, rewardAmount],
+        args: [config.HERMES_FACTORY_ADDRESS, rewardAmount],
     });
 
     console.log("3️⃣  Creating challenge (3-min deadline, 0h dispute)...");
@@ -70,7 +69,7 @@ async function main() {
     const specCidClean = specCid.replace("ipfs://", "");
 
     const createTxHash = await walletClient.writeContract({
-        address: TEST_FACTORY as `0x${string}`,
+        address: config.HERMES_FACTORY_ADDRESS,
         abi: HermesFactoryAbi,
         functionName: "createChallenge",
         args: [specCidClean, rewardAmount, deadlineSeconds, 0n, 0n, 0, "0x0000000000000000000000000000000000000000"], // 0h dispute, 0 minScore, WinnerTakeAll, no labTBA
@@ -84,7 +83,7 @@ async function main() {
 
     // Register in DB directly (skip buildChallengeInsert which expects full parsed spec)
     const chalRow = {
-        chain_id: 84532,
+        chain_id: config.HERMES_CHAIN_ID,
         contract_address: challengeAddress,
         factory_challenge_id: Number(createdEvent?.args?.id ?? 0),
         poster_address: account.address,
@@ -100,7 +99,7 @@ async function main() {
         distribution_type: spec.distribution_type,
         deadline: new Date(Number(deadlineSeconds) * 1000).toISOString(),
         dispute_window_hours: 0,
-        status: "active",
+        status: CHALLENGE_STATUS.active,
         tx_hash: createTxHash,
     };
     const { data: dbChallenge, error: chalError } = await db.from("challenges").insert(chalRow).select("*").single();

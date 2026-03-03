@@ -2,7 +2,7 @@ import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" wit
 import type { Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { getPublicClient, getWalletClient } from "./client.js";
-import { loadConfig } from "@hermes/common";
+import { CHAIN_IDS, loadConfig } from "@hermes/common";
 import { createWalletClient, http } from "viem";
 import { base, baseSepolia } from "viem/chains";
 
@@ -27,8 +27,8 @@ export async function submitChallengeResultWithPrivateKey(
   privateKey: `0x${string}`,
 ) {
   const config = loadConfig();
-  const chainId = config.HERMES_CHAIN_ID ?? baseSepolia.id;
-  const chain = chainId === base.id ? base : baseSepolia;
+  const chainId = config.HERMES_CHAIN_ID;
+  const chain = chainId === CHAIN_IDS.baseMainnet ? base : baseSepolia;
   const walletClient = createWalletClient({
     chain,
     transport: http(config.HERMES_RPC_URL),

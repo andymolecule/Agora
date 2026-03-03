@@ -1,44 +1,32 @@
 "use client";
 
-import { Clock, Shield, Calendar, CheckCircle, XCircle, AlertTriangle, CircleDot, ExternalLink, ArrowUpRight } from "lucide-react";
+import { Clock, Shield, Calendar, CheckCircle, ExternalLink, ArrowUpRight } from "lucide-react";
+import { CHALLENGE_STATUS, type ChallengeStatus } from "@hermes/common";
 import type { Challenge, Submission } from "../lib/types";
 import { shortAddress } from "../lib/format";
-
-type StepConfig = {
-  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
-  color: string;
-};
-const DEFAULT_STEP_CONFIG: StepConfig = { icon: CircleDot, color: "var(--color-success)" };
-const STEP_CONFIG: Record<string, StepConfig> = {
-  active: DEFAULT_STEP_CONFIG,
-  scoring: { icon: Clock, color: "var(--color-warning)" },
-  disputed: { icon: AlertTriangle, color: "var(--color-error)" },
-  finalized: { icon: CheckCircle, color: "var(--color-cobalt-200)" },
-  cancelled: { icon: XCircle, color: "var(--text-tertiary)" },
-};
 
 const BASESCAN_URL = "https://sepolia.basescan.org";
 
 export function TimelineStatus({ challenge, submissions = [] }: { challenge: Challenge; submissions?: Submission[] }) {
-  const flow: Array<{ key: string; label: string; detail: string }> = (() => {
-    if (challenge.status === "cancelled") {
+  const flow: Array<{ key: ChallengeStatus; label: string; detail: string }> = (() => {
+    if (challenge.status === CHALLENGE_STATUS.cancelled) {
       return [
-        { key: "active", label: "Active", detail: "Open for solver submissions" },
-        { key: "cancelled", label: "Cancelled", detail: "Challenge cancelled/refunded" },
+        { key: CHALLENGE_STATUS.active, label: "Active", detail: "Open for solver submissions" },
+        { key: CHALLENGE_STATUS.cancelled, label: "Cancelled", detail: "Challenge cancelled/refunded" },
       ];
     }
-    if (challenge.status === "disputed") {
+    if (challenge.status === CHALLENGE_STATUS.disputed) {
       return [
-        { key: "active", label: "Active", detail: "Open for solver submissions" },
-        { key: "scoring", label: "Scoring", detail: "Oracle scoring window" },
-        { key: "disputed", label: "Disputed", detail: "Dispute and resolution period" },
-        { key: "finalized", label: "Finalized", detail: "Payouts claimable" },
+        { key: CHALLENGE_STATUS.active, label: "Active", detail: "Open for solver submissions" },
+        { key: CHALLENGE_STATUS.scoring, label: "Scoring", detail: "Oracle scoring window" },
+        { key: CHALLENGE_STATUS.disputed, label: "Disputed", detail: "Dispute and resolution period" },
+        { key: CHALLENGE_STATUS.finalized, label: "Finalized", detail: "Payouts claimable" },
       ];
     }
     return [
-      { key: "active", label: "Active", detail: "Open for solver submissions" },
-      { key: "scoring", label: "Scoring", detail: "Oracle scoring window" },
-      { key: "finalized", label: "Finalized", detail: "Payouts claimable" },
+      { key: CHALLENGE_STATUS.active, label: "Active", detail: "Open for solver submissions" },
+      { key: CHALLENGE_STATUS.scoring, label: "Scoring", detail: "Oracle scoring window" },
+      { key: CHALLENGE_STATUS.finalized, label: "Finalized", detail: "Payouts claimable" },
     ];
   })();
 

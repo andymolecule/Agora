@@ -73,14 +73,15 @@ Check every 15-30 minutes during first launch window:
 2. Verify RPC reachability.
 3. Check last row in `indexed_events` and compare with chain head.
 4. Check `GET /api/indexer-health` and alert if status is `critical`.
-5. If you changed factory address, reset only the per-factory cursor (not all events):
+5. Rewind cursors with CLI (dry-run first):
 
-```sql
-delete from indexer_cursors
-where cursor_key = 'factory:84532:<factory_address_lowercase>';
+```bash
+hm reindex --from-block <block_number> --dry-run
+hm reindex --from-block <block_number>
 ```
 
-6. Ensure `HERMES_INDEXER_START_BLOCK` is set before restarting indexer when bootstrapping a new factory.
+6. If a deep replay is required, include `--purge-indexed-events`.
+7. Ensure `HERMES_INDEXER_START_BLOCK` is set before restarting indexer when bootstrapping a new factory.
 
 ### Bad deploy / regression
 

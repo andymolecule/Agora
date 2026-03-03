@@ -1,4 +1,4 @@
-import { loadConfig } from "@hermes/common";
+import { CHAIN_IDS, loadConfig } from "@hermes/common";
 import {
   http,
   type Chain,
@@ -11,8 +11,8 @@ import { base, baseSepolia } from "viem/chains";
 
 function resolveChain(): Chain {
   const config = loadConfig();
-  const chainId = config.HERMES_CHAIN_ID ?? baseSepolia.id;
-  return chainId === base.id ? base : baseSepolia;
+  const chainId = config.HERMES_CHAIN_ID;
+  return chainId === CHAIN_IDS.baseMainnet ? base : baseSepolia;
 }
 
 export function createHermesPublicClient() {
@@ -29,9 +29,7 @@ export function createHermesWalletClient() {
   }
   const chain = resolveChain();
   const transport = http(config.HERMES_RPC_URL);
-  const account = privateKeyToAccount(
-    config.HERMES_PRIVATE_KEY as `0x${string}`,
-  );
+  const account = privateKeyToAccount(config.HERMES_PRIVATE_KEY);
   return createWalletClient({ chain, transport, account });
 }
 

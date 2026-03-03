@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Layers, Trophy, Database, Container } from "lucide-react";
+import { CHALLENGE_STATUS } from "@hermes/common";
 import Link from "next/link";
 import { LeaderboardTable } from "../../../components/LeaderboardTable";
 import { SubmitSolution } from "../../../components/SubmitSolution";
@@ -74,7 +75,7 @@ export function DetailClient({ id }: { id: string }) {
                   {challenge.title}
                 </h1>
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.5px] font-mono border border-black bg-white text-black shrink-0">
-                  <span className={`w-1.5 h-1.5 rounded-full ${challenge.status === 'active' ? 'bg-green-500' : 'bg-black'}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${challenge.status === CHALLENGE_STATUS.active ? 'bg-green-500' : 'bg-black'}`} />
                   {challenge.status}
                 </span>
               </div>

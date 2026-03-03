@@ -51,6 +51,7 @@ const rewardTotal = z
 
 export const challengeSpecSchema = z.object({
   id: z.string().min(1),
+  preset_id: z.string().min(1).optional(),
   title: z.string().min(1),
   domain: domainEnum,
   type: typeEnum,
@@ -72,6 +73,8 @@ export const challengeSpecSchema = z.object({
   deadline: z.string().datetime({ offset: true }),
   tags: z.array(z.string().min(1)).optional(),
   minimum_score: z.number().optional(),
+  max_submissions_total: z.number().int().min(1).max(10000).optional(),
+  max_submissions_per_solver: z.number().int().min(1).max(1000).optional(),
   dispute_window_hours: z
     .number()
     .int()
@@ -89,6 +92,19 @@ export const challengeSpecSchema = z.object({
     .string()
     .regex(/^0x[a-fA-F0-9]{40}$/, "lab_tba must be a valid EVM address")
     .optional(),
+}).superRefine((value, ctx) => {
+  if (
+    typeof value.max_submissions_total === "number" &&
+    typeof value.max_submissions_per_solver === "number" &&
+    value.max_submissions_per_solver > value.max_submissions_total
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["max_submissions_per_solver"],
+      message:
+        "max_submissions_per_solver cannot exceed max_submissions_total",
+    });
+  }
 });
 
 export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;

@@ -1,7 +1,7 @@
 "use client";
 
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
-import { isValidPinnedSpecCid } from "@hermes/common";
+import { CHALLENGE_STATUS, isValidPinnedSpecCid } from "@hermes/common";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useState } from "react";
 import type { Abi } from "viem";
@@ -47,7 +47,7 @@ export function SubmitSolution({
     const [status, setStatus] = useState("");
     const [txHash, setTxHash] = useState("");
 
-    const isActive = challengeStatus === "active";
+    const isActive = challengeStatus === CHALLENGE_STATUS.active;
     const isPastDeadline = new Date(deadline).getTime() <= Date.now();
     const canSubmit = isActive && !isPastDeadline;
 
