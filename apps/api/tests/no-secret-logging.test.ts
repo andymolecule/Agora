@@ -1,26 +1,56 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import test from "node:test";
 
 const SECRET_ENV_PATTERN =
   /console\.(log|info|warn|error)\([\s\S]{0,400}?process\.env\.(HERMES_PRIVATE_KEY|HERMES_ORACLE_KEY|PRIVATE_KEY)/m;
 
+function collectSourceFiles(rootDir: string): string[] {
+  const queue = [rootDir];
+  const files: string[] = [];
+
+  while (queue.length > 0) {
+    const current = queue.pop();
+    if (!current) continue;
+
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      const relativePath = path.relative(rootDir, fullPath);
+
+      if (entry.isDirectory()) {
+        if (
+          entry.name === "node_modules" ||
+          entry.name === "dist" ||
+          entry.name === ".git" ||
+          relativePath.startsWith(`packages${path.sep}contracts`)
+        ) {
+          continue;
+        }
+        queue.push(fullPath);
+        continue;
+      }
+
+      if (!entry.isFile()) continue;
+      if (!/\.(ts|tsx|js|mjs)$/.test(entry.name)) continue;
+      files.push(relativePath);
+    }
+  }
+
+  return files;
+}
+
 test("source does not log private key env values", () => {
   const repoRoot = path.resolve(process.cwd(), "../..");
-  const filesRaw = execFileSync("rg", ["--files", "apps", "packages"], {
-    encoding: "utf8",
-    cwd: repoRoot,
-  });
-  const files = filesRaw
-    .split("\n")
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .filter((filePath) => /\.(ts|tsx|js|mjs)$/.test(filePath))
-    .filter((filePath) => !filePath.includes("/dist/"))
-    .filter((filePath) => !filePath.includes("/node_modules/"))
-    .filter((filePath) => !filePath.startsWith("packages/contracts/"));
+  const files = [
+    ...collectSourceFiles(path.join(repoRoot, "apps")).map((value) =>
+      path.posix.join("apps", value.split(path.sep).join(path.posix.sep)),
+    ),
+    ...collectSourceFiles(path.join(repoRoot, "packages")).map((value) =>
+      path.posix.join("packages", value.split(path.sep).join(path.posix.sep)),
+    ),
+  ];
 
   const violations: string[] = [];
   for (const relativePath of files) {
