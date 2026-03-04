@@ -14,7 +14,7 @@ import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "w
 import {
   Wallet, ArrowRight, Coins, AlertCircle, Loader2, CheckCircle,
   FlaskConical, BarChart3, Settings2, ChevronRight, Check,
-  Upload, Eye, X, Crosshair, Tag,
+  Upload, Eye, X, Tag,
 } from "lucide-react";
 import { buildPinSpecMessage, computeSpecHash } from "../../lib/pin-spec-auth";
 import { accelerateChallengeIndex } from "../../lib/api";
@@ -59,14 +59,13 @@ const erc20Abi = [
   },
 ] as const;
 
-type PostChallengeType = "prediction" | "optimization" | "reproducibility" | "docking" | "custom";
+type PostChallengeType = "prediction" | "optimization" | "reproducibility" | "custom";
 
 // ─── Icon mapping for presets ───────────────────────
 const TYPE_ICONS: Record<PostChallengeType, typeof FlaskConical> = {
   prediction: BarChart3,
   optimization: FlaskConical,
   reproducibility: FlaskConical,
-  docking: Crosshair,
   custom: Settings2,
 };
 
@@ -89,7 +88,6 @@ const REGISTRY_PRESETS = Object.values(PRESET_REGISTRY);
 const REPRODUCIBILITY_PRESET_ID =
   defaultPresetIdForChallengeType("reproducibility");
 const PREDICTION_PRESET_ID = defaultPresetIdForChallengeType("prediction");
-const DOCKING_PRESET_ID = defaultPresetIdForChallengeType("docking");
 const reproducibilityPreset =
   REPRODUCIBILITY_PRESET_ID &&
   REPRODUCIBILITY_PRESET_ID !== "custom"
@@ -99,14 +97,10 @@ const predictionPreset =
   PREDICTION_PRESET_ID && PREDICTION_PRESET_ID !== "custom"
     ? PRESET_REGISTRY[PREDICTION_PRESET_ID]
     : undefined;
-const dockingPreset =
-  DOCKING_PRESET_ID && DOCKING_PRESET_ID !== "custom"
-    ? PRESET_REGISTRY[DOCKING_PRESET_ID]
-    : undefined;
 
-if (!reproducibilityPreset || !predictionPreset || !dockingPreset) {
+if (!reproducibilityPreset || !predictionPreset) {
   throw new Error(
-    "Required presets (reproducibility/prediction/docking) are missing from PRESET_REGISTRY.",
+    "Required presets (reproducibility/prediction) are missing from PRESET_REGISTRY.",
   );
 }
 
@@ -148,16 +142,6 @@ const TYPE_CONFIG = {
     presetId: reproducibilityPreset.id,
     scoringTemplate: reproducibilityPreset.scoringDescription,
   },
-  docking: {
-    label: "Docking",
-    description: "Solvers dock small molecules against a protein target",
-    defaultDomain: "drug_discovery",
-    metricHint: "spearman",
-    container: dockingPreset.container,
-    defaultMinimumScore: dockingPreset.defaultMinimumScore,
-    presetId: dockingPreset.id,
-    scoringTemplate: dockingPreset.scoringDescription,
-  },
   custom: {
     label: "Custom",
     description: "Bring your own scorer and rules",
@@ -193,6 +177,7 @@ const EXAMPLES: Record<string, { label: string; state: Partial<FormState> }> = {
       type: "prediction",
       train: "https://example.com/train.csv",
       test: "https://example.com/test.csv",
+      hiddenLabels: "https://example.com/labels.csv",
       metric: "r2",
       reward: "10",
       distribution: "top_3",
@@ -210,27 +195,13 @@ const EXAMPLES: Record<string, { label: string; state: Partial<FormState> }> = {
       description: "Reproduce the published score for the provided dataset.\nInclude your methodology, preprocessing steps, and any assumptions.",
       domain: "longevity",
       type: "reproducibility",
-      train: "https://example.com/train.csv",
-      test: "https://example.com/test.csv",
+      train: "https://example.com/input_data.csv",
+      test: "https://example.com/expected_output.csv",
       reward: "10",
       distribution: "winner_take_all",
       reproPresetId: "csv_comparison_v1",
+      tolerance: "1e-4",
       tags: ["reproducibility", "longevity"],
-    },
-  },
-  docking: {
-    label: "Molecular Docking Screen",
-    state: {
-      title: "Dock small molecules to a target protein",
-      description: "Predict docking scores for the supplied ligand set.\nInclude your docking protocol and scoring rationale.",
-      domain: "drug_discovery",
-      type: "docking",
-      train: "https://example.com/train.sdf",
-      test: "https://example.com/test.sdf",
-      metric: "spearman",
-      reward: "10",
-      distribution: "proportional",
-      tags: ["docking", "drug_discovery"],
     },
   },
 };
@@ -253,6 +224,7 @@ type FormState = {
   type: PostChallengeType;
   train: string;
   test: string;
+  hiddenLabels: string;
   metric: string;
   container: string;
   reward: string;
@@ -267,6 +239,7 @@ type FormState = {
   idColumn: string;
   labelColumn: string;
   reproPresetId: string;
+  tolerance: string;
   tags: string[];
 };
 
@@ -279,6 +252,7 @@ const initialState: FormState = {
   type: "reproducibility",
   train: "",
   test: "",
+  hiddenLabels: "",
   metric: defaultPreset.metricHint,
   container: defaultPreset.container,
   reward: "10",
@@ -293,17 +267,20 @@ const initialState: FormState = {
   idColumn: "id",
   labelColumn: "prediction",
   reproPresetId: "csv_comparison_v1",
+  tolerance: "",
   tags: [],
 };
 
 function buildSpec(state: FormState) {
   const train = state.train.trim();
   const test = state.test.trim();
+  const hiddenLabels = state.hiddenLabels.trim();
   const dataset =
-    train || test
+    train || test || hiddenLabels
       ? {
         ...(train ? { train } : {}),
         ...(test ? { test } : {}),
+        ...(hiddenLabels ? { hidden_labels: hiddenLabels } : {}),
       }
       : undefined;
 
@@ -334,6 +311,7 @@ function buildSpec(state: FormState) {
       success_definition: state.successDefinition || undefined,
       id_column: state.idColumn || undefined,
       label_column: state.labelColumn || undefined,
+      ...(state.tolerance ? { tolerance: state.tolerance } : {}),
     },
     ...(state.tags.length > 0 ? { tags: state.tags } : {}),
     lab_tba: "0x0000000000000000000000000000000000000000",
@@ -407,7 +385,7 @@ export function PostClient() {
   const [isPosting, setIsPosting] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  const [uploadingField, setUploadingField] = useState<"train" | "test" | null>(null);
+  const [uploadingField, setUploadingField] = useState<"train" | "test" | "hiddenLabels" | null>(null);
   const [tagInput, setTagInput] = useState("");
 
   const { isConnected, chainId, address } = useAccount();
@@ -420,7 +398,7 @@ export function PostClient() {
 
   const isCustomType = state.type === "custom" || state.type === "optimization";
 
-  async function handleFileUpload(file: File, field: "train" | "test") {
+  async function handleFileUpload(file: File, field: "train" | "test" | "hiddenLabels") {
     setUploadingField(field);
     try {
       const formData = new FormData();
@@ -474,6 +452,9 @@ export function PostClient() {
       domain: preset.defaultDomain,
       minimumScore: String(preset.defaultMinimumScore),
       evaluationCriteria: preset.scoringTemplate || s.evaluationCriteria,
+      // Clear type-specific fields when switching
+      hiddenLabels: "",
+      tolerance: "",
       // Reset repro sub-preset to default when switching to reproducibility
       ...(t === "reproducibility" ? { reproPresetId: "csv_comparison_v1" } : {}),
       // Prediction: default to CSV submission with id + prediction columns
@@ -505,6 +486,19 @@ export function PostClient() {
       return "Reward must be a positive number.";
     if (rewardValue < 1 || rewardValue > 30)
       return "Reward must be between 1 and 30 USDC.";
+
+    // Per-type required uploads
+    if (state.type === "prediction") {
+      if (!state.train.trim()) return "Training dataset is required for prediction challenges.";
+      if (!state.test.trim()) return "Test dataset is required for prediction challenges.";
+      if (!state.hiddenLabels.trim()) return "Hidden labels are required for prediction challenges. Upload the ground truth used for scoring.";
+    } else if (state.type === "reproducibility") {
+      if (!state.train.trim()) return "Input bundle is required for reproducibility challenges.";
+      if (!state.test.trim()) return "Expected artifact is required for reproducibility challenges. Upload the reference output the scorer compares against.";
+    } else if (state.type === "optimization") {
+      if (!state.train.trim()) return "Evaluation bundle is required for optimization challenges.";
+    }
+
     if (!state.container.trim())
       return "Scoring container is required.";
     // Validate container reference
@@ -632,15 +626,6 @@ export function PostClient() {
 
   const isSuccess = status.startsWith("success:");
 
-  // ─── Type-adaptive data labels ───
-  const dataLabels: Record<PostChallengeType, { field1: string; hint1: string; field2: string; hint2: string }> = {
-    prediction: { field1: "Training data", hint1: "Public dataset solvers use to build models", field2: "Test labels (hidden)", hint2: "Ground truth for scoring — visible on IPFS" },
-    reproducibility: { field1: "Input dataset", hint1: "Source data solvers must reproduce from", field2: "Expected output", hint2: "Reference result to compare against" },
-    docking: { field1: "Compound library", hint1: "SDF or CSV of molecules to dock", field2: "Reference scores", hint2: "Ground truth docking scores for evaluation" },
-    optimization: { field1: "Evaluation bundle", hint1: "Config and data your scorer needs", field2: "Additional data", hint2: "Extra files for scoring (optional)" },
-    custom: { field1: "Public inputs", hint1: "Files or data available to solvers", field2: "Evaluation dataset", hint2: "Used during scoring (visible on IPFS)" },
-  };
-  const dl = dataLabels[state.type];
 
   return (
     <div className="post-form">
@@ -755,7 +740,7 @@ export function PostClient() {
         </div>
       </div>
 
-      {/* ── Section 2: Data & Inputs ── */}
+      {/* ── Section 2: Data & Inputs (type-adaptive) ── */}
       <div className="form-section">
         <div className="form-section-header">
           <span className="form-section-step">2</span>
@@ -763,24 +748,103 @@ export function PostClient() {
         </div>
         <div className="form-section-body">
           <div className="form-grid">
-            <FormField label={dl.field1} hint={dl.hint1}>
-              <DataUploadField
-                value={state.train}
-                onChange={(v) => setState((s) => ({ ...s, train: v }))}
-                uploading={uploadingField === "train"}
-                onUpload={(file) => handleFileUpload(file, "train")}
-                placeholder="ipfs://... or https://..."
-              />
-            </FormField>
-            <FormField label={dl.field2} hint={dl.hint2}>
-              <DataUploadField
-                value={state.test}
-                onChange={(v) => setState((s) => ({ ...s, test: v }))}
-                uploading={uploadingField === "test"}
-                onUpload={(file) => handleFileUpload(file, "test")}
-                placeholder="ipfs://... or https://..."
-              />
-            </FormField>
+            {/* ── Prediction: 3 uploads ── */}
+            {state.type === "prediction" && (
+              <>
+                <FormField label="Train (with labels)" hint="Public dataset solvers use to build and train models">
+                  <DataUploadField
+                    value={state.train}
+                    onChange={(v) => setState((s) => ({ ...s, train: v }))}
+                    uploading={uploadingField === "train"}
+                    onUpload={(file) => handleFileUpload(file, "train")}
+                    placeholder="ipfs://... or https://..."
+                  />
+                </FormField>
+                <FormField label="Test (no labels)" hint="Public test inputs — solvers predict values for these rows">
+                  <DataUploadField
+                    value={state.test}
+                    onChange={(v) => setState((s) => ({ ...s, test: v }))}
+                    uploading={uploadingField === "test"}
+                    onUpload={(file) => handleFileUpload(file, "test")}
+                    placeholder="ipfs://... or https://..."
+                  />
+                </FormField>
+                <FormField label="Hidden labels (for scoring)" hint="Ground truth labels the scorer compares submissions against" className="span-full">
+                  <DataUploadField
+                    value={state.hiddenLabels}
+                    onChange={(v) => setState((s) => ({ ...s, hiddenLabels: v }))}
+                    uploading={uploadingField === "hiddenLabels"}
+                    onUpload={(file) => handleFileUpload(file, "hiddenLabels")}
+                    placeholder="ipfs://... or https://..."
+                  />
+                </FormField>
+              </>
+            )}
+
+            {/* ── Reproducibility: 2 uploads + tolerance ── */}
+            {state.type === "reproducibility" && (
+              <>
+                <FormField label="Input dataset (visible to solvers)" hint="Source data and inputs solvers must reproduce from">
+                  <DataUploadField
+                    value={state.train}
+                    onChange={(v) => setState((s) => ({ ...s, train: v }))}
+                    uploading={uploadingField === "train"}
+                    onUpload={(file) => handleFileUpload(file, "train")}
+                    placeholder="ipfs://... or https://..."
+                  />
+                </FormField>
+                <FormField label="Expected output (used for scoring)" hint="Reference artifact the scorer compares submissions against">
+                  <DataUploadField
+                    value={state.test}
+                    onChange={(v) => setState((s) => ({ ...s, test: v }))}
+                    uploading={uploadingField === "test"}
+                    onUpload={(file) => handleFileUpload(file, "test")}
+                    placeholder="ipfs://... or https://..."
+                  />
+                </FormField>
+                <FormField label="Tolerance" hint="Numeric tolerance for comparison (e.g. 1e-4). Leave empty for exact match.">
+                  <input className="form-input form-input-mono" placeholder="e.g. 1e-4 or 0.001"
+                    value={state.tolerance} onChange={(e) => setState((s) => ({ ...s, tolerance: e.target.value }))} />
+                </FormField>
+              </>
+            )}
+
+            {/* ── Optimization: 1 upload ── */}
+            {state.type === "optimization" && (
+              <FormField label="Evaluation bundle" hint="Config and data your scorer container needs" className="span-full">
+                <DataUploadField
+                  value={state.train}
+                  onChange={(v) => setState((s) => ({ ...s, train: v }))}
+                  uploading={uploadingField === "train"}
+                  onUpload={(file) => handleFileUpload(file, "train")}
+                  placeholder="ipfs://... or https://..."
+                />
+              </FormField>
+            )}
+
+            {/* ── Custom: 2 generic uploads ── */}
+            {state.type === "custom" && (
+              <>
+                <FormField label="Public inputs" hint="Files or data available to solvers">
+                  <DataUploadField
+                    value={state.train}
+                    onChange={(v) => setState((s) => ({ ...s, train: v }))}
+                    uploading={uploadingField === "train"}
+                    onUpload={(file) => handleFileUpload(file, "train")}
+                    placeholder="ipfs://... or https://..."
+                  />
+                </FormField>
+                <FormField label="Evaluation dataset" hint="Used during scoring (visible on IPFS)">
+                  <DataUploadField
+                    value={state.test}
+                    onChange={(v) => setState((s) => ({ ...s, test: v }))}
+                    uploading={uploadingField === "test"}
+                    onUpload={(file) => handleFileUpload(file, "test")}
+                    placeholder="ipfs://... or https://..."
+                  />
+                </FormField>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -861,31 +925,6 @@ SAMPLE_003,2.10`}
               </>
             )}
 
-            {/* ── Docking-specific fields ── */}
-            {state.type === "docking" && (
-              <>
-                <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
-                <FormField label="Metric" hint={METRIC_OPTIONS.find(m => m.value === state.metric)?.hint ?? ""}>
-                  <select className="form-select" value={state.metric}
-                    onChange={(e) => {
-                      const m = METRIC_OPTIONS.find(o => o.value === e.target.value);
-                      setState((s) => ({
-                        ...s,
-                        metric: e.target.value,
-                        evaluationCriteria: m ? `Evaluated by ${m.label}. ${m.hint}.` : s.evaluationCriteria,
-                      }));
-                    }}>
-                    {METRIC_OPTIONS.map((m) => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
-                  </select>
-                </FormField>
-                <FormField label="Scoring detail" hint="Additional context (optional)">
-                  <input className="form-input" placeholder="e.g. Docking protocol, target PDB ID"
-                    value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
-                </FormField>
-              </>
-            )}
 
             {/* ── Reproducibility-specific fields ── */}
             {state.type === "reproducibility" && (
@@ -1168,9 +1207,11 @@ TP53,1.85,0.0003`}
               <div className="preview-divider" />
               <div className="preview-row"><span className="preview-label">Container</span><span className="preview-value" style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{state.container || "—"}</span></div>
               {state.type === "reproducibility" && <div className="preview-row"><span className="preview-label">Scoring method</span><span className="preview-value">{REPRO_SUB_PRESETS.find(rp => rp.id === state.reproPresetId)?.label ?? state.reproPresetId}</span></div>}
-              {state.metric && <div className="preview-row"><span className="preview-label">Metric</span><span className="preview-value">{state.metric}</span></div>}
+              {state.type === "reproducibility" && state.tolerance && <div className="preview-row"><span className="preview-label">Tolerance</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.tolerance}</span></div>}
+              {state.type === "prediction" && state.metric && <div className="preview-row"><span className="preview-label">Metric</span><span className="preview-value">{state.metric}</span></div>}
               {state.type === "prediction" && state.idColumn && <div className="preview-row"><span className="preview-label">ID column</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.idColumn}</span></div>}
               {state.type === "prediction" && state.labelColumn && <div className="preview-row"><span className="preview-label">Label column</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.labelColumn}</span></div>}
+              {state.type === "prediction" && state.hiddenLabels && <div className="preview-row"><span className="preview-label">Hidden labels</span><span className="preview-value" style={{ fontFamily: "monospace", fontSize: "0.72rem" }}>{state.hiddenLabels.length > 40 ? state.hiddenLabels.slice(0, 40) + "…" : state.hiddenLabels}</span></div>}
               {state.submissionFormat && <div className="preview-row"><span className="preview-label">Submission format</span><span className="preview-value">{state.submissionFormat}</span></div>}
               {state.successDefinition && <div className="preview-row"><span className="preview-label">Success criteria</span><span className="preview-value">{state.successDefinition}</span></div>}
               {state.evaluationCriteria && <div className="preview-row span-full"><span className="preview-label">Evaluation</span><span className="preview-value">{state.evaluationCriteria}</span></div>}

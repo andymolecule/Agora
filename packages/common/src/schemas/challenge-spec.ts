@@ -81,6 +81,8 @@ export const challengeSpecSchema = z.object({
     .object({
       train: datasetSource.optional(),
       test: datasetSource.optional(),
+      // Prediction: ground truth labels for scoring (separate from test inputs)
+      hidden_labels: datasetSource.optional(),
     })
     .optional(),
   // Legacy scoring section — still accepted for backward compatibility
@@ -113,6 +115,8 @@ export const challengeSpecSchema = z.object({
       // Prediction-specific: column names for the scorer
       id_column: z.string().min(1).optional(),
       label_column: z.string().min(1).optional(),
+      // Reproducibility: numeric tolerance for comparison (e.g. "1e-4")
+      tolerance: z.string().min(1).optional(),
     })
     .optional(),
   lab_tba: z
