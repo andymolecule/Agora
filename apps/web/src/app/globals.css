@@ -390,13 +390,14 @@ a:hover {
   border-color: var(--border-strong);
 }
 
-/* Card hover pattern */
+/* Card hover pattern — brutalist mechanical lift */
 .card-hover {
-  transition: transform 200ms var(--ease-out);
+  transition: transform 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
 }
 
 .card-hover:hover {
-  transform: translateY(-2px);
+  transform: translateY(-4px);
+  box-shadow: 4px 4px 0px #000;
 }
 
 /* Input focus pattern */
@@ -409,31 +410,47 @@ a:hover {
   box-shadow: 0 0 0 1px #000;
 }
 
-/* Button primary hover */
+/* Button primary — brutalist tactile */
 .btn-primary {
-  background-color: #000;
-  color: #FFF;
+  background-color: transparent;
+  color: #000;
   border: 1px solid #000;
-  transition: transform 200ms var(--ease-out), background-color 200ms var(--ease-out);
+  box-shadow: 4px 4px 0px #000;
+  transition: all 150ms ease;
+  cursor: pointer;
 }
 
 .btn-primary:hover {
-  background-color: #18181b;
-  transform: translateY(-2px);
+  background-color: #000;
+  color: #fff;
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0px #000;
 }
 
-/* Button secondary hover */
+.btn-primary:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0px 0px 0px transparent;
+}
+
+/* Button secondary — brutalist tactile */
 .btn-secondary {
   background-color: transparent;
   color: #000;
   border: 2px solid #000;
-  transition: transform 200ms var(--ease-out), background-color 200ms var(--ease-out), color 200ms var(--ease-out);
+  box-shadow: 3px 3px 0px #000;
+  transition: transform 150ms var(--ease-out), box-shadow 150ms var(--ease-out), background-color 150ms var(--ease-out), color 150ms var(--ease-out);
 }
 
 .btn-secondary:hover {
   background-color: #000;
   color: #FFF;
-  transform: translateY(-2px);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px #000;
+}
+
+.btn-secondary:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px #000;
 }
 
 /* Table row hover */

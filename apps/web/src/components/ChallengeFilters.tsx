@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { Search, SlidersHorizontal, X } from "lucide-react";
+import { SlidersHorizontal, X } from "lucide-react";
 import { ON_CHAIN_STATUS_ORDER } from "@hermes/common";
 
 export type ChallengeFilterState = {
@@ -39,7 +38,7 @@ function Pill({
   );
 }
 
-/** Search bar — always visible */
+/** Search bar — CLI-style monospace */
 export function SearchBar({
   value,
   onChange,
@@ -49,13 +48,13 @@ export function SearchBar({
 }) {
   return (
     <div className="relative flex-1">
-      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-black/50" />
+      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/40 font-mono text-xs font-bold select-none">&gt;</span>
       <input
         type="text"
         placeholder="Search challenges..."
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full py-2.5 pl-10 pr-4 text-sm font-mono border border-black bg-white text-black outline-none input-focus placeholder:text-black/40"
+        className="w-full py-2.5 pl-8 pr-4 text-xs font-mono font-medium bg-white text-black outline-none input-focus placeholder:text-black/30 tracking-wide"
       />
     </div>
   );
@@ -75,7 +74,7 @@ export function FilterToggle({
     <button
       type="button"
       onClick={onToggle}
-      className={`inline-flex items-center gap-2 px-4 py-2.5 text-[10px] font-bold font-mono uppercase tracking-wider border border-black transition-all duration-150 ${isOpen ? "bg-black text-white" : "bg-white text-black hover:bg-black/5"
+      className={`inline-flex items-center gap-2 px-4 py-2.5 text-[10px] font-bold font-mono uppercase tracking-wider border border-black transition-all duration-150 ${isOpen ? "bg-black text-white" : "bg-white text-black hover:bg-black hover:text-white"
         }`}
     >
       {isOpen ? <X className="w-3.5 h-3.5" /> : <SlidersHorizontal className="w-3.5 h-3.5" />}

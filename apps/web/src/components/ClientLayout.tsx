@@ -1,11 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
-import { useAccount } from "wagmi";
-import { ChevronDown, Sparkles } from "lucide-react";
 import { HatchedDivider } from "./HatchedDivider";
 import { LogoBar } from "./LogoBar";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
@@ -44,7 +41,7 @@ function CustomConnectButton() {
                             if (!connected) {
                                 return (
                                     <button onClick={openConnectModal} type="button" className="btn-primary inline-flex items-center justify-center px-6 py-2.5 font-semibold text-sm transition-all duration-200 uppercase font-mono tracking-wider">
-                                        Sign In
+                                        Connect
                                     </button>
                                 );
                             }
@@ -78,7 +75,6 @@ function CustomConnectButton() {
 
 function TopNav() {
     const pathname = usePathname();
-    const { isConnected } = useAccount();
 
     const isActive = (href: string) => {
         if (!pathname) return false;
@@ -90,12 +86,12 @@ function TopNav() {
         { href: "/", label: "Dashboard" },
         { href: "/analytics", label: "Analytics" },
         { href: "/leaderboard", label: "Leaderboard" },
-        ...(isConnected ? [{ href: "/portfolio", label: "Portfolio" }] : []),
+        { href: "/portfolio", label: "Portfolio" },
     ];
 
     return (
         <div className="w-full bg-surface-base flex flex-col">
-            <header className="flex items-center justify-between px-6 py-4">
+            <header className="flex items-center justify-between px-6 py-4 border-b border-black">
                 {/* Logo Left */}
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-[2px] border-2 border-black flex items-center justify-center bg-white">
@@ -111,23 +107,15 @@ function TopNav() {
                         <Link
                             key={item.href}
                             href={item.href}
-                            className={`text-sm font-semibold font-mono uppercase tracking-wider flex items-center gap-1.5 text-black no-underline transition-all duration-200 ${isActive(item.href) ? "opacity-100 border-b-2 border-black pb-0.5" : "opacity-60 hover:opacity-100"}`}
+                            className={`text-sm font-semibold font-mono uppercase tracking-wider text-black no-underline transition-all duration-200 ${isActive(item.href) ? "opacity-100 border-b-2 border-black pb-0.5" : "opacity-60 hover:opacity-100"}`}
                         >
                             {item.label}
-                            <ChevronDown className="w-3 h-3 opacity-40" />
                         </Link>
                     ))}
                 </nav>
 
                 {/* Actions Right */}
                 <div className="flex items-center gap-3">
-                    <Link
-                        href="/post"
-                        className="btn-secondary inline-flex items-center justify-center gap-2 px-6 py-2.5 font-semibold text-sm uppercase font-mono tracking-wider no-underline"
-                    >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        Post Bounty
-                    </Link>
                     <CustomConnectButton />
                 </div>
             </header>
