@@ -1,24 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Clock, Microscope, Dna, FlaskConical, Database, BrainCircuit } from "lucide-react";
+import { Clock } from "lucide-react";
 import { CHALLENGE_STATUS } from "@hermes/common";
 import { deadlineCountdown, formatUsdc } from "../lib/format";
 import type { Challenge } from "../lib/types";
-import { IsometricIcon } from "./IsometricIcon";
-
-const DOMAIN_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  longevity: Dna,
-  reproducibility: Microscope,
-  drug_discovery: FlaskConical,
-  protein_design: BrainCircuit,
-  omics: Database,
-  neuroscience: BrainCircuit,
-  other: Microscope,
-  genomics: Database,
-  proteomics: FlaskConical,
-  clinical: Database,
-};
 
 export function ChallengeCard({
   challenge,
@@ -26,66 +12,44 @@ export function ChallengeCard({
   challenge: Challenge;
   index?: number;
 }) {
-  const Icon = DOMAIN_ICONS[challenge.domain?.toLowerCase()] ?? FlaskConical;
+  const isActive = challenge.status === CHALLENGE_STATUS.active;
 
   return (
     <Link
       href={`/challenges/${challenge.id}`}
       className="group flex flex-col rounded-[2px] border border-black no-underline bg-white card-hover overflow-hidden h-full"
     >
-      {/* Top Graphic Area (40%) */}
-      <div className="h-44 bg-surface-base border-b border-black flex items-center justify-center p-4 relative overflow-hidden">
-        {/* Subtle background hatched border for texture */}
-        <div className="absolute inset-0 bg-black/[0.02] pointer-events-none" />
-
-        <IsometricIcon>
-          <Icon className="w-14 h-14 text-black" strokeWidth={1.5} />
-        </IsometricIcon>
-
-        {/* Status Badge Top-Right */}
-        <div className="absolute top-3 right-3">
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.5px] font-mono border border-black bg-white text-black">
-            <span className={`w-1.5 h-1.5 rounded-full ${challenge.status === CHALLENGE_STATUS.active ? 'bg-green-500' : 'bg-black'}`} />
-            {challenge.status}
-          </span>
-        </div>
+      {/* Top row: status + reward */}
+      <div className="flex items-center justify-between px-5 pt-4 pb-2">
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.5px] font-mono border border-black bg-white text-black">
+          <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-green-500" : "bg-black"}`} />
+          {challenge.status}
+        </span>
+        <span className="inline-flex items-baseline text-xl font-display font-bold text-black tabular-nums tracking-tight">
+          ${formatUsdc(challenge.reward_amount)}
+          <span className="text-[10px] font-mono font-bold text-black/40 ml-1">USDC</span>
+        </span>
       </div>
 
-      {/* Content Area */}
-      <div className="p-5 flex flex-col flex-1">
-        <h3 className="text-xl font-display font-bold mb-2 line-clamp-2 text-black transition-colors duration-150 group-hover:underline decoration-2 underline-offset-4">
+      {/* Title */}
+      <div className="px-5 py-3 flex-1">
+        <h3 className="text-lg font-display font-bold leading-snug line-clamp-2 text-black group-hover:underline decoration-2 underline-offset-4">
           {challenge.title}
         </h3>
-
-        <p className="text-sm line-clamp-3 mb-6 text-black/70 flex-1">
-          {challenge.description?.slice(0, 160) ?? "No description."}
+        <p className="text-xs line-clamp-2 mt-2 text-black/50 font-mono">
+          {challenge.description?.slice(0, 120) ?? "No description."}
         </p>
+      </div>
 
-        {/* Vertical stacking meta for mobile, side-by-side for desktop */}
-        <div className="flex flex-col gap-2 mt-auto">
-          {/* Metadata Row */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] font-mono font-bold uppercase tracking-[0.5px] px-2 py-1 bg-black text-white">
-              {challenge.domain}
-            </span>
-            <span className="text-[10px] font-mono font-bold uppercase tracking-[0.5px] text-black border border-black px-2 py-1">
-              {formatUsdc(challenge.reward_amount)} USDC
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between mt-2 pt-3 border-t border-black/10">
-            <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.5px] text-black/60">
-              <Clock className="w-3 h-3" />
-              {deadlineCountdown(challenge.deadline)}
-            </span>
-
-            {challenge.status === CHALLENGE_STATUS.active && (
-              <span className="text-[11px] font-bold font-mono uppercase tracking-[0.5px] text-black flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                Solve &gt;&gt;
-              </span>
-            )}
-          </div>
-        </div>
+      {/* Footer: domain + deadline */}
+      <div className="flex items-center justify-between px-5 py-3 border-t border-black/10">
+        <span className="text-[10px] font-mono font-bold uppercase tracking-[0.5px] px-2 py-1 border border-black text-black">
+          {challenge.domain}
+        </span>
+        <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.5px] text-black/50">
+          <Clock className="w-3 h-3" />
+          {deadlineCountdown(challenge.deadline)}
+        </span>
       </div>
     </Link>
   );

@@ -2,7 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { ArrowUpDown, Search as SearchIcon } from "lucide-react";
+import { ArrowUpDown, ChevronDown, Search as SearchIcon, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { CHALLENGE_STATUS } from "@hermes/common";
 import { ChallengeCard } from "../components/ChallengeCard";
 import {
@@ -11,7 +12,6 @@ import {
   FilterToggle,
   FilterPanel,
 } from "../components/ChallengeFilters";
-import { HatchedDivider } from "../components/HatchedDivider";
 import { listChallenges } from "../lib/api";
 import { formatUsdc } from "../lib/format";
 
@@ -80,41 +80,43 @@ export function HomeClient() {
 
   return (
     <div className="space-y-6">
-      {/* ═══════ HERO + TVL ═══════ */}
+      {/* ═══════ HERO ═══════ */}
       <section className="py-10 text-center">
-        <h1 className="text-[3rem] sm:text-[4rem] leading-none font-display font-bold text-black tracking-[-0.04em]">
+        <h1 className="text-[3.5rem] sm:text-[4.5rem] leading-[0.9] font-display font-bold text-black tracking-[-0.06em]">
           Science Bounty
         </h1>
-        <p className="text-base text-black/60 font-medium mt-3 mb-8">
-          Open science challenges with deterministic scoring and on-chain USDC settlement.
+        <p className="text-sm text-black/50 font-mono font-medium mt-3 mb-6 uppercase tracking-wider">
+          Deterministic scoring · On-chain USDC settlement
         </p>
 
-        {/* TVL big number */}
-        <div className="border border-black bg-white inline-block px-12 py-6 rounded-[2px]">
-          <div className="text-[10px] font-mono font-bold uppercase tracking-[0.15em] text-black/50 mb-2">
-            Total Value Locked
-          </div>
-          <div className="text-[3.5rem] sm:text-[4.5rem] font-display font-bold text-black leading-none tabular-nums tracking-tight">
-            {formatUsdc(totalPool)}
-            <span className="text-xl sm:text-2xl font-mono font-bold text-black/40 ml-2">USDC</span>
-          </div>
+        {/* Post Bounty — inverted CTA */}
+        <div className="flex justify-center mb-6">
+          <Link
+            href="/post"
+            className="btn-primary inline-flex items-center justify-center gap-2 px-8 py-3 font-semibold text-sm uppercase font-mono tracking-wider no-underline"
+          >
+            <Sparkles className="w-4 h-4" />
+            Post Bounty
+          </Link>
         </div>
 
-        {/* Mini stats row */}
-        <div className="flex items-center justify-center gap-8 mt-6">
-          <div className="text-center">
-            <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/50">Active</div>
-            <div className="text-2xl font-display font-bold text-black tabular-nums">{activeChallenges.length}</div>
+        {/* Stats ticker — modular grid */}
+        <div className="grid grid-cols-4 border border-black max-w-2xl mx-auto">
+          <div className="bg-white px-5 py-5 border-r border-black">
+            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">TVL</div>
+            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">${formatUsdc(totalPool)}</div>
           </div>
-          <div className="w-px h-8 bg-black/20" />
-          <div className="text-center">
-            <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/50">Submissions</div>
-            <div className="text-2xl font-display font-bold text-black tabular-nums">{totalSubs}</div>
+          <div className="bg-white px-5 py-5 border-r border-black">
+            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">Active</div>
+            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">{activeChallenges.length}</div>
           </div>
-          <div className="w-px h-8 bg-black/20" />
-          <div className="text-center">
-            <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/50">Challenges</div>
-            <div className="text-2xl font-display font-bold text-black tabular-nums">{challenges.length}</div>
+          <div className="bg-white px-5 py-5 border-r border-black">
+            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">Submissions</div>
+            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">{totalSubs}</div>
+          </div>
+          <div className="bg-white px-5 py-5">
+            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">Challenges</div>
+            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">{challenges.length}</div>
           </div>
         </div>
       </section>
@@ -131,16 +133,19 @@ export function HomeClient() {
           onToggle={() => setFiltersOpen(!filtersOpen)}
           hasActiveFilters={hasActiveFilters}
         />
-        <div className="flex items-center border-l border-black">
-          <ArrowUpDown className="w-3.5 h-3.5 text-black/50 ml-3" />
-          <select
-            className="text-[10px] font-bold font-mono uppercase tracking-wider px-3 py-3 bg-white text-black outline-none cursor-pointer appearance-none border-none"
-            value={sort}
-            onChange={(e) => setSort(e.target.value as "deadline" | "reward")}
-          >
-            <option value="deadline">Deadline</option>
-            <option value="reward">Reward</option>
-          </select>
+        <div className="flex items-center border-l border-black hover:bg-black hover:text-white transition-colors duration-150 group/sort">
+          <ArrowUpDown className="w-3.5 h-3.5 text-black/50 group-hover/sort:text-white/60 ml-3" />
+          <div className="relative">
+            <select
+              className="text-[10px] font-bold font-mono uppercase tracking-wider pl-3 pr-7 py-3 bg-transparent text-inherit outline-none cursor-pointer appearance-none border-none"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as "deadline" | "reward")}
+            >
+              <option value="deadline">Deadline</option>
+              <option value="reward">Reward</option>
+            </select>
+            <ChevronDown className="w-3 h-3 opacity-40 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
         </div>
       </div>
 
