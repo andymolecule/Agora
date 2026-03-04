@@ -87,6 +87,15 @@ export const PRESET_REGISTRY: Record<string, ScorerPresetV2> = {
         runnerLimits: { memory: "2g", cpus: "2", pids: 64, timeoutMs: 600_000 },
         defaultMinimumScore: 0,
     },
+    docking_v1: {
+        id: "docking_v1",
+        label: "Molecular Docking",
+        description: "Rank compounds by docking score against a protein target",
+        container: OFFICIAL_IMAGES.docking,  // TODO: pin @sha256: before production
+        scoringDescription: "Evaluated by the Docking Scorer engine. Submissions are ranked by correlation to reference docking scores.",
+        runnerLimits: { memory: "4g", cpus: "2", pids: 64, timeoutMs: 1_200_000 },
+        defaultMinimumScore: 0,
+    },
 };
 
 // ---------------------------------------------------------------------------
@@ -125,6 +134,7 @@ const DEFAULT_PRESET_ID_BY_CHALLENGE_TYPE: Partial<
 > = {
     reproducibility: "csv_comparison_v1",
     prediction: "regression_v1",
+    docking: "docking_v1",
     optimization: "custom",
     custom: "custom",
 };
