@@ -3,7 +3,6 @@
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
 import {
   defaultPresetIdForChallengeType,
-  OFFICIAL_IMAGES,
   PRESET_REGISTRY,
   validatePresetIntegrity,
   validateScoringContainer,
@@ -90,6 +89,7 @@ const REGISTRY_PRESETS = Object.values(PRESET_REGISTRY);
 const REPRODUCIBILITY_PRESET_ID =
   defaultPresetIdForChallengeType("reproducibility");
 const PREDICTION_PRESET_ID = defaultPresetIdForChallengeType("prediction");
+const DOCKING_PRESET_ID = defaultPresetIdForChallengeType("docking");
 const reproducibilityPreset =
   REPRODUCIBILITY_PRESET_ID &&
   REPRODUCIBILITY_PRESET_ID !== "custom"
@@ -99,10 +99,14 @@ const predictionPreset =
   PREDICTION_PRESET_ID && PREDICTION_PRESET_ID !== "custom"
     ? PRESET_REGISTRY[PREDICTION_PRESET_ID]
     : undefined;
+const dockingPreset =
+  DOCKING_PRESET_ID && DOCKING_PRESET_ID !== "custom"
+    ? PRESET_REGISTRY[DOCKING_PRESET_ID]
+    : undefined;
 
-if (!reproducibilityPreset || !predictionPreset) {
+if (!reproducibilityPreset || !predictionPreset || !dockingPreset) {
   throw new Error(
-    "Required presets (reproducibility/prediction) are missing from PRESET_REGISTRY.",
+    "Required presets (reproducibility/prediction/docking) are missing from PRESET_REGISTRY.",
   );
 }
 
@@ -142,10 +146,10 @@ const TYPE_CONFIG = {
     description: "Solvers dock small molecules against a protein target",
     defaultDomain: "drug_discovery",
     metricHint: "spearman",
-    container: OFFICIAL_IMAGES.docking,
-    defaultMinimumScore: 0,
-    presetId: "custom",
-    scoringTemplate: "",
+    container: dockingPreset.container,
+    defaultMinimumScore: dockingPreset.defaultMinimumScore,
+    presetId: dockingPreset.id,
+    scoringTemplate: dockingPreset.scoringDescription,
   },
   custom: {
     label: "Custom",

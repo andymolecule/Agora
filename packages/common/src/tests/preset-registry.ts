@@ -25,7 +25,7 @@ assert.equal(
 );
 assert.equal(defaultPresetIdForChallengeType("prediction"), "regression_v1");
 assert.equal(defaultPresetIdForChallengeType("custom"), "custom");
-assert.equal(defaultPresetIdForChallengeType("docking"), null);
+assert.equal(defaultPresetIdForChallengeType("docking"), "docking_v1");
 
 assert.equal(defaultMinimumScoreForChallengeType("reproducibility"), 0);
 assert.equal(defaultMinimumScoreForChallengeType("prediction"), 0);
