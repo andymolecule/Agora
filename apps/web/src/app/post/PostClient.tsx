@@ -14,7 +14,7 @@ import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "w
 import {
   Wallet, ArrowRight, Coins, AlertCircle, Loader2, CheckCircle,
   FlaskConical, BarChart3, Settings2, ChevronRight, Check,
-  Upload, Eye, X, Database, Crosshair,
+  Upload, Eye, X, Crosshair, Tag,
 } from "lucide-react";
 import { buildPinSpecMessage, computeSpecHash } from "../../lib/pin-spec-auth";
 import { accelerateChallengeIndex } from "../../lib/api";
@@ -110,6 +110,13 @@ if (!reproducibilityPreset || !predictionPreset || !dockingPreset) {
   );
 }
 
+// ─── Reproducibility sub-presets ─────────────────────
+const REPRO_SUB_PRESETS = [
+  { id: "csv_comparison_v1", label: "CSV Comparison", desc: "Row-by-row comparison against ground truth" },
+  { id: "file_hash_v1", label: "File Hash Match", desc: "SHA-256 exact match (100 or 0)" },
+  { id: "number_absdiff_v1", label: "Number Match", desc: "Score = 100 − abs(answer − target)" },
+] as const;
+
 const TYPE_CONFIG = {
   prediction: {
     label: "Prediction",
@@ -175,6 +182,59 @@ function engineDisplayName(container: string): string {
   return `${names[0]} (+${names.length - 1} preset${names.length > 2 ? "s" : ""})`;
 }
 
+// ─── Example templates for "Load Example" ─────────
+const EXAMPLES: Record<string, { label: string; state: Partial<FormState> }> = {
+  prediction: {
+    label: "Gene Expression Prediction",
+    state: {
+      title: "Predict gene expression from promoter sequences",
+      description: "Predict expression levels from promoter sequence inputs.\nProvide your model details and any preprocessing steps.",
+      domain: "omics",
+      type: "prediction",
+      train: "https://example.com/train.csv",
+      test: "https://example.com/test.csv",
+      metric: "r2",
+      reward: "10",
+      distribution: "top_3",
+      submissionType: "csv",
+      submissionFormat: "CSV with columns: id, prediction",
+      idColumn: "id",
+      labelColumn: "prediction",
+      tags: ["prediction", "omics"],
+    },
+  },
+  reproducibility: {
+    label: "Longevity Clock Reproduction",
+    state: {
+      title: "Reproduce a published longevity score",
+      description: "Reproduce the published score for the provided dataset.\nInclude your methodology, preprocessing steps, and any assumptions.",
+      domain: "longevity",
+      type: "reproducibility",
+      train: "https://example.com/train.csv",
+      test: "https://example.com/test.csv",
+      reward: "10",
+      distribution: "winner_take_all",
+      reproPresetId: "csv_comparison_v1",
+      tags: ["reproducibility", "longevity"],
+    },
+  },
+  docking: {
+    label: "Molecular Docking Screen",
+    state: {
+      title: "Dock small molecules to a target protein",
+      description: "Predict docking scores for the supplied ligand set.\nInclude your docking protocol and scoring rationale.",
+      domain: "drug_discovery",
+      type: "docking",
+      train: "https://example.com/train.sdf",
+      test: "https://example.com/test.sdf",
+      metric: "spearman",
+      reward: "10",
+      distribution: "proportional",
+      tags: ["docking", "drug_discovery"],
+    },
+  },
+};
+
 const SUBMISSION_TYPES = [
   { value: "number", label: "🔢 Number", desc: "Solvers submit a numeric answer.", format: '{"answer": <number>}' },
   { value: "text", label: "📝 Text", desc: "Solvers submit a text response.", format: '{"answer": <string>}' },
@@ -206,6 +266,8 @@ type FormState = {
   successDefinition: string;
   idColumn: string;
   labelColumn: string;
+  reproPresetId: string;
+  tags: string[];
 };
 
 const defaultPreset = TYPE_CONFIG.reproducibility;
@@ -230,6 +292,8 @@ const initialState: FormState = {
   successDefinition: "",
   idColumn: "id",
   labelColumn: "prediction",
+  reproPresetId: "csv_comparison_v1",
+  tags: [],
 };
 
 function buildSpec(state: FormState) {
@@ -243,7 +307,10 @@ function buildSpec(state: FormState) {
       }
       : undefined;
 
-  const presetId = TYPE_CONFIG[state.type].presetId;
+  // For reproducibility, use the selected sub-preset; otherwise use TYPE_CONFIG default
+  const presetId = state.type === "reproducibility"
+    ? state.reproPresetId
+    : TYPE_CONFIG[state.type].presetId;
 
   return {
     id: `web-${Date.now()}`,
@@ -268,6 +335,7 @@ function buildSpec(state: FormState) {
       id_column: state.idColumn || undefined,
       label_column: state.labelColumn || undefined,
     },
+    ...(state.tags.length > 0 ? { tags: state.tags } : {}),
     lab_tba: "0x0000000000000000000000000000000000000000",
   };
 }
@@ -338,9 +406,9 @@ export function PostClient() {
   const [status, setStatus] = useState<string>("");
   const [isPosting, setIsPosting] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showData, setShowData] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [uploadingField, setUploadingField] = useState<"train" | "test" | null>(null);
+  const [tagInput, setTagInput] = useState("");
 
   const { isConnected, chainId, address } = useAccount();
   const publicClient = usePublicClient();
@@ -368,6 +436,34 @@ export function PostClient() {
     }
   }
 
+  function loadExample(key: string) {
+    const example = EXAMPLES[key];
+    if (!example) return;
+    const t = (example.state.type ?? "reproducibility") as PostChallengeType;
+    const typePreset = TYPE_CONFIG[t];
+    setState({
+      ...initialState,
+      container: typePreset.container,
+      metric: typePreset.metricHint,
+      domain: typePreset.defaultDomain,
+      minimumScore: String(typePreset.defaultMinimumScore),
+      evaluationCriteria: typePreset.scoringTemplate,
+      ...example.state,
+    } as FormState);
+    setStatus("");
+  }
+
+  function addTag(tag: string) {
+    const trimmed = tag.trim().toLowerCase();
+    if (!trimmed || state.tags.includes(trimmed)) return;
+    setState((s) => ({ ...s, tags: [...s.tags, trimmed] }));
+    setTagInput("");
+  }
+
+  function removeTag(tag: string) {
+    setState((s) => ({ ...s, tags: s.tags.filter((t) => t !== tag) }));
+  }
+
   function selectType(t: PostChallengeType) {
     const preset = TYPE_CONFIG[t];
     setState((s) => ({
@@ -378,6 +474,8 @@ export function PostClient() {
       domain: preset.defaultDomain,
       minimumScore: String(preset.defaultMinimumScore),
       evaluationCriteria: preset.scoringTemplate || s.evaluationCriteria,
+      // Reset repro sub-preset to default when switching to reproducibility
+      ...(t === "reproducibility" ? { reproPresetId: "csv_comparison_v1" } : {}),
       // Prediction: default to CSV submission with id + prediction columns
       ...(t === "prediction" ? {
         submissionType: "csv",
@@ -385,6 +483,18 @@ export function PostClient() {
         idColumn: "id",
         labelColumn: "prediction",
       } : {}),
+    }));
+  }
+
+  function selectReproPreset(presetId: string) {
+    const preset = PRESET_REGISTRY[presetId];
+    if (!preset) return;
+    setState((s) => ({
+      ...s,
+      reproPresetId: presetId,
+      container: preset.container,
+      minimumScore: String(preset.defaultMinimumScore),
+      evaluationCriteria: preset.scoringDescription,
     }));
   }
 
@@ -401,7 +511,9 @@ export function PostClient() {
     const containerError = validateScoringContainer(state.container);
     if (containerError)
       return containerError;
-    const presetId = TYPE_CONFIG[state.type].presetId;
+    const presetId = state.type === "reproducibility"
+      ? state.reproPresetId
+      : TYPE_CONFIG[state.type].presetId;
     const presetIntegrityError = validatePresetIntegrity(presetId, state.container);
     if (presetIntegrityError)
       return presetIntegrityError;
@@ -520,6 +632,16 @@ export function PostClient() {
 
   const isSuccess = status.startsWith("success:");
 
+  // ─── Type-adaptive data labels ───
+  const dataLabels: Record<PostChallengeType, { field1: string; hint1: string; field2: string; hint2: string }> = {
+    prediction: { field1: "Training data", hint1: "Public dataset solvers use to build models", field2: "Test labels (hidden)", hint2: "Ground truth for scoring — visible on IPFS" },
+    reproducibility: { field1: "Input dataset", hint1: "Source data solvers must reproduce from", field2: "Expected output", hint2: "Reference result to compare against" },
+    docking: { field1: "Compound library", hint1: "SDF or CSV of molecules to dock", field2: "Reference scores", hint2: "Ground truth docking scores for evaluation" },
+    optimization: { field1: "Evaluation bundle", hint1: "Config and data your scorer needs", field2: "Additional data", hint2: "Extra files for scoring (optional)" },
+    custom: { field1: "Public inputs", hint1: "Files or data available to solvers", field2: "Evaluation dataset", hint2: "Used during scoring (visible on IPFS)" },
+  };
+  const dl = dataLabels[state.type];
+
   return (
     <div className="post-form">
       {/* Header */}
@@ -529,6 +651,19 @@ export function PostClient() {
           <p className="page-subtitle">
             Define a computational challenge and fund it with USDC.
           </p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <select
+            className="form-select"
+            style={{ fontSize: "0.75rem", padding: "0.35rem 0.5rem", width: "auto" }}
+            value=""
+            onChange={(e) => { if (e.target.value) loadExample(e.target.value); e.target.value = ""; }}
+          >
+            <option value="">Load Example…</option>
+            {Object.entries(EXAMPLES).map(([key, ex]) => (
+              <option key={key} value={key}>{ex.label}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -585,18 +720,80 @@ export function PostClient() {
               <textarea className="form-textarea" placeholder="What problem are you trying to solve? What should solvers achieve?"
                 value={state.description} onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))} />
             </FormField>
+            <FormField label="Tags" hint="Press Enter or comma to add" className="span-full">
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", alignItems: "center" }}>
+                {state.tags.map((tag) => (
+                  <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", padding: "0.2rem 0.5rem", borderRadius: "12px", background: "var(--surface-inset)", fontSize: "0.72rem", color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}>
+                    <Tag size={10} />
+                    {tag}
+                    <button type="button" onClick={() => removeTag(tag)}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: "var(--text-tertiary)", lineHeight: 1, display: "flex" }}>
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  className="form-input"
+                  style={{ flex: 1, minWidth: "120px", border: "none", padding: "0.25rem 0", fontSize: "0.8rem", background: "transparent" }}
+                  placeholder={state.tags.length === 0 ? "e.g. longevity, prediction, omics" : "Add tag…"}
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if ((e.key === "Enter" || e.key === ",") && tagInput.trim()) {
+                      e.preventDefault();
+                      addTag(tagInput);
+                    }
+                    if (e.key === "Backspace" && !tagInput && state.tags.length > 0) {
+                      removeTag(state.tags[state.tags.length - 1]!);
+                    }
+                  }}
+                  onBlur={() => { if (tagInput.trim()) addTag(tagInput); }}
+                />
+              </div>
+            </FormField>
           </div>
         </div>
       </div>
 
-      {/* ── Section 2: Submission & Evaluation ── */}
+      {/* ── Section 2: Data & Inputs ── */}
       <div className="form-section">
         <div className="form-section-header">
           <span className="form-section-step">2</span>
-          <span className="form-section-title">Submission &amp; Evaluation</span>
+          <span className="form-section-title">Data &amp; Inputs</span>
         </div>
         <div className="form-section-body">
           <div className="form-grid">
+            <FormField label={dl.field1} hint={dl.hint1}>
+              <DataUploadField
+                value={state.train}
+                onChange={(v) => setState((s) => ({ ...s, train: v }))}
+                uploading={uploadingField === "train"}
+                onUpload={(file) => handleFileUpload(file, "train")}
+                placeholder="ipfs://... or https://..."
+              />
+            </FormField>
+            <FormField label={dl.field2} hint={dl.hint2}>
+              <DataUploadField
+                value={state.test}
+                onChange={(v) => setState((s) => ({ ...s, test: v }))}
+                uploading={uploadingField === "test"}
+                onUpload={(file) => handleFileUpload(file, "test")}
+                placeholder="ipfs://... or https://..."
+              />
+            </FormField>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Section 3: Evaluation ── */}
+      <div className="form-section">
+        <div className="form-section-header">
+          <span className="form-section-step">3</span>
+          <span className="form-section-title">Evaluation</span>
+        </div>
+        <div className="form-section-body">
+          <div className="form-grid">
+            {/* Submission format — always shown */}
             <FormField label="Submission type" hint={SUBMISSION_TYPES.find(t => t.value === state.submissionType)?.desc ?? ""}>
               <select className="form-select" value={state.submissionType}
                 onChange={(e) => {
@@ -620,48 +817,10 @@ export function PostClient() {
               </FormField>
             )}
 
-            <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
-
-            {/* Type-specific fields */}
-            {state.type === "reproducibility" && (
-              <div className="span-full" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                <FormField label="Scoring description (for humans)" hint="">
-                  <textarea className="form-textarea" placeholder="Describe the scoring logic for solvers..."
-                    value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
-                </FormField>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.75rem", fontFamily: "var(--font-mono)" }}>
-                    <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>Authoritative evaluator:</span>
-                    <span style={{ color: "var(--text-primary)" }}>{engineDisplayName(state.container)}</span>
-                  </div>
-                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
-                    This description is not enforced. The scorer container is the source of truth.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {state.type === "optimization" && (
-              <>
-                <FormField label="Scoring container" hint="Your OCI image that runs the simulation" className="span-full">
-                  <input className="form-input form-input-mono"
-                    placeholder="ghcr.io/org/scorer@sha256:..."
-                    value={state.container}
-                    onChange={(e) => setState((s) => ({ ...s, container: e.target.value }))}
-                  />
-                </FormField>
-                <FormField label="Scoring description (for humans)" hint="" className="span-full">
-                  <textarea className="form-textarea" placeholder="Describe the objective function and how submissions are evaluated..."
-                    value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
-                </FormField>
-                <p className="span-full" style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
-                  This description is not enforced. The scorer container is the source of truth.
-                </p>
-              </>
-            )}
-
+            {/* ── Prediction-specific fields ── */}
             {state.type === "prediction" && (
               <>
+                <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
                 <FormField label="ID column" hint="Column name for row identifiers in test.csv">
                   <input className="form-input form-input-mono" placeholder="id"
                     value={state.idColumn} onChange={(e) => setState((s) => ({ ...s, idColumn: e.target.value }))} />
@@ -689,20 +848,23 @@ export function PostClient() {
                   <input className="form-input" placeholder="e.g. Evaluated on held-out test split"
                     value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
                 </FormField>
-                <div className="span-full" style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.75rem", fontFamily: "var(--font-mono)" }}>
-                    <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>Authoritative evaluator:</span>
-                    <span style={{ color: "var(--text-primary)" }}>{engineDisplayName(state.container)}</span>
-                  </div>
-                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
-                    This description is not enforced. The scorer container is the source of truth.
-                  </p>
+                {/* Submission preview */}
+                <div className="span-full">
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.25rem", fontWeight: 600 }}>Expected submission format</p>
+                  <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
+{`${state.idColumn || "id"},${state.labelColumn || "prediction"}
+SAMPLE_001,1.23
+SAMPLE_002,0.85
+SAMPLE_003,2.10`}
+                  </pre>
                 </div>
               </>
             )}
 
+            {/* ── Docking-specific fields ── */}
             {state.type === "docking" && (
               <>
+                <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
                 <FormField label="Metric" hint={METRIC_OPTIONS.find(m => m.value === state.metric)?.hint ?? ""}>
                   <select className="form-select" value={state.metric}
                     onChange={(e) => {
@@ -722,20 +884,70 @@ export function PostClient() {
                   <input className="form-input" placeholder="e.g. Docking protocol, target PDB ID"
                     value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
                 </FormField>
-                <div className="span-full" style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.75rem", fontFamily: "var(--font-mono)" }}>
-                    <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>Authoritative evaluator:</span>
-                    <span style={{ color: "var(--text-primary)" }}>{engineDisplayName(state.container)}</span>
-                  </div>
-                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
-                    This description is not enforced. The scorer container is the source of truth.
-                  </p>
-                </div>
               </>
             )}
 
+            {/* ── Reproducibility-specific fields ── */}
+            {state.type === "reproducibility" && (
+              <>
+                <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
+                {/* Sub-preset selector */}
+                <div className="span-full">
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.5rem", fontWeight: 600 }}>Scoring method</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                    {REPRO_SUB_PRESETS.map((rp) => (
+                      <label key={rp.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", borderRadius: "6px", cursor: "pointer", border: `1px solid ${state.reproPresetId === rp.id ? "var(--text-accent)" : "var(--border-default)"}`, background: state.reproPresetId === rp.id ? "var(--surface-inset)" : "transparent", transition: "all 0.15s ease" }}>
+                        <input type="radio" name="reproPreset" value={rp.id} checked={state.reproPresetId === rp.id}
+                          onChange={() => selectReproPreset(rp.id)}
+                          style={{ accentColor: "var(--text-accent)" }} />
+                        <div>
+                          <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-primary)" }}>{rp.label}</span>
+                          <span style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", marginLeft: "0.5rem" }}>{rp.desc}</span>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <FormField label="Scoring description" hint="Describe how submissions are compared to expected output" className="span-full">
+                  <textarea className="form-textarea" placeholder="e.g. Row-by-row comparison of output CSV against expected_output.csv with numeric tolerance 1e-4"
+                    value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
+                </FormField>
+                {/* Submission preview */}
+                {state.submissionType === "csv" && (
+                  <div className="span-full">
+                    <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.25rem", fontWeight: 600 }}>Expected submission format</p>
+                    <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
+{`gene_id,log2fc,padj
+BRCA1,-2.31,0.001
+TP53,1.85,0.0003`}
+                    </pre>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ── Optimization-specific fields ── */}
+            {state.type === "optimization" && (
+              <>
+                <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
+                <FormField label="Scoring container" hint="Your OCI image that runs the simulation" className="span-full">
+                  <input className="form-input form-input-mono"
+                    placeholder="ghcr.io/org/scorer@sha256:..."
+                    value={state.container}
+                    onChange={(e) => setState((s) => ({ ...s, container: e.target.value }))}
+                  />
+                </FormField>
+                <FormField label="Scoring description" hint="Describe the objective function" className="span-full">
+                  <textarea className="form-textarea" placeholder="e.g. Minimize binding energy. Score = 100 - abs(energy - target_energy)."
+                    value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
+                </FormField>
+              </>
+            )}
+
+            {/* ── Custom-specific fields ── */}
             {state.type === "custom" && (
               <>
+                <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
                 <FormField label="Scoring container" hint="Your OCI image reference" className="span-full">
                   <input className="form-input form-input-mono"
                     placeholder="ghcr.io/org/scorer@sha256:..."
@@ -743,16 +955,48 @@ export function PostClient() {
                     onChange={(e) => setState((s) => ({ ...s, container: e.target.value }))}
                   />
                 </FormField>
-                <FormField label="Scoring description (for humans)" hint="" className="span-full">
-                  <textarea className="form-textarea" placeholder="Explain the scoring logic for solvers..."
+                <FormField label="Scoring description" hint="Explain the scoring logic for solvers" className="span-full">
+                  <textarea className="form-textarea" placeholder="e.g. Exact hash match scores 100, partial matches scored by edit distance."
                     value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
                 </FormField>
-                <p className="span-full" style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
-                  This description is not enforced. The scorer container is the source of truth.
-                </p>
               </>
             )}
 
+            {/* Managed scorer badge — for preset types only */}
+            {!isCustomType && (
+              <div className="span-full" style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.75rem", fontFamily: "var(--font-mono)" }}>
+                  <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>Scorer:</span>
+                  <span style={{ color: "var(--text-primary)" }}>{engineDisplayName(state.container)}</span>
+                </div>
+                <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
+                  Managed scorer — scoring is deterministic and independently verifiable.
+                </p>
+              </div>
+            )}
+
+            {/* Custom/optimization disclaimer */}
+            {isCustomType && (
+              <p className="span-full" style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
+                The scoring description is informational. The scorer container is the source of truth.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Section 4: Reward & Execution ── */}
+      <div className="form-section">
+        <div className="form-section-header">
+          <span className="form-section-step">4</span>
+          <span className="form-section-title">Reward &amp; Execution</span>
+        </div>
+        <div className="form-section-body">
+          <div className="form-grid">
+            <FormField label="Reward (USDC)" hint="Between 1 and 30 USDC">
+              <input className="form-input form-input-mono" type="number" min={1} max={30}
+                value={state.reward} onChange={(e) => setState((s) => ({ ...s, reward: e.target.value }))} />
+            </FormField>
             <FormField label="Winner selection" hint={WINNER_LABELS[state.distribution] ?? ""}>
               <select className="form-select" value={state.distribution}
                 onChange={(e) => setState((s) => ({ ...s, distribution: e.target.value as FormState["distribution"] }))}>
@@ -760,59 +1004,6 @@ export function PostClient() {
                 <option value="top_3">Top 3</option>
                 <option value="proportional">Proportional</option>
               </select>
-            </FormField>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Data (optional, collapsed) ── */}
-      <button
-        type="button"
-        className={`advanced-toggle ${showData ? "open" : ""}`}
-        onClick={() => setShowData(!showData)}
-      >
-        <Database size={14} />
-        <ChevronRight size={14} />
-        Data (optional)
-        <span className="form-hint" style={{ marginLeft: "auto" }}>
-          Public files, evaluation dataset
-        </span>
-      </button>
-
-      {showData && (
-        <div className="advanced-body" style={{ gridTemplateColumns: "1fr 1fr" }}>
-          <FormField label="Public inputs" hint="Files or data available to solvers">
-            <DataUploadField
-              value={state.train}
-              onChange={(v) => setState((s) => ({ ...s, train: v }))}
-              uploading={uploadingField === "train"}
-              onUpload={(file) => handleFileUpload(file, "train")}
-              placeholder="ipfs://... or https://... (optional)"
-            />
-          </FormField>
-          <FormField label="Evaluation dataset" hint="Used during scoring (visible on IPFS)">
-            <DataUploadField
-              value={state.test}
-              onChange={(v) => setState((s) => ({ ...s, test: v }))}
-              uploading={uploadingField === "test"}
-              onUpload={(file) => handleFileUpload(file, "test")}
-              placeholder="ipfs://... or https://... (optional)"
-            />
-          </FormField>
-        </div>
-      )}
-
-      {/* ── Section 3: Reward & Timeline ── */}
-      <div className="form-section">
-        <div className="form-section-header">
-          <span className="form-section-step">3</span>
-          <span className="form-section-title">Reward &amp; Timeline</span>
-        </div>
-        <div className="form-section-body">
-          <div className="form-grid">
-            <FormField label="Reward (USDC)" hint="Between 1 and 30 USDC">
-              <input className="form-input form-input-mono" type="number" min={1} max={30}
-                value={state.reward} onChange={(e) => setState((s) => ({ ...s, reward: e.target.value }))} />
             </FormField>
             <FormField label="Deadline">
               <input className="form-input" type="datetime-local"
@@ -822,7 +1013,7 @@ export function PostClient() {
                   if (Number.isFinite(ts)) setState((s) => ({ ...s, deadline: new Date(ts).toISOString() }));
                 }} />
             </FormField>
-            <FormField label="Review period" hint="Funds are locked until review period ends (0–2160 hours)">
+            <FormField label="Review period" hint="Funds locked until review period ends (0–2160 hours)">
               <select className="form-select" value={state.disputeWindow}
                 onChange={(e) => setState((s) => ({ ...s, disputeWindow: e.target.value }))}>
                 <option value="0">Instant (0h) — Testnet only</option>
@@ -837,46 +1028,41 @@ export function PostClient() {
             {state.disputeWindow === "0" && (
               <div className="span-full" style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "#fff3cd", borderRadius: "6px", fontSize: "0.75rem", color: "#856404", border: "1px solid #ffc107" }}>
                 <AlertCircle size={14} />
-                <span>⚠️ Instant review (0h) means <strong>no dispute window</strong>. Funds are released immediately after scoring. Use only for testing.</span>
+                <span>Instant review (0h) means <strong>no dispute window</strong>. Funds are released immediately after scoring. Use only for testing.</span>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* ── Scoring Engine & Threshold ── */}
-      <button
-        type="button"
-        className={`advanced-toggle ${showAdvanced ? "open" : ""}`}
-        onClick={() => setShowAdvanced(!showAdvanced)}
-      >
-        <Settings2 size={14} />
-        <ChevronRight size={14} />
-        Scoring Engine &amp; Threshold
-        <span className="form-hint" style={{ marginLeft: "auto" }}>
-          Container image, minimum score
-        </span>
-      </button>
+      {/* ── Advanced: Scoring Engine & Threshold (custom/optimization only) ── */}
+      {isCustomType && (
+        <>
+          <button
+            type="button"
+            className={`advanced-toggle ${showAdvanced ? "open" : ""}`}
+            onClick={() => setShowAdvanced(!showAdvanced)}
+          >
+            <Settings2 size={14} />
+            <ChevronRight size={14} />
+            Advanced Settings
+            <span className="form-hint" style={{ marginLeft: "auto" }}>
+              Minimum score threshold
+            </span>
+          </button>
 
-      {showAdvanced && (
-        <div className="advanced-body" style={{ gridTemplateColumns: "1fr 1fr" }}>
-          <FormField label="Scoring container" hint={isCustomType ? "Provide your own OCI image reference." : "Managed by preset. Switch to Custom to override."}>
-            <input className="form-input form-input-mono"
-              placeholder="ghcr.io/org/image@sha256:..."
-              value={state.container}
-              onChange={(e) => setState((s) => ({ ...s, container: e.target.value }))}
-              readOnly={!isCustomType}
-              style={!isCustomType ? { opacity: 0.6, cursor: "not-allowed" } : undefined}
-            />
-          </FormField>
-          <FormField label="Minimum score" hint="Submissions below this are rejected (0 = no threshold)">
-            <input className="form-input form-input-mono" type="number" min={0} max={100}
-              placeholder="0"
-              value={state.minimumScore}
-              onChange={(e) => setState((s) => ({ ...s, minimumScore: e.target.value }))}
-            />
-          </FormField>
-        </div>
+          {showAdvanced && (
+            <div className="advanced-body" style={{ gridTemplateColumns: "1fr" }}>
+              <FormField label="Minimum score" hint="Submissions below this are rejected (0 = no threshold)">
+                <input className="form-input form-input-mono" type="number" min={0} max={100}
+                  placeholder="0"
+                  value={state.minimumScore}
+                  onChange={(e) => setState((s) => ({ ...s, minimumScore: e.target.value }))}
+                />
+              </FormField>
+            </div>
+          )}
+        </>
       )}
 
       {/* ── Challenge Summary ── */}
@@ -902,6 +1088,10 @@ export function PostClient() {
         </div>
         <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.5rem 0" }} />
         <div className="cost-row">
+          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Winner</span>
+          <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.78rem" }}>{state.distribution.replace(/_/g, " ")}</span>
+        </div>
+        <div className="cost-row">
           <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Deadline</span>
           <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.78rem" }}>
             {new Date(state.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
@@ -912,17 +1102,11 @@ export function PostClient() {
           <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.78rem" }}>{state.disputeWindow}h</span>
         </div>
         <div className="cost-row">
-          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Winner</span>
-          <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.78rem" }}>{state.distribution.replace(/_/g, " ")}</span>
+          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Scorer</span>
+          <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.72rem", fontFamily: "var(--font-mono)" }}>
+            {isCustomType ? (state.container.length > 40 ? state.container.slice(0, 40) + "…" : state.container || "—") : engineDisplayName(state.container)}
+          </span>
         </div>
-        {state.container && (
-          <div className="cost-row">
-            <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Engine</span>
-            <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.72rem", fontFamily: "var(--font-mono)" }}>
-              {state.container.length > 40 ? state.container.slice(0, 40) + "…" : state.container}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* ── Submit ── */}
@@ -980,8 +1164,10 @@ export function PostClient() {
               <div className="preview-row"><span className="preview-label">Domain</span><span className="preview-value">{state.domain}</span></div>
               <div className="preview-row"><span className="preview-label">Type</span><span className="preview-value">{TYPE_CONFIG[state.type].label}</span></div>
               {state.description && <div className="preview-row span-full"><span className="preview-label">Description</span><span className="preview-value">{state.description}</span></div>}
+              {state.tags.length > 0 && <div className="preview-row"><span className="preview-label">Tags</span><span className="preview-value">{state.tags.join(", ")}</span></div>}
               <div className="preview-divider" />
               <div className="preview-row"><span className="preview-label">Container</span><span className="preview-value" style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{state.container || "—"}</span></div>
+              {state.type === "reproducibility" && <div className="preview-row"><span className="preview-label">Scoring method</span><span className="preview-value">{REPRO_SUB_PRESETS.find(rp => rp.id === state.reproPresetId)?.label ?? state.reproPresetId}</span></div>}
               {state.metric && <div className="preview-row"><span className="preview-label">Metric</span><span className="preview-value">{state.metric}</span></div>}
               {state.type === "prediction" && state.idColumn && <div className="preview-row"><span className="preview-label">ID column</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.idColumn}</span></div>}
               {state.type === "prediction" && state.labelColumn && <div className="preview-row"><span className="preview-label">Label column</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.labelColumn}</span></div>}
