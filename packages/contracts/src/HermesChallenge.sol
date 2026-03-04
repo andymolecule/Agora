@@ -31,6 +31,13 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
     uint256 public winningSubmissionId;
     bool public winnerSet;
 
+    uint256 public scoredCount;
+
+    // Submission limits (0 = unlimited)
+    uint256 public maxSubmissions;
+    uint256 public maxSubmissionsPerSolver;
+    mapping(address => uint256) public solverSubmissionCount;
+
     // Oracle rotation
     address public pendingOracle;
     uint64 public oracleRotationTimestamp;
@@ -38,46 +45,41 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
     Submission[] private submissions;
 
     mapping(address => uint256) public payoutByAddress;
-    constructor(
-        IERC20 usdc_,
-        address poster_,
-        address oracle_,
-        address treasury_,
-        string memory specCid_,
-        uint256 rewardAmount_,
-        uint64 deadline_,
-        uint64 disputeWindowHours_,
-        uint256 minimumScore_,
-        DistributionType distributionType_
-    ) {
-        if (poster_ == address(0) || oracle_ == address(0) || treasury_ == address(0)) {
+
+    constructor(ChallengeConfig memory cfg) {
+        if (cfg.poster == address(0) || cfg.oracle == address(0) || cfg.treasury == address(0)) {
             revert HermesErrors.InvalidAddress();
         }
-        if (rewardAmount_ < HermesConstants.MIN_REWARD_USDC || rewardAmount_ > HermesConstants.MAX_REWARD_USDC) {
+        if (cfg.rewardAmount < HermesConstants.MIN_REWARD_USDC || cfg.rewardAmount > HermesConstants.MAX_REWARD_USDC) {
             revert HermesErrors.InvalidRewardAmount();
         }
-        if (deadline_ <= block.timestamp) {
+        if (cfg.deadline <= block.timestamp) {
             revert HermesErrors.DeadlineInPast();
         }
         if (
-            disputeWindowHours_ < HermesConstants.MIN_DISPUTE_WINDOW_HOURS
-                || disputeWindowHours_ > HermesConstants.MAX_DISPUTE_WINDOW_HOURS
+            cfg.disputeWindowHours < HermesConstants.MIN_DISPUTE_WINDOW_HOURS
+                || cfg.disputeWindowHours > HermesConstants.MAX_DISPUTE_WINDOW_HOURS
         ) {
             revert HermesErrors.InvalidDisputeWindow();
         }
-        if (uint8(distributionType_) > uint8(DistributionType.Proportional)) {
+        if (uint8(cfg.distributionType) > uint8(DistributionType.Proportional)) {
             revert HermesErrors.InvalidDistribution();
         }
-        usdc = usdc_;
-        poster = poster_;
-        oracle = oracle_;
-        treasury = treasury_;
-        specCid = specCid_;
-        rewardAmount = rewardAmount_;
-        deadline = deadline_;
-        disputeWindowHours = disputeWindowHours_;
-        minimumScore = minimumScore_;
-        distributionType = distributionType_;
+        if (cfg.maxSubmissionsPerSolver > 0 && cfg.maxSubmissions > 0 && cfg.maxSubmissionsPerSolver > cfg.maxSubmissions) {
+            revert HermesErrors.InvalidSubmissionLimits();
+        }
+        usdc = cfg.usdc;
+        poster = cfg.poster;
+        oracle = cfg.oracle;
+        treasury = cfg.treasury;
+        specCid = cfg.specCid;
+        rewardAmount = cfg.rewardAmount;
+        deadline = cfg.deadline;
+        disputeWindowHours = cfg.disputeWindowHours;
+        minimumScore = cfg.minimumScore;
+        distributionType = cfg.distributionType;
+        maxSubmissions = cfg.maxSubmissions;
+        maxSubmissionsPerSolver = cfg.maxSubmissionsPerSolver;
         status = Status.Active;
     }
 
@@ -95,6 +97,13 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         _updateStatusAfterDeadline();
         if (status != Status.Active) revert HermesErrors.InvalidStatus();
         if (block.timestamp >= deadline) revert HermesErrors.DeadlinePassed();
+        if (maxSubmissions > 0 && submissions.length >= maxSubmissions) {
+            revert HermesErrors.MaxSubmissionsReached();
+        }
+        if (maxSubmissionsPerSolver > 0 && solverSubmissionCount[msg.sender] >= maxSubmissionsPerSolver) {
+            revert HermesErrors.MaxSubmissionsPerSolverReached();
+        }
+        solverSubmissionCount[msg.sender]++;
         submissions.push(
             Submission({
                 solver: msg.sender,
@@ -121,6 +130,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         submission.scored = true;
         submission.score = score;
         submission.proofBundleHash = proofBundleHash;
+        scoredCount++;
 
         emit HermesEvents.Scored(subId, score, proofBundleHash);
     }
@@ -135,10 +145,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         }
 
         // Scoring completeness check: all scored OR grace period elapsed
-        bool allScored = true;
-        for (uint256 i = 0; i < submissions.length; i++) {
-            if (!submissions[i].scored) { allScored = false; break; }
-        }
+        bool allScored = scoredCount >= submissions.length;
         if (!allScored && block.timestamp <= deadline + SCORING_GRACE_PERIOD) {
             revert HermesErrors.ScoringIncomplete();
         }
@@ -303,6 +310,9 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         payoutByAddress[solver] += amount;
     }
 
+    /// @dev Split 70/20/10 among up to 3 winners. When fewer than 3 qualified
+    ///      submissions exist, unclaimed shares consolidate on the top scorer.
+    ///      E.g. 1 winner receives 100%; 2 winners receive 90%/10%.
     function _setTopThreePayouts(uint256[] memory winners, uint256 remaining) internal {
         uint256 first = (remaining * 70) / 100;
         uint256 second = (remaining * 20) / 100;
@@ -380,31 +390,31 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         rankedIds = new uint256[](subCount);
         rankedScores = new uint256[](subCount);
 
-        uint256 scoredCount = 0;
+        uint256 qualifiedCount = 0;
         for (uint256 i = 0; i < subCount; i++) {
             if (submissions[i].scored && submissions[i].score >= minimumScore) {
-                rankedIds[scoredCount] = i;
-                rankedScores[scoredCount] = submissions[i].score;
-                scoredCount++;
+                rankedIds[qualifiedCount] = i;
+                rankedScores[qualifiedCount] = submissions[i].score;
+                qualifiedCount++;
             }
         }
 
-        if (scoredCount == 0) {
+        if (qualifiedCount == 0) {
             return (new uint256[](0), new uint256[](0));
         }
 
-        // Trim arrays to scoredCount
-        uint256[] memory ids = new uint256[](scoredCount);
-        uint256[] memory scores = new uint256[](scoredCount);
-        for (uint256 i = 0; i < scoredCount; i++) {
+        // Trim arrays to qualifiedCount
+        uint256[] memory ids = new uint256[](qualifiedCount);
+        uint256[] memory scores = new uint256[](qualifiedCount);
+        for (uint256 i = 0; i < qualifiedCount; i++) {
             ids[i] = rankedIds[i];
             scores[i] = rankedScores[i];
         }
 
-        // Simple selection sort (scoredCount is expected to be small)
-        for (uint256 i = 0; i < scoredCount; i++) {
+        // Simple selection sort (qualifiedCount is expected to be small)
+        for (uint256 i = 0; i < qualifiedCount; i++) {
             uint256 bestIndex = i;
-            for (uint256 j = i + 1; j < scoredCount; j++) {
+            for (uint256 j = i + 1; j < qualifiedCount; j++) {
                 if (scores[j] > scores[bestIndex]) {
                     bestIndex = j;
                 }

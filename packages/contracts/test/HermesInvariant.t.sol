@@ -29,16 +29,20 @@ contract HermesInvariantHandler is Test {
 
         vm.prank(poster);
         challenge = new HermesChallenge(
-            usdc,
-            poster,
-            oracle,
-            treasury,
-            "cid",
-            rewardAmount,
-            uint64(block.timestamp + 1 days),
-            168,
-            0,
-            IHermesChallenge.DistributionType.WinnerTakeAll
+            IHermesChallenge.ChallengeConfig({
+                usdc: usdc,
+                poster: poster,
+                oracle: oracle,
+                treasury: treasury,
+                specCid: "cid",
+                rewardAmount: rewardAmount,
+                deadline: uint64(block.timestamp + 1 days),
+                disputeWindowHours: 168,
+                minimumScore: 0,
+                distributionType: IHermesChallenge.DistributionType.WinnerTakeAll,
+                maxSubmissions: 0,
+                maxSubmissionsPerSolver: 0
+            })
         );
 
         vm.prank(poster);

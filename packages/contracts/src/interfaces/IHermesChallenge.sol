@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+
 interface IHermesChallenge {
     enum Status {
         Active,
@@ -14,6 +16,21 @@ interface IHermesChallenge {
         WinnerTakeAll,
         TopThree,
         Proportional
+    }
+
+    struct ChallengeConfig {
+        IERC20 usdc;
+        address poster;
+        address oracle;
+        address treasury;
+        string specCid;
+        uint256 rewardAmount;
+        uint64 deadline;
+        uint64 disputeWindowHours;
+        uint256 minimumScore;
+        DistributionType distributionType;
+        uint256 maxSubmissions;
+        uint256 maxSubmissionsPerSolver;
     }
 
     struct Submission {
@@ -31,6 +48,9 @@ interface IHermesChallenge {
     function disputeWindowHours() external view returns (uint64);
     function distributionType() external view returns (DistributionType);
     function minimumScore() external view returns (uint256);
+    function maxSubmissions() external view returns (uint256);
+    function maxSubmissionsPerSolver() external view returns (uint256);
+    function solverSubmissionCount(address solver) external view returns (uint256);
 
     function submit(bytes32 resultHash) external returns (uint256 subId);
     function postScore(uint256 subId, uint256 score, bytes32 proofBundleHash) external;

@@ -18,6 +18,8 @@ export interface RunScorerInput {
     cpus?: string;
     pids?: number;
   };
+  /** When true, pull failures are fatal even if the image exists locally. */
+  strictPull?: boolean;
 }
 
 export interface ScoreResult {
@@ -159,18 +161,32 @@ export async function runScorer(input: RunScorerInput): Promise<ScoreResult> {
 
   const pull = await runCommand("docker", ["pull", input.image], timeoutMs);
   if (pull.code !== 0) {
-    // Pull failed — check if image exists locally
+    if (input.strictPull) {
+      throw new Error(
+        `Failed to pull scorer image ${input.image}. In strict mode, local fallback is disabled to ensure reproducibility. ${pull.stderr || pull.stdout}`,
+      );
+    }
+    // Pull failed — check if image exists locally (dev/local only)
     const localCheck = await runCommand("docker", ["image", "inspect", input.image], 30_000);
     if (localCheck.code !== 0) {
       throw new Error(
         `Failed to pull scorer image ${input.image} and not found locally. Run: docker pull ${input.image}. ${pull.stderr || pull.stdout}`,
       );
     }
-    // Image exists locally, continue with warning
-    console.error(`Warning: pull failed for ${input.image}, using local image`);
+    console.error(`Warning: pull failed for ${input.image}, using local image (not safe for production verification)`);
   }
 
   const digest = await resolveImageDigest(input.image);
+
+  // Verify digest matches when image reference includes a pinned digest
+  if (input.image.includes("@sha256:")) {
+    const expectedDigest = input.image.slice(input.image.indexOf("@sha256:"));
+    if (!digest.includes(expectedDigest)) {
+      throw new Error(
+        `Digest mismatch for ${input.image}: expected ${expectedDigest} but resolved ${digest}. This indicates the local image is different from the pinned reference.`,
+      );
+    }
+  }
 
   const args = [
     "run",

@@ -9,6 +9,7 @@ export type ChallengeDomain =
 export type ChallengeType =
   | "reproducibility"
   | "prediction"
+  | "optimization"
   | "docking"
   | "custom";
 
@@ -109,6 +110,12 @@ export interface ChallengeReward {
   distribution: RewardDistribution;
 }
 
+export interface ChallengeEvalSpec {
+  engine_id: string;
+  engine_digest?: string;
+  evaluation_bundle?: string;
+}
+
 export interface ChallengeSpec {
   id: string;
   title: string;
@@ -117,6 +124,7 @@ export interface ChallengeSpec {
   description: string;
   dataset?: ChallengeDataset;
   scoring: ChallengeScoring;
+  eval_spec?: ChallengeEvalSpec;
   reward: ChallengeReward;
   deadline: string;
   tags?: string[];

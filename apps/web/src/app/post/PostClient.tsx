@@ -3,6 +3,7 @@
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
 import {
   defaultPresetIdForChallengeType,
+  OFFICIAL_IMAGES,
   PRESET_REGISTRY,
   validatePresetIntegrity,
   validateScoringContainer,
@@ -14,7 +15,7 @@ import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "w
 import {
   Wallet, ArrowRight, Coins, AlertCircle, Loader2, CheckCircle,
   FlaskConical, BarChart3, Settings2, ChevronRight, Check,
-  Upload, Eye, X, Database,
+  Upload, Eye, X, Database, Crosshair,
 } from "lucide-react";
 import { buildPinSpecMessage, computeSpecHash } from "../../lib/pin-spec-auth";
 import { accelerateChallengeIndex } from "../../lib/api";
@@ -59,21 +60,23 @@ const erc20Abi = [
   },
 ] as const;
 
-type PostChallengeType = "reproducibility" | "prediction" | "custom";
+type PostChallengeType = "prediction" | "optimization" | "reproducibility" | "docking" | "custom";
 
 // ─── Icon mapping for presets ───────────────────────
 const TYPE_ICONS: Record<PostChallengeType, typeof FlaskConical> = {
-  reproducibility: FlaskConical,
   prediction: BarChart3,
+  optimization: FlaskConical,
+  reproducibility: FlaskConical,
+  docking: Crosshair,
   custom: Settings2,
 };
 
 const METRIC_OPTIONS = [
   { value: "rmse", label: "RMSE", hint: "Lower is better" },
   { value: "r2", label: "R²", hint: "Higher is better" },
-  { value: "accuracy", label: "Accuracy", hint: "Higher is better" },
-  { value: "f1", label: "F1 Score", hint: "Higher is better" },
   { value: "mae", label: "MAE", hint: "Lower is better" },
+  { value: "pearson", label: "Pearson", hint: "Higher is better" },
+  { value: "spearman", label: "Spearman", hint: "Higher is better" },
   { value: "custom", label: "Custom metric", hint: "" },
 ];
 
@@ -104,9 +107,29 @@ if (!reproducibilityPreset || !predictionPreset) {
 }
 
 const TYPE_CONFIG = {
+  prediction: {
+    label: "Prediction",
+    description: "Solvers predict outcomes on held-out test data (Kaggle-style)",
+    defaultDomain: "omics",
+    metricHint: "r2",
+    container: predictionPreset.container,
+    defaultMinimumScore: predictionPreset.defaultMinimumScore,
+    presetId: predictionPreset.id,
+    scoringTemplate: predictionPreset.scoringDescription,
+  },
+  optimization: {
+    label: "Optimization",
+    description: "Solvers submit parameters; your scorer runs the simulation",
+    defaultDomain: "drug_discovery",
+    metricHint: "custom",
+    container: "",
+    defaultMinimumScore: 0,
+    presetId: "custom",
+    scoringTemplate: "",
+  },
   reproducibility: {
-    label: "Deterministic",
-    description: "Same input -> same score, fully reproducible",
+    label: "Reproducibility",
+    description: "Solvers reproduce a known result from a published pipeline",
     defaultDomain: "other",
     metricHint: "custom",
     container: reproducibilityPreset.container,
@@ -114,15 +137,15 @@ const TYPE_CONFIG = {
     presetId: reproducibilityPreset.id,
     scoringTemplate: reproducibilityPreset.scoringDescription,
   },
-  prediction: {
-    label: "Metric-Based",
-    description: "Submissions scored by a numerical metric (RMSE, R2, etc.)",
-    defaultDomain: "omics",
-    metricHint: "r2",
-    container: predictionPreset.container,
-    defaultMinimumScore: predictionPreset.defaultMinimumScore,
-    presetId: predictionPreset.id,
-    scoringTemplate: predictionPreset.scoringDescription,
+  docking: {
+    label: "Docking",
+    description: "Solvers dock small molecules against a protein target",
+    defaultDomain: "drug_discovery",
+    metricHint: "spearman",
+    container: OFFICIAL_IMAGES.docking,
+    defaultMinimumScore: 0,
+    presetId: "custom",
+    scoringTemplate: "",
   },
   custom: {
     label: "Custom",
@@ -177,6 +200,8 @@ type FormState = {
   submissionFormat: string;
   evaluationCriteria: string;
   successDefinition: string;
+  idColumn: string;
+  labelColumn: string;
 };
 
 const defaultPreset = TYPE_CONFIG.reproducibility;
@@ -199,6 +224,8 @@ const initialState: FormState = {
   submissionFormat: '{"answer": <number>}',
   evaluationCriteria: "",
   successDefinition: "",
+  idColumn: "id",
+  labelColumn: "prediction",
 };
 
 function buildSpec(state: FormState) {
@@ -234,6 +261,8 @@ function buildSpec(state: FormState) {
       submission_format: state.submissionFormat || undefined,
       criteria: state.evaluationCriteria || undefined,
       success_definition: state.successDefinition || undefined,
+      id_column: state.idColumn || undefined,
+      label_column: state.labelColumn || undefined,
     },
     lab_tba: "0x0000000000000000000000000000000000000000",
   };
@@ -317,7 +346,7 @@ export function PostClient() {
   const rewardValue = Number(state.reward || 0);
   const { feeUsdc: protocolFeeValue, payoutUsdc: winnerPayoutValue } = computeProtocolFee(rewardValue);
 
-  const isCustomType = state.type === "custom";
+  const isCustomType = state.type === "custom" || state.type === "optimization";
 
   async function handleFileUpload(file: File, field: "train" | "test") {
     setUploadingField(field);
@@ -345,6 +374,13 @@ export function PostClient() {
       domain: preset.defaultDomain,
       minimumScore: String(preset.defaultMinimumScore),
       evaluationCriteria: preset.scoringTemplate || s.evaluationCriteria,
+      // Prediction: default to CSV submission with id + prediction columns
+      ...(t === "prediction" ? {
+        submissionType: "csv",
+        submissionFormat: "CSV with columns: id, prediction",
+        idColumn: "id",
+        labelColumn: "prediction",
+      } : {}),
     }));
   }
 
@@ -453,6 +489,8 @@ export function PostClient() {
           BigInt(spec.dispute_window_hours ?? 168), minimumScoreWad,
           DISTRIBUTION_TO_ENUM[spec.reward.distribution as keyof typeof DISTRIBUTION_TO_ENUM] ?? 0,
           "0x0000000000000000000000000000000000000000",
+          0n, // maxSubmissions (0 = use off-chain defaults)
+          0n, // maxSubmissionsPerSolver (0 = use off-chain defaults)
         ],
       });
 
@@ -599,8 +637,35 @@ export function PostClient() {
               </div>
             )}
 
+            {state.type === "optimization" && (
+              <>
+                <FormField label="Scoring container" hint="Your OCI image that runs the simulation" className="span-full">
+                  <input className="form-input form-input-mono"
+                    placeholder="ghcr.io/org/scorer@sha256:..."
+                    value={state.container}
+                    onChange={(e) => setState((s) => ({ ...s, container: e.target.value }))}
+                  />
+                </FormField>
+                <FormField label="Scoring description (for humans)" hint="" className="span-full">
+                  <textarea className="form-textarea" placeholder="Describe the objective function and how submissions are evaluated..."
+                    value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
+                </FormField>
+                <p className="span-full" style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
+                  This description is not enforced. The scorer container is the source of truth.
+                </p>
+              </>
+            )}
+
             {state.type === "prediction" && (
               <>
+                <FormField label="ID column" hint="Column name for row identifiers in test.csv">
+                  <input className="form-input form-input-mono" placeholder="id"
+                    value={state.idColumn} onChange={(e) => setState((s) => ({ ...s, idColumn: e.target.value }))} />
+                </FormField>
+                <FormField label="Label column" hint="Column name solvers must predict">
+                  <input className="form-input form-input-mono" placeholder="prediction"
+                    value={state.labelColumn} onChange={(e) => setState((s) => ({ ...s, labelColumn: e.target.value }))} />
+                </FormField>
                 <FormField label="Metric" hint={METRIC_OPTIONS.find(m => m.value === state.metric)?.hint ?? ""}>
                   <select className="form-select" value={state.metric}
                     onChange={(e) => {
@@ -618,6 +683,39 @@ export function PostClient() {
                 </FormField>
                 <FormField label="Scoring detail" hint="Additional context (optional)">
                   <input className="form-input" placeholder="e.g. Evaluated on held-out test split"
+                    value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
+                </FormField>
+                <div className="span-full" style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.75rem", fontFamily: "var(--font-mono)" }}>
+                    <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>Authoritative evaluator:</span>
+                    <span style={{ color: "var(--text-primary)" }}>{engineDisplayName(state.container)}</span>
+                  </div>
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
+                    This description is not enforced. The scorer container is the source of truth.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {state.type === "docking" && (
+              <>
+                <FormField label="Metric" hint={METRIC_OPTIONS.find(m => m.value === state.metric)?.hint ?? ""}>
+                  <select className="form-select" value={state.metric}
+                    onChange={(e) => {
+                      const m = METRIC_OPTIONS.find(o => o.value === e.target.value);
+                      setState((s) => ({
+                        ...s,
+                        metric: e.target.value,
+                        evaluationCriteria: m ? `Evaluated by ${m.label}. ${m.hint}.` : s.evaluationCriteria,
+                      }));
+                    }}>
+                    {METRIC_OPTIONS.map((m) => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                </FormField>
+                <FormField label="Scoring detail" hint="Additional context (optional)">
+                  <input className="form-input" placeholder="e.g. Docking protocol, target PDB ID"
                     value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
                 </FormField>
                 <div className="span-full" style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
@@ -880,6 +978,9 @@ export function PostClient() {
               {state.description && <div className="preview-row span-full"><span className="preview-label">Description</span><span className="preview-value">{state.description}</span></div>}
               <div className="preview-divider" />
               <div className="preview-row"><span className="preview-label">Container</span><span className="preview-value" style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{state.container || "—"}</span></div>
+              {state.metric && <div className="preview-row"><span className="preview-label">Metric</span><span className="preview-value">{state.metric}</span></div>}
+              {state.type === "prediction" && state.idColumn && <div className="preview-row"><span className="preview-label">ID column</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.idColumn}</span></div>}
+              {state.type === "prediction" && state.labelColumn && <div className="preview-row"><span className="preview-label">Label column</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.labelColumn}</span></div>}
               {state.submissionFormat && <div className="preview-row"><span className="preview-label">Submission format</span><span className="preview-value">{state.submissionFormat}</span></div>}
               {state.successDefinition && <div className="preview-row"><span className="preview-label">Success criteria</span><span className="preview-value">{state.successDefinition}</span></div>}
               {state.evaluationCriteria && <div className="preview-row span-full"><span className="preview-label">Evaluation</span><span className="preview-value">{state.evaluationCriteria}</span></div>}

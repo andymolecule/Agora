@@ -3,6 +3,7 @@ import {
   defaultMinimumScoreForChallengeType,
   defaultPresetIdForChallengeType,
   findPresetIdsByContainer,
+  getUnpinnedOfficialImages,
   inferPresetIdByContainer,
   lookupPreset,
   validatePresetIntegrity,
@@ -67,5 +68,18 @@ assert.ok(
   unpinnedPresetError?.includes("pinned digest"),
   "preset validation should enforce pinned digests when strict mode is enabled",
 );
+
+// getUnpinnedOfficialImages — should flag :latest tags
+const unpinned = getUnpinnedOfficialImages();
+assert.ok(
+  unpinned.length > 0,
+  "dev images use :latest and should be flagged as unpinned",
+);
+for (const img of unpinned) {
+  assert.ok(
+    !img.includes("@sha256:"),
+    `unpinned image should not contain @sha256: — got ${img}`,
+  );
+}
 
 console.log("preset registry validation passed");

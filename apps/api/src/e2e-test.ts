@@ -72,7 +72,7 @@ async function main() {
         address: config.HERMES_FACTORY_ADDRESS,
         abi: HermesFactoryAbi,
         functionName: "createChallenge",
-        args: [specCidClean, rewardAmount, deadlineSeconds, 0n, 0n, 0, "0x0000000000000000000000000000000000000000"], // 0h dispute, 0 minScore, WinnerTakeAll, no labTBA
+        args: [specCidClean, rewardAmount, deadlineSeconds, 0n, 0n, 0, "0x0000000000000000000000000000000000000000", 0n, 0n], // 0h dispute, 0 minScore, WinnerTakeAll, no labTBA, unlimited submissions
     });
 
     const createReceipt = await publicClient.waitForTransactionReceipt({ hash: createTxHash });

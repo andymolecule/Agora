@@ -42,9 +42,11 @@ contract HermesFactory is Ownable {
         uint64 disputeWindowHours,
         uint256 minimumScore,
         uint8 distributionType,
-        address labTBA
+        address labTBA,
+        uint256 maxSubmissions_,
+        uint256 maxSubmissionsPerSolver_
     ) external returns (uint256 challengeId, address challengeAddr) {
-        return _createChallenge(specCid, rewardAmount, deadline, disputeWindowHours, minimumScore, distributionType, labTBA);
+        return _createChallenge(specCid, rewardAmount, deadline, disputeWindowHours, minimumScore, distributionType, labTBA, maxSubmissions_, maxSubmissionsPerSolver_);
     }
 
     /// @notice Create a challenge using EIP-2612 permit (single transaction).
@@ -56,6 +58,8 @@ contract HermesFactory is Ownable {
         uint256 minimumScore,
         uint8 distributionType,
         address labTBA,
+        uint256 maxSubmissions_,
+        uint256 maxSubmissionsPerSolver_,
         uint256 permitDeadline,
         uint8 v,
         bytes32 r,
@@ -63,7 +67,7 @@ contract HermesFactory is Ownable {
     ) external returns (uint256 challengeId, address challengeAddr) {
         // permit may fail if already approved or if frontrun — that's OK
         try IERC20Permit(address(usdc)).permit(msg.sender, address(this), rewardAmount, permitDeadline, v, r, s) {} catch {}
-        return _createChallenge(specCid, rewardAmount, deadline, disputeWindowHours, minimumScore, distributionType, labTBA);
+        return _createChallenge(specCid, rewardAmount, deadline, disputeWindowHours, minimumScore, distributionType, labTBA, maxSubmissions_, maxSubmissionsPerSolver_);
     }
 
     function _createChallenge(
@@ -73,7 +77,9 @@ contract HermesFactory is Ownable {
         uint64 disputeWindowHours,
         uint256 minimumScore,
         uint8 distributionType,
-        address labTBA
+        address labTBA,
+        uint256 maxSubmissions_,
+        uint256 maxSubmissionsPerSolver_
     ) internal returns (uint256 challengeId, address challengeAddr) {
         if (distributionType > uint8(IHermesChallenge.DistributionType.Proportional)) {
             revert HermesErrors.InvalidDistribution();
@@ -81,16 +87,20 @@ contract HermesFactory is Ownable {
         IHermesChallenge.DistributionType dist = IHermesChallenge.DistributionType(distributionType);
 
         HermesChallenge challenge = new HermesChallenge(
-            usdc,
-            msg.sender,
-            oracle,
-            treasury,
-            specCid,
-            rewardAmount,
-            deadline,
-            disputeWindowHours,
-            minimumScore,
-            dist
+            IHermesChallenge.ChallengeConfig({
+                usdc: usdc,
+                poster: msg.sender,
+                oracle: oracle,
+                treasury: treasury,
+                specCid: specCid,
+                rewardAmount: rewardAmount,
+                deadline: deadline,
+                disputeWindowHours: disputeWindowHours,
+                minimumScore: minimumScore,
+                distributionType: dist,
+                maxSubmissions: maxSubmissions_,
+                maxSubmissionsPerSolver: maxSubmissionsPerSolver_
+            })
         );
 
         challengeId = challengeCount;

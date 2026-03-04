@@ -16,6 +16,7 @@ export type Challenge = {
   dataset_test_cid?: string | null;
   scoring_metric?: string | null;
   scoring_container?: string | null;
+  distribution_type?: string | null;
   dispute_window_hours?: number | null;
   minimum_score?: number | string | null;
   created_at?: string;

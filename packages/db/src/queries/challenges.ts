@@ -3,6 +3,7 @@ import {
   defaultMinimumScoreForChallengeType,
   findPresetIdsByContainer,
   inferPresetIdByContainer,
+  resolveEvalSpec,
   SUBMISSION_LIMITS,
   CHALLENGE_STATUS,
   validatePresetIntegrity,
@@ -25,6 +26,10 @@ export interface ChallengeInsert {
   scoring_container: string;
   scoring_metric: string;
   scoring_preset_id?: string | null;
+  // Eval spec columns
+  eval_engine_id?: string | null;
+  eval_engine_digest?: string | null;
+  eval_bundle_cid?: string | null;
   minimum_score?: number | null;
   max_submissions_total?: number | null;
   max_submissions_per_solver?: number | null;
@@ -59,18 +64,20 @@ export function buildChallengeInsert(
     typeof input.spec.preset_id === "string" && input.spec.preset_id.trim().length > 0
       ? input.spec.preset_id.trim()
       : null;
-  const effectivePresetId = explicitPresetId ?? (input.spec.type === "custom" ? "custom" : null);
+  // Types where the poster provides their own scorer container
+  const usesCustomScorer = input.spec.type === "custom" || input.spec.type === "optimization";
+  const effectivePresetId = explicitPresetId ?? (usesCustomScorer ? "custom" : null);
   const inferredPresetId =
     effectivePresetId ?? inferPresetIdByContainer(input.spec.scoring.container);
   const presetIdsForContainer = findPresetIdsByContainer(input.spec.scoring.container);
 
-  if (!inferredPresetId && input.spec.type !== "custom" && presetIdsForContainer.length > 1) {
+  if (!inferredPresetId && !usesCustomScorer && presetIdsForContainer.length > 1) {
     throw new Error(
       `Ambiguous scoring preset for container ${input.spec.scoring.container}. Set preset_id explicitly.`,
     );
   }
 
-  if (!inferredPresetId && input.spec.type !== "custom" && presetIdsForContainer.length === 0) {
+  if (!inferredPresetId && !usesCustomScorer && presetIdsForContainer.length === 0) {
     throw new Error(
       `Unknown scorer container for non-custom challenge: ${input.spec.scoring.container}. Use a registered preset container or set type to custom with a pinned digest.`,
     );
@@ -87,6 +94,9 @@ export function buildChallengeInsert(
     }
   }
 
+  // Resolve the evaluation spec (supports both new eval_spec and legacy scoring fields)
+  const evalSpec = resolveEvalSpec(input.spec);
+
   return {
     chain_id: input.chainId,
     contract_address: input.contractAddress,
@@ -102,6 +112,10 @@ export function buildChallengeInsert(
     scoring_container: input.spec.scoring.container,
     scoring_metric: input.spec.scoring.metric,
     scoring_preset_id: inferredPresetId,
+    // Eval spec columns
+    eval_engine_id: evalSpec.engineId,
+    eval_engine_digest: evalSpec.engineDigest ?? null,
+    eval_bundle_cid: evalSpec.evaluationBundle ?? null,
     minimum_score:
       input.spec.minimum_score ??
       defaultMinimumScoreForChallengeType(input.spec.type) ??
