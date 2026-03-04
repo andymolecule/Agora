@@ -199,14 +199,18 @@ export async function scoreSubmissionAndBuildProof(
     submissionId: submission.id,
     image: challenge.scoring_container,
   });
+  const isProduction = process.env.NODE_ENV === "production";
+  // Prefer eval_bundle_cid (new eval spec) over dataset_test_cid (legacy)
+  const groundTruthCid = challenge.eval_bundle_cid ?? challenge.dataset_test_cid;
   const run = await executeScoringPipeline({
     image: challenge.scoring_container,
-    groundTruth: challenge.dataset_test_cid
-      ? { cid: challenge.dataset_test_cid }
+    groundTruth: groundTruthCid
+      ? { cid: groundTruthCid }
       : undefined,
     submission: { cid: submission.result_cid as string },
     timeoutMs: runnerPolicy.timeoutMs,
     limits: runnerPolicy.limits,
+    strictPull: isProduction,
     keepWorkspace: true,
   });
   try {

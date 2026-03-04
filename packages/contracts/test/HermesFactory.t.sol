@@ -34,7 +34,8 @@ contract HermesFactoryTest is Test {
             168,
             0,
             uint8(IHermesChallenge.DistributionType.WinnerTakeAll),
-            address(0)
+            address(0),
+            0, 0
         );
         assertEq(id, 0);
         assertEq(usdc.balanceOf(challengeAddr), 10e6);
@@ -46,15 +47,15 @@ contract HermesFactoryTest is Test {
         vm.prank(poster);
         (uint256 id,) = factory.createChallenge(
             "cid", 10e6, uint64(block.timestamp + 1 days), 168, 0,
-            uint8(IHermesChallenge.DistributionType.WinnerTakeAll), labTba
+            uint8(IHermesChallenge.DistributionType.WinnerTakeAll), labTba, 0, 0
         );
         assertEq(id, 0);
     }
 
     function testCreateMultipleChallengesIncrementsId() public {
         vm.startPrank(poster);
-        (uint256 id1,) = factory.createChallenge("cid1", 10e6, uint64(block.timestamp + 1 days), 168, 0, 0, address(0));
-        (uint256 id2,) = factory.createChallenge("cid2", 10e6, uint64(block.timestamp + 1 days), 168, 0, 0, address(0));
+        (uint256 id1,) = factory.createChallenge("cid1", 10e6, uint64(block.timestamp + 1 days), 168, 0, 0, address(0), 0, 0);
+        (uint256 id2,) = factory.createChallenge("cid2", 10e6, uint64(block.timestamp + 1 days), 168, 0, 0, address(0), 0, 0);
         vm.stopPrank();
         assertEq(id1, 0);
         assertEq(id2, 1);
@@ -113,7 +114,7 @@ contract HermesFactoryTest is Test {
     function testChallengesMappingStoresAddress() public {
         vm.prank(poster);
         (uint256 id, address challengeAddr) = factory.createChallenge(
-            "cid", 10e6, uint64(block.timestamp + 1 days), 168, 0, 0, address(0)
+            "cid", 10e6, uint64(block.timestamp + 1 days), 168, 0, 0, address(0), 0, 0
         );
         assertEq(factory.challenges(id), challengeAddr);
     }
@@ -128,6 +129,7 @@ contract HermesFactoryTest is Test {
             0,
             uint8(IHermesChallenge.DistributionType.WinnerTakeAll),
             address(0),
+            0, 0,
             block.timestamp + 1 days,
             0,
             bytes32(0),
@@ -152,6 +154,7 @@ contract HermesFactoryTest is Test {
             0,
             uint8(IHermesChallenge.DistributionType.WinnerTakeAll),
             address(0),
+            0, 0,
             block.timestamp + 1 days,
             0,
             bytes32(0),
@@ -169,7 +172,8 @@ contract HermesFactoryTest is Test {
             168,
             0,
             99,
-            address(0)
+            address(0),
+            0, 0
         );
     }
 }

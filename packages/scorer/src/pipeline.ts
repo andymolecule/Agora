@@ -17,6 +17,8 @@ export interface ExecuteScoringPipelineInput {
   timeoutMs?: number;
   limits?: RunScorerInput["limits"];
   keepWorkspace?: boolean;
+  /** When true, pull failures are fatal even if the image exists locally. */
+  strictPull?: boolean;
 }
 
 export interface ScoringPipelineResult {
@@ -88,6 +90,7 @@ export async function executeScoringPipeline(
       inputDir: workspace.inputDir,
       timeoutMs: input.timeoutMs,
       limits: input.limits,
+      strictPull: input.strictPull,
     });
 
     const output: ScoringPipelineResult = {

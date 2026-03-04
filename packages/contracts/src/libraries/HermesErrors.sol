@@ -31,4 +31,7 @@ library HermesErrors {
     error NoPendingRotation();
     error TransferFailed();
     error TransferFromFailed();
+    error MaxSubmissionsReached();
+    error MaxSubmissionsPerSolverReached();
+    error InvalidSubmissionLimits();
 }

@@ -125,6 +125,7 @@ const DEFAULT_PRESET_ID_BY_CHALLENGE_TYPE: Partial<
 > = {
     reproducibility: "csv_comparison_v1",
     prediction: "regression_v1",
+    optimization: "custom",
     custom: "custom",
 };
 
@@ -219,4 +220,15 @@ export function validatePresetIntegrity(
     }
 
     return null;
+}
+
+/**
+ * Check whether all official images use pinned digests.
+ * Returns an array of image references that still use mutable tags.
+ * Empty array means all images are properly pinned.
+ */
+export function getUnpinnedOfficialImages(): string[] {
+    return Object.values(OFFICIAL_IMAGES).filter(
+        (image) => !image.includes("@sha256:"),
+    );
 }

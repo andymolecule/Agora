@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Layers, Trophy, Database, Container } from "lucide-react";
+import { ArrowLeft, Layers, Trophy, Database, Container, Award, Shield, Clock } from "lucide-react";
 import { CHALLENGE_STATUS } from "@hermes/common";
 import Link from "next/link";
 import { LeaderboardTable } from "../../../components/LeaderboardTable";
@@ -107,6 +107,9 @@ export function DetailClient({ id }: { id: string }) {
                   <InfoRow label="Dataset (test)" value={challenge.dataset_test_cid ?? "—"} mono icon={Database} />
                   <InfoRow label="Scoring container" value={challenge.scoring_container ?? "—"} mono icon={Container} />
                   <InfoRow label="Metric" value={challenge.scoring_metric ?? "—"} icon={Layers} />
+                  <InfoRow label="Distribution" value={(challenge.distribution_type ?? "—").replace(/_/g, " ")} icon={Award} />
+                  <InfoRow label="Minimum score" value={String(challenge.minimum_score ?? "0")} icon={Shield} />
+                  <InfoRow label="Review period" value={challenge.dispute_window_hours != null ? `${challenge.dispute_window_hours}h` : "—"} icon={Clock} />
                 </div>
               </div>
             </div>

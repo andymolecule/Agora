@@ -6,6 +6,7 @@ import {HermesChallenge} from "../src/HermesChallenge.sol";
 import {IHermesChallenge} from "../src/interfaces/IHermesChallenge.sol";
 import {HermesErrors} from "../src/libraries/HermesErrors.sol";
 import {MockUSDC} from "./MockUSDC.sol";
+import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 contract HermesChallengeTest is Test {
     MockUSDC private usdc;
@@ -16,23 +17,30 @@ contract HermesChallengeTest is Test {
     address private treasury = address(0x789);
     address private solver = address(0xabc);
 
+    /// @dev Default config for tests. Override individual fields as needed.
+    function _cfg() internal view returns (IHermesChallenge.ChallengeConfig memory) {
+        return IHermesChallenge.ChallengeConfig({
+            usdc: IERC20(address(usdc)),
+            poster: poster,
+            oracle: oracle,
+            treasury: treasury,
+            specCid: "cid",
+            rewardAmount: 10e6,
+            deadline: uint64(block.timestamp + 1 days),
+            disputeWindowHours: 168,
+            minimumScore: 0,
+            distributionType: IHermesChallenge.DistributionType.WinnerTakeAll,
+            maxSubmissions: 0,
+            maxSubmissionsPerSolver: 0
+        });
+    }
+
     function setUp() public {
         usdc = new MockUSDC();
         usdc.mint(poster, 1_000_000e6);
 
         vm.prank(poster);
-        challenge = new HermesChallenge(
-            usdc,
-            poster,
-            oracle,
-            treasury,
-            "cid",
-            10e6,
-            uint64(block.timestamp + 1 days),
-            168,
-            0,
-            IHermesChallenge.DistributionType.WinnerTakeAll
-        );
+        challenge = new HermesChallenge(_cfg());
 
         vm.prank(poster);
         usdc.transfer(address(challenge), 10e6);
@@ -62,19 +70,10 @@ contract HermesChallengeTest is Test {
 
 
     function testConstructorRejectsPastDeadline() public {
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.deadline = uint64(block.timestamp);
         vm.expectRevert(HermesErrors.DeadlineInPast.selector);
-        new HermesChallenge(
-            usdc,
-            poster,
-            oracle,
-            treasury,
-            "cid",
-            10e6,
-            uint64(block.timestamp),
-            168,
-            0,
-            IHermesChallenge.DistributionType.WinnerTakeAll
-        );
+        new HermesChallenge(cfg);
     }
 
     function testSubmitAfterDeadlineReverts() public {
@@ -120,18 +119,10 @@ contract HermesChallengeTest is Test {
     }
 
     function testTopThreeDistribution() public {
-        HermesChallenge top3 = new HermesChallenge(
-            usdc,
-            poster,
-            oracle,
-            treasury,
-            "cid",
-            30e6,
-            uint64(block.timestamp + 1 days),
-            168,
-            0,
-            IHermesChallenge.DistributionType.TopThree
-        );
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.rewardAmount = 30e6;
+        cfg.distributionType = IHermesChallenge.DistributionType.TopThree;
+        HermesChallenge top3 = new HermesChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(top3), 30e6);
 
@@ -163,18 +154,10 @@ contract HermesChallengeTest is Test {
     }
 
     function testProportionalDistribution() public {
-        HermesChallenge proportional = new HermesChallenge(
-            usdc,
-            poster,
-            oracle,
-            treasury,
-            "cid",
-            20e6,
-            uint64(block.timestamp + 1 days),
-            168,
-            0,
-            IHermesChallenge.DistributionType.Proportional
-        );
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.rewardAmount = 20e6;
+        cfg.distributionType = IHermesChallenge.DistributionType.Proportional;
+        HermesChallenge proportional = new HermesChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(proportional), 20e6);
 
@@ -221,18 +204,10 @@ contract HermesChallengeTest is Test {
     }
 
     function testDisputeResolveProportionalHonorsWinnerDust() public {
-        HermesChallenge proportional = new HermesChallenge(
-            usdc,
-            poster,
-            oracle,
-            treasury,
-            "cid",
-            20e6,
-            uint64(block.timestamp + 1 days),
-            168,
-            0,
-            IHermesChallenge.DistributionType.Proportional
-        );
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.rewardAmount = 20e6;
+        cfg.distributionType = IHermesChallenge.DistributionType.Proportional;
+        HermesChallenge proportional = new HermesChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(proportional), 20e6);
 
@@ -420,41 +395,40 @@ contract HermesChallengeTest is Test {
     // ===== Constructor validation tests =====
 
     function testConstructorRevertsZeroPoster() public {
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.poster = address(0);
         vm.expectRevert(HermesErrors.InvalidAddress.selector);
-        new HermesChallenge(usdc, address(0), oracle, treasury, "cid", 10e6, uint64(block.timestamp + 1 days), 168, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
+        new HermesChallenge(cfg);
     }
 
     function testConstructorRevertsRewardTooLow() public {
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.rewardAmount = 0;
         vm.expectRevert(HermesErrors.InvalidRewardAmount.selector);
-        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 0, uint64(block.timestamp + 1 days), 168, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
+        new HermesChallenge(cfg);
     }
 
     function testConstructorRevertsRewardTooHigh() public {
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.rewardAmount = 31_000_000;
         vm.expectRevert(HermesErrors.InvalidRewardAmount.selector);
-        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 31_000_000, uint64(block.timestamp + 1 days), 168, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
+        new HermesChallenge(cfg);
     }
 
 
 
     function testConstructorAcceptsZeroDisputeWindow() public {
-        HermesChallenge c = new HermesChallenge(
-            usdc,
-            poster,
-            oracle,
-            treasury,
-            "cid",
-            10e6,
-            uint64(block.timestamp + 1 days),
-            0,
-            0,
-            IHermesChallenge.DistributionType.WinnerTakeAll
-        );
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.disputeWindowHours = 0;
+        HermesChallenge c = new HermesChallenge(cfg);
         assertEq(c.disputeWindowHours(), 0);
     }
 
     function testConstructorRevertsDisputeWindowTooLong() public {
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.disputeWindowHours = 2200;
         vm.expectRevert(HermesErrors.InvalidDisputeWindow.selector);
-        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 10e6, uint64(block.timestamp + 1 days), 2200, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
+        new HermesChallenge(cfg);
     }
 
     // ===== cancel() edge cases =====
@@ -566,11 +540,10 @@ contract HermesChallengeTest is Test {
     // ===== Additional edge case coverage =====
 
     function testTopThreeWithOnlyOneSolver() public {
-        HermesChallenge top3 = new HermesChallenge(
-            usdc, poster, oracle, treasury, "cid", 20e6,
-            uint64(block.timestamp + 1 days), 168, 0,
-            IHermesChallenge.DistributionType.TopThree
-        );
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.rewardAmount = 20e6;
+        cfg.distributionType = IHermesChallenge.DistributionType.TopThree;
+        HermesChallenge top3 = new HermesChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(top3), 20e6);
 
@@ -589,11 +562,10 @@ contract HermesChallengeTest is Test {
     }
 
     function testTopThreeWithTwoSolvers() public {
-        HermesChallenge top3 = new HermesChallenge(
-            usdc, poster, oracle, treasury, "cid", 20e6,
-            uint64(block.timestamp + 1 days), 168, 0,
-            IHermesChallenge.DistributionType.TopThree
-        );
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.rewardAmount = 20e6;
+        cfg.distributionType = IHermesChallenge.DistributionType.TopThree;
+        HermesChallenge top3 = new HermesChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(top3), 20e6);
 
@@ -651,11 +623,10 @@ contract HermesChallengeTest is Test {
     }
 
     function testResolveDisputeTopThree() public {
-        HermesChallenge top3 = new HermesChallenge(
-            usdc, poster, oracle, treasury, "cid", 20e6,
-            uint64(block.timestamp + 1 days), 168, 0,
-            IHermesChallenge.DistributionType.TopThree
-        );
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.rewardAmount = 20e6;
+        cfg.distributionType = IHermesChallenge.DistributionType.TopThree;
+        HermesChallenge top3 = new HermesChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(top3), 20e6);
 
@@ -749,18 +720,10 @@ contract HermesChallengeTest is Test {
     }
 
     function testFinalizeRefundsPosterWhenNoSubmissionMeetsMinimumScore() public {
-        HermesChallenge gated = new HermesChallenge(
-            usdc,
-            poster,
-            oracle,
-            treasury,
-            "cid",
-            20e6,
-            uint64(block.timestamp + 1 days),
-            168,
-            90e18,
-            IHermesChallenge.DistributionType.WinnerTakeAll
-        );
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.rewardAmount = 20e6;
+        cfg.minimumScore = 90e18;
+        HermesChallenge gated = new HermesChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(gated), 20e6);
 
@@ -779,18 +742,10 @@ contract HermesChallengeTest is Test {
     }
 
     function testResolveDisputeRevertsWhenWinnerBelowMinimumScore() public {
-        HermesChallenge gated = new HermesChallenge(
-            usdc,
-            poster,
-            oracle,
-            treasury,
-            "cid",
-            20e6,
-            uint64(block.timestamp + 1 days),
-            168,
-            90e18,
-            IHermesChallenge.DistributionType.WinnerTakeAll
-        );
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.rewardAmount = 20e6;
+        cfg.minimumScore = 90e18;
+        HermesChallenge gated = new HermesChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(gated), 20e6);
 
@@ -806,5 +761,78 @@ contract HermesChallengeTest is Test {
         vm.prank(oracle);
         vm.expectRevert(HermesErrors.MinimumScoreNotMet.selector);
         gated.resolveDispute(subId);
+    }
+
+    // ===== On-chain submission limits =====
+
+    function testMaxSubmissionsEnforced() public {
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.maxSubmissions = 2;
+        HermesChallenge limited = new HermesChallenge(cfg);
+        vm.prank(poster);
+        usdc.transfer(address(limited), 10e6);
+
+        vm.prank(address(0x1));
+        limited.submit(keccak256("a"));
+        vm.prank(address(0x2));
+        limited.submit(keccak256("b"));
+
+        // Third submission should revert
+        vm.prank(address(0x3));
+        vm.expectRevert(HermesErrors.MaxSubmissionsReached.selector);
+        limited.submit(keccak256("c"));
+    }
+
+    function testMaxSubmissionsPerSolverEnforced() public {
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.maxSubmissionsPerSolver = 2;
+        HermesChallenge limited = new HermesChallenge(cfg);
+        vm.prank(poster);
+        usdc.transfer(address(limited), 10e6);
+
+        vm.startPrank(solver);
+        limited.submit(keccak256("a"));
+        limited.submit(keccak256("b"));
+        vm.expectRevert(HermesErrors.MaxSubmissionsPerSolverReached.selector);
+        limited.submit(keccak256("c"));
+        vm.stopPrank();
+
+        // Different solver can still submit
+        vm.prank(address(0x1));
+        limited.submit(keccak256("d"));
+    }
+
+    function testZeroLimitsAreUnlimited() public {
+        // Default setUp challenge has 0, 0 — should allow many submissions
+        vm.startPrank(solver);
+        for (uint256 i = 0; i < 10; i++) {
+            challenge.submit(keccak256(abi.encodePacked(i)));
+        }
+        vm.stopPrank();
+        assertEq(challenge.submissionCount(), 10);
+    }
+
+    function testConstructorRevertsPerSolverExceedsTotal() public {
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.maxSubmissions = 5;
+        cfg.maxSubmissionsPerSolver = 10;
+        vm.expectRevert(HermesErrors.InvalidSubmissionLimits.selector);
+        new HermesChallenge(cfg);
+    }
+
+    function testSolverSubmissionCountTracked() public {
+        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.maxSubmissionsPerSolver = 3;
+        HermesChallenge limited = new HermesChallenge(cfg);
+        vm.prank(poster);
+        usdc.transfer(address(limited), 10e6);
+
+        assertEq(limited.solverSubmissionCount(solver), 0);
+        vm.prank(solver);
+        limited.submit(keccak256("a"));
+        assertEq(limited.solverSubmissionCount(solver), 1);
+        vm.prank(solver);
+        limited.submit(keccak256("b"));
+        assertEq(limited.solverSubmissionCount(solver), 2);
     }
 }

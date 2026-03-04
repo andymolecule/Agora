@@ -13,6 +13,8 @@ export interface CreateChallengeParams {
   minimumScore: bigint;
   distributionType: number;
   labTba: `0x${string}`;
+  maxSubmissions?: number;
+  maxSubmissionsPerSolver?: number;
 }
 
 export async function createChallenge(params: CreateChallengeParams) {
@@ -33,6 +35,8 @@ export async function createChallenge(params: CreateChallengeParams) {
       params.minimumScore,
       params.distributionType,
       params.labTba,
+      BigInt(params.maxSubmissions ?? 0),
+      BigInt(params.maxSubmissionsPerSolver ?? 0),
     ],
   });
 }

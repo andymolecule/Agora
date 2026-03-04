@@ -10,7 +10,7 @@ const domainEnum = z.enum([
   "other",
 ]);
 
-const typeEnum = z.enum(["reproducibility", "prediction", "docking", "custom"]);
+const typeEnum = z.enum(["reproducibility", "prediction", "optimization", "docking", "custom"]);
 
 const rewardDistributionEnum = z.enum([
   "winner_take_all",
@@ -49,6 +49,27 @@ const rewardTotal = z
     `reward.total must have at most ${CHALLENGE_LIMITS.rewardDecimals} decimal places`,
   );
 
+// ---------------------------------------------------------------------------
+// Eval Spec — the lean 3-field evaluation specification
+// ---------------------------------------------------------------------------
+
+/**
+ * EvalSpec: how a submission is evaluated.
+ *
+ * - engine_id:          preset name (e.g. "csv_comparison_v1") or "custom"
+ * - engine_digest:      pinned container digest (@sha256:...), required in production
+ * - evaluation_bundle:  CID pointing to everything the engine needs
+ *                        (ground truth, config, schema — engine-specific)
+ */
+const evalSpecSchema = z.object({
+  engine_id: z.string().min(1),
+  engine_digest: z.string().min(1).optional(),
+  evaluation_bundle: datasetSource.optional(),
+});
+
+export { evalSpecSchema };
+export type EvalSpec = z.infer<typeof evalSpecSchema>;
+
 export const challengeSpecSchema = z.object({
   id: z.string().min(1),
   preset_id: z.string().min(1).optional(),
@@ -62,10 +83,13 @@ export const challengeSpecSchema = z.object({
       test: datasetSource.optional(),
     })
     .optional(),
+  // Legacy scoring section — still accepted for backward compatibility
   scoring: z.object({
     container: z.string().min(1),
     metric: scoringMetricEnum,
   }),
+  // New: structured evaluation spec (optional; when absent, derived from scoring + dataset.test)
+  eval_spec: evalSpecSchema.optional(),
   reward: z.object({
     total: rewardTotal,
     distribution: rewardDistributionEnum,
@@ -86,6 +110,9 @@ export const challengeSpecSchema = z.object({
       submission_format: z.string().min(1).optional(),
       criteria: z.string().min(1).optional(),
       success_definition: z.string().min(1).optional(),
+      // Prediction-specific: column names for the scorer
+      id_column: z.string().min(1).optional(),
+      label_column: z.string().min(1).optional(),
     })
     .optional(),
   lab_tba: z
@@ -109,3 +136,44 @@ export const challengeSpecSchema = z.object({
 
 export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;
 export type ChallengeSpecOutput = z.output<typeof challengeSpecSchema>;
+
+// ---------------------------------------------------------------------------
+// Resolve effective eval spec from a parsed challenge spec
+// ---------------------------------------------------------------------------
+
+export interface ResolvedEvalSpec {
+  engineId: string;
+  engineDigest?: string;
+  evaluationBundle?: string;
+  scoringContainer: string;
+  scoringMetric: string;
+}
+
+/**
+ * Resolve the effective evaluation spec from a challenge spec.
+ * Supports both new `eval_spec` field and legacy `scoring` + `dataset.test`.
+ */
+export function resolveEvalSpec(
+  spec: ChallengeSpecOutput,
+): ResolvedEvalSpec {
+  if (spec.eval_spec) {
+    return {
+      engineId: spec.eval_spec.engine_id,
+      engineDigest: spec.eval_spec.engine_digest,
+      evaluationBundle: spec.eval_spec.evaluation_bundle,
+      scoringContainer: spec.eval_spec.engine_digest ?? spec.scoring.container,
+      scoringMetric: spec.scoring.metric,
+    };
+  }
+
+  // Legacy path: derive from scoring + dataset + preset_id
+  return {
+    engineId: spec.preset_id ?? "custom",
+    engineDigest: spec.scoring.container.includes("@sha256:")
+      ? spec.scoring.container
+      : undefined,
+    evaluationBundle: spec.dataset?.test,
+    scoringContainer: spec.scoring.container,
+    scoringMetric: spec.scoring.metric,
+  };
+}

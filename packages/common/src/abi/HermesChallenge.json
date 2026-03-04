@@ -3,54 +3,71 @@
     "type": "constructor",
     "inputs": [
       {
-        "name": "usdc_",
-        "type": "address",
-        "internalType": "contract IERC20"
-      },
-      {
-        "name": "poster_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "oracle_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "treasury_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "specCid_",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "rewardAmount_",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "deadline_",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "disputeWindowHours_",
-        "type": "uint64",
-        "internalType": "uint64"
-      },
-      {
-        "name": "minimumScore_",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "distributionType_",
-        "type": "uint8",
-        "internalType": "enum IHermesChallenge.DistributionType"
+        "name": "cfg",
+        "type": "tuple",
+        "internalType": "struct IHermesChallenge.ChallengeConfig",
+        "components": [
+          {
+            "name": "usdc",
+            "type": "address",
+            "internalType": "contract IERC20"
+          },
+          {
+            "name": "poster",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "oracle",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "treasury",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "specCid",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "rewardAmount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "deadline",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "disputeWindowHours",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "minimumScore",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "distributionType",
+            "type": "uint8",
+            "internalType": "enum IHermesChallenge.DistributionType"
+          },
+          {
+            "name": "maxSubmissions",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "maxSubmissionsPerSolver",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
       }
     ],
     "stateMutability": "nonpayable"
@@ -258,6 +275,32 @@
   },
   {
     "type": "function",
+    "name": "maxSubmissions",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxSubmissionsPerSolver",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "minimumScore",
     "inputs": [],
     "outputs": [
@@ -393,6 +436,38 @@
     "type": "function",
     "name": "rewardAmount",
     "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "scoredCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "solverSubmissionCount",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -756,6 +831,21 @@
   {
     "type": "error",
     "name": "InvalidSubmission",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidSubmissionLimits",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MaxSubmissionsPerSolverReached",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MaxSubmissionsReached",
     "inputs": []
   },
   {

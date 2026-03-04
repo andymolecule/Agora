@@ -270,6 +270,8 @@ export function buildPostCommand() {
           distributionType: distributionMap[spec.reward.distribution] ?? 0,
           labTba: (spec.lab_tba ??
             "0x0000000000000000000000000000000000000000") as `0x${string}`,
+          maxSubmissions: spec.max_submissions_total ?? 0,
+          maxSubmissionsPerSolver: spec.max_submissions_per_solver ?? 0,
         });
         createSpinnerInstance.succeed(`Challenge tx sent: ${txHash}`);
 

@@ -25,6 +25,7 @@ if (!reproducibilityPreset || !predictionPreset) {
 const templateMap: Record<string, string> = {
   reproducibility: "reproducibility.yaml",
   prediction: "prediction.yaml",
+  optimization: "optimization.yaml",
   docking: "docking.yaml",
 };
 
@@ -129,6 +130,49 @@ dispute_window_hours: ${CHALLENGE_LIMITS.defaultDisputeWindowHours}
 # Optional lab TBA address
 lab_tba: "0x0000000000000000000000000000000000000000"
 `,
+  optimization: `# Hermes challenge template: optimization
+# The poster provides a custom scorer container that runs the simulation.
+# Solvers submit parameters; the container evaluates them.
+# Run: hm post challenge.yaml --deposit 10
+
+id: ch-004
+# Short, human-readable title
+title: "Optimize binding affinity for target protein"
+
+domain: drug_discovery
+type: optimization
+
+description: |
+  Submit parameters that maximize the objective function.
+  The scorer container runs the simulation and returns the score.
+  Higher scores are better.
+
+dataset:
+  # ipfs:// or https:// URL to any reference data the solver needs
+  train: "https://example.com/reference_data.tar.gz"
+
+scoring:
+  # YOUR custom scorer container — must accept /input/submission.* and write /output/score.json
+  container: "ghcr.io/your-org/your-scorer:v1"
+  metric: custom
+
+reward:
+  total: 10
+  distribution: winner_take_all
+
+# Deadline in ISO-8601 with timezone offset
+deadline: "2026-03-20T00:00:00Z"
+
+tags:
+  - optimization
+
+# Optional settings
+minimum_score: 0
+max_submissions_total: ${SUBMISSION_LIMITS.maxPerChallenge}
+max_submissions_per_solver: ${SUBMISSION_LIMITS.maxPerSolverPerChallenge}
+# Dispute window in hours (${CHALLENGE_LIMITS.disputeWindowMinHours}-${CHALLENGE_LIMITS.disputeWindowMaxHours}, i.e. 7-90 days)
+dispute_window_hours: ${CHALLENGE_LIMITS.defaultDisputeWindowHours}
+`,
   docking: `# Hermes challenge template: docking
 # Fill in the placeholders, then run: hm post challenge.yaml --deposit 10
 
@@ -210,7 +254,7 @@ export function buildInitCommand() {
     .description("Create a challenge.yaml template")
     .option(
       "-t, --template <template>",
-      "reproducibility | prediction | docking",
+      "prediction | optimization | reproducibility | docking",
       "reproducibility",
     )
     .option("-f, --force", "overwrite existing challenge.yaml", false)

@@ -90,6 +90,16 @@
         "name": "labTBA",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "maxSubmissions_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxSubmissionsPerSolver_",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
@@ -144,6 +154,16 @@
         "name": "labTBA",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "maxSubmissions_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxSubmissionsPerSolver_",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
         "name": "permitDeadline",
