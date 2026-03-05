@@ -1,4 +1,5 @@
-FROM python:3.11-slim
+FROM --platform=linux/amd64 python:3.11.9-slim
+
 WORKDIR /app
 COPY score.py /app/score.py
 CMD ["python", "/app/score.py"]
