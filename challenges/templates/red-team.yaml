@@ -1,0 +1,40 @@
+# Hermes challenge template: red team
+# Solvers find adversarial inputs that break your model or claim.
+# Fill in the placeholders, then run: hm post challenge.yaml --deposit 10
+
+id: ch-001
+title: "Find adversarial inputs that degrade model performance"
+
+domain: other
+type: red_team
+
+description: |
+  Submit adversarial test cases that cause the target model to fail.
+  Your scorer container runs the model on submitted inputs and measures
+  how much performance degrades compared to the baseline.
+  Higher degradation = higher score.
+
+dataset:
+  # Baseline data the model was trained/validated on
+  train: "https://example.com/baseline_data.csv"
+  # Reference model outputs for comparison
+  test: "https://example.com/reference_outputs.csv"
+
+scoring:
+  # Your custom scorer that runs the model on adversarial inputs
+  # and measures degradation. Must be pinned with @sha256: digest.
+  container: "ghcr.io/your-org/your-red-team-scorer@sha256:abc123..."
+  metric: custom
+
+reward:
+  total: 10
+  distribution: top_3
+
+deadline: "2026-03-15T00:00:00Z"
+
+tags:
+  - red_team
+  - adversarial
+
+minimum_score: 0.0
+dispute_window_hours: 168

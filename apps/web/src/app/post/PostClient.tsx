@@ -15,7 +15,7 @@ import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "w
 import { useConnectModal, useChainModal } from "@rainbow-me/rainbowkit";
 import {
   Wallet, ArrowRight, AlertCircle, Loader2, CheckCircle,
-  FlaskConical, BarChart3, Settings2, ChevronRight, Check,
+  FlaskConical, BarChart3, Settings2, ShieldAlert, ChevronRight, Check,
   Upload, Eye, X, Tag
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -62,13 +62,14 @@ const erc20Abi = [
   },
 ] as const;
 
-type PostChallengeType = "prediction" | "optimization" | "reproducibility" | "custom";
+type PostChallengeType = "prediction" | "optimization" | "reproducibility" | "red_team" | "custom";
 
 // ─── Icon mapping for presets ───────────────────────
 const TYPE_ICONS: Record<PostChallengeType, typeof FlaskConical> = {
   prediction: BarChart3,
   optimization: FlaskConical,
   reproducibility: FlaskConical,
+  red_team: ShieldAlert,
   custom: Settings2,
 };
 
@@ -145,6 +146,16 @@ const TYPE_CONFIG = {
     presetId: reproducibilityPreset.id,
     scoringTemplate: reproducibilityPreset.scoringDescription,
   },
+  red_team: {
+    label: "Red Team",
+    description: "Solvers find adversarial inputs that break a model or claim",
+    defaultDomain: "other",
+    metricHint: "custom",
+    container: "",
+    defaultMinimumScore: 0,
+    presetId: "custom",
+    scoringTemplate: "",
+  },
   custom: {
     label: "Custom",
     description: "Bring your own scorer and rules",
@@ -198,6 +209,15 @@ const PIPELINE_FLOWS: Record<PostChallengeType, PipelineFlow> = {
     scorerAction: "Simulates",
     scorerResult: "with your image \u2192 score",
     helper: "Solvers submit parameters. Your scorer runs the simulation and returns a score.",
+  },
+  red_team: {
+    posterAction: "Uploads",
+    posterFiles: "model + baseline data",
+    solverAction: "Submits",
+    solverFiles: "adversarial inputs",
+    scorerAction: "Measures",
+    scorerResult: "model degradation \u2192 score",
+    helper: "Solvers find inputs that break your model. Your scorer measures how much the model degrades on adversarial cases.",
   },
   custom: {
     posterAction: "Uploads",
@@ -621,7 +641,7 @@ export function PostClient() {
   const rewardValue = Number(state.reward || 0);
   const { feeUsdc: protocolFeeValue, payoutUsdc: winnerPayoutValue } = computeProtocolFee(rewardValue);
 
-  const isCustomType = state.type === "custom" || state.type === "optimization";
+  const isCustomType = state.type === "custom" || state.type === "optimization" || state.type === "red_team";
 
   async function handleFileUpload(file: File, field: "train" | "test" | "hiddenLabels") {
     setUploadingField(field);
