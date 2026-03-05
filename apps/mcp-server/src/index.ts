@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { readFeaturePolicy } from "@hermes/common";
+import { loadConfig, readFeaturePolicy } from "@hermes/common";
 import { z } from "zod";
 import { hermesClaimPayout } from "./tools/claim-payout.js";
 import { hermesGetChallenge } from "./tools/get-challenge.js";
@@ -198,13 +198,24 @@ async function createHttpMcpSession(
   return session;
 }
 
+function assertRequiredConfig() {
+  const config = loadConfig();
+  if (!config.HERMES_PINATA_JWT) {
+    throw new Error(
+      "HERMES_PINATA_JWT is not set. Submissions require IPFS pinning. Set it in .env or environment.",
+    );
+  }
+}
+
 async function startStdioMode() {
+  assertRequiredConfig();
   const server = createServer({ allowRemotePrivateKey: true });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
 
 function startHttpMode() {
+  assertRequiredConfig();
   const port = Number(process.env.HERMES_MCP_PORT ?? 3001);
   const allowRemotePrivateKey = readFeaturePolicy().allowMcpRemotePrivateKeys;
   const sessions = new Map<string, HttpMcpSession>();
@@ -300,8 +311,16 @@ function startHttpMode() {
     })();
   });
 
-  server.listen(port, () => {
-    console.log(`Hermes MCP server listening on http://localhost:${port}`);
+  const host = process.env.HERMES_MCP_HOST ?? "127.0.0.1";
+  if (host !== "127.0.0.1" && host !== "localhost" && allowRemotePrivateKey) {
+    console.warn(
+      "WARNING: MCP HTTP server bound to non-localhost with remote private keys enabled. " +
+        "Private keys sent over the network can be intercepted.",
+    );
+  }
+
+  server.listen(port, host, () => {
+    console.log(`Hermes MCP server listening on http://${host}:${port}`);
   });
 }
 

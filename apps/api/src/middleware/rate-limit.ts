@@ -25,6 +25,9 @@ export function requireWriteQuota(routeKey: string) {
     const requesterKey = getRequesterKey(c);
     const quota = consumeWriteQuota(requesterKey, routeKey);
     if (!quota.allowed) {
+      if ("retryAfterSec" in quota) {
+        c.header("Retry-After", String(quota.retryAfterSec));
+      }
       return c.json({ error: quota.message }, 429);
     }
 

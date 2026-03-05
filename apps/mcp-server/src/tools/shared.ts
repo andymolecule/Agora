@@ -29,7 +29,7 @@ import {
   setSubmissionResultCid,
   upsertSubmissionOnChain,
 } from "@hermes/db";
-import { pinFile } from "@hermes/ipfs";
+import { pinFile, unpinCid } from "@hermes/ipfs";
 import { executeScoringPipeline, wadToScore } from "@hermes/scorer";
 import { keccak256, parseEventLogs, toBytes } from "viem";
 import type { Abi } from "viem";
@@ -148,7 +148,17 @@ export async function getSubmissionStatus(submissionId: string) {
   const db = createSupabaseClient(false);
   const submission = await getSubmissionById(db, submissionId);
   const proofBundle = await getProofBundleBySubmissionId(db, submissionId);
-  return { submission, proofBundle };
+
+  let scoringStatus: string;
+  if (!submission.scored) {
+    scoringStatus = "pending";
+  } else if (proofBundle?.cid) {
+    scoringStatus = "complete";
+  } else {
+    scoringStatus = "scored_awaiting_proof";
+  }
+
+  return { submission, proofBundle, scoringStatus };
 }
 
 export async function submitSolution(input: {
@@ -161,8 +171,12 @@ export async function submitSolution(input: {
   const challenge = await getChallengeById(db, input.challengeId);
   const challengeAddress = challenge.contract_address as `0x${string}`;
 
-  const resultCid = await pinFile(input.filePath);
-  const resultHash = keccak256(toBytes(resultCid.replace("ipfs://", "")));
+  if (challenge.deadline && new Date(challenge.deadline) <= new Date()) {
+    throw new Error(
+      "Challenge deadline has passed. Submissions are no longer accepted.",
+    );
+  }
+
   const normalizedPrivateKey = input.privateKey?.trim();
   if (normalizedPrivateKey && !/^0x[a-fA-F0-9]{64}$/.test(normalizedPrivateKey)) {
     throw new Error("Invalid privateKey: expected 0x-prefixed 32-byte hex.");
@@ -174,13 +188,22 @@ export async function submitSolution(input: {
     );
   }
 
-  const txHash = normalizedPrivateKey
-    ? await submitChallengeResultWithPrivateKey(
-      challengeAddress,
-      resultHash,
-      normalizedPrivateKey as `0x${string}`,
-    )
-    : await submitChallengeResult(challengeAddress, resultHash);
+  const resultCid = await pinFile(input.filePath);
+  const resultHash = keccak256(toBytes(resultCid.replace("ipfs://", "")));
+
+  let txHash: `0x${string}`;
+  try {
+    txHash = normalizedPrivateKey
+      ? await submitChallengeResultWithPrivateKey(
+        challengeAddress,
+        resultHash,
+        normalizedPrivateKey as `0x${string}`,
+      )
+      : await submitChallengeResult(challengeAddress, resultHash);
+  } catch (error) {
+    await unpinCid(resultCid).catch(() => {});
+    throw error;
+  }
 
   const publicClient = getPublicClient();
   const receipt = await publicClient.waitForTransactionReceipt({

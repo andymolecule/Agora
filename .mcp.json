@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "hermes": {
-      "command": "node",
-      "args": ["apps/mcp-server/dist/index.js", "--stdio"]
+      "command": "bash",
+      "args": ["-c", "set -a && source .env && set +a && exec node apps/mcp-server/dist/index.js --stdio"]
     }
   }
 }
