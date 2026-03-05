@@ -81,6 +81,16 @@ export async function runIndexer() {
       }
       pollCount++;
 
+      // Reorg safety: if our cursor is ahead of the confirmed chain tip,
+      // a reorg has moved the chain behind us. Rewind to the safe tip.
+      if (fromBlock > toBlock + BigInt(1)) {
+        console.warn(
+          `[indexer] possible reorg: cursor ${fromBlock} > confirmed tip ${toBlock}. Rewinding.`,
+        );
+        fromBlock = toBlock > BigInt(0) ? toBlock : BigInt(0);
+        await setIndexerCursor(db, cursorKey, fromBlock);
+      }
+
       if (toBlock < fromBlock) {
         await sleep(POLL_INTERVAL_MS);
         continue;

@@ -46,6 +46,12 @@ export async function pinFile(
   return `ipfs://${result.IpfsHash}`;
 }
 
+export async function unpinCid(cid: string): Promise<void> {
+  const client = getClient();
+  const hash = cid.replace("ipfs://", "");
+  await client.unpin(hash);
+}
+
 export async function pinDirectory(
   dirPath: string,
   name?: string,

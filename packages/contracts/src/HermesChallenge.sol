@@ -301,7 +301,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
     }
 
     function _updateStatusAfterDeadline() internal {
-        if (status == Status.Active && block.timestamp > deadline) {
+        if (status == Status.Active && block.timestamp >= deadline) {
             status = Status.Scoring;
         }
     }
