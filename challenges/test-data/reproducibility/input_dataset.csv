@@ -1,0 +1,7 @@
+sample_id,raw_signal,batch,condition
+r1,10.2,A,control
+r2,14.8,A,treated
+r3,11.7,B,control
+r4,16.5,B,treated
+r5,9.9,C,control
+r6,18.1,C,treated
