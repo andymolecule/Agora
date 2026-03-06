@@ -21,6 +21,7 @@ import {
   scoreToWad,
 } from "@hermes/scorer";
 import { keccak256, toBytes } from "viem";
+import { createWorkerPhaseObserver, runWorkerPhase } from "./phases.js";
 import type { ChallengeRow, SubmissionRow, WorkerLogFn } from "./types.js";
 
 type DbClient = ReturnType<typeof createSupabaseClient>;
@@ -172,6 +173,7 @@ export async function scoreSubmissionAndBuildProof(
   challenge: ChallengeRow,
   submission: SubmissionRow,
   log: WorkerLogFn,
+  jobId?: string,
 ): Promise<ScoringOutcome> {
   const submissionLimitViolation = await getSubmissionLimitViolationForRun(
     db,
@@ -186,15 +188,17 @@ export async function scoreSubmissionAndBuildProof(
     };
   }
 
-  log("info", "Preparing scoring inputs", {
-    submissionId: submission.id,
-    challengeId: challenge.id,
-  });
   const evalPlan = resolveEvalSpec(challenge);
   const runnerPolicy = resolveRunnerPolicyForChallenge({
     image: evalPlan.image,
     scoring_preset_id: challenge.scoring_preset_id,
   });
+  const phaseMeta = {
+    jobId,
+    submissionId: submission.id,
+    challengeId: challenge.id,
+    image: evalPlan.image,
+  };
   if (runnerPolicy.warning) {
     log("warn", runnerPolicy.warning, {
       challengeId: challenge.id,
@@ -203,10 +207,6 @@ export async function scoreSubmissionAndBuildProof(
     });
   }
 
-  log("info", "Running scorer container", {
-    submissionId: submission.id,
-    image: evalPlan.image,
-  });
   const isProduction = process.env.NODE_ENV === "production";
   const run = await executeScoringPipeline({
     image: evalPlan.image,
@@ -218,6 +218,7 @@ export async function scoreSubmissionAndBuildProof(
     limits: runnerPolicy.limits,
     strictPull: isProduction,
     keepWorkspace: true,
+    phaseObserver: createWorkerPhaseObserver(log, phaseMeta),
   });
   try {
     const result = run.result;
@@ -241,21 +242,31 @@ export async function scoreSubmissionAndBuildProof(
       },
     );
 
-    const proof = await buildProofBundle({
-      challengeId: challenge.id,
-      submissionId: submission.id,
-      score: result.score,
-      scorerLog: result.log,
-      containerImageDigest: result.containerImageDigest,
-      inputPaths: run.inputPaths,
-      outputPath: result.outputPath,
-    });
+    const { proof, proofCid } = await runWorkerPhase(
+      log,
+      "pin_proof",
+      phaseMeta,
+      async () => {
+        const proof = await buildProofBundle({
+          challengeId: challenge.id,
+          submissionId: submission.id,
+          score: result.score,
+          scorerLog: result.log,
+          containerImageDigest: result.containerImageDigest,
+          inputPaths: run.inputPaths,
+          outputPath: result.outputPath,
+        });
 
-    const proofPath = path.join(run.workspaceRoot, "proof-bundle.json");
-    await fs.writeFile(proofPath, JSON.stringify(proof, null, 2), "utf8");
-
-    const proofCid = await pinFile(proofPath, `proof-${submission.id}.json`);
-    log("info", "Proof pinned", { submissionId: submission.id, proofCid });
+        const proofPath = path.join(run.workspaceRoot, "proof-bundle.json");
+        await fs.writeFile(proofPath, JSON.stringify(proof, null, 2), "utf8");
+        const proofCid = await pinFile(proofPath, `proof-${submission.id}.json`);
+        log("info", "Proof pinned", {
+          ...phaseMeta,
+          proofCid,
+        });
+        return { proof, proofCid };
+      },
+    );
 
     const proofHash = keccak256(toBytes(proofCid.replace("ipfs://", "")));
     const scoreWad = scoreToWad(result.score);

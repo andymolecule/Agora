@@ -2,10 +2,12 @@
 
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
 import {
+  challengeSpecSchema,
   defaultPresetIdForChallengeType,
   getDisputeWindowMinHours,
   isTestnetChain,
   PRESET_REGISTRY,
+  validateChallengeScoreability,
   validatePresetIntegrity,
   validateScoringContainer,
 } from "@hermes/common";
@@ -810,6 +812,16 @@ export function PostClient() {
     const minDispute = getDisputeWindowMinHours(CHAIN_ID);
     if (!Number.isFinite(disputeWindow) || disputeWindow < minDispute || disputeWindow > 2160)
       return `Dispute window must be between ${minDispute} and 2160 hours.`;
+
+    const specResult = challengeSpecSchema.safeParse(buildSpec(state));
+    if (!specResult.success) {
+      return specResult.error.issues[0]?.message ?? "Challenge spec is invalid.";
+    }
+
+    const scoreability = validateChallengeScoreability(specResult.data);
+    if (!scoreability.ok) {
+      return scoreability.errors[0] ?? "Challenge is not scoreable.";
+    }
     return null;
   }
 

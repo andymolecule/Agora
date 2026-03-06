@@ -70,6 +70,16 @@ function StatusDot({ ok }: { ok: boolean | null }) {
     return <span className="status-dot" style={{ background: "var(--accent-rose, var(--color-error))", boxShadow: "0 0 6px rgba(220,38,38,0.4)" }} />;
 }
 
+function formatRelativeAge(ms: number | null | undefined) {
+    if (typeof ms !== "number" || !Number.isFinite(ms)) return "n/a";
+    const minutes = Math.floor(ms / 60_000);
+    if (minutes < 1) return "<1m";
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+}
+
 export function ActivityPanel() {
     const { isConnected, address, chainId } = useAccount();
     const apiHealth = useApiHealth();
@@ -174,9 +184,14 @@ export function ActivityPanel() {
                         </div>
                         <div className="feed-detail">
                             {workerHealth?.jobs
-                                ? `${workerHealth.jobs.queued} queued \u00b7 ${workerHealth.jobs.scored} scored${workerHealth.jobs.failed > 0 ? ` \u00b7 ${workerHealth.jobs.failed} failed` : ""}`
+                                ? `${workerHealth.jobs.queued} queued \u00b7 ${workerHealth.jobs.running} running${(workerHealth.runningOverThresholdCount ?? 0) > 0 ? ` \u00b7 ${workerHealth.runningOverThresholdCount} stale` : ""}${workerHealth.lastScoredAt ? ` \u00b7 last score ${new Date(workerHealth.lastScoredAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`
                                 : "Scorer worker status"}
                         </div>
+                        {workerHealth?.metrics && (
+                            <div className="feed-detail">
+                                Oldest queued: {formatRelativeAge(workerHealth.metrics.oldestQueuedAgeMs)}
+                            </div>
+                        )}
                     </div>
                     <StatusDot ok={workerHealth === null ? null : workerHealth.ok} />
                 </div>

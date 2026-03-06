@@ -3,30 +3,85 @@ import {
   getScoreJobCounts,
   getOldestPendingJobTime,
   getLastScoredJobTime,
+  getOldestRunningStartedAt,
+  runningOverThresholdCount,
 } from "@hermes/db";
 import { Hono } from "hono";
 import type { ApiEnv } from "../types.js";
 
 type WorkerStatus = "ok" | "warning" | "idle";
 
-/** Queue age (in ms) after which we consider the worker potentially stuck. */
-const STUCK_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+export const QUEUE_STALE_THRESHOLD_MS = 5 * 60 * 1000;
+export const RUNNING_STALE_THRESHOLD_MS = 20 * 60 * 1000;
 
-function deriveStatus(
-  queuedCount: number,
-  failedCount: number,
-  oldestPendingAt: string | null,
+export interface WorkerHealthSnapshotInput {
+  jobs: {
+    queued: number;
+    running: number;
+    scored: number;
+    failed: number;
+    skipped: number;
+  };
+  oldestPendingAt: string | null;
+  lastScoredAt: string | null;
+  oldestRunningStartedAt: string | null;
+  runningOverThresholdCount: number;
+  nowMs?: number;
+}
+
+export function deriveWorkerHealthStatus(
+  input: WorkerHealthSnapshotInput,
 ): WorkerStatus {
-  if (queuedCount === 0 && failedCount === 0) return "idle";
+  const nowMs = input.nowMs ?? Date.now();
+  const oldestQueuedAgeMs = input.oldestPendingAt
+    ? nowMs - new Date(input.oldestPendingAt).getTime()
+    : null;
 
-  if (oldestPendingAt) {
-    const ageMs = Date.now() - new Date(oldestPendingAt).getTime();
-    if (ageMs > STUCK_THRESHOLD_MS) return "warning";
+  if (
+    input.jobs.queued === 0 &&
+    input.jobs.running === 0 &&
+    input.jobs.failed === 0
+  ) {
+    return "idle";
   }
 
-  if (failedCount > 0) return "warning";
+  if (
+    typeof oldestQueuedAgeMs === "number" &&
+    oldestQueuedAgeMs > QUEUE_STALE_THRESHOLD_MS
+  ) {
+    return "warning";
+  }
+
+  if (input.runningOverThresholdCount > 0) return "warning";
+  if (input.jobs.failed > 0) return "warning";
 
   return "ok";
+}
+
+export function buildWorkerHealthResponse(input: WorkerHealthSnapshotInput) {
+  const nowMs = input.nowMs ?? Date.now();
+  const oldestQueuedAgeMs = input.oldestPendingAt
+    ? Math.max(0, nowMs - new Date(input.oldestPendingAt).getTime())
+    : null;
+  const status = deriveWorkerHealthStatus({ ...input, nowMs });
+
+  return {
+    ok: status !== "warning",
+    status,
+    jobs: input.jobs,
+    oldestPendingAt: input.oldestPendingAt,
+    lastScoredAt: input.lastScoredAt,
+    oldestRunningStartedAt: input.oldestRunningStartedAt,
+    runningOverThresholdCount: input.runningOverThresholdCount,
+    thresholds: {
+      queueStaleMs: QUEUE_STALE_THRESHOLD_MS,
+      runningStaleMs: RUNNING_STALE_THRESHOLD_MS,
+    },
+    metrics: {
+      oldestQueuedAgeMs,
+    },
+    checkedAt: new Date(nowMs).toISOString(),
+  };
 }
 
 const router = new Hono<ApiEnv>();
@@ -35,22 +90,29 @@ router.get("/", async (c) => {
   try {
     const db = createSupabaseClient(false);
 
-    const [jobs, oldestPendingAt, lastScoredAt] = await Promise.all([
-      getScoreJobCounts(db),
-      getOldestPendingJobTime(db),
-      getLastScoredJobTime(db),
-    ]);
-
-    const status = deriveStatus(jobs.queued, jobs.failed, oldestPendingAt);
-
-    return c.json({
-      ok: status !== "warning",
-      status,
+    const [
       jobs,
       oldestPendingAt,
       lastScoredAt,
-      checkedAt: new Date().toISOString(),
-    });
+      oldestRunningStartedAt,
+      runningOverThreshold,
+    ] = await Promise.all([
+      getScoreJobCounts(db),
+      getOldestPendingJobTime(db),
+      getLastScoredJobTime(db),
+      getOldestRunningStartedAt(db),
+      runningOverThresholdCount(db, RUNNING_STALE_THRESHOLD_MS),
+    ]);
+
+    return c.json(
+      buildWorkerHealthResponse({
+        jobs,
+        oldestPendingAt,
+        lastScoredAt,
+        oldestRunningStartedAt,
+        runningOverThresholdCount: runningOverThreshold,
+      }),
+    );
   } catch (error) {
     return c.json(
       {

@@ -1,8 +1,11 @@
 import {
+  CHALLENGE_TYPE_SCOREABILITY,
+  getChallengeTypeScoreabilityProfile,
   challengeSpecSchema,
   resolveEvalSpec,
   validateChallengeScoreability,
 } from "../schemas/challenge-spec";
+import { CHALLENGE_TYPES } from "../types/challenge.js";
 
 const sample = {
   id: "ch-001",
@@ -365,6 +368,202 @@ if (!customPinnedScoreability.ok) {
     customPinnedScoreability.errors,
   );
   process.exit(1);
+}
+
+const optimizationScoreability = validateChallengeScoreability(
+  challengeSpecSchema.parse({
+    id: "ch-010",
+    title: "Optimization scoreable",
+    domain: "drug_discovery",
+    type: "optimization",
+    description: "Optimization challenge with scorer image.",
+    dataset: {
+      train: "ipfs://QmOptimizationBundle",
+    },
+    scoring: {
+      container: "ghcr.io/acme/optimization-scorer@sha256:" + "b".repeat(64),
+      metric: "custom",
+    },
+    reward: {
+      total: 10,
+      distribution: "winner_take_all",
+    },
+    deadline: "2026-03-04T23:59:59Z",
+    dispute_window_hours: 168,
+  }),
+);
+if (!optimizationScoreability.ok) {
+  console.error(
+    "validateChallengeScoreability should accept optimization challenges with a scorer image",
+    optimizationScoreability.errors,
+  );
+  process.exit(1);
+}
+
+const dockingMissingBundle = validateChallengeScoreability(
+  challengeSpecSchema.parse({
+    id: "ch-011",
+    title: "Docking missing bundle",
+    domain: "drug_discovery",
+    type: "docking",
+    description: "Docking challenge without evaluation bundle.",
+    scoring: {
+      container: "ghcr.io/hermes-science/docking-scorer:latest",
+      metric: "spearman",
+    },
+    reward: {
+      total: 10,
+      distribution: "winner_take_all",
+    },
+    deadline: "2026-03-04T23:59:59Z",
+    dispute_window_hours: 168,
+  }),
+);
+if (dockingMissingBundle.ok) {
+  console.error(
+    "validateChallengeScoreability should reject docking challenges without an evaluation bundle",
+  );
+  process.exit(1);
+}
+if (
+  dockingMissingBundle.errors[0] !==
+  "Docking challenges require an evaluation bundle."
+) {
+  console.error(
+    "validateChallengeScoreability should return a clear docking bundle error",
+    dockingMissingBundle.errors,
+  );
+  process.exit(1);
+}
+
+{
+  const invalidMetricSpec = {
+    id: "ch-012",
+    title: "Docking blank metric",
+    domain: "drug_discovery",
+    type: "docking",
+    description: "Docking challenge with blank metric in scoreability check.",
+    dataset: {
+      test: "ipfs://QmDockingEvalBundle",
+    },
+    scoring: {
+      container: "ghcr.io/hermes-science/docking-scorer:latest",
+      metric: "spearman",
+    },
+    reward: {
+      total: 10,
+      distribution: "winner_take_all",
+    },
+    deadline: "2026-03-04T23:59:59Z",
+    dispute_window_hours: 168,
+  };
+  const parsedDockingMetric = challengeSpecSchema.parse(invalidMetricSpec);
+  const mutated = {
+    ...parsedDockingMetric,
+    scoring: {
+      ...parsedDockingMetric.scoring,
+      metric: "" as typeof parsedDockingMetric.scoring.metric,
+    },
+  };
+  const metricCheck = validateChallengeScoreability(mutated);
+  if (metricCheck.ok) {
+    console.error(
+      "validateChallengeScoreability should reject docking challenges without a scoring metric",
+    );
+    process.exit(1);
+  }
+  if (
+    metricCheck.errors[0] !== "Docking challenges require a scoring metric."
+  ) {
+    console.error(
+      "validateChallengeScoreability should return a clear docking metric error",
+      metricCheck.errors,
+    );
+    process.exit(1);
+  }
+}
+
+const redTeamScoreability = validateChallengeScoreability(
+  challengeSpecSchema.parse({
+    id: "ch-013",
+    title: "Red team scoreable",
+    domain: "other",
+    type: "red_team",
+    description: "Red team challenge with custom scorer image.",
+    dataset: {
+      train: "ipfs://QmBaselineData",
+    },
+    scoring: {
+      container: "ghcr.io/acme/red-team-scorer@sha256:" + "c".repeat(64),
+      metric: "custom",
+    },
+    reward: {
+      total: 10,
+      distribution: "winner_take_all",
+    },
+    deadline: "2026-03-04T23:59:59Z",
+    dispute_window_hours: 168,
+  }),
+);
+if (!redTeamScoreability.ok) {
+  console.error(
+    "validateChallengeScoreability should accept red team challenges with a scorer image",
+    redTeamScoreability.errors,
+  );
+  process.exit(1);
+}
+
+{
+  const parsedRedTeam = challengeSpecSchema.parse({
+    id: "ch-014",
+    title: "Red team missing image",
+    domain: "other",
+    type: "red_team",
+    description: "Red team challenge without a scoring image.",
+    scoring: {
+      container: "ghcr.io/acme/red-team-scorer@sha256:" + "d".repeat(64),
+      metric: "custom",
+    },
+    reward: {
+      total: 10,
+      distribution: "winner_take_all",
+    },
+    deadline: "2026-03-04T23:59:59Z",
+    dispute_window_hours: 168,
+  });
+  const mutated = {
+    ...parsedRedTeam,
+    scoring: {
+      ...parsedRedTeam.scoring,
+      container: "",
+    },
+  };
+  const imageCheck = validateChallengeScoreability(mutated);
+  if (imageCheck.ok) {
+    console.error(
+      "validateChallengeScoreability should reject red team challenges without a scoring image",
+    );
+    process.exit(1);
+  }
+  if (imageCheck.errors[0] !== "Red team challenges require a scoring container.") {
+    console.error(
+      "validateChallengeScoreability should return a clear red team image error",
+      imageCheck.errors,
+    );
+    process.exit(1);
+  }
+}
+
+for (const challengeType of CHALLENGE_TYPES) {
+  const profile = getChallengeTypeScoreabilityProfile(challengeType);
+  if (!profile) {
+    console.error(`Missing scoreability profile for challenge type: ${challengeType}`);
+    process.exit(1);
+  }
+  if (CHALLENGE_TYPE_SCOREABILITY[challengeType] !== profile) {
+    console.error(`Scoreability profile lookup mismatch for challenge type: ${challengeType}`);
+    process.exit(1);
+  }
 }
 
 console.log("challengeSpecSchema validation passed");

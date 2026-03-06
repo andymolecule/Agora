@@ -120,6 +120,15 @@ export type WorkerHealth = {
   };
   oldestPendingAt?: string | null;
   lastScoredAt?: string | null;
+  oldestRunningStartedAt?: string | null;
+  runningOverThresholdCount?: number;
+  thresholds?: {
+    queueStaleMs: number;
+    runningStaleMs: number;
+  };
+  metrics?: {
+    oldestQueuedAgeMs: number | null;
+  };
   checkedAt: string;
   error?: string;
 };

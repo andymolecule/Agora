@@ -18,6 +18,7 @@ export interface ScoreJobRow {
   attempts: number;
   max_attempts: number;
   locked_at: string | null;
+  run_started_at: string | null;
   locked_by: string | null;
   last_error: string | null;
   score_tx_hash: string | null;
@@ -92,6 +93,7 @@ export async function createScoreJob(
         submission_id: payload.submission_id,
         challenge_id: payload.challenge_id,
         status: SCORE_JOB_STATUS.queued,
+        run_started_at: null,
       },
       { onConflict: "submission_id", ignoreDuplicates: true },
     )
@@ -122,6 +124,7 @@ export async function markScoreJobSkipped(
         max_attempts: 0,
         last_error: reason,
         locked_at: null,
+        run_started_at: null,
         locked_by: null,
         updated_at: new Date().toISOString(),
       },
@@ -184,6 +187,7 @@ export async function completeJob(
     status: SCORE_JOB_STATUS.scored,
     last_error: null,
     locked_at: null,
+    run_started_at: null,
     locked_by: null,
     updated_at: new Date().toISOString(),
   };
@@ -216,6 +220,7 @@ export async function failJob(
       status: exhausted ? SCORE_JOB_STATUS.failed : SCORE_JOB_STATUS.queued,
       last_error: errorMessage,
       locked_at: null,
+      run_started_at: null,
       locked_by: null,
       updated_at: new Date().toISOString(),
     })
@@ -242,6 +247,7 @@ export async function requeueJobWithoutAttemptPenalty(
       attempts: currentAttempts > 0 ? currentAttempts - 1 : 0,
       last_error: reason,
       locked_at: null,
+      run_started_at: null,
       locked_by: null,
       updated_at: new Date().toISOString(),
     })
@@ -321,6 +327,47 @@ export async function getLastScoredJobTime(
     throw new Error(`Failed to get last scored job: ${error.message}`);
   }
   return data?.updated_at ?? null;
+}
+
+export async function getOldestRunningStartedAt(
+  db: HermesDbClient,
+): Promise<string | null> {
+  const { data, error } = await db
+    .from("score_jobs")
+    .select("run_started_at")
+    .eq("status", SCORE_JOB_STATUS.running)
+    .not("run_started_at", "is", null)
+    .order("run_started_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      `Failed to get oldest running score job: ${error.message}`,
+    );
+  }
+  return (data as { run_started_at?: string | null } | null)?.run_started_at ?? null;
+}
+
+export async function runningOverThresholdCount(
+  db: HermesDbClient,
+  thresholdMs: number,
+): Promise<number> {
+  const cutoffIso = new Date(Date.now() - thresholdMs).toISOString();
+  const { count, error } = await db
+    .from("score_jobs")
+    .select("*", { count: "exact", head: true })
+    .eq("status", SCORE_JOB_STATUS.running)
+    .not("run_started_at", "is", null)
+    .lt("run_started_at", cutoffIso);
+
+  if (error) {
+    throw new Error(
+      `Failed to count running score jobs over threshold: ${error.message}`,
+    );
+  }
+
+  return count ?? 0;
 }
 
 /**

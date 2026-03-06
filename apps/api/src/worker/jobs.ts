@@ -15,6 +15,7 @@ import {
   postScoreAndWaitForConfirmation,
   reconcileScoredSubmission,
 } from "./chain.js";
+import { runWorkerPhase } from "./phases.js";
 import { isDockerInfrastructureError } from "./policy.js";
 import { scoreSubmissionAndBuildProof } from "./scoring.js";
 import type { ChallengeRow, ScoreJobRow, SubmissionRow, WorkerLogFn } from "./types.js";
@@ -74,6 +75,11 @@ export async function processJob(
     )) as SubmissionRow;
     const challengeAddress = challenge.contract_address as `0x${string}`;
     const publicClient = resolvedDeps.getPublicClient();
+    const phaseMeta = {
+      jobId: job.id,
+      submissionId: submission.id,
+      challengeId: challenge.id,
+    };
 
     if (
       await resolvedDeps.reconcileScoredSubmission(
@@ -128,6 +134,7 @@ export async function processJob(
       challenge,
       submission,
       log,
+      job.id,
     );
     if (!scoringOutcome.ok) {
       if (scoringOutcome.kind === "skipped") {
@@ -163,12 +170,14 @@ export async function processJob(
     }
 
     if (
-      await resolvedDeps.reconcileScoredSubmission(
-        db,
-        submission,
-        challengeAddress,
-        job.score_tx_hash,
-        job.id,
+      await runWorkerPhase(log, "pre_post_reconcile", phaseMeta, () =>
+        resolvedDeps.reconcileScoredSubmission(
+          db,
+          submission,
+          challengeAddress,
+          job.score_tx_hash,
+          job.id,
+        ),
       )
     ) {
       log("info", "Submission became scored before post; completed job without reposting", {

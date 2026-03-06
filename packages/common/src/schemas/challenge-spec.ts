@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { CHALLENGE_LIMITS } from "../constants.js";
 import { getDisputeWindowMinHours } from "../dispute-policy.js";
+import {
+  CHALLENGE_TYPES,
+  type ChallengeType,
+} from "../types/challenge.js";
 
 const domainEnum = z.enum([
   "longevity",
@@ -11,7 +15,7 @@ const domainEnum = z.enum([
   "other",
 ]);
 
-const typeEnum = z.enum(["reproducibility", "prediction", "optimization", "docking", "red_team", "custom"]);
+const typeEnum = z.enum(CHALLENGE_TYPES);
 
 const rewardDistributionEnum = z.enum([
   "winner_take_all",
@@ -255,6 +259,79 @@ export interface ChallengeScoreabilityValidation {
   errors: string[];
 }
 
+export interface ChallengeTypeScoreabilityProfile {
+  requiresScoringImage: boolean;
+  requiresEvaluationBundle: boolean;
+  requiresMetric: boolean;
+  missingImageMessage: string;
+  missingEvaluationBundleMessage: string;
+  missingMetricMessage: string;
+}
+
+export const CHALLENGE_TYPE_SCOREABILITY = {
+  prediction: {
+    requiresScoringImage: false,
+    requiresEvaluationBundle: true,
+    requiresMetric: true,
+    missingImageMessage: "Prediction challenges require a scoring container.",
+    missingEvaluationBundleMessage:
+      "Prediction challenges require an evaluation bundle or hidden labels.",
+    missingMetricMessage: "Prediction challenges require a scoring metric.",
+  },
+  reproducibility: {
+    requiresScoringImage: true,
+    requiresEvaluationBundle: true,
+    requiresMetric: false,
+    missingImageMessage:
+      "Reproducibility challenges require a scoring container.",
+    missingEvaluationBundleMessage:
+      "Reproducibility challenges require an evaluation bundle.",
+    missingMetricMessage:
+      "Reproducibility challenges require a scoring metric.",
+  },
+  optimization: {
+    requiresScoringImage: true,
+    requiresEvaluationBundle: false,
+    requiresMetric: false,
+    missingImageMessage:
+      "Optimization challenges require a scoring container.",
+    missingEvaluationBundleMessage:
+      "Optimization challenges require an evaluation bundle.",
+    missingMetricMessage: "Optimization challenges require a scoring metric.",
+  },
+  docking: {
+    requiresScoringImage: true,
+    requiresEvaluationBundle: true,
+    requiresMetric: true,
+    missingImageMessage: "Docking challenges require a scoring container.",
+    missingEvaluationBundleMessage:
+      "Docking challenges require an evaluation bundle.",
+    missingMetricMessage: "Docking challenges require a scoring metric.",
+  },
+  red_team: {
+    requiresScoringImage: true,
+    requiresEvaluationBundle: false,
+    requiresMetric: false,
+    missingImageMessage: "Red team challenges require a scoring container.",
+    missingEvaluationBundleMessage:
+      "Red team challenges require an evaluation bundle.",
+    missingMetricMessage: "Red team challenges require a scoring metric.",
+  },
+  custom: {
+    requiresScoringImage: true,
+    requiresEvaluationBundle: false,
+    requiresMetric: false,
+    missingImageMessage: "Custom challenges require a scoring container.",
+    missingEvaluationBundleMessage:
+      "Custom challenges require an evaluation bundle.",
+    missingMetricMessage: "Custom challenges require a scoring metric.",
+  },
+} satisfies Record<ChallengeType, ChallengeTypeScoreabilityProfile>;
+
+export function getChallengeTypeScoreabilityProfile(type: ChallengeType) {
+  return CHALLENGE_TYPE_SCOREABILITY[type];
+}
+
 /**
  * Resolve the effective evaluation spec from a challenge spec.
  * Supports both new `eval_spec` field and legacy `scoring` + `dataset.test`.
@@ -288,6 +365,7 @@ export function validateChallengeScoreability(
 ): ChallengeScoreabilityValidation {
   const resolved = resolveEvalSpec(spec);
   const errors: string[] = [];
+  const profile = getChallengeTypeScoreabilityProfile(spec.type);
 
   const hasEvaluationBundle =
     typeof resolved.evaluationBundleCid === "string" &&
@@ -297,37 +375,16 @@ export function validateChallengeScoreability(
   const hasScoringMetric =
     typeof resolved.metric === "string" && resolved.metric.trim().length > 0;
 
-  switch (spec.type) {
-    case "prediction":
-      if (!hasEvaluationBundle) {
-        errors.push(
-          "Prediction challenges require an evaluation bundle or hidden labels.",
-        );
-      }
-      if (!hasScoringMetric) {
-        errors.push("Prediction challenges require a scoring metric.");
-      }
-      break;
-    case "reproducibility":
-      if (!hasEvaluationBundle) {
-        errors.push(
-          "Reproducibility challenges require an evaluation bundle.",
-        );
-      }
-      if (!hasScoringImage) {
-        errors.push("Reproducibility challenges require a scoring container.");
-      }
-      break;
-    case "custom":
-    case "optimization":
-      if (!hasScoringImage) {
-        errors.push(
-          "Custom and optimization challenges require a scoring container.",
-        );
-      }
-      break;
-    default:
-      break;
+  if (profile.requiresEvaluationBundle && !hasEvaluationBundle) {
+    errors.push(profile.missingEvaluationBundleMessage);
+  }
+
+  if (profile.requiresScoringImage && !hasScoringImage) {
+    errors.push(profile.missingImageMessage);
+  }
+
+  if (profile.requiresMetric && !hasScoringMetric) {
+    errors.push(profile.missingMetricMessage);
   }
 
   return {
