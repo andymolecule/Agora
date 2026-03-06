@@ -71,6 +71,18 @@ const evalSpecSchema = z.object({
 export { evalSpecSchema };
 export type EvalSpec = z.infer<typeof evalSpecSchema>;
 
+function resolveSpecEvaluationBundle(
+  spec: Pick<ChallengeSpecOutput, "type" | "dataset" | "eval_spec">,
+): string | undefined {
+  if (spec.eval_spec?.evaluation_bundle) {
+    return spec.eval_spec.evaluation_bundle;
+  }
+  if (spec.type === "prediction" && spec.dataset?.hidden_labels) {
+    return spec.dataset.hidden_labels;
+  }
+  return spec.dataset?.test;
+}
+
 // Internal permissive shape — dispute_window_hours accepts 0+.
 // Never export this directly; use challengeSpecSchema (strict) or
 // challengeSpecSchemaForChain(chainId) (chain-aware).
@@ -140,6 +152,36 @@ const _baseSpecShape = z.object({
         "max_submissions_per_solver cannot exceed max_submissions_total",
     });
   }
+
+  if (value.type !== "prediction") {
+    return;
+  }
+
+  const evaluationBundle = value.eval_spec?.evaluation_bundle;
+  const hiddenLabels = value.dataset?.hidden_labels;
+  const testDataset = value.dataset?.test;
+
+  if (!evaluationBundle && !hiddenLabels && !testDataset) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["dataset"],
+      message:
+        "Prediction challenges require eval_spec.evaluation_bundle, dataset.hidden_labels, or dataset.test.",
+    });
+  }
+
+  if (
+    typeof evaluationBundle === "string" &&
+    typeof hiddenLabels === "string" &&
+    evaluationBundle !== hiddenLabels
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["dataset", "hidden_labels"],
+      message:
+        "Prediction challenges must use the same CID for dataset.hidden_labels and eval_spec.evaluation_bundle when both are provided.",
+    });
+  }
 });
 
 /** Adds a dispute-window minimum refinement to the base shape. */
@@ -166,7 +208,7 @@ function _withDisputeMin(minHours: number) {
  * Safe for any code path. Use this unless you need chain-aware validation.
  */
 export const challengeSpecSchema = _withDisputeMin(
-  CHALLENGE_LIMITS.disputeWindowMinHours, // 168
+  CHALLENGE_LIMITS.disputeWindowMinHours,
 );
 
 export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;
@@ -208,6 +250,11 @@ export interface ResolvedEvalSpec {
   metric: string;
 }
 
+export interface ChallengeScoreabilityValidation {
+  ok: boolean;
+  errors: string[];
+}
+
 /**
  * Resolve the effective evaluation spec from a challenge spec.
  * Supports both new `eval_spec` field and legacy `scoring` + `dataset.test`.
@@ -223,15 +270,68 @@ export function resolveEvalSpec(
   if ("scoring" in spec) {
     return {
       image: spec.eval_spec?.engine_digest ?? spec.scoring.container,
-      evaluationBundleCid:
-        spec.eval_spec?.evaluation_bundle ?? spec.dataset?.test,
+      evaluationBundleCid: resolveSpecEvaluationBundle(spec),
       metric: spec.scoring.metric,
     };
   }
 
   return {
     image: spec.eval_engine_digest ?? spec.scoring_container,
-    evaluationBundleCid: spec.eval_bundle_cid ?? spec.dataset_test_cid ?? undefined,
+    evaluationBundleCid:
+      spec.eval_bundle_cid ?? spec.dataset_test_cid ?? undefined,
     metric: spec.scoring_metric,
+  };
+}
+
+export function validateChallengeScoreability(
+  spec: ChallengeSpecOutput,
+): ChallengeScoreabilityValidation {
+  const resolved = resolveEvalSpec(spec);
+  const errors: string[] = [];
+
+  const hasEvaluationBundle =
+    typeof resolved.evaluationBundleCid === "string" &&
+    resolved.evaluationBundleCid.trim().length > 0;
+  const hasScoringImage =
+    typeof resolved.image === "string" && resolved.image.trim().length > 0;
+  const hasScoringMetric =
+    typeof resolved.metric === "string" && resolved.metric.trim().length > 0;
+
+  switch (spec.type) {
+    case "prediction":
+      if (!hasEvaluationBundle) {
+        errors.push(
+          "Prediction challenges require an evaluation bundle or hidden labels.",
+        );
+      }
+      if (!hasScoringMetric) {
+        errors.push("Prediction challenges require a scoring metric.");
+      }
+      break;
+    case "reproducibility":
+      if (!hasEvaluationBundle) {
+        errors.push(
+          "Reproducibility challenges require an evaluation bundle.",
+        );
+      }
+      if (!hasScoringImage) {
+        errors.push("Reproducibility challenges require a scoring container.");
+      }
+      break;
+    case "custom":
+    case "optimization":
+      if (!hasScoringImage) {
+        errors.push(
+          "Custom and optimization challenges require a scoring container.",
+        );
+      }
+      break;
+    default:
+      break;
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
   };
 }

@@ -12,6 +12,11 @@ export interface ProofBundle {
   containerImageDigest: string;
   score: number;
   scorerLog?: string;
+  meta?: {
+    challengeId?: string;
+    submissionId?: string;
+    createdAt?: string;
+  };
 }
 
 export interface VerificationRecord {
