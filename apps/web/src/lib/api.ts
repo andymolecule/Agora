@@ -1,3 +1,8 @@
+import {
+  DEFAULT_IPFS_GATEWAY,
+  challengeSpecSchema,
+  type ChallengeSpecOutput,
+} from "@hermes/common";
 import { API_BASE_URL } from "./config";
 import type { AnalyticsData, Challenge, ChallengeDetails, SolverPortfolio, Stats, WorkerHealth } from "./types";
 
@@ -56,6 +61,16 @@ export async function listChallenges(filters: {
 
 export async function getChallenge(id: string) {
   return request<ChallengeDetails>(`/api/challenges/${id}`);
+}
+
+export async function getChallengeSpec(specCid: string): Promise<ChallengeSpecOutput> {
+  const url = `${DEFAULT_IPFS_GATEWAY}${specCid.replace("ipfs://", "")}`;
+  const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch challenge spec (${response.status}).`);
+  }
+  const json = (await response.json()) as unknown;
+  return challengeSpecSchema.parse(json);
 }
 
 export async function accelerateChallengeIndex(input: {

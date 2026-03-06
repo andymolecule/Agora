@@ -65,16 +65,20 @@ export function SubmitSolution({
 
     if (!canSubmit) {
         return (
-            <div className="rounded-[2px] border border-black p-6 bg-white flex flex-col items-center justify-center text-center">
-                <Upload className="w-6 h-6 text-black/40 mb-3" strokeWidth={1.5} />
-                <h3 className="text-lg font-bold font-mono tracking-wider uppercase mb-2 text-black/60">
+            <div className="rounded-[2px] border border-black p-6 bg-white">
+                <div className="flex items-start gap-3">
+                    <Upload className="mt-0.5 w-5 h-5 text-black/40 shrink-0" strokeWidth={1.75} />
+                    <div className="min-w-0">
+                        <h3 className="text-lg font-bold font-mono tracking-wider uppercase mb-2 text-black">
                     Submissions Closed
-                </h3>
-                <p className="text-sm text-black/50 font-medium">
-                    {isPastDeadline
-                        ? "Submission deadline has passed."
-                        : `This challenge is ${challengeStatus} — submissions are not open.`}
-                </p>
+                        </h3>
+                        <p className="text-sm text-black/60 font-medium leading-relaxed">
+                            {isPastDeadline
+                                ? "Submission deadline has passed."
+                                : `This challenge is ${challengeStatus} — submissions are not open.`}
+                        </p>
+                    </div>
+                </div>
             </div>
         );
     }
