@@ -27,7 +27,6 @@ export interface ChallengeInsert {
   scoring_container: string;
   scoring_metric: string;
   scoring_preset_id?: string | null;
-  // Eval spec columns
   eval_engine_id?: string | null;
   eval_engine_digest?: string | null;
   eval_bundle_cid?: string | null;
@@ -52,7 +51,6 @@ export interface BuildChallengeInsertInput {
   rewardAmountUsdc: number;
   disputeWindowHours: number;
   txHash: string;
-  /** On-chain deadline (ISO string). Preferred over spec.deadline when available. */
   onChainDeadline?: string;
 }
 
@@ -121,7 +119,10 @@ async function resolveOfficialImageToDigest(image: string): Promise<string> {
 
   const { imagePath, tag } = parseOfficialGhcrImage(image);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GHCR_RESOLUTION_TIMEOUT_MS);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    GHCR_RESOLUTION_TIMEOUT_MS,
+  );
 
   try {
     const response = await fetch(
@@ -211,15 +212,18 @@ export async function buildChallengeInsert(
     process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS === "true" ||
     process.env.NODE_ENV === "production";
   const explicitPresetId =
-    typeof input.spec.preset_id === "string" && input.spec.preset_id.trim().length > 0
+    typeof input.spec.preset_id === "string" &&
+    input.spec.preset_id.trim().length > 0
       ? input.spec.preset_id.trim()
       : null;
-  // Types where the poster provides their own scorer container
-  const usesCustomScorer = input.spec.type === "custom" || input.spec.type === "optimization";
+  const usesCustomScorer =
+    input.spec.type === "custom" || input.spec.type === "optimization";
   const effectivePresetId = explicitPresetId ?? (usesCustomScorer ? "custom" : null);
   const inferredPresetId =
     effectivePresetId ?? inferPresetIdByContainer(input.spec.scoring.container);
-  const presetIdsForContainer = findPresetIdsByContainer(input.spec.scoring.container);
+  const presetIdsForContainer = findPresetIdsByContainer(
+    input.spec.scoring.container,
+  );
   const shouldResolveOfficialPresetDigest =
     requirePinnedPresetDigest &&
     Boolean(inferredPresetId) &&
@@ -257,21 +261,24 @@ export async function buildChallengeInsert(
   if (!scoreability.ok) {
     throw new Error(scoreability.errors[0] ?? "Challenge is not scoreable.");
   }
+
   const persistedScoringContainer = shouldResolveOfficialPresetDigest
     ? await resolveOfficialImageToDigest(input.spec.scoring.container)
     : input.spec.scoring.container;
+
+  const evalEngineId =
+    input.spec.eval_spec?.engine_id ?? inferredPresetId ?? "custom";
+  const evalEngineDigest =
+    input.spec.eval_spec?.engine_digest ??
+    (persistedScoringContainer.includes("@sha256:")
+      ? persistedScoringContainer
+      : undefined);
   const evalBundleCid =
     input.spec.eval_spec?.evaluation_bundle ??
     (input.spec.type === "prediction"
       ? input.spec.dataset?.hidden_labels
       : undefined) ??
     input.spec.dataset?.test;
-  const evalEngineId = input.spec.eval_spec?.engine_id ?? inferredPresetId ?? "custom";
-  const evalEngineDigest =
-    input.spec.eval_spec?.engine_digest ??
-    (persistedScoringContainer.includes("@sha256:")
-      ? persistedScoringContainer
-      : undefined);
 
   return {
     chain_id: input.chainId,
@@ -288,7 +295,6 @@ export async function buildChallengeInsert(
     scoring_container: persistedScoringContainer,
     scoring_metric: input.spec.scoring.metric,
     scoring_preset_id: inferredPresetId,
-    // Eval spec columns
     eval_engine_id: evalEngineId,
     eval_engine_digest: evalEngineDigest ?? null,
     eval_bundle_cid: evalBundleCid ?? null,
@@ -382,7 +388,6 @@ export async function listChallengesWithDetails(
     throw new Error(`Failed to list challenges: ${error.message}`);
   }
 
-  // Flatten the Supabase embedded count into submissions_count
   return (data ?? []).map((row: Record<string, unknown>) => {
     const subs = row.submissions as Array<{ count: number }> | undefined;
     const submissions_count = subs?.[0]?.count ?? 0;

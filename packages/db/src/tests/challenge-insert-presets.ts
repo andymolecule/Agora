@@ -83,6 +83,7 @@ const insertInferred = await buildChallengeInsert({
   spec: inferredSpec,
 });
 assert.equal(insertInferred.scoring_preset_id, "regression_v1");
+assert.equal(insertInferred.eval_engine_id, "regression_v1");
 assert.equal(insertInferred.eval_bundle_cid, "ipfs://QmLegacyTest");
 
 const mismatchSpec = challengeSpecSchema.parse({

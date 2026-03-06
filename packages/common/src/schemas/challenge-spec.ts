@@ -208,11 +208,19 @@ function _withDisputeMin(minHours: number) {
  * Safe for any code path. Use this unless you need chain-aware validation.
  */
 export const challengeSpecSchema = _withDisputeMin(
-  CHALLENGE_LIMITS.disputeWindowMinHours, // 168
+  CHALLENGE_LIMITS.disputeWindowMinHours,
 );
 
 export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;
 export type ChallengeSpecOutput = z.output<typeof challengeSpecSchema>;
+
+export interface ChallengeEvalRow {
+  scoring_container: string;
+  scoring_metric: string;
+  dataset_test_cid?: string | null;
+  eval_engine_digest?: string | null;
+  eval_bundle_cid?: string | null;
+}
 
 /**
  * Chain-aware schema. Testnet (Base Sepolia) allows 0h; mainnet enforces 168h.
@@ -237,11 +245,9 @@ export function validateChallengeSpec(raw: unknown, chainId: number) {
 // ---------------------------------------------------------------------------
 
 export interface ResolvedEvalSpec {
-  engineId: string;
-  engineDigest?: string;
-  evaluationBundle?: string;
-  scoringContainer: string;
-  scoringMetric: string;
+  image: string;
+  evaluationBundleCid?: string;
+  metric: string;
 }
 
 export interface ChallengeScoreabilityValidation {
@@ -253,30 +259,27 @@ export interface ChallengeScoreabilityValidation {
  * Resolve the effective evaluation spec from a challenge spec.
  * Supports both new `eval_spec` field and legacy `scoring` + `dataset.test`.
  */
+export function resolveEvalSpec(spec: ChallengeSpecOutput): ResolvedEvalSpec;
+export function resolveEvalSpec(spec: ChallengeEvalRow): ResolvedEvalSpec;
 export function resolveEvalSpec(
-  spec: ChallengeSpecOutput,
+  spec: ChallengeSpecOutput | ChallengeEvalRow,
+): ResolvedEvalSpec;
+export function resolveEvalSpec(
+  spec: ChallengeSpecOutput | ChallengeEvalRow,
 ): ResolvedEvalSpec {
-  const evaluationBundle = resolveSpecEvaluationBundle(spec);
-
-  if (spec.eval_spec) {
+  if ("scoring" in spec) {
     return {
-      engineId: spec.eval_spec.engine_id,
-      engineDigest: spec.eval_spec.engine_digest,
-      evaluationBundle,
-      scoringContainer: spec.eval_spec.engine_digest ?? spec.scoring.container,
-      scoringMetric: spec.scoring.metric,
+      image: spec.eval_spec?.engine_digest ?? spec.scoring.container,
+      evaluationBundleCid: resolveSpecEvaluationBundle(spec),
+      metric: spec.scoring.metric,
     };
   }
 
-  // Legacy path: derive from scoring + dataset + preset_id
   return {
-    engineId: spec.preset_id ?? "custom",
-    engineDigest: spec.scoring.container.includes("@sha256:")
-      ? spec.scoring.container
-      : undefined,
-    evaluationBundle,
-    scoringContainer: spec.scoring.container,
-    scoringMetric: spec.scoring.metric,
+    image: spec.eval_engine_digest ?? spec.scoring_container,
+    evaluationBundleCid:
+      spec.eval_bundle_cid ?? spec.dataset_test_cid ?? undefined,
+    metric: spec.scoring_metric,
   };
 }
 
@@ -287,14 +290,12 @@ export function validateChallengeScoreability(
   const errors: string[] = [];
 
   const hasEvaluationBundle =
-    typeof resolved.evaluationBundle === "string" &&
-    resolved.evaluationBundle.trim().length > 0;
-  const hasScoringContainer =
-    typeof resolved.scoringContainer === "string" &&
-    resolved.scoringContainer.trim().length > 0;
+    typeof resolved.evaluationBundleCid === "string" &&
+    resolved.evaluationBundleCid.trim().length > 0;
+  const hasScoringImage =
+    typeof resolved.image === "string" && resolved.image.trim().length > 0;
   const hasScoringMetric =
-    typeof resolved.scoringMetric === "string" &&
-    resolved.scoringMetric.trim().length > 0;
+    typeof resolved.metric === "string" && resolved.metric.trim().length > 0;
 
   switch (spec.type) {
     case "prediction":
@@ -313,13 +314,13 @@ export function validateChallengeScoreability(
           "Reproducibility challenges require an evaluation bundle.",
         );
       }
-      if (!hasScoringContainer) {
+      if (!hasScoringImage) {
         errors.push("Reproducibility challenges require a scoring container.");
       }
       break;
     case "custom":
     case "optimization":
-      if (!hasScoringContainer) {
+      if (!hasScoringImage) {
         errors.push(
           "Custom and optimization challenges require a scoring container.",
         );

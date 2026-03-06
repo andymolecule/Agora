@@ -51,8 +51,6 @@ if (invalidLimits.success) {
   process.exit(1);
 }
 
-// --- Test eval_spec field ---
-
 const sampleWithEvalSpec = {
   ...sample,
   id: "ch-003",
@@ -74,29 +72,51 @@ if (evalResult.data.eval_spec?.engine_id !== "csv_comparison_v1") {
   process.exit(1);
 }
 
-// --- Test resolveEvalSpec with eval_spec ---
 const resolvedNew = resolveEvalSpec(evalResult.data);
-if (resolvedNew.engineId !== "csv_comparison_v1") {
-  console.error("resolveEvalSpec should use eval_spec.engine_id");
+if (resolvedNew.image !== "ghcr.io/hermes-science/repro-scorer@sha256:abc123") {
+  console.error("resolveEvalSpec should use eval_spec.engine_digest as image");
   process.exit(1);
 }
-if (resolvedNew.evaluationBundle !== "ipfs://QmEvalBundle") {
+if (resolvedNew.evaluationBundleCid !== "ipfs://QmEvalBundle") {
   console.error("resolveEvalSpec should use eval_spec.evaluation_bundle");
   process.exit(1);
 }
-
-// --- Test resolveEvalSpec with legacy fields ---
-const resolvedLegacy = resolveEvalSpec(result.data);
-if (resolvedLegacy.engineId !== "csv_comparison_v1") {
-  console.error("resolveEvalSpec should fall back to preset_id");
+if (resolvedNew.metric !== "custom") {
+  console.error("resolveEvalSpec should preserve scoring metric");
   process.exit(1);
 }
-if (resolvedLegacy.evaluationBundle !== "ipfs://QmTest") {
+
+const resolvedLegacy = resolveEvalSpec(result.data);
+if (resolvedLegacy.evaluationBundleCid !== "ipfs://QmTest") {
   console.error("resolveEvalSpec should fall back to dataset.test");
   process.exit(1);
 }
-if (resolvedLegacy.scoringContainer !== "ghcr.io/hermes-science/repro-scorer:v1") {
+if (resolvedLegacy.image !== "ghcr.io/hermes-science/repro-scorer:v1") {
   console.error("resolveEvalSpec should use scoring.container");
+  process.exit(1);
+}
+if (resolvedLegacy.metric !== "custom") {
+  console.error("resolveEvalSpec should preserve metric on legacy input");
+  process.exit(1);
+}
+
+const resolvedRow = resolveEvalSpec({
+  scoring_container: "ghcr.io/hermes-science/repro-scorer:v1",
+  scoring_metric: "custom",
+  dataset_test_cid: "ipfs://QmLegacyBundle",
+  eval_engine_digest: "ghcr.io/hermes-science/repro-scorer@sha256:def456",
+  eval_bundle_cid: "ipfs://QmResolvedBundle",
+});
+if (resolvedRow.image !== "ghcr.io/hermes-science/repro-scorer@sha256:def456") {
+  console.error("resolveEvalSpec should prefer eval_engine_digest for DB rows");
+  process.exit(1);
+}
+if (resolvedRow.evaluationBundleCid !== "ipfs://QmResolvedBundle") {
+  console.error("resolveEvalSpec should prefer eval_bundle_cid for DB rows");
+  process.exit(1);
+}
+if (resolvedRow.metric !== "custom") {
+  console.error("resolveEvalSpec should preserve scoring_metric for DB rows");
   process.exit(1);
 }
 
@@ -131,8 +151,13 @@ if (!predictionHiddenLabelsOnly.success) {
 const resolvedPredictionHiddenLabels = resolveEvalSpec(
   predictionHiddenLabelsOnly.data,
 );
-if (resolvedPredictionHiddenLabels.evaluationBundle !== "ipfs://QmHiddenLabels") {
-  console.error("resolveEvalSpec should use dataset.hidden_labels for prediction specs");
+if (
+  resolvedPredictionHiddenLabels.evaluationBundleCid !==
+  "ipfs://QmHiddenLabels"
+) {
+  console.error(
+    "resolveEvalSpec should use dataset.hidden_labels for prediction specs",
+  );
   process.exit(1);
 }
 const predictionScoreability = validateChallengeScoreability(
@@ -167,13 +192,19 @@ const predictionTestOnly = challengeSpecSchema.safeParse({
   dispute_window_hours: 168,
 });
 if (!predictionTestOnly.success) {
-  console.error("prediction spec should still accept dataset.test as the evaluation bundle fallback");
+  console.error(
+    "prediction spec should still accept dataset.test as the evaluation bundle fallback",
+  );
   process.exit(1);
 }
 
 const resolvedPredictionTestOnly = resolveEvalSpec(predictionTestOnly.data);
-if (resolvedPredictionTestOnly.evaluationBundle !== "ipfs://QmPredictionTest") {
-  console.error("resolveEvalSpec should fall back to dataset.test for prediction specs");
+if (
+  resolvedPredictionTestOnly.evaluationBundleCid !== "ipfs://QmPredictionTest"
+) {
+  console.error(
+    "resolveEvalSpec should fall back to dataset.test for prediction specs",
+  );
   process.exit(1);
 }
 
@@ -195,7 +226,9 @@ const predictionMissingEvalBundle = challengeSpecSchema.safeParse({
   dispute_window_hours: 168,
 });
 if (predictionMissingEvalBundle.success) {
-  console.error("prediction spec should require evaluation_bundle, hidden_labels, or dataset.test");
+  console.error(
+    "prediction spec should require evaluation_bundle, hidden_labels, or dataset.test",
+  );
   process.exit(1);
 }
 
@@ -229,9 +262,13 @@ if (!predictionMatchingEvalBundle.success) {
   process.exit(1);
 }
 
-const resolvedPredictionEvalBundle = resolveEvalSpec(predictionMatchingEvalBundle.data);
-if (resolvedPredictionEvalBundle.evaluationBundle !== "ipfs://QmSharedBundle") {
-  console.error("resolveEvalSpec should prefer eval_spec.evaluation_bundle for prediction specs");
+const resolvedPredictionEvalBundle = resolveEvalSpec(
+  predictionMatchingEvalBundle.data,
+);
+if (resolvedPredictionEvalBundle.evaluationBundleCid !== "ipfs://QmSharedBundle") {
+  console.error(
+    "resolveEvalSpec should prefer eval_spec.evaluation_bundle for prediction specs",
+  );
   process.exit(1);
 }
 
@@ -260,7 +297,9 @@ const predictionMismatchedEvalBundle = challengeSpecSchema.safeParse({
   dispute_window_hours: 168,
 });
 if (predictionMismatchedEvalBundle.success) {
-  console.error("prediction spec should reject mismatched hidden_labels and eval_spec.evaluation_bundle");
+  console.error(
+    "prediction spec should reject mismatched hidden_labels and eval_spec.evaluation_bundle",
+  );
   process.exit(1);
 }
 
