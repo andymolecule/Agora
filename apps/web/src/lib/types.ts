@@ -4,6 +4,7 @@ export type Challenge = {
   id: string;
   title: string;
   description: string;
+  spec_cid?: string | null;
   domain: string;
   status: ChallengeStatus;
   db_status?: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, Shield, Calendar, CheckCircle, ExternalLink, ArrowUpRight } from "lucide-react";
+import { Clock, Calendar, ExternalLink, ArrowUpRight } from "lucide-react";
 import { CHALLENGE_STATUS, type ChallengeStatus } from "@hermes/common";
 import type { Challenge, Submission } from "../lib/types";
 import { shortAddress } from "../lib/format";
@@ -33,7 +33,7 @@ export function TimelineStatus({ challenge, submissions = [] }: { challenge: Cha
   const current = flow.findIndex((step) => step.key === challenge.status);
 
   return (
-    <div className="rounded-[2px] border border-black p-6 bg-white h-full flex flex-col">
+    <div className="rounded-[2px] border border-black p-6 bg-white">
       <h3 className="text-xl font-display font-bold mb-6 text-black flex items-center gap-2 uppercase tracking-tight">
         <Clock className="w-5 h-5" strokeWidth={2.5} />
         Timeline
@@ -88,17 +88,10 @@ export function TimelineStatus({ challenge, submissions = [] }: { challenge: Cha
           </span>
         </div>
         <div className="flex items-center gap-3 text-sm">
-          <Shield className="w-4 h-4 text-black" strokeWidth={1.5} />
-          <span className="text-black/70 font-medium">Dispute window</span>
+          <Clock className="w-4 h-4 text-black" strokeWidth={1.5} />
+          <span className="text-black/70 font-medium">Review period</span>
           <span className="ml-auto font-mono font-bold text-black uppercase tracking-wider text-xs">
             {challenge.dispute_window_hours ?? 168}h
-          </span>
-        </div>
-        <div className="flex items-center gap-3 text-sm">
-          <CheckCircle className="w-4 h-4 text-black" strokeWidth={1.5} />
-          <span className="text-black/70 font-medium">Min score</span>
-          <span className="ml-auto font-mono font-bold text-black uppercase tracking-wider text-xs">
-            {String(challenge.minimum_score ?? 0)}
           </span>
         </div>
       </div>
@@ -129,7 +122,7 @@ export function TimelineStatus({ challenge, submissions = [] }: { challenge: Cha
         On-Chain Activity
       </h4>
 
-      <div className="space-y-3 flex-1 overflow-y-auto">
+      <div className="space-y-3">
         {/* Challenge creation */}
         {challenge.created_at && (
           <div className="flex items-start gap-3 text-xs">
