@@ -28,6 +28,16 @@ function formatDate(iso: string) {
     });
 }
 
+function formatRelativeAge(ms: number | null | undefined) {
+    if (typeof ms !== "number" || !Number.isFinite(ms)) return "n/a";
+    const minutes = Math.floor(ms / 60_000);
+    if (minutes < 1) return "<1m";
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+}
+
 // ─── Hero Metric (large, prominent) ────────────────────
 
 function HeroMetric({
@@ -360,7 +370,8 @@ function WorkerStatus() {
                 </span>
             </div>
             {health?.jobs ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="space-y-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {(
                         [
                             ["Queued", health.jobs.queued],
@@ -376,6 +387,33 @@ function WorkerStatus() {
                             </p>
                         </div>
                     ))}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t border-black/10">
+                        <div className="text-center">
+                            <span className="text-sm font-mono font-bold tabular-nums">
+                                {formatRelativeAge(health.metrics?.oldestQueuedAgeMs)}
+                            </span>
+                            <p className="text-[10px] font-mono uppercase tracking-wider text-black/50 font-bold">
+                                Oldest queued
+                            </p>
+                        </div>
+                        <div className="text-center">
+                            <span className="text-sm font-mono font-bold tabular-nums">
+                                {health.runningOverThresholdCount ?? 0}
+                            </span>
+                            <p className="text-[10px] font-mono uppercase tracking-wider text-black/50 font-bold">
+                                Running stale
+                            </p>
+                        </div>
+                        <div className="text-center">
+                            <span className="text-sm font-mono font-bold tabular-nums">
+                                {health.lastScoredAt ? formatDate(health.lastScoredAt) : "n/a"}
+                            </span>
+                            <p className="text-[10px] font-mono uppercase tracking-wider text-black/50 font-bold">
+                                Last scored
+                            </p>
+                        </div>
+                    </div>
                 </div>
             ) : (
                 <p className="text-sm text-black/40 font-mono">

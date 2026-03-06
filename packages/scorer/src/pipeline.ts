@@ -14,6 +14,21 @@ export interface ScoringInputSource {
   content?: string;
 }
 
+export type ScoringPipelinePhase = "fetch_inputs" | "run_scorer";
+
+export interface ScoringPipelinePhaseObserver {
+  onPhaseStart?: (phase: ScoringPipelinePhase) => void | Promise<void>;
+  onPhaseSuccess?: (
+    phase: ScoringPipelinePhase,
+    durationMs: number,
+  ) => void | Promise<void>;
+  onPhaseError?: (
+    phase: ScoringPipelinePhase,
+    durationMs: number,
+    error: unknown,
+  ) => void | Promise<void>;
+}
+
 export interface ExecuteScoringPipelineInput {
   image: string;
   evaluationBundle?: ScoringInputSource;
@@ -23,6 +38,7 @@ export interface ExecuteScoringPipelineInput {
   keepWorkspace?: boolean;
   /** When true, pull failures are fatal even if the image exists locally. */
   strictPull?: boolean;
+  phaseObserver?: ScoringPipelinePhaseObserver;
 }
 
 export interface ScoringPipelineResult {
@@ -66,6 +82,23 @@ async function stageSourceToPath(
   await fs.writeFile(destinationPath, source.content as string, "utf8");
 }
 
+async function runObservedPhase<T>(
+  observer: ScoringPipelinePhaseObserver | undefined,
+  phase: ScoringPipelinePhase,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const startedAt = Date.now();
+  await observer?.onPhaseStart?.(phase);
+  try {
+    const result = await fn();
+    await observer?.onPhaseSuccess?.(phase, Date.now() - startedAt);
+    return result;
+  } catch (error) {
+    await observer?.onPhaseError?.(phase, Date.now() - startedAt, error);
+    throw error;
+  }
+}
+
 export async function executeScoringPipeline(
   input: ExecuteScoringPipelineInput,
 ): Promise<ScoringPipelineResult> {
@@ -79,25 +112,37 @@ export async function executeScoringPipeline(
   };
 
   try {
-    // Current scorer family still expects the evaluation bundle staged
-    // under the historical ground_truth.csv filename.
-    const evaluationBundlePath = input.evaluationBundle
-      ? path.join(workspace.inputDir, "ground_truth.csv")
-      : undefined;
-    if (evaluationBundlePath && input.evaluationBundle) {
-      await stageSourceToPath(input.evaluationBundle, evaluationBundlePath);
-    }
+    const { evaluationBundlePath, submissionPath } = await runObservedPhase(
+      input.phaseObserver,
+      "fetch_inputs",
+      async () => {
+        // Current scorer family still expects the evaluation bundle staged
+        // under the historical ground_truth.csv filename.
+        const evaluationBundlePath = input.evaluationBundle
+          ? path.join(workspace.inputDir, "ground_truth.csv")
+          : undefined;
+        if (evaluationBundlePath && input.evaluationBundle) {
+          await stageSourceToPath(input.evaluationBundle, evaluationBundlePath);
+        }
 
-    const submissionPath = path.join(workspace.inputDir, "submission.csv");
-    await stageSourceToPath(input.submission, submissionPath);
+        const submissionPath = path.join(workspace.inputDir, "submission.csv");
+        await stageSourceToPath(input.submission, submissionPath);
+        return { evaluationBundlePath, submissionPath };
+      },
+    );
 
-    const result = await runScorer({
-      image: input.image,
-      inputDir: workspace.inputDir,
-      timeoutMs: input.timeoutMs,
-      limits: input.limits,
-      strictPull: input.strictPull,
-    });
+    const result = await runObservedPhase(
+      input.phaseObserver,
+      "run_scorer",
+      async () =>
+        runScorer({
+          image: input.image,
+          inputDir: workspace.inputDir,
+          timeoutMs: input.timeoutMs,
+          limits: input.limits,
+          strictPull: input.strictPull,
+        }),
+    );
 
     const output: ScoringPipelineResult = {
       result,

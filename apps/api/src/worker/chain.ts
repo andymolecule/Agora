@@ -10,6 +10,7 @@ import {
   type createSupabaseClient,
 } from "@hermes/db";
 import { type Abi } from "viem";
+import { runWorkerPhase } from "./phases.js";
 import type { ScoreJobRow, SubmissionRow, WorkerLogFn } from "./types.js";
 
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
@@ -118,24 +119,34 @@ export async function postScoreAndWaitForConfirmation(
   publicClient: ReturnType<typeof getPublicClient>,
   log: WorkerLogFn,
 ) {
-  log("info", "Posting score on-chain", {
+  const phaseMeta = {
+    jobId: job.id,
     submissionId: submission.id,
+    challengeId: job.challenge_id,
     scoreWad: scoreWad.toString(),
+  };
+  const txHash = await runWorkerPhase(log, "post_tx", phaseMeta, async () => {
+    const txHash = await postScore(
+      challengeAddress,
+      BigInt(submission.on_chain_sub_id),
+      scoreWad,
+      proofHash,
+    );
+    await markJobPosted(db, job.id, txHash);
+    log("info", "Score tx submitted", { ...phaseMeta, txHash });
+    return txHash;
   });
-  const txHash = await postScore(
-    challengeAddress,
-    BigInt(submission.on_chain_sub_id),
-    scoreWad,
-    proofHash,
-  );
-  await markJobPosted(db, job.id, txHash);
-  log("info", "Score tx submitted", { submissionId: submission.id, txHash });
 
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+  const receipt = await runWorkerPhase(
+    log,
+    "wait_confirmation",
+    { ...phaseMeta, txHash },
+    () => publicClient.waitForTransactionReceipt({ hash: txHash }),
+  );
   if (receipt.status !== "success") {
     throw new Error(`Score transaction reverted: ${txHash}`);
   }
-  log("info", "Score tx confirmed on-chain", { submissionId: submission.id, txHash });
+  log("info", "Score tx confirmed on-chain", { ...phaseMeta, txHash });
   return txHash;
 }
 

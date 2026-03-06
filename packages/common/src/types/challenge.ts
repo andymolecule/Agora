@@ -6,13 +6,16 @@ export type ChallengeDomain =
   | "neuroscience"
   | "other";
 
-export type ChallengeType =
-  | "reproducibility"
-  | "prediction"
-  | "optimization"
-  | "docking"
-  | "red_team"
-  | "custom";
+export const CHALLENGE_TYPES = [
+  "reproducibility",
+  "prediction",
+  "optimization",
+  "docking",
+  "red_team",
+  "custom",
+] as const;
+
+export type ChallengeType = (typeof CHALLENGE_TYPES)[number];
 
 export const CHALLENGE_DB_STATUS = {
   active: "active",
