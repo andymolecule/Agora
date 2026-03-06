@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { ProofBundle as SharedProofBundle } from "@hermes/common";
 
 export interface ProofBundleInput {
   challengeId: string;
@@ -12,15 +13,13 @@ export interface ProofBundleInput {
   outputPath: string;
 }
 
-export interface ProofBundle {
-  challengeId: string;
-  submissionId: string;
-  score: number;
-  inputHash: string;
-  outputHash: string;
-  containerImageDigest: string;
+export interface ProofBundle extends SharedProofBundle {
   scorerLog: string;
-  createdAt: string;
+  meta: {
+    challengeId: string;
+    submissionId: string;
+    createdAt: string;
+  };
 }
 
 async function sha256OfFile(filePath: string) {
@@ -44,13 +43,15 @@ export async function buildProofBundle(
   const outputHash = await sha256OfFile(input.outputPath);
 
   return {
-    challengeId: input.challengeId,
-    submissionId: input.submissionId,
     score: input.score,
     inputHash: hashJoined(inputHashes.sort()),
     outputHash,
     containerImageDigest: input.containerImageDigest,
     scorerLog: input.scorerLog,
-    createdAt: new Date().toISOString(),
+    meta: {
+      challengeId: input.challengeId,
+      submissionId: input.submissionId,
+      createdAt: new Date().toISOString(),
+    },
   };
 }

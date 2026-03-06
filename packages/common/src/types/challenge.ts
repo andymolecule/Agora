@@ -99,6 +99,7 @@ export type RewardDistribution = "winner_take_all" | "top_3" | "proportional";
 export interface ChallengeDataset {
   train?: string;
   test?: string;
+  hidden_labels?: string;
 }
 
 export interface ChallengeScoring {

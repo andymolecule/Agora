@@ -6,6 +6,7 @@ import {
   getProofBundleBySubmissionId,
   getSubmissionById,
 } from "@hermes/db";
+import type { ProofBundle as ProofBundlePayload } from "@hermes/common";
 import { getJSON } from "@hermes/ipfs";
 import { executeScoringPipeline } from "@hermes/scorer";
 import { Command } from "commander";
@@ -46,13 +47,6 @@ type ProofBundleRecord = {
   input_hash: string;
   output_hash: string;
   container_image_hash: string;
-};
-
-type ProofBundlePayload = {
-  score?: number;
-  inputHash?: string;
-  outputHash?: string;
-  containerImageDigest?: string;
 };
 
 export function buildVerifyCommand() {

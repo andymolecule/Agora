@@ -71,6 +71,18 @@ const evalSpecSchema = z.object({
 export { evalSpecSchema };
 export type EvalSpec = z.infer<typeof evalSpecSchema>;
 
+function resolveSpecEvaluationBundle(
+  spec: Pick<ChallengeSpecOutput, "type" | "dataset" | "eval_spec">,
+): string | undefined {
+  if (spec.eval_spec?.evaluation_bundle) {
+    return spec.eval_spec.evaluation_bundle;
+  }
+  if (spec.type === "prediction" && spec.dataset?.hidden_labels) {
+    return spec.dataset.hidden_labels;
+  }
+  return spec.dataset?.test;
+}
+
 // Internal permissive shape — dispute_window_hours accepts 0+.
 // Never export this directly; use challengeSpecSchema (strict) or
 // challengeSpecSchemaForChain(chainId) (chain-aware).
@@ -140,6 +152,36 @@ const _baseSpecShape = z.object({
         "max_submissions_per_solver cannot exceed max_submissions_total",
     });
   }
+
+  if (value.type !== "prediction") {
+    return;
+  }
+
+  const evaluationBundle = value.eval_spec?.evaluation_bundle;
+  const hiddenLabels = value.dataset?.hidden_labels;
+  const testDataset = value.dataset?.test;
+
+  if (!evaluationBundle && !hiddenLabels && !testDataset) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["dataset"],
+      message:
+        "Prediction challenges require eval_spec.evaluation_bundle, dataset.hidden_labels, or dataset.test.",
+    });
+  }
+
+  if (
+    typeof evaluationBundle === "string" &&
+    typeof hiddenLabels === "string" &&
+    evaluationBundle !== hiddenLabels
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["dataset", "hidden_labels"],
+      message:
+        "Prediction challenges must use the same CID for dataset.hidden_labels and eval_spec.evaluation_bundle when both are provided.",
+    });
+  }
 });
 
 /** Adds a dispute-window minimum refinement to the base shape. */
@@ -202,6 +244,11 @@ export interface ResolvedEvalSpec {
   scoringMetric: string;
 }
 
+export interface ChallengeScoreabilityValidation {
+  ok: boolean;
+  errors: string[];
+}
+
 /**
  * Resolve the effective evaluation spec from a challenge spec.
  * Supports both new `eval_spec` field and legacy `scoring` + `dataset.test`.
@@ -209,11 +256,13 @@ export interface ResolvedEvalSpec {
 export function resolveEvalSpec(
   spec: ChallengeSpecOutput,
 ): ResolvedEvalSpec {
+  const evaluationBundle = resolveSpecEvaluationBundle(spec);
+
   if (spec.eval_spec) {
     return {
       engineId: spec.eval_spec.engine_id,
       engineDigest: spec.eval_spec.engine_digest,
-      evaluationBundle: spec.eval_spec.evaluation_bundle,
+      evaluationBundle,
       scoringContainer: spec.eval_spec.engine_digest ?? spec.scoring.container,
       scoringMetric: spec.scoring.metric,
     };
@@ -225,8 +274,63 @@ export function resolveEvalSpec(
     engineDigest: spec.scoring.container.includes("@sha256:")
       ? spec.scoring.container
       : undefined,
-    evaluationBundle: spec.dataset?.test,
+    evaluationBundle,
     scoringContainer: spec.scoring.container,
     scoringMetric: spec.scoring.metric,
+  };
+}
+
+export function validateChallengeScoreability(
+  spec: ChallengeSpecOutput,
+): ChallengeScoreabilityValidation {
+  const resolved = resolveEvalSpec(spec);
+  const errors: string[] = [];
+
+  const hasEvaluationBundle =
+    typeof resolved.evaluationBundle === "string" &&
+    resolved.evaluationBundle.trim().length > 0;
+  const hasScoringContainer =
+    typeof resolved.scoringContainer === "string" &&
+    resolved.scoringContainer.trim().length > 0;
+  const hasScoringMetric =
+    typeof resolved.scoringMetric === "string" &&
+    resolved.scoringMetric.trim().length > 0;
+
+  switch (spec.type) {
+    case "prediction":
+      if (!hasEvaluationBundle) {
+        errors.push(
+          "Prediction challenges require an evaluation bundle or hidden labels.",
+        );
+      }
+      if (!hasScoringMetric) {
+        errors.push("Prediction challenges require a scoring metric.");
+      }
+      break;
+    case "reproducibility":
+      if (!hasEvaluationBundle) {
+        errors.push(
+          "Reproducibility challenges require an evaluation bundle.",
+        );
+      }
+      if (!hasScoringContainer) {
+        errors.push("Reproducibility challenges require a scoring container.");
+      }
+      break;
+    case "custom":
+    case "optimization":
+      if (!hasScoringContainer) {
+        errors.push(
+          "Custom and optimization challenges require a scoring container.",
+        );
+      }
+      break;
+    default:
+      break;
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
   };
 }
