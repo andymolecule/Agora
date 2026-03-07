@@ -37,9 +37,12 @@ function assertServerEnvAlignment() {
   }
 
   if (mismatches.length > 0) {
-    throw new Error(
-      `Hermes web env mismatch detected. Align HERMES_* and NEXT_PUBLIC_HERMES_* values.\n- ${mismatches.join("\n- ")}`,
-    );
+    const message =
+      `Hermes web env mismatch detected. Align HERMES_* and NEXT_PUBLIC_HERMES_* values.\n- ${mismatches.join("\n- ")}`;
+    if (process.env.NODE_ENV === "development") {
+      throw new Error(message);
+    }
+    console.warn(message);
   }
 }
 
