@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { SUBMISSION_LIMITS } from "@hermes/common";
-import { pinFile } from "@hermes/ipfs";
+import { SUBMISSION_LIMITS } from "@agora/common";
+import { pinFile } from "@agora/ipfs";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -75,7 +75,7 @@ export async function POST(req: Request) {
         }
 
         // Store upload temporarily and stream-pin it as a file (no base64 wrapping).
-        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-upload-"));
+        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "agora-upload-"));
         const safeName = path.basename(file.name || "upload.bin");
         tempFilePath = path.join(tempDir, `${randomUUID()}-${safeName}`);
         const buffer = await file.arrayBuffer();

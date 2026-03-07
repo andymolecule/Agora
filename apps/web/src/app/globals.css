@@ -1,5 +1,5 @@
 /* ============================================================
-   HERMES DESIGN SYSTEM — globals.css
+   AGORA DESIGN SYSTEM — globals.css
    v2.0 | Tailwind CSS 4 + Molecule Blue tokens
    Reference: docs/design-system/DESIGN-SYSTEM.md
    ============================================================ */
@@ -507,7 +507,7 @@ a:hover {
 }
 
 /* ============================================================
-   DASHBOARD LAYOUT — ported from hermes-mockup
+   DASHBOARD LAYOUT
    ============================================================ */
 
 /* Override tokens inside dashboard to match mockup's warm palette */

@@ -8,7 +8,7 @@ import {
   createChallenge,
   getPublicClient,
   getWalletClient,
-} from "@hermes/chain";
+} from "@agora/chain";
 import {
   CHALLENGE_LIMITS,
   DEFAULT_CHAIN_ID,
@@ -17,9 +17,9 @@ import {
   defaultMinimumScoreForChallengeType,
   type ChallengeSpecOutput,
   validateChallengeSpec,
-} from "@hermes/common";
-import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
-import { pinFile } from "@hermes/ipfs";
+} from "@agora/common";
+import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json";
+import { pinFile } from "@agora/ipfs";
 import { Command } from "commander";
 import { formatUnits, parseEventLogs, parseUnits } from "viem";
 import yaml from "yaml";
@@ -33,7 +33,7 @@ import { printJson, printSuccess, printWarning } from "../lib/output";
 import { createSpinner } from "../lib/spinner";
 import { ensurePrivateKey } from "../lib/wallet";
 
-const HermesFactoryAbi = HermesFactoryAbiJson as unknown as readonly unknown[];
+const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as readonly unknown[];
 
 const distributionMap: Record<string, number> = {
   winner_take_all: 0,
@@ -79,7 +79,7 @@ async function maybePinDataset(value: string, label: string, baseDir: string) {
 }
 
 async function pinSpecFile(spec: ChallengeSpecOutput) {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-spec-"));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "agora-spec-"));
   const tempPath = path.join(tempDir, "challenge.yaml");
   try {
     const content = yaml.stringify(spec);
@@ -124,7 +124,7 @@ export function buildPostCommand() {
       "Validate and pin, but skip on-chain transactions",
       false,
     )
-    .option("--key <ref>", "Private key reference, e.g. env:HERMES_PRIVATE_KEY")
+    .option("--key <ref>", "Private key reference, e.g. env:AGORA_PRIVATE_KEY")
     .option("--format <format>", "table or json", "table")
     .action(
       async (
@@ -287,7 +287,7 @@ export function buildPostCommand() {
           hash: txHash,
         });
         const parsedLogs = parseEventLogs({
-          abi: HermesFactoryAbi,
+          abi: AgoraFactoryAbi,
           logs: receipt.logs,
           strict: false,
         }) as Array<{ eventName?: string; args?: readonly unknown[] }>;

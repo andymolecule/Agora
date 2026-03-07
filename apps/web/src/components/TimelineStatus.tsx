@@ -1,7 +1,7 @@
 "use client";
 
 import { Clock, Calendar, ExternalLink, ArrowUpRight } from "lucide-react";
-import { CHALLENGE_STATUS, type ChallengeStatus } from "@hermes/common";
+import { CHALLENGE_STATUS, type ChallengeStatus } from "@agora/common";
 import type { Challenge, Submission } from "../lib/types";
 import { shortAddress } from "../lib/format";
 

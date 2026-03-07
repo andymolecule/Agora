@@ -1,6 +1,6 @@
 import { scoreLocal } from "./shared.js";
 
-export async function hermesScoreLocal(input: {
+export async function agoraScoreLocal(input: {
   challengeId: string;
   filePath: string;
 }) {

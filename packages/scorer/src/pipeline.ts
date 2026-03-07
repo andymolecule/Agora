@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { downloadToPath } from "@hermes/ipfs";
+import { downloadToPath } from "@agora/ipfs";
 import {
   runScorer,
   type RunScorerInput,

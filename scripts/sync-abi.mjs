@@ -3,14 +3,14 @@ import path from "node:path";
 
 const pairs = [
   {
-    from: "packages/contracts/out/HermesFactory.sol/HermesFactory.json",
-    to: "packages/common/src/abi/HermesFactory.json",
-    label: "HermesFactory",
+    from: "packages/contracts/out/AgoraFactory.sol/AgoraFactory.json",
+    to: "packages/common/src/abi/AgoraFactory.json",
+    label: "AgoraFactory",
   },
   {
-    from: "packages/contracts/out/HermesChallenge.sol/HermesChallenge.json",
-    to: "packages/common/src/abi/HermesChallenge.json",
-    label: "HermesChallenge",
+    from: "packages/contracts/out/AgoraChallenge.sol/AgoraChallenge.json",
+    to: "packages/common/src/abi/AgoraChallenge.json",
+    label: "AgoraChallenge",
   },
 ];
 
@@ -20,7 +20,7 @@ for (const pair of pairs) {
 
   if (!fs.existsSync(srcPath)) {
     throw new Error(
-      `Missing forge artifact for ${pair.label}: ${srcPath}. Run 'pnpm --filter @hermes/contracts build' first.`,
+      `Missing forge artifact for ${pair.label}: ${srcPath}. Run 'pnpm --filter @agora/contracts build' first.`,
     );
   }
 

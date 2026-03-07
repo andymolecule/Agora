@@ -22,7 +22,7 @@ export function getPinSpecAuthorizationTypedData(input: {
 }) {
   return {
     domain: {
-      name: "Hermes",
+      name: "Agora",
       version: "1",
       chainId: input.chainId,
     },

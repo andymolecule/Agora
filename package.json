@@ -1,13 +1,13 @@
 {
-  "name": "hermes",
+  "name": "agora",
   "private": true,
   "packageManager": "pnpm@9.0.0",
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "build": "turbo build",
     "test": "turbo test",
-    "abi:sync": "pnpm --filter @hermes/contracts build && node scripts/sync-abi.mjs",
-    "abi:check": "pnpm --filter @hermes/contracts build && node scripts/check-abi-sync.mjs",
+    "abi:sync": "pnpm --filter @agora/contracts build && node scripts/sync-abi.mjs",
+    "abi:check": "pnpm --filter @agora/contracts build && node scripts/check-abi-sync.mjs",
     "verify": "pnpm abi:check && pnpm build && pnpm test",
     "lint": "biome check .",
     "lint:fix": "biome check --apply .",

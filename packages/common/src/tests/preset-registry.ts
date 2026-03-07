@@ -20,7 +20,7 @@ assert.equal(uniqueIds[0], "regression_v1");
 assert.equal(inferPresetIdByContainer(regression.container), "regression_v1");
 
 const resolvedRegressionDigest =
-  "ghcr.io/hermes-science/regression-scorer@sha256:" + "e".repeat(64);
+  "ghcr.io/agora-science/regression-scorer@sha256:" + "e".repeat(64);
 const digestIds = findPresetIdsByContainer(resolvedRegressionDigest);
 assert.equal(
   digestIds.length,

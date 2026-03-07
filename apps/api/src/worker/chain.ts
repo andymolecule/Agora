@@ -1,6 +1,6 @@
-import { finalizeChallenge, getOnChainSubmission, getPublicClient, postScore } from "@hermes/chain";
-import { CHALLENGE_STATUS } from "@hermes/common";
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
+import { finalizeChallenge, getOnChainSubmission, getPublicClient, postScore } from "@agora/chain";
+import { CHALLENGE_STATUS } from "@agora/common";
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with { type: "json" };
 import {
   clearJobPostedTx,
   completeJob,
@@ -8,12 +8,12 @@ import {
   requeueJobWithoutAttemptPenalty,
   updateScore,
   type createSupabaseClient,
-} from "@hermes/db";
+} from "@agora/db";
 import { type Abi } from "viem";
 import { runWorkerPhase } from "./phases.js";
 import type { ScoreJobRow, SubmissionRow, WorkerLogFn } from "./types.js";
 
-const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
+const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 type DbClient = ReturnType<typeof createSupabaseClient>;
 
@@ -169,17 +169,17 @@ export async function sweepFinalizable(
         await Promise.all([
           publicClient.readContract({
             address: challenge.contract_address as `0x${string}`,
-            abi: HermesChallengeAbi,
+            abi: AgoraChallengeAbi,
             functionName: "status",
           }),
           publicClient.readContract({
             address: challenge.contract_address as `0x${string}`,
-            abi: HermesChallengeAbi,
+            abi: AgoraChallengeAbi,
             functionName: "deadline",
           }) as Promise<bigint>,
           publicClient.readContract({
             address: challenge.contract_address as `0x${string}`,
-            abi: HermesChallengeAbi,
+            abi: AgoraChallengeAbi,
             functionName: "disputeWindowHours",
           }) as Promise<bigint>,
         ]);

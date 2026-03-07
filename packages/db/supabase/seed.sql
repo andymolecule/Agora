@@ -1,2 +1,2 @@
--- Hermes seed data (optional)
+-- Agora seed data (optional)
 -- Intentionally left minimal for MVP.

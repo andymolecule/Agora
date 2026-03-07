@@ -2,7 +2,7 @@ import {
   createSupabaseClient,
   createVerification,
   getProofBundleBySubmissionId,
-} from "@hermes/db";
+} from "@agora/db";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";

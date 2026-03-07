@@ -1,6 +1,6 @@
 import { parseBooleanFlag } from "./env.js";
 
-export type HermesFeaturePolicy = {
+export type AgoraFeaturePolicy = {
   enableNonCoreFeatures: boolean;
   scorePreviewEnabled: boolean;
   x402Enabled: boolean;
@@ -10,22 +10,22 @@ export type HermesFeaturePolicy = {
 
 export function readFeaturePolicy(
   env: Record<string, string | undefined> = process.env,
-): HermesFeaturePolicy {
+): AgoraFeaturePolicy {
   const enableNonCoreFeatures = parseBooleanFlag(
-    env.HERMES_ENABLE_NON_CORE_FEATURES,
+    env.AGORA_ENABLE_NON_CORE_FEATURES,
     false,
   );
 
   const x402Enabled =
-    enableNonCoreFeatures && parseBooleanFlag(env.HERMES_X402_ENABLED, false);
+    enableNonCoreFeatures && parseBooleanFlag(env.AGORA_X402_ENABLED, false);
   const x402ReportOnly =
-    x402Enabled && parseBooleanFlag(env.HERMES_X402_REPORT_ONLY, false);
+    x402Enabled && parseBooleanFlag(env.AGORA_X402_REPORT_ONLY, false);
   const scorePreviewEnabled =
     enableNonCoreFeatures &&
-    parseBooleanFlag(env.HERMES_ENABLE_SCORE_PREVIEW, false);
+    parseBooleanFlag(env.AGORA_ENABLE_SCORE_PREVIEW, false);
   const allowMcpRemotePrivateKeys =
     enableNonCoreFeatures &&
-    parseBooleanFlag(env.HERMES_MCP_ALLOW_REMOTE_PRIVATE_KEYS, false);
+    parseBooleanFlag(env.AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS, false);
 
   return {
     enableNonCoreFeatures,

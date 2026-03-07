@@ -1,6 +1,6 @@
 # Optimization Test Data
 
-Realistic posting fixtures for the Hermes optimization category.
+Realistic posting fixtures for the Agora optimization category.
 
 This category is intentionally flexible and currently depends on a poster-supplied custom scorer image. That means this folder is primarily a human posting and submission-contract kit.
 

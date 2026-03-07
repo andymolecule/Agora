@@ -10,9 +10,9 @@ import type { ChallengeType } from "./types/challenge.js";
 // ---------------------------------------------------------------------------
 
 export const OFFICIAL_IMAGES = {
-    repro: "ghcr.io/hermes-science/repro-scorer:latest",
-    regression: "ghcr.io/hermes-science/regression-scorer:latest",
-    docking: "ghcr.io/hermes-science/docking-scorer:latest",
+    repro: "ghcr.io/agora-science/repro-scorer:latest",
+    regression: "ghcr.io/agora-science/regression-scorer:latest",
+    docking: "ghcr.io/agora-science/docking-scorer:latest",
 } as const;
 
 // ===========================================================================
@@ -302,7 +302,7 @@ function getGhcrHeaders(env: Record<string, string | undefined>) {
             "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json",
     };
     const token =
-        env.HERMES_GHCR_TOKEN
+        env.AGORA_GHCR_TOKEN
         ?? env.GHCR_TOKEN
         ?? env.GITHUB_TOKEN;
     if (typeof token === "string" && token.length > 0) {
@@ -374,7 +374,7 @@ export async function resolveOfficialImageToDigest(
         if (response.status === 401 || response.status === 403) {
             throw new GhcrResolutionError(
                 "auth_failure",
-                `GHCR auth failure while resolving official preset image ${trimmed}. Configure HERMES_GHCR_TOKEN, GHCR_TOKEN, or GITHUB_TOKEN with pull access.`,
+                `GHCR auth failure while resolving official preset image ${trimmed}. Configure AGORA_GHCR_TOKEN, GHCR_TOKEN, or GITHUB_TOKEN with pull access.`,
             );
         }
 

@@ -1,4 +1,4 @@
-import { CHAIN_IDS, loadConfig } from "@hermes/common";
+import { CHAIN_IDS, loadConfig } from "@agora/common";
 import {
   http,
   type Chain,
@@ -11,43 +11,43 @@ import { base, baseSepolia } from "viem/chains";
 
 function resolveChain(): Chain {
   const config = loadConfig();
-  const chainId = config.HERMES_CHAIN_ID;
+  const chainId = config.AGORA_CHAIN_ID;
   return chainId === CHAIN_IDS.baseMainnet ? base : baseSepolia;
 }
 
-export function createHermesPublicClient() {
+export function createAgoraPublicClient() {
   const config = loadConfig();
   const chain = resolveChain();
-  const transport = http(config.HERMES_RPC_URL);
+  const transport = http(config.AGORA_RPC_URL);
   return createPublicClient({ chain, transport });
 }
 
-export function createHermesWalletClient() {
+export function createAgoraWalletClient() {
   const config = loadConfig();
-  if (!config.HERMES_PRIVATE_KEY) {
-    throw new Error("HERMES_PRIVATE_KEY is required for wallet operations.");
+  if (!config.AGORA_PRIVATE_KEY) {
+    throw new Error("AGORA_PRIVATE_KEY is required for wallet operations.");
   }
   const chain = resolveChain();
-  const transport = http(config.HERMES_RPC_URL);
-  const account = privateKeyToAccount(config.HERMES_PRIVATE_KEY);
+  const transport = http(config.AGORA_RPC_URL);
+  const account = privateKeyToAccount(config.AGORA_PRIVATE_KEY);
   return createWalletClient({ chain, transport, account });
 }
 
-let cachedPublicClient: ReturnType<typeof createHermesPublicClient> | null =
+let cachedPublicClient: ReturnType<typeof createAgoraPublicClient> | null =
   null;
-let cachedWalletClient: ReturnType<typeof createHermesWalletClient> | null =
+let cachedWalletClient: ReturnType<typeof createAgoraWalletClient> | null =
   null;
 
 export function getPublicClient() {
   if (!cachedPublicClient) {
-    cachedPublicClient = createHermesPublicClient();
+    cachedPublicClient = createAgoraPublicClient();
   }
   return cachedPublicClient;
 }
 
 export function getWalletClient() {
   if (!cachedWalletClient) {
-    cachedWalletClient = createHermesWalletClient();
+    cachedWalletClient = createAgoraWalletClient();
   }
   return cachedWalletClient;
 }

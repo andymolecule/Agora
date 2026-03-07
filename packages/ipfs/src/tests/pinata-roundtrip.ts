@@ -1,12 +1,12 @@
 // Skip early if required env vars are missing — check raw process.env
 // because loadConfig() will throw on missing required vars.
 if (
-  !process.env.HERMES_PINATA_JWT ||
-  !process.env.HERMES_RPC_URL ||
-  !process.env.HERMES_FACTORY_ADDRESS ||
-  !process.env.HERMES_USDC_ADDRESS
+  !process.env.AGORA_PINATA_JWT ||
+  !process.env.AGORA_RPC_URL ||
+  !process.env.AGORA_FACTORY_ADDRESS ||
+  !process.env.AGORA_USDC_ADDRESS
 ) {
-  console.log("SKIP: IPFS test requires HERMES_PINATA_JWT + core env vars");
+  console.log("SKIP: IPFS test requires AGORA_PINATA_JWT + core env vars");
   process.exit(0);
 }
 
@@ -18,7 +18,7 @@ const payload = {
   timestamp: new Date().toISOString(),
 };
 
-const name = `hermes-test-${Date.now()}`;
+const name = `agora-test-${Date.now()}`;
 const cid = await pinJSON(name, payload);
 const fetched = await getJSON<typeof payload>(cid);
 

@@ -1,6 +1,6 @@
-import { getOnChainSubmission } from "@hermes/chain";
-import { getJSON } from "@hermes/ipfs";
-import { executeScoringPipeline } from "@hermes/scorer";
+import { getOnChainSubmission } from "@agora/chain";
+import { getJSON } from "@agora/ipfs";
+import { executeScoringPipeline } from "@agora/scorer";
 import { Command } from "commander";
 import { keccak256, toBytes } from "viem";
 import { fetchApiJson } from "../lib/api";

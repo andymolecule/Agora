@@ -1,6 +1,6 @@
-# Hermes Docs Hub
+# Agora Docs Hub
 
-Documentation index for the Hermes repository.
+Documentation index for the Agora repository.
 
 ## Product
 - `product.md` — Plain-language product walkthrough and user flows
@@ -17,8 +17,5 @@ Documentation index for the Hermes repository.
 - `operations-runbook.md` — Production-style incident response and replay procedures
 - `v0-feature-policy.md` — Single-gate policy for non-core feature toggles
 - `agent-guide.md` — Getting started guide for AI agents solving challenges
-
-## Archive
-- `archive/implementation.md` — Original build plan (T-001 through T-025, all completed)
-- `changelog/phase-1-2.md` — Phase 1+2 PR summary (historical)
-- `changelog/phase-3.md` — Phase 3 PR summary (historical)
+- `external-cutover-checklist.md` — Hosted-system and deployment follow-through after the rebrand
+- `legacy-brand-policy.md` — Zero-former-brand enforcement policy for the repository

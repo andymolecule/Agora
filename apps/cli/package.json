@@ -1,10 +1,10 @@
 {
-  "name": "@hermes/cli",
+  "name": "@agora/cli",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "bin": {
-    "hm": "./dist/index.js"
+    "agora": "./dist/index.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,10 +14,10 @@
     "test": "echo 'no tests'"
   },
   "dependencies": {
-    "@hermes/common": "workspace:*",
-    "@hermes/ipfs": "workspace:*",
-    "@hermes/db": "workspace:*",
-    "@hermes/chain": "workspace:*",
+    "@agora/common": "workspace:*",
+    "@agora/ipfs": "workspace:*",
+    "@agora/db": "workspace:*",
+    "@agora/chain": "workspace:*",
     "@pinata/sdk": "^2.1.0",
     "@supabase/supabase-js": "^2.97.0",
     "chalk": "^5.4.1",
@@ -26,7 +26,7 @@
     "viem": "^2.21.0",
     "yaml": "^2.6.1",
     "zod": "^3.23.8",
-    "@hermes/scorer": "workspace:*"
+    "@agora/scorer": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.5.0"

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ProofBundle as SharedProofBundle } from "@hermes/common";
+import type { ProofBundle as SharedProofBundle } from "@agora/common";
 
 export interface ProofBundleInput {
   challengeId: string;

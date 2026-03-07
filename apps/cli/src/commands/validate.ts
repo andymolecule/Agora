@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_CHAIN_ID, validateChallengeSpec } from "@hermes/common";
-import { executeScoringPipeline } from "@hermes/scorer";
+import { DEFAULT_CHAIN_ID, validateChallengeSpec } from "@agora/common";
+import { executeScoringPipeline } from "@agora/scorer";
 import { Command } from "commander";
 import yaml from "yaml";
 import { printSuccess, printWarning, printJson } from "../lib/output";

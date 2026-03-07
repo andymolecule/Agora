@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { claimNextJob } from "@hermes/db";
+import { claimNextJob } from "@agora/db";
 
 test("claimNextJob is a function that accepts db + workerId", () => {
   assert.equal(typeof claimNextJob, "function");

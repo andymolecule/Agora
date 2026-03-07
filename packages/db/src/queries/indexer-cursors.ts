@@ -1,7 +1,7 @@
-import type { HermesDbClient } from "../index";
+import type { AgoraDbClient } from "../index";
 
 export async function getIndexerCursor(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   cursorKey: string,
 ): Promise<bigint | null> {
   const { data, error } = await db
@@ -18,7 +18,7 @@ export async function getIndexerCursor(
 }
 
 export async function setIndexerCursor(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   cursorKey: string,
   blockNumber: bigint,
 ) {

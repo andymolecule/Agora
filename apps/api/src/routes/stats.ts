@@ -1,4 +1,4 @@
-import { createSupabaseClient } from "@hermes/db";
+import { createSupabaseClient } from "@agora/db";
 import { Hono } from "hono";
 import type { ApiEnv } from "../types.js";
 

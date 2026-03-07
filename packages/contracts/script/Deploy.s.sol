@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
-import {HermesFactory} from "../src/HermesFactory.sol";
+import {AgoraFactory} from "../src/AgoraFactory.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 contract Deploy is Script {
@@ -13,7 +13,7 @@ contract Deploy is Script {
         address treasury = vm.envAddress("TREASURY_ADDRESS");
 
         vm.startBroadcast(deployerKey);
-        new HermesFactory(IERC20(usdc), oracle, treasury);
+        new AgoraFactory(IERC20(usdc), oracle, treasury);
         vm.stopBroadcast();
     }
 }

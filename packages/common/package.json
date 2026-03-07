@@ -1,5 +1,5 @@
 {
-  "name": "@hermes/common",
+  "name": "@agora/common",
   "version": "0.0.0",
   "private": true,
   "type": "module",

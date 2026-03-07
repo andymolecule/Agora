@@ -1,4 +1,4 @@
-import type { HermesDbClient } from "../index";
+import type { AgoraDbClient } from "../index";
 import {
   canonicalizeChallengeSpec,
   defaultMinimumScoreForChallengeType,
@@ -10,7 +10,7 @@ import {
   validatePresetIntegrity,
   type ChallengeDbStatus,
   type ChallengeSpecOutput,
-} from "@hermes/common";
+} from "@agora/common";
 
 export interface ChallengeInsert {
   chain_id: number;
@@ -60,8 +60,8 @@ export async function buildChallengeInsert(
   input: BuildChallengeInsertInput,
 ): Promise<ChallengeInsert> {
   const requirePinnedPresetDigest =
-    process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS === "1" ||
-    process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS === "true" ||
+    process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS === "1" ||
+    process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS === "true" ||
     process.env.NODE_ENV === "production";
   const canonicalSpec = await canonicalizeChallengeSpec(input.spec, {
     resolveOfficialPresetDigests: requirePinnedPresetDigest,
@@ -162,7 +162,7 @@ export async function buildChallengeInsert(
 }
 
 export async function upsertChallenge(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   payload: ChallengeInsert,
 ) {
   const { data, error } = await db
@@ -178,7 +178,7 @@ export async function upsertChallenge(
   return data;
 }
 
-export async function getChallengeById(db: HermesDbClient, id: string) {
+export async function getChallengeById(db: AgoraDbClient, id: string) {
   const { data, error } = await db
     .from("challenges")
     .select("*")
@@ -190,7 +190,7 @@ export async function getChallengeById(db: HermesDbClient, id: string) {
   return data;
 }
 
-export async function listChallenges(db: HermesDbClient) {
+export async function listChallenges(db: AgoraDbClient) {
   const { data, error } = await db
     .from("challenges")
     .select(
@@ -210,7 +210,7 @@ export interface ChallengeListFilters {
 }
 
 export async function listChallengesWithDetails(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   filters: ChallengeListFilters = {},
 ) {
   let query = db.from("challenges").select("*, submissions(count)");
@@ -242,7 +242,7 @@ export async function listChallengesWithDetails(
 }
 
 export async function updateChallengeStatus(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   challengeId: string,
   status: ChallengeDbStatus,
 ) {
@@ -259,7 +259,7 @@ export async function updateChallengeStatus(
 }
 
 export async function setChallengeFinalized(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   challengeId: string,
   finalizedAt: string,
   winnerOnChainSubId: number | null,

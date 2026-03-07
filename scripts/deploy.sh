@@ -4,34 +4,34 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-API_TARGET="${HERMES_DEPLOY_API_TARGET:-none}"       # none|fly|railway
-INDEXER_TARGET="${HERMES_DEPLOY_INDEXER_TARGET:-none}" # none|fly|railway
-RPC_URL="${HERMES_RPC_URL:-}"
-PRIVATE_KEY="${HERMES_PRIVATE_KEY:-}"
-USDC_ADDRESS="${HERMES_USDC_ADDRESS:-}"
-ORACLE_ADDRESS="${HERMES_ORACLE_ADDRESS:-}"
-TREASURY_ADDRESS="${HERMES_TREASURY_ADDRESS:-}"
+API_TARGET="${AGORA_DEPLOY_API_TARGET:-none}"       # none|fly|railway
+INDEXER_TARGET="${AGORA_DEPLOY_INDEXER_TARGET:-none}" # none|fly|railway
+RPC_URL="${AGORA_RPC_URL:-}"
+PRIVATE_KEY="${AGORA_PRIVATE_KEY:-}"
+USDC_ADDRESS="${AGORA_USDC_ADDRESS:-}"
+ORACLE_ADDRESS="${AGORA_ORACLE_ADDRESS:-}"
+TREASURY_ADDRESS="${AGORA_TREASURY_ADDRESS:-}"
 
 if [[ -z "$RPC_URL" || -z "$PRIVATE_KEY" || -z "$USDC_ADDRESS" ]]; then
   echo "Missing required env vars for contract deploy:"
-  echo "  HERMES_RPC_URL, HERMES_PRIVATE_KEY, HERMES_USDC_ADDRESS"
+  echo "  AGORA_RPC_URL, AGORA_PRIVATE_KEY, AGORA_USDC_ADDRESS"
   exit 1
 fi
 
 if [[ -z "$ORACLE_ADDRESS" ]]; then
   ORACLE_ADDRESS="$(node --input-type=module -e 'import { privateKeyToAccount } from "viem/accounts"; const pk = process.argv[1]; process.stdout.write(privateKeyToAccount(pk).address);' "$PRIVATE_KEY")"
-  echo "HERMES_ORACLE_ADDRESS not set. Defaulting to deployer-derived address: $ORACLE_ADDRESS"
+  echo "AGORA_ORACLE_ADDRESS not set. Defaulting to deployer-derived address: $ORACLE_ADDRESS"
 fi
 
 if [[ -z "$TREASURY_ADDRESS" ]]; then
   TREASURY_ADDRESS="$ORACLE_ADDRESS"
-  echo "HERMES_TREASURY_ADDRESS not set. Defaulting treasury to: $TREASURY_ADDRESS"
+  echo "AGORA_TREASURY_ADDRESS not set. Defaulting treasury to: $TREASURY_ADDRESS"
 fi
 
 echo "Building monorepo..."
 pnpm turbo build >/dev/null
 
-echo "Deploying HermesFactory via Foundry..."
+echo "Deploying AgoraFactory via Foundry..."
 pushd packages/contracts >/dev/null
 PRIVATE_KEY="$PRIVATE_KEY" \
 USDC_ADDRESS="$USDC_ADDRESS" \
@@ -90,14 +90,14 @@ deploy_railway() {
 case "$API_TARGET" in
   fly) deploy_fly "apps/api" ;;
   railway) deploy_railway "apps/api" ;;
-  none) echo "Skipping API deployment (HERMES_DEPLOY_API_TARGET=none)." ;;
+  none) echo "Skipping API deployment (AGORA_DEPLOY_API_TARGET=none)." ;;
   *) echo "Unsupported API target: $API_TARGET"; exit 1 ;;
 esac
 
 case "$INDEXER_TARGET" in
   fly) deploy_fly "packages/chain" ;;
   railway) deploy_railway "packages/chain" ;;
-  none) echo "Skipping indexer deployment (HERMES_DEPLOY_INDEXER_TARGET=none)." ;;
+  none) echo "Skipping indexer deployment (AGORA_DEPLOY_INDEXER_TARGET=none)." ;;
   *) echo "Unsupported indexer target: $INDEXER_TARGET"; exit 1 ;;
 esac
 

@@ -1,4 +1,4 @@
-import type { ChallengeEvalRow } from "@hermes/common";
+import type { ChallengeEvalRow } from "@agora/common";
 
 export interface ChallengeRow extends ChallengeEvalRow {
   id: string;

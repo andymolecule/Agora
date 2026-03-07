@@ -4,9 +4,9 @@ import {
   parseCsvHeaders,
   getSubmissionLimitViolation,
   resolveSubmissionLimits,
-  type HermesConfig,
-} from "@hermes/common";
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with {
+  type AgoraConfig,
+} from "@agora/common";
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
 };
 import {
@@ -25,8 +25,8 @@ import {
   upsertChallenge,
   upsertSubmissionOnChain,
   type createSupabaseClient,
-} from "@hermes/db";
-import { getText } from "@hermes/ipfs";
+} from "@agora/db";
+import { getText } from "@agora/ipfs";
 import { type Abi } from "viem";
 import { getPublicClient } from "../client.js";
 import { fetchValidatedChallengeSpec, loadChallengeDefinitionFromChain } from "../challenge-definition.js";
@@ -38,7 +38,7 @@ import {
   sleep,
 } from "./polling.js";
 
-const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
+const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 const SPEC_FETCH_MAX_RETRIES = 4;
 const SPEC_FETCH_RETRY_BASE_MS = 500;
 
@@ -116,7 +116,7 @@ async function readSubmission(
 ) {
   const submission = (await publicClient.readContract({
     address: challengeAddress,
-    abi: HermesChallengeAbi,
+    abi: AgoraChallengeAbi,
     functionName: "getSubmission",
     args: [submissionId],
   })) as {
@@ -136,7 +136,7 @@ async function readWinningSubmissionId(
 ) {
   const winner = (await publicClient.readContract({
     address: challengeAddress,
-    abi: HermesChallengeAbi,
+    abi: AgoraChallengeAbi,
     functionName: "winningSubmissionId",
   })) as bigint;
   return winner;
@@ -186,7 +186,7 @@ export async function resolveChallengeInitialFromBlock(
 export async function processFactoryLog(input: {
   db: DbClient;
   publicClient: ReturnType<typeof getPublicClient>;
-  config: HermesConfig;
+  config: AgoraConfig;
   log: ParsedLog;
   fromBlock: bigint;
 }) {
@@ -230,15 +230,15 @@ export async function processFactoryLog(input: {
       } = await loadChallengeDefinitionFromChain({
         publicClient,
         challengeAddress: challengeAddr,
-        chainId: config.HERMES_CHAIN_ID,
+        chainId: config.AGORA_CHAIN_ID,
       });
 
       await upsertChallenge(
         db,
         await buildChallengeInsert({
-          chainId: config.HERMES_CHAIN_ID,
+          chainId: config.AGORA_CHAIN_ID,
           contractAddress: challengeAddr,
-          factoryAddress: config.HERMES_FACTORY_ADDRESS,
+          factoryAddress: config.AGORA_FACTORY_ADDRESS,
           factoryChallengeId: Number(id),
           posterAddress: poster,
           specCid,

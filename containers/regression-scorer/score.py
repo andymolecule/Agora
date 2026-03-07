@@ -1,5 +1,5 @@
 """
-Hermes Regression Scorer
+Agora Regression Scorer
 
 Compares submission.csv predictions against ground_truth.csv labels.
 Computes all standard regression metrics. Primary score = R² (0–1, higher is better).

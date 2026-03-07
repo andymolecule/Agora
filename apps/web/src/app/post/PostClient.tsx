@@ -1,6 +1,6 @@
 "use client";
 
-import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
+import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json";
 import {
   computeSpecHash,
   defaultPresetIdForChallengeType,
@@ -12,7 +12,7 @@ import {
   validateChallengeSpec,
   validatePresetIntegrity,
   validateScoringContainer,
-} from "@hermes/common";
+} from "@agora/common";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { type Abi, parseSignature, parseUnits } from "viem";
 import { useAccount, usePublicClient, useSignTypedData, useWriteContract } from "wagmi";
@@ -28,7 +28,7 @@ import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../../lib/config";
 import { formatUsdc, computeProtocolFee } from "../../lib/format";
 import { ScoringTrustNotice } from "../../components/ScoringTrustNotice";
 
-const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
+const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 const DEFAULT_PERMIT_VERSION = "1";
 const PERMIT_LIFETIME_SECONDS = 60 * 60;
@@ -1152,7 +1152,7 @@ export function PostClient() {
   async function prepareChallengeCreation() {
     if (!walletReady) throw new Error("Connect the correct wallet before posting.");
     if (!FACTORY_ADDRESS || !USDC_ADDRESS) {
-      throw new Error("Missing NEXT_PUBLIC_HERMES_FACTORY_ADDRESS or NEXT_PUBLIC_HERMES_USDC_ADDRESS.");
+      throw new Error("Missing NEXT_PUBLIC_AGORA_FACTORY_ADDRESS or NEXT_PUBLIC_AGORA_USDC_ADDRESS.");
     }
     if (!publicClient) throw new Error("Wallet client is not ready. Reconnect wallet and retry.");
     if (!address) throw new Error("Wallet address is required to post a challenge.");
@@ -1338,7 +1338,7 @@ export function PostClient() {
         const { request } = await publicClient.simulateContract({
           account: address,
           address: FACTORY_ADDRESS,
-          abi: HermesFactoryAbi,
+          abi: AgoraFactoryAbi,
           functionName: "createChallengeWithPermit",
           args: [
             prepared.specCid,
@@ -1371,7 +1371,7 @@ export function PostClient() {
       const { request } = await publicClient.simulateContract({
         account: address,
         address: FACTORY_ADDRESS,
-        abi: HermesFactoryAbi,
+        abi: AgoraFactoryAbi,
         functionName: "createChallenge",
         args: [
           prepared.specCid,
@@ -2081,7 +2081,7 @@ export function PostClient() {
                   <div>
                     <p className="summary-trust-title">Checkable Scoring</p>
                     <p className="summary-trust-text">
-                      Hermes operates scoring first, but the scorer image, challenge inputs, and published outputs are intended to be replayable and independently checked.
+                      Agora operates scoring first, but the scorer image, challenge inputs, and published outputs are intended to be replayable and independently checked.
                     </p>
                   </div>
                 </div>

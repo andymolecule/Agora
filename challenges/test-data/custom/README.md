@@ -1,6 +1,6 @@
 # Custom Test Data
 
-Generic posting fixtures for the Hermes custom category.
+Generic posting fixtures for the Agora custom category.
 
 Use this folder when you want to test the broadest bring-your-own-scorer path in the web UI.
 

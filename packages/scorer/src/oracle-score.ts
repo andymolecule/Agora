@@ -1,25 +1,25 @@
 /**
  * Shared oracle scoring function.
- * Extracted from the CLI `hm score` command so both the CLI and the
+ * Extracted from the CLI `agora score` command so both the CLI and the
  * oracle-worker daemon can reuse the same logic.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getPublicClient, postScore } from "@hermes/chain";
+import { getPublicClient, postScore } from "@agora/chain";
 import {
   loadConfig,
   resolveEvalSpec,
   SUBMISSION_RESULT_FORMAT,
   type ChallengeEvalRow,
-} from "@hermes/common";
+} from "@agora/common";
 import {
-  type HermesDbClient,
+  type AgoraDbClient,
   getChallengeById,
   getSubmissionById,
   updateScore,
   upsertProofBundle,
-} from "@hermes/db";
-import { pinFile } from "@hermes/ipfs";
+} from "@agora/db";
+import { pinFile } from "@agora/ipfs";
 import { keccak256, toBytes } from "viem";
 import { buildProofBundle } from "./proof.js";
 import { executeScoringPipeline } from "./pipeline.js";
@@ -28,7 +28,7 @@ import { scoreToWad } from "./staging.js";
 
 export interface OracleScoreInput {
   /** Supabase client (service-key level). */
-  db: HermesDbClient;
+  db: AgoraDbClient;
   /** UUID of the submission to score. */
   submissionId: string;
 }
@@ -77,7 +77,7 @@ export async function oracleScore(
     resultFormat: submission.result_format,
     challengeId: challenge.id,
     solverAddress: submission.solver_address,
-    privateKeyPem: loadConfig().HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+    privateKeyPem: loadConfig().AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
   });
   const run = await executeScoringPipeline({
     image: evalPlan.image,

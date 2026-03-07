@@ -1,7 +1,7 @@
-import type { HermesDbClient } from "../index";
+import type { AgoraDbClient } from "../index";
 
 export async function isEventIndexed(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   txHash: string,
   logIndex: number,
 ): Promise<boolean> {
@@ -18,7 +18,7 @@ export async function isEventIndexed(
 }
 
 export async function markEventIndexed(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   txHash: string,
   logIndex: number,
   eventName: string,

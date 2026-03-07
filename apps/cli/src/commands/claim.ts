@@ -3,8 +3,8 @@ import {
   getPublicClient,
   getWalletClient,
   balanceOf,
-} from "@hermes/chain";
-import { createSupabaseClient, getChallengeById } from "@hermes/db";
+} from "@agora/chain";
+import { createSupabaseClient, getChallengeById } from "@agora/db";
 import { Command } from "commander";
 import { formatUnits } from "viem";
 import {
@@ -25,7 +25,7 @@ export function buildClaimCommand() {
   const cmd = new Command("claim")
     .description("Claim payout for caller wallet on a finalized challenge")
     .argument("<id>", "Challenge id")
-    .option("--key <ref>", "Private key reference, e.g. env:HERMES_PRIVATE_KEY")
+    .option("--key <ref>", "Private key reference, e.g. env:AGORA_PRIVATE_KEY")
     .option("--format <format>", "table or json", "table")
     .action(
       async (

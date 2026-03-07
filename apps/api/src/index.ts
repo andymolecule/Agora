@@ -1,5 +1,5 @@
 import { serve } from "@hono/node-server";
-import { getHermesRuntimeIdentity, loadConfig } from "@hermes/common";
+import { getAgoraRuntimeIdentity, loadConfig } from "@agora/common";
 import { createApp } from "./app.js";
 import { readSubmissionSealHealth } from "./lib/submission-seal-health.js";
 
@@ -12,19 +12,19 @@ async function start() {
     );
   }
 
-  const port = Number(process.env.HERMES_API_PORT ?? 3000);
+  const port = Number(process.env.AGORA_API_PORT ?? 3000);
   const app = createApp();
-  const runtimeIdentity = getHermesRuntimeIdentity(config);
+  const runtimeIdentity = getAgoraRuntimeIdentity(config);
 
   serve({ fetch: app.fetch, port });
 
-  console.log("Hermes API runtime identity", runtimeIdentity);
-  console.log(`Hermes API listening on http://localhost:${port}`);
+  console.log("Agora API runtime identity", runtimeIdentity);
+  console.log(`Agora API listening on http://localhost:${port}`);
 }
 
 start().catch((error) => {
   console.error(
-    `Hermes API failed to start: ${error instanceof Error ? error.message : String(error)}`,
+    `Agora API failed to start: ${error instanceof Error ? error.message : String(error)}`,
   );
   process.exit(1);
 });

@@ -1,7 +1,7 @@
 import { ShieldCheck } from "lucide-react";
 
 const TRUST_MODEL_COPY =
-  "During the initial phase, scoring is operated by the Hermes team. However, scoring is designed to be reproducible: anyone can rerun the same scorer image against the same inputs and verify that the published output matches. Over time, this scorer role will be decentralized.";
+  "During the initial phase, scoring is operated by the Agora team. However, scoring is designed to be reproducible: anyone can rerun the same scorer image against the same inputs and verify that the published output matches. Over time, this scorer role will be decentralized.";
 
 interface ScoringTrustNoticeProps {
   compact?: boolean;

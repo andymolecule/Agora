@@ -1,11 +1,11 @@
 // Skip early if required env vars are missing — check raw process.env
 // because loadConfig() will throw on missing required vars.
 if (
-  !process.env.HERMES_SUPABASE_URL ||
-  !process.env.HERMES_SUPABASE_ANON_KEY ||
-  !process.env.HERMES_RPC_URL ||
-  !process.env.HERMES_FACTORY_ADDRESS ||
-  !process.env.HERMES_USDC_ADDRESS
+  !process.env.AGORA_SUPABASE_URL ||
+  !process.env.AGORA_SUPABASE_ANON_KEY ||
+  !process.env.AGORA_RPC_URL ||
+  !process.env.AGORA_FACTORY_ADDRESS ||
+  !process.env.AGORA_USDC_ADDRESS
 ) {
   console.log("SKIP: DB test requires Supabase + core env vars");
   process.exit(0);

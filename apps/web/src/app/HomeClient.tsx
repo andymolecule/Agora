@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { ArrowUpDown, ChevronDown, Search as SearchIcon, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { CHALLENGE_STATUS } from "@hermes/common";
+import { CHALLENGE_STATUS } from "@agora/common";
 import { ChallengeCard } from "../components/ChallengeCard";
 import {
   type ChallengeFilterState,
@@ -185,9 +185,9 @@ export function HomeClient() {
           <div className="font-mono text-sm space-y-1 text-black/70">
             <div className="flex items-center gap-2 mb-3">
               <SearchIcon className="w-4 h-4" />
-              <span className="text-[10px] uppercase tracking-wider font-bold">hermes</span>
+              <span className="text-[10px] uppercase tracking-wider font-bold">agora</span>
             </div>
-            <p>$ hermes query --open</p>
+            <p>$ agora query --open</p>
             <p>&gt; No challenges found.</p>
             <p>&gt; Try adjusting filters or post the first bounty.</p>
             <p className="inline-block animate-[blink_1s_step-end_infinite]">_</p>

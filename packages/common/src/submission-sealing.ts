@@ -11,7 +11,7 @@ const SUBMISSION_SEAL_ALG = "aes-256-gcm+rsa-oaep-256";
 type SupportedCryptoKey = CryptoKey;
 const SELF_CHECK_CHALLENGE_ID = "00000000-0000-0000-0000-000000000001";
 const SELF_CHECK_SOLVER_ADDRESS = "0x0000000000000000000000000000000000000001";
-const SELF_CHECK_BYTES = new TextEncoder().encode("hermes-sealed-submission-self-check");
+const SELF_CHECK_BYTES = new TextEncoder().encode("agora-sealed-submission-self-check");
 
 function normalizeSolverAddress(value: string) {
   return value.toLowerCase();

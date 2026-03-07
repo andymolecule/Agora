@@ -1,4 +1,4 @@
-import { getOnChainSubmission, getPublicClient } from "@hermes/chain";
+import { getOnChainSubmission, getPublicClient } from "@agora/chain";
 import {
   CHALLENGE_STATUS,
   SUBMISSION_RESULT_FORMAT,
@@ -7,8 +7,8 @@ import {
   loadConfig,
   resolveEvalSpec,
   resolveSubmissionLimits,
-} from "@hermes/common";
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
+} from "@agora/common";
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with { type: "json" };
 import {
   countSubmissionsBySolverForChallenge,
   countSubmissionsForChallenge,
@@ -20,8 +20,8 @@ import {
   markScoreJobSkipped,
   setSubmissionResultCid,
   upsertSubmissionOnChain,
-} from "@hermes/db";
-import { getJSON } from "@hermes/ipfs";
+} from "@agora/db";
+import { getJSON } from "@agora/ipfs";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { type Abi, parseEventLogs } from "viem";
@@ -34,7 +34,7 @@ import {
   toPrivateSubmission,
 } from "./challenges-shared.js";
 
-const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
+const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 const createSubmissionBodySchema = z.object({
   challengeId: z.string().uuid(),
@@ -111,8 +111,8 @@ const router = new Hono<ApiEnv>();
 router.get("/public-key", async (c) => {
   const config = loadConfig();
   if (
-    !config.HERMES_SUBMISSION_SEAL_KEY_ID ||
-    !config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM
+    !config.AGORA_SUBMISSION_SEAL_KEY_ID ||
+    !config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM
   ) {
     return c.json({ error: "Submission sealing is not configured." }, 503);
   }
@@ -121,8 +121,8 @@ router.get("/public-key", async (c) => {
     data: {
       version: "sealed_submission_v1",
       alg: "aes-256-gcm+rsa-oaep-256",
-      kid: config.HERMES_SUBMISSION_SEAL_KEY_ID,
-      publicKeyPem: config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+      kid: config.AGORA_SUBMISSION_SEAL_KEY_ID,
+      publicKeyPem: config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
     },
   });
 });
@@ -220,7 +220,7 @@ router.post(
     );
 
     const logs = parseEventLogs({
-      abi: HermesChallengeAbi,
+      abi: AgoraChallengeAbi,
       logs: challengeLogs,
       strict: false,
     });

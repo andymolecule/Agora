@@ -7,17 +7,17 @@
  * Follows the same pattern as packages/chain/src/indexer.ts.
  *
  * Usage:
- *   HERMES_ORACLE_KEY=0x... node packages/scorer/dist/oracle-worker.js
+ *   AGORA_ORACLE_KEY=0x... node packages/scorer/dist/oracle-worker.js
  */
 import { randomUUID } from "node:crypto";
-import { loadConfig, resetConfigCache } from "@hermes/common";
+import { loadConfig, resetConfigCache } from "@agora/common";
 import {
   createSupabaseClient,
   claimNextJob,
   completeJob,
   failJob,
   markJobPosted,
-} from "@hermes/db";
+} from "@agora/db";
 import { oracleScore } from "./oracle-score.js";
 
 const DEFAULT_POLL_MS = 30_000;
@@ -28,23 +28,23 @@ function sleep(ms: number): Promise<void> {
 }
 
 export async function runOracleWorker() {
-  // Promote HERMES_ORACLE_KEY to HERMES_PRIVATE_KEY so the wallet client
+  // Promote AGORA_ORACLE_KEY to AGORA_PRIVATE_KEY so the wallet client
   // picks it up for on-chain scoring transactions.
-  if (process.env.HERMES_ORACLE_KEY && !process.env.HERMES_PRIVATE_KEY) {
-    process.env.HERMES_PRIVATE_KEY = process.env.HERMES_ORACLE_KEY;
+  if (process.env.AGORA_ORACLE_KEY && !process.env.AGORA_PRIVATE_KEY) {
+    process.env.AGORA_PRIVATE_KEY = process.env.AGORA_ORACLE_KEY;
     resetConfigCache();
   }
 
   const config = loadConfig();
 
-  if (!config.HERMES_PRIVATE_KEY) {
+  if (!config.AGORA_PRIVATE_KEY) {
     throw new Error(
-      "Oracle worker requires HERMES_ORACLE_KEY (or HERMES_PRIVATE_KEY) to sign scoring transactions.",
+      "Oracle worker requires AGORA_ORACLE_KEY (or AGORA_PRIVATE_KEY) to sign scoring transactions.",
     );
   }
 
-  const pollMs = process.env.HERMES_ORACLE_WORKER_POLL_MS
-    ? Number(process.env.HERMES_ORACLE_WORKER_POLL_MS)
+  const pollMs = process.env.AGORA_ORACLE_WORKER_POLL_MS
+    ? Number(process.env.AGORA_ORACLE_WORKER_POLL_MS)
     : DEFAULT_POLL_MS;
 
   const db = createSupabaseClient(true);

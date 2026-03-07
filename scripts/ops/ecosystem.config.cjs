@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: "hermes-api",
+      name: "agora-api",
       cwd: process.cwd(),
       script: "node",
       args: "scripts/run-node-with-root-env.mjs apps/api/dist/index.js",
@@ -15,7 +15,7 @@ module.exports = {
       time: true,
     },
     {
-      name: "hermes-indexer",
+      name: "agora-indexer",
       cwd: process.cwd(),
       script: "node",
       args: "scripts/run-node-with-root-env.mjs packages/chain/dist/indexer.js",
@@ -29,7 +29,7 @@ module.exports = {
       time: true,
     },
     {
-      name: "hermes-worker",
+      name: "agora-worker",
       cwd: process.cwd(),
       script: "node",
       args: "scripts/run-node-with-root-env.mjs apps/api/dist/worker.js",
@@ -43,7 +43,7 @@ module.exports = {
       time: true,
     },
     {
-      name: "hermes-mcp",
+      name: "agora-mcp",
       cwd: process.cwd(),
       script: "node",
       args: "scripts/run-node-with-root-env.mjs apps/mcp-server/dist/index.js",

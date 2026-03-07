@@ -13,7 +13,7 @@ import {
   Target,
   Trophy,
 } from "lucide-react";
-import { CHALLENGE_STATUS, DEFAULT_IPFS_GATEWAY } from "@hermes/common";
+import { CHALLENGE_STATUS, DEFAULT_IPFS_GATEWAY } from "@agora/common";
 import Link from "next/link";
 import { LeaderboardTable } from "../../../components/LeaderboardTable";
 import { SubmitSolution } from "../../../components/SubmitSolution";
@@ -21,7 +21,7 @@ import { TimelineStatus } from "../../../components/TimelineStatus";
 import { ChallengeActions } from "../../../components/ChallengeActions";
 import { getChallenge, getChallengeSpec, getPublicSubmissionVerification } from "../../../lib/api";
 import { formatUsdc } from "../../../lib/format";
-import type { ChallengeSpecOutput } from "@hermes/common";
+import type { ChallengeSpecOutput } from "@agora/common";
 import type { SubmissionVerification } from "../../../lib/types";
 
 function InfoRow({
@@ -320,7 +320,7 @@ export function DetailClient({ id }: { id: string }) {
   const technicalSpecsLoading = Boolean(challenge.spec_cid) && specQuery.isLoading;
   const verification = verificationQuery.data;
   const verifyCommand = verification
-    ? `hm verify-public ${challenge.id} --sub ${verification.submissionId}`
+    ? `agora verify-public ${challenge.id} --sub ${verification.submissionId}`
     : null;
 
   return (
@@ -473,7 +473,7 @@ export function DetailClient({ id }: { id: string }) {
                 ) : verification ? (
                   <div className="space-y-5">
                     <p className="text-sm leading-relaxed text-black/75">
-                      Hermes currently operates scoring, but this submission exposes the public artifacts needed to replay the scorer and check the published result independently.
+                      Agora currently operates scoring, but this submission exposes the public artifacts needed to replay the scorer and check the published result independently.
                     </p>
 
                     <div className="grid gap-4 sm:grid-cols-2">

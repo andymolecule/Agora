@@ -23,8 +23,8 @@ import { handleCommandError } from "./lib/errors";
 async function main() {
   const program = new Command();
   program
-    .name("hm")
-    .description("Hermes CLI")
+    .name("agora")
+    .description("Agora CLI")
     .version(pkg.version)
     .showHelpAfterError();
 

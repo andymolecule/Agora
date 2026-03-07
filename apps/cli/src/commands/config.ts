@@ -28,7 +28,7 @@ function assertKey(key: string): asserts key is ConfigKey {
 }
 
 export function buildConfigCommand() {
-  const config = new Command("config").description("Manage Hermes CLI config");
+  const config = new Command("config").description("Manage Agora CLI config");
 
   config
     .command("set")

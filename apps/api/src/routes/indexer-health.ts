@@ -1,20 +1,20 @@
-import { getPublicClient } from "@hermes/chain";
-import { getHermesRuntimeIdentity, loadConfig } from "@hermes/common";
-import { createSupabaseClient } from "@hermes/db";
+import { getPublicClient } from "@agora/chain";
+import { getAgoraRuntimeIdentity, loadConfig } from "@agora/common";
+import { createSupabaseClient } from "@agora/db";
 import { Hono } from "hono";
 import type { ApiEnv } from "../types.js";
 
-const WARN_LAG_BLOCKS = Number(process.env.HERMES_INDEXER_LAG_WARN_BLOCKS ?? 20);
+const WARN_LAG_BLOCKS = Number(process.env.AGORA_INDEXER_LAG_WARN_BLOCKS ?? 20);
 const CRITICAL_LAG_BLOCKS = Number(
-  process.env.HERMES_INDEXER_LAG_CRITICAL_BLOCKS ?? 120,
+  process.env.AGORA_INDEXER_LAG_CRITICAL_BLOCKS ?? 120,
 );
 const INDEXER_CONFIRMATION_DEPTH = (() => {
-  const parsed = Number(process.env.HERMES_INDEXER_CONFIRMATION_DEPTH ?? 3);
+  const parsed = Number(process.env.AGORA_INDEXER_CONFIRMATION_DEPTH ?? 3);
   if (!Number.isFinite(parsed) || parsed < 0) return 0;
   return Math.floor(parsed);
 })();
 const ACTIVE_FACTORY_CURSOR_WINDOW_MS = Number(
-  process.env.HERMES_INDEXER_ACTIVE_CURSOR_WINDOW_MS ?? 15 * 60 * 1000,
+  process.env.AGORA_INDEXER_ACTIVE_CURSOR_WINDOW_MS ?? 15 * 60 * 1000,
 );
 
 type LagStatus = "ok" | "warning" | "critical" | "empty" | "error";
@@ -31,7 +31,7 @@ const router = new Hono<ApiEnv>();
 router.get("/", async (c) => {
   try {
     const config = loadConfig();
-    const runtimeIdentity = getHermesRuntimeIdentity(config);
+    const runtimeIdentity = getAgoraRuntimeIdentity(config);
     const db = createSupabaseClient(true);
     const publicClient = getPublicClient();
 

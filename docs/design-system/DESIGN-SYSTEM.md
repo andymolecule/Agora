@@ -1,8 +1,8 @@
-# Hermes Visual Identity — Molecule Brand Reference
+# Agora Visual Identity — Molecule Brand Reference
 
-**Platform:** Hermes by Molecule · **Themes:** Light (default), Dark
+**Platform:** Agora by Molecule · **Themes:** Light (default), Dark
 
-> A soft reference guide to the Molecule visual identity used across Hermes. Use this for quick colour lookups and font choices — not as a rulebook.
+> A soft reference guide to the Molecule visual identity used across Agora. Use this for quick colour lookups and font choices — not as a rulebook.
 
 ---
 
@@ -154,4 +154,4 @@ Defined in `globals.css` to bridge CSS custom properties with class-based stylin
 
 ---
 
-*Hermes Visual Identity · Molecule · Last updated February 2026*
+*Agora Visual Identity · Molecule · Last updated February 2026*

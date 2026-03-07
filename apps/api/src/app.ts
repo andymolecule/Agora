@@ -17,7 +17,7 @@ import { readSubmissionSealHealth } from "./lib/submission-seal-health.js";
 import type { ApiEnv } from "./types.js";
 
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
-const corsOrigins = (process.env.HERMES_CORS_ORIGINS ?? "")
+const corsOrigins = (process.env.AGORA_CORS_ORIGINS ?? "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);

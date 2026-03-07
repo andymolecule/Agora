@@ -5,13 +5,13 @@ const scoreResult: ScoreResult = {
   ok: true,
   score: 0.75,
   details: { matched_rows: 3, total_rows: 4 },
-  containerImageDigest: "ghcr.io/hermes-science/repro-scorer@sha256:abc123",
+  containerImageDigest: "ghcr.io/agora-science/repro-scorer@sha256:abc123",
 };
 
 const proofBundle: ProofBundle = {
   inputHash: "input-hash",
   outputHash: "output-hash",
-  containerImageDigest: "ghcr.io/hermes-science/repro-scorer@sha256:def456",
+  containerImageDigest: "ghcr.io/agora-science/repro-scorer@sha256:def456",
   score: 0.75,
   scorerLog: "scorer completed",
 };

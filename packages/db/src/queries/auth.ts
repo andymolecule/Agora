@@ -1,4 +1,4 @@
-import type { HermesDbClient } from "../index";
+import type { AgoraDbClient } from "../index";
 
 export type AuthNoncePurpose = "siwe" | "pin_spec";
 
@@ -33,7 +33,7 @@ export interface AuthSessionRow {
 }
 
 export async function createAuthNonce(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   input: AuthNonceInsert,
 ) {
   const { error } = await db.from("auth_nonces").insert({
@@ -49,7 +49,7 @@ export async function createAuthNonce(
 }
 
 export async function consumeAuthNonce(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   input: {
     nonce: string;
     purpose: AuthNoncePurpose;
@@ -81,7 +81,7 @@ export async function consumeAuthNonce(
 }
 
 export async function createAuthSession(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   input: AuthSessionInsert,
 ) {
   const { error } = await db.from("auth_sessions").insert({
@@ -96,7 +96,7 @@ export async function createAuthSession(
 }
 
 export async function getAuthSession(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   tokenHash: string,
 ): Promise<AuthSessionRow | null> {
   const { data, error } = await db
@@ -115,7 +115,7 @@ export async function getAuthSession(
 }
 
 export async function revokeAuthSession(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   tokenHash: string,
 ) {
   const { error } = await db

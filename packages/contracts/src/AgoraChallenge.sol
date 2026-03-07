@@ -3,12 +3,12 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
-import {HermesErrors} from "./libraries/HermesErrors.sol";
-import {HermesEvents} from "./libraries/HermesEvents.sol";
-import {HermesConstants} from "./libraries/HermesConstants.sol";
-import {IHermesChallenge} from "./interfaces/IHermesChallenge.sol";
+import {AgoraErrors} from "./libraries/AgoraErrors.sol";
+import {AgoraEvents} from "./libraries/AgoraEvents.sol";
+import {AgoraConstants} from "./libraries/AgoraConstants.sol";
+import {IAgoraChallenge} from "./interfaces/IAgoraChallenge.sol";
 
-contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
+contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
     uint256 public constant PROTOCOL_FEE_BPS = 500; // 5%
     uint64 public constant SCORING_GRACE_PERIOD = 7 days;
 
@@ -43,25 +43,25 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
 
     constructor(ChallengeConfig memory cfg) {
         if (cfg.poster == address(0) || cfg.oracle == address(0) || cfg.treasury == address(0)) {
-            revert HermesErrors.InvalidAddress();
+            revert AgoraErrors.InvalidAddress();
         }
-        if (cfg.rewardAmount < HermesConstants.MIN_REWARD_USDC || cfg.rewardAmount > HermesConstants.MAX_REWARD_USDC) {
-            revert HermesErrors.InvalidRewardAmount();
+        if (cfg.rewardAmount < AgoraConstants.MIN_REWARD_USDC || cfg.rewardAmount > AgoraConstants.MAX_REWARD_USDC) {
+            revert AgoraErrors.InvalidRewardAmount();
         }
         if (cfg.deadline <= block.timestamp) {
-            revert HermesErrors.DeadlineInPast();
+            revert AgoraErrors.DeadlineInPast();
         }
         if (
-            cfg.disputeWindowHours < HermesConstants.MIN_DISPUTE_WINDOW_HOURS
-                || cfg.disputeWindowHours > HermesConstants.MAX_DISPUTE_WINDOW_HOURS
+            cfg.disputeWindowHours < AgoraConstants.MIN_DISPUTE_WINDOW_HOURS
+                || cfg.disputeWindowHours > AgoraConstants.MAX_DISPUTE_WINDOW_HOURS
         ) {
-            revert HermesErrors.InvalidDisputeWindow();
+            revert AgoraErrors.InvalidDisputeWindow();
         }
         if (uint8(cfg.distributionType) > uint8(DistributionType.Proportional)) {
-            revert HermesErrors.InvalidDistribution();
+            revert AgoraErrors.InvalidDistribution();
         }
         if (cfg.maxSubmissionsPerSolver > 0 && cfg.maxSubmissions > 0 && cfg.maxSubmissionsPerSolver > cfg.maxSubmissions) {
-            revert HermesErrors.InvalidSubmissionLimits();
+            revert AgoraErrors.InvalidSubmissionLimits();
         }
         usdc = cfg.usdc;
         poster = cfg.poster;
@@ -79,24 +79,24 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
     }
 
     modifier onlyOracle() {
-        if (msg.sender != oracle) revert HermesErrors.NotOracle();
+        if (msg.sender != oracle) revert AgoraErrors.NotOracle();
         _;
     }
 
     modifier onlyPoster() {
-        if (msg.sender != poster) revert HermesErrors.NotPoster();
+        if (msg.sender != poster) revert AgoraErrors.NotPoster();
         _;
     }
 
     function submit(bytes32 resultHash) external override returns (uint256 subId) {
         _updateStatusAfterDeadline();
-        if (status != Status.Active) revert HermesErrors.InvalidStatus();
-        if (block.timestamp >= deadline) revert HermesErrors.DeadlinePassed();
+        if (status != Status.Active) revert AgoraErrors.InvalidStatus();
+        if (block.timestamp >= deadline) revert AgoraErrors.DeadlinePassed();
         if (maxSubmissions > 0 && submissions.length >= maxSubmissions) {
-            revert HermesErrors.MaxSubmissionsReached();
+            revert AgoraErrors.MaxSubmissionsReached();
         }
         if (maxSubmissionsPerSolver > 0 && solverSubmissionCount[msg.sender] >= maxSubmissionsPerSolver) {
-            revert HermesErrors.MaxSubmissionsPerSolverReached();
+            revert AgoraErrors.MaxSubmissionsPerSolverReached();
         }
         solverSubmissionCount[msg.sender]++;
         submissions.push(
@@ -110,45 +110,45 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
             })
         );
         subId = submissions.length - 1;
-        emit HermesEvents.Submitted(subId, msg.sender, resultHash);
+        emit AgoraEvents.Submitted(subId, msg.sender, resultHash);
     }
 
     function postScore(uint256 subId, uint256 score, bytes32 proofBundleHash) external override onlyOracle {
         _updateStatusAfterDeadline();
-        if (status != Status.Scoring) revert HermesErrors.InvalidStatus();
-        if (subId >= submissions.length) revert HermesErrors.InvalidSubmission();
+        if (status != Status.Scoring) revert AgoraErrors.InvalidStatus();
+        if (subId >= submissions.length) revert AgoraErrors.InvalidSubmission();
         Submission storage submission = submissions[subId];
-        if (submission.scored) revert HermesErrors.AlreadyScored();
+        if (submission.scored) revert AgoraErrors.AlreadyScored();
 
         submission.scored = true;
         submission.score = score;
         submission.proofBundleHash = proofBundleHash;
         scoredCount++;
 
-        emit HermesEvents.Scored(subId, score, proofBundleHash);
+        emit AgoraEvents.Scored(subId, score, proofBundleHash);
     }
 
     function finalize() external override nonReentrant {
         _updateStatusAfterDeadline();
-        if (status == Status.Disputed) revert HermesErrors.DisputeActive();
-        if (status == Status.Cancelled) revert HermesErrors.ChallengeCancelled();
-        if (status == Status.Finalized) revert HermesErrors.ChallengeFinalized();
-        if (status != Status.Scoring) revert HermesErrors.InvalidStatus();
+        if (status == Status.Disputed) revert AgoraErrors.DisputeActive();
+        if (status == Status.Cancelled) revert AgoraErrors.ChallengeCancelled();
+        if (status == Status.Finalized) revert AgoraErrors.ChallengeFinalized();
+        if (status != Status.Scoring) revert AgoraErrors.InvalidStatus();
         if (block.timestamp <= deadline + (uint256(disputeWindowHours) * 1 hours)) {
-            revert HermesErrors.DeadlineNotPassed();
+            revert AgoraErrors.DeadlineNotPassed();
         }
 
         // Scoring completeness check: all scored OR grace period elapsed
         bool allScored = scoredCount >= submissions.length;
         if (!allScored && block.timestamp <= deadline + SCORING_GRACE_PERIOD) {
-            revert HermesErrors.ScoringIncomplete();
+            revert AgoraErrors.ScoringIncomplete();
         }
 
         (uint256[] memory winners, uint256[] memory scores) = _computeWinners();
         if (winners.length == 0) {
             status = Status.Cancelled;
-            if (!usdc.transfer(poster, rewardAmount)) revert HermesErrors.TransferFailed();
-            emit HermesEvents.Cancelled();
+            if (!usdc.transfer(poster, rewardAmount)) revert AgoraErrors.TransferFailed();
+            emit AgoraEvents.Cancelled();
             return;
         }
 
@@ -162,7 +162,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         } else if (distributionType == DistributionType.Proportional) {
             _setProportionalPayouts(winners, scores, remaining);
         } else {
-            revert HermesErrors.InvalidDistribution();
+            revert AgoraErrors.InvalidDistribution();
         }
 
         status = Status.Finalized;
@@ -170,32 +170,32 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         winningSubmissionId = winners[0];
 
         if (protocolFee > 0) {
-            if (!usdc.transfer(treasury, protocolFee)) revert HermesErrors.TransferFailed();
+            if (!usdc.transfer(treasury, protocolFee)) revert AgoraErrors.TransferFailed();
         }
 
-        emit HermesEvents.Finalized(protocolFee, remaining);
+        emit AgoraEvents.Finalized(protocolFee, remaining);
     }
 
     function dispute(string calldata reason) external override {
         _updateStatusAfterDeadline();
-        if (block.timestamp <= deadline) revert HermesErrors.DisputeWindowNotStarted();
-        if (status == Status.Disputed) revert HermesErrors.DisputeActive();
-        if (status == Status.Finalized || status == Status.Cancelled) revert HermesErrors.InvalidStatus();
-        if (status != Status.Scoring) revert HermesErrors.InvalidStatus();
+        if (block.timestamp <= deadline) revert AgoraErrors.DisputeWindowNotStarted();
+        if (status == Status.Disputed) revert AgoraErrors.DisputeActive();
+        if (status == Status.Finalized || status == Status.Cancelled) revert AgoraErrors.InvalidStatus();
+        if (status != Status.Scoring) revert AgoraErrors.InvalidStatus();
 
         uint256 disputeEnd = deadline + (uint256(disputeWindowHours) * 1 hours);
-        if (block.timestamp >= disputeEnd) revert HermesErrors.DisputeWindowClosed();
+        if (block.timestamp >= disputeEnd) revert AgoraErrors.DisputeWindowClosed();
 
         status = Status.Disputed;
         disputeStartedAt = uint64(block.timestamp);
-        emit HermesEvents.Disputed(msg.sender, reason);
+        emit AgoraEvents.Disputed(msg.sender, reason);
     }
 
     function resolveDispute(uint256 winnerSubId) external override onlyOracle nonReentrant {
-        if (status != Status.Disputed) revert HermesErrors.InvalidStatus();
-        if (winnerSubId >= submissions.length) revert HermesErrors.InvalidSubmission();
-        if (!submissions[winnerSubId].scored) revert HermesErrors.InvalidSubmission();
-        if (submissions[winnerSubId].score < minimumScore) revert HermesErrors.MinimumScoreNotMet();
+        if (status != Status.Disputed) revert AgoraErrors.InvalidStatus();
+        if (winnerSubId >= submissions.length) revert AgoraErrors.InvalidSubmission();
+        if (!submissions[winnerSubId].scored) revert AgoraErrors.InvalidSubmission();
+        if (submissions[winnerSubId].score < minimumScore) revert AgoraErrors.MinimumScoreNotMet();
 
         uint256 protocolFee = (rewardAmount * PROTOCOL_FEE_BPS) / 10_000;
         uint256 remaining = rewardAmount - protocolFee;
@@ -215,7 +215,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
             );
             _setProportionalPayouts(orderedIds, orderedScores, remaining);
         } else {
-            revert HermesErrors.InvalidDistribution();
+            revert AgoraErrors.InvalidDistribution();
         }
 
         status = Status.Finalized;
@@ -223,43 +223,43 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         winningSubmissionId = winnerSubId;
 
         if (protocolFee > 0) {
-            if (!usdc.transfer(treasury, protocolFee)) revert HermesErrors.TransferFailed();
+            if (!usdc.transfer(treasury, protocolFee)) revert AgoraErrors.TransferFailed();
         }
 
-        emit HermesEvents.DisputeResolved(winnerSubId);
+        emit AgoraEvents.DisputeResolved(winnerSubId);
     }
 
     function cancel() external override onlyPoster nonReentrant {
         _updateStatusAfterDeadline();
-        if (status != Status.Active) revert HermesErrors.InvalidStatus();
-        if (block.timestamp >= deadline) revert HermesErrors.DeadlinePassed();
-        if (submissions.length > 0) revert HermesErrors.SubmissionsExist();
+        if (status != Status.Active) revert AgoraErrors.InvalidStatus();
+        if (block.timestamp >= deadline) revert AgoraErrors.DeadlinePassed();
+        if (submissions.length > 0) revert AgoraErrors.SubmissionsExist();
 
         status = Status.Cancelled;
-        if (!usdc.transfer(poster, rewardAmount)) revert HermesErrors.TransferFailed();
-        emit HermesEvents.Cancelled();
+        if (!usdc.transfer(poster, rewardAmount)) revert AgoraErrors.TransferFailed();
+        emit AgoraEvents.Cancelled();
     }
 
     function timeoutRefund() external override nonReentrant {
-        if (status != Status.Disputed) revert HermesErrors.InvalidStatus();
-        if (block.timestamp <= disputeStartedAt + 30 days) revert HermesErrors.DeadlineNotPassed();
+        if (status != Status.Disputed) revert AgoraErrors.InvalidStatus();
+        if (block.timestamp <= disputeStartedAt + 30 days) revert AgoraErrors.DeadlineNotPassed();
 
         status = Status.Cancelled;
-        if (!usdc.transfer(poster, rewardAmount)) revert HermesErrors.TransferFailed();
-        emit HermesEvents.Cancelled();
+        if (!usdc.transfer(poster, rewardAmount)) revert AgoraErrors.TransferFailed();
+        emit AgoraEvents.Cancelled();
     }
 
     function claim() external override nonReentrant {
-        if (status != Status.Finalized) revert HermesErrors.InvalidStatus();
+        if (status != Status.Finalized) revert AgoraErrors.InvalidStatus();
         uint256 payout = payoutByAddress[msg.sender];
-        if (payout == 0) revert HermesErrors.NothingToClaim();
+        if (payout == 0) revert AgoraErrors.NothingToClaim();
         payoutByAddress[msg.sender] = 0;
-        if (!usdc.transfer(msg.sender, payout)) revert HermesErrors.TransferFailed();
-        emit HermesEvents.Claimed(msg.sender, payout);
+        if (!usdc.transfer(msg.sender, payout)) revert AgoraErrors.TransferFailed();
+        emit AgoraEvents.Claimed(msg.sender, payout);
     }
 
     function getSubmission(uint256 subId) external view override returns (Submission memory) {
-        if (subId >= submissions.length) revert HermesErrors.InvalidSubmission();
+        if (subId >= submissions.length) revert AgoraErrors.InvalidSubmission();
         return submissions[subId];
     }
 

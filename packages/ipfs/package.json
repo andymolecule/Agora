@@ -1,5 +1,5 @@
 {
-  "name": "@hermes/ipfs",
+  "name": "@agora/ipfs",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "test": "node --import tsx src/tests/fetch-resilience.ts && node --import tsx src/tests/pinata-roundtrip.ts"
   },
   "dependencies": {
-    "@hermes/common": "workspace:*",
+    "@agora/common": "workspace:*",
     "@pinata/sdk": "^2.1.0"
   },
   "devDependencies": {

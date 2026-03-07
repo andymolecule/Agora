@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { SUBMISSION_RESULT_FORMAT } from "@hermes/common";
+import { SUBMISSION_RESULT_FORMAT } from "@agora/common";
 import { setSubmissionResultCid, upsertSubmissionOnChain } from "../queries/submissions.js";
 
 function makeConflictDbMock() {

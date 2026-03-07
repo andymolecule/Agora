@@ -1,5 +1,5 @@
 {
-  "name": "@hermes/api",
+  "name": "@agora/api",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -14,11 +14,11 @@
     "test": "node --import tsx --test $(find tests -type f -name '*.test.ts' | sort)"
   },
   "dependencies": {
-    "@hermes/chain": "workspace:*",
-    "@hermes/common": "workspace:*",
-    "@hermes/db": "workspace:*",
-    "@hermes/ipfs": "workspace:*",
-    "@hermes/scorer": "workspace:*",
+    "@agora/chain": "workspace:*",
+    "@agora/common": "workspace:*",
+    "@agora/db": "workspace:*",
+    "@agora/ipfs": "workspace:*",
+    "@agora/scorer": "workspace:*",
     "@hono/node-server": "^1.19.9",
     "@hono/zod-validator": "^0.7.6",
     "@x402/core": "2.5.0",

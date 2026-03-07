@@ -1,10 +1,10 @@
-# Hermes — Technical Architecture
+# Agora — Technical Architecture
 
 > Last updated: 27 Feb 2026
 
 ## System Overview
 
-Hermes is an on-chain science bounty protocol. The system is split into **on-chain** (trustless settlement) and **off-chain** (compute, indexing, UX) layers.
+Agora is an on-chain science bounty protocol. The system is split into **on-chain** (trustless settlement) and **off-chain** (compute, indexing, UX) layers.
 
 ### Navigation By Layer
 
@@ -18,7 +18,7 @@ Hermes is an on-chain science bounty protocol. The system is split into **on-cha
 flowchart TB
     subgraph Clients["Client Layer"]
         Web["Web Frontend<br/>(Next.js)"]
-        CLI["Hermes CLI<br/>(hm)"]
+        CLI["Agora CLI<br/>(agora)"]
         Agent["AI Agent"]
     end
 
@@ -38,8 +38,8 @@ flowchart TB
     end
 
     subgraph Chain["On-Chain (Base)"]
-        Factory["HermesFactory"]
-        Challenge["HermesChallenge<br/>(per-bounty)"]
+        Factory["AgoraFactory"]
+        Challenge["AgoraChallenge<br/>(per-bounty)"]
         USDC["USDC Token"]
     end
 
@@ -118,7 +118,7 @@ flowchart LR
 
 ```mermaid
 classDiagram
-    class HermesFactory {
+    class AgoraFactory {
         +IERC20 usdc
         +address oracle
         +address treasury
@@ -129,7 +129,7 @@ classDiagram
         +setTreasury(address)
     }
 
-    class HermesChallenge {
+    class AgoraChallenge {
         +Status status
         +address poster
         +address oracle
@@ -164,10 +164,10 @@ classDiagram
         +transfer(to, amount)
     }
 
-    HermesFactory --> HermesChallenge : deploys (1 per bounty)
-    HermesFactory --> USDC : transferFrom poster
-    HermesChallenge --> Submission : contains[]
-    HermesChallenge --> USDC : escrow + payouts
+    AgoraFactory --> AgoraChallenge : deploys (1 per bounty)
+    AgoraFactory --> USDC : transferFrom poster
+    AgoraChallenge --> Submission : contains[]
+    AgoraChallenge --> USDC : escrow + payouts
 ```
 
 ### Challenge Status Machine
@@ -193,8 +193,8 @@ stateDiagram-v2
 sequenceDiagram
     participant Poster
     participant USDC
-    participant Factory as HermesFactory
-    participant Escrow as HermesChallenge
+    participant Factory as AgoraFactory
+    participant Escrow as AgoraChallenge
     participant Treasury
     participant Winner
 
@@ -236,7 +236,7 @@ sequenceDiagram
     CLI/Web->>IPFS: Pin spec + datasets → specCid
     CLI/Web->>Chain: USDC.approve(Factory, amount)
     CLI/Web->>Chain: Factory.createChallenge(specCid, ...)
-    Chain->>Chain: Deploy HermesChallenge
+    Chain->>Chain: Deploy AgoraChallenge
     Chain->>Chain: USDC.transferFrom → escrow
     Chain-->>Chain: emit ChallengeCreated
     Indexer->>Chain: getLogs (every 30s)
@@ -256,11 +256,11 @@ sequenceDiagram
     participant Docker as Scorer Container
     participant Chain as Base (on-chain)
 
-    Agent->>MCP/CLI: hermes-list-challenges
+    Agent->>MCP/CLI: agora-list-challenges
     MCP/CLI->>DB: SELECT * FROM challenges
     DB-->>Agent: Challenge list
 
-    Agent->>MCP/CLI: hermes-get-challenge(id)
+    Agent->>MCP/CLI: agora-get-challenge(id)
     MCP/CLI->>DB: Get details + leaderboard
     MCP/CLI->>IPFS: Download datasets
     DB-->>Agent: Full challenge data
@@ -271,7 +271,7 @@ sequenceDiagram
     MCP/CLI->>Docker: Run scorer container
     Docker-->>Agent: Preview score
 
-    Agent->>MCP/CLI: hermes-submit-solution
+    Agent->>MCP/CLI: agora-submit-solution
     MCP/CLI->>IPFS: Pin result file → resultCid
     MCP/CLI->>Chain: Challenge.submit(keccak256(resultCid))
     Chain-->>Chain: emit Submitted(subId)
@@ -282,7 +282,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     actor Oracle
-    participant CLI as hm score
+    participant CLI as agora score
     participant IPFS as Pinata
     participant Docker as Scorer Container
     participant Chain as Base
@@ -290,7 +290,7 @@ sequenceDiagram
 
     Note over Oracle: Deadline passes → status = Scoring
 
-    Oracle->>CLI: hm score <subId>
+    Oracle->>CLI: agora score <subId>
     CLI->>IPFS: Fetch test dataset + submission
     CLI->>Docker: Run scorer (sandboxed)
     Docker-->>CLI: score.json {score: 0.923}
@@ -342,7 +342,7 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     subgraph apps["apps/"]
-        cli["cli<br/>Commander CLI (hm)"]
+        cli["cli<br/>Commander CLI (agora)"]
         api["api<br/>Hono REST API"]
         mcp["mcp-server<br/>MCP SDK (stdio + HTTP)"]
         web["web<br/>Next.js frontend"]
@@ -397,12 +397,12 @@ flowchart TB
     end
 
     subgraph Tools["6 MCP Tools"]
-        T1["hermes-list-challenges"]
-        T2["hermes-get-challenge"]
-        T3["hermes-submit-solution"]
-        T4["hermes-get-leaderboard"]
-        T5["hermes-get-submission-status"]
-        T6["hermes-verify-submission"]
+        T1["agora-list-challenges"]
+        T2["agora-get-challenge"]
+        T3["agora-submit-solution"]
+        T4["agora-get-leaderboard"]
+        T5["agora-get-submission-status"]
+        T6["agora-verify-submission"]
     end
 
     STDIO --> SM
@@ -541,7 +541,7 @@ sequenceDiagram
     Browser->>API: POST /api/auth/verify {message, signature}
     API->>API: Verify SIWE signature
     API->>API: Create session (in-memory)
-    API-->>Browser: Set-Cookie: hermes_session
+    API-->>Browser: Set-Cookie: agora_session
     Note over Browser,API: Subsequent requests use cookie
 ```
 
@@ -601,7 +601,7 @@ flowchart TB
 | **Scoring** | Resource exhaustion | 8GB memory, 4 CPUs, 30-min timeout |
 | **API** | Spam / abuse | Rate limiting (per wallet + per IP) |
 | **API** | Oversized payloads | 1MB JSON body limit |
-| **MCP** | Private key over HTTP | Blocked by default; requires `HERMES_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true` |
+| **MCP** | Private key over HTTP | Blocked by default; requires `AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true` |
 | **MCP** | Session flooding | 30-min TTL + GC sweep every 5 min |
 | **x402** | Free-riding on paid routes | Facilitator verification + settlement before serving |
 | **Auth** | Session hijacking | `httpOnly` + `sameSite=Lax` + `secure` cookies |
@@ -631,7 +631,7 @@ flowchart TB
     end
 
     subgraph OnChain["Base Sepolia → Base Mainnet"]
-        Contracts["HermesFactory<br/>+ HermesChallenge(s)"]
+        Contracts["AgoraFactory<br/>+ AgoraChallenge(s)"]
         USDCContract["USDC"]
     end
 

@@ -1,4 +1,4 @@
-# Hermes Frontend Design Skill
+# Agora Frontend Design Skill
 
 Use this skill when building or modifying any frontend component in `apps/web`.
 

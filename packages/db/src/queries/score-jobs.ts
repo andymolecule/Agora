@@ -2,8 +2,8 @@ import {
   SCORE_JOB_STATUSES,
   SCORE_JOB_STATUS,
   type ScoreJobStatus,
-} from "@hermes/common";
-import type { HermesDbClient } from "../index";
+} from "@agora/common";
+import type { AgoraDbClient } from "../index";
 
 export interface ScoreJobInsert {
   submission_id: string;
@@ -27,7 +27,7 @@ export interface ScoreJobRow {
 }
 
 const DEFAULT_JOB_LEASE_MS = Number(
-  process.env.HERMES_WORKER_JOB_LEASE_MS ?? 60 * 60 * 1000,
+  process.env.AGORA_WORKER_JOB_LEASE_MS ?? 60 * 60 * 1000,
 );
 
 /**
@@ -35,7 +35,7 @@ const DEFAULT_JOB_LEASE_MS = Number(
  * Uses a Postgres function with FOR UPDATE SKIP LOCKED — no race window.
  */
 export async function claimNextJob(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   workerId: string,
 ): Promise<ScoreJobRow | null> {
   const { data, error } = await db.rpc("claim_next_score_job", {
@@ -54,7 +54,7 @@ export async function claimNextJob(
 }
 
 export async function heartbeatScoreJobLease(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   jobId: string,
   workerId: string,
 ): Promise<boolean> {
@@ -83,7 +83,7 @@ export async function heartbeatScoreJobLease(
  * via the unique index on submission_id.
  */
 export async function createScoreJob(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   payload: ScoreJobInsert,
 ): Promise<ScoreJobRow | null> {
   const { data, error } = await db
@@ -109,7 +109,7 @@ export async function createScoreJob(
 }
 
 export async function markScoreJobSkipped(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   payload: ScoreJobInsert,
   reason: string,
 ): Promise<ScoreJobRow | null> {
@@ -140,7 +140,7 @@ export async function markScoreJobSkipped(
 }
 
 export async function markJobPosted(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   jobId: string,
   scoreTxHash: string,
 ) {
@@ -159,7 +159,7 @@ export async function markJobPosted(
 }
 
 export async function clearJobPostedTx(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   jobId: string,
 ) {
   const { error } = await db
@@ -179,7 +179,7 @@ export async function clearJobPostedTx(
  * Mark a job as successfully scored.
  */
 export async function completeJob(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   jobId: string,
   scoreTxHash?: string | null,
 ) {
@@ -207,7 +207,7 @@ export async function completeJob(
  * If exhausted, mark as permanently failed.
  */
 export async function failJob(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   jobId: string,
   errorMessage: string,
   currentAttempts: number,
@@ -235,7 +235,7 @@ export async function failJob(
  * Requeue a job without consuming an attempt (for transient reconciliation waits).
  */
 export async function requeueJobWithoutAttemptPenalty(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   jobId: string,
   currentAttempts: number,
   reason: string,
@@ -262,7 +262,7 @@ export async function requeueJobWithoutAttemptPenalty(
  * Get job counts by status - for health endpoint.
  */
 export async function getScoreJobCounts(
-  db: HermesDbClient,
+  db: AgoraDbClient,
 ): Promise<Record<ScoreJobStatus, number>> {
   const counts: Record<ScoreJobStatus, number> = {
     [SCORE_JOB_STATUS.queued]: 0,
@@ -292,7 +292,7 @@ export async function getScoreJobCounts(
  * Used by worker-health to detect stuck queues.
  */
 export async function getOldestPendingJobTime(
-  db: HermesDbClient,
+  db: AgoraDbClient,
 ): Promise<string | null> {
   const { data, error } = await db
     .from("score_jobs")
@@ -313,7 +313,7 @@ export async function getOldestPendingJobTime(
  * Used by worker-health to infer worker liveness.
  */
 export async function getLastScoredJobTime(
-  db: HermesDbClient,
+  db: AgoraDbClient,
 ): Promise<string | null> {
   const { data, error } = await db
     .from("score_jobs")
@@ -330,7 +330,7 @@ export async function getLastScoredJobTime(
 }
 
 export async function getOldestRunningStartedAt(
-  db: HermesDbClient,
+  db: AgoraDbClient,
 ): Promise<string | null> {
   const { data, error } = await db
     .from("score_jobs")
@@ -350,7 +350,7 @@ export async function getOldestRunningStartedAt(
 }
 
 export async function runningOverThresholdCount(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   thresholdMs: number,
 ): Promise<number> {
   const cutoffIso = new Date(Date.now() - thresholdMs).toISOString();
@@ -374,7 +374,7 @@ export async function runningOverThresholdCount(
  * List failed jobs, optionally scoped to a challenge.
  */
 export async function getFailedJobs(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   challengeId?: string,
 ): Promise<ScoreJobRow[]> {
   let query = db
@@ -400,7 +400,7 @@ export async function getFailedJobs(
  * Returns the number of jobs retried.
  */
 export async function retryFailedJobs(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   challengeId?: string,
 ): Promise<number> {
   let query = db

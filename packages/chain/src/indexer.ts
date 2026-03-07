@@ -1,8 +1,8 @@
-import { getHermesRuntimeIdentity, loadConfig } from "@hermes/common";
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with {
+import { getAgoraRuntimeIdentity, loadConfig } from "@agora/common";
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
 };
-import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json" with {
+import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
   type: "json",
 };
 import {
@@ -10,7 +10,7 @@ import {
   getIndexerCursor,
   listChallenges,
   setIndexerCursor,
-} from "@hermes/db";
+} from "@agora/db";
 import { type Abi, parseEventLogs } from "viem";
 import { getPublicClient } from "./client.js";
 import {
@@ -30,16 +30,16 @@ import {
   sleep,
 } from "./indexer/polling.js";
 
-const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
-const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
+const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
+const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 export async function runIndexer() {
   const config = loadConfig();
   const publicClient = getPublicClient();
   const db = createSupabaseClient(true);
 
-  const factoryAddress = config.HERMES_FACTORY_ADDRESS;
-  const chainId = config.HERMES_CHAIN_ID;
+  const factoryAddress = config.AGORA_FACTORY_ADDRESS;
+  const chainId = config.AGORA_CHAIN_ID;
   const cursorKey = `factory:${chainId}:${factoryAddress.toLowerCase()}`;
 
   const { data: lastBlock, error: lastBlockError } = await db
@@ -55,12 +55,12 @@ export async function runIndexer() {
   }
 
   const persistedCursor = await getIndexerCursor(db, cursorKey);
-  const envStartBlock = process.env.HERMES_INDEXER_START_BLOCK
-    ? BigInt(process.env.HERMES_INDEXER_START_BLOCK)
+  const envStartBlock = process.env.AGORA_INDEXER_START_BLOCK
+    ? BigInt(process.env.AGORA_INDEXER_START_BLOCK)
     : BigInt(0);
   let fromBlock =
     persistedCursor ??
-    (process.env.HERMES_INDEXER_START_BLOCK
+    (process.env.AGORA_INDEXER_START_BLOCK
       ? envStartBlock
       : lastBlock
         ? BigInt(lastBlock.block_number)
@@ -68,7 +68,7 @@ export async function runIndexer() {
 
   let pollCount = 0;
 
-  console.log("[indexer] runtime identity", getHermesRuntimeIdentity(config));
+  console.log("[indexer] runtime identity", getAgoraRuntimeIdentity(config));
 
   while (true) {
     try {
@@ -106,7 +106,7 @@ export async function runIndexer() {
         toBlock,
       );
       const parsedFactoryLogs = parseEventLogs({
-        abi: HermesFactoryAbi,
+        abi: AgoraFactoryAbi,
         logs: factoryLogs,
         strict: false,
       }) as unknown as ParsedLog[];
@@ -148,7 +148,7 @@ export async function runIndexer() {
             toBlock,
           );
           const parsedChallengeLogs = parseEventLogs({
-            abi: HermesChallengeAbi,
+            abi: AgoraChallengeAbi,
             logs: challengeLogs,
             strict: false,
           }) as unknown as ParsedLog[];

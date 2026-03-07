@@ -2,8 +2,8 @@ import {
   finalizeChallenge,
   getPublicClient,
   getWalletClient,
-} from "@hermes/chain";
-import { createSupabaseClient, getChallengeById } from "@hermes/db";
+} from "@agora/chain";
+import { createSupabaseClient, getChallengeById } from "@agora/db";
 import { Command } from "commander";
 import {
   applyConfigToEnv,
@@ -24,7 +24,7 @@ export function buildFinalizeCommand() {
   const cmd = new Command("finalize")
     .description("Finalize a challenge after deadline + dispute window")
     .argument("<id>", "Challenge id")
-    .option("--key <ref>", "Private key reference, e.g. env:HERMES_PRIVATE_KEY")
+    .option("--key <ref>", "Private key reference, e.g. env:AGORA_PRIVATE_KEY")
     .option("--format <format>", "table or json", "table")
     .action(
       async (

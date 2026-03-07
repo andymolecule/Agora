@@ -1,4 +1,4 @@
-import type { ChallengeStatus } from "@hermes/common";
+import type { ChallengeStatus } from "@agora/common";
 
 export type Challenge = {
   id: string;

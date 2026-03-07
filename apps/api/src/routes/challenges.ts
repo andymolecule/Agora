@@ -1,17 +1,17 @@
-import { getPublicClient, loadChallengeDefinitionFromChain } from "@hermes/chain";
+import { getPublicClient, loadChallengeDefinitionFromChain } from "@agora/chain";
 import {
   CHALLENGE_LIMITS,
   ON_CHAIN_STATUS_ORDER,
   loadConfig,
   validateScoringContainer,
-} from "@hermes/common";
-import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json" with { type: "json" };
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
+} from "@agora/common";
+import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with { type: "json" };
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with { type: "json" };
 import {
   buildChallengeInsert,
   createSupabaseClient,
   upsertChallenge,
-} from "@hermes/db";
+} from "@agora/db";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { type Abi, parseEventLogs } from "viem";
@@ -25,8 +25,8 @@ import {
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import type { ApiEnv } from "../types.js";
 
-const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
-const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
+const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
+const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 const createChallengeBodySchema = z.object({
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
@@ -77,7 +77,7 @@ router.post(
     }
 
     const logs = parseEventLogs({
-      abi: HermesFactoryAbi,
+      abi: AgoraFactoryAbi,
       logs: receipt.logs,
       strict: false,
     });
@@ -118,7 +118,7 @@ router.post(
       } = await loadChallengeDefinitionFromChain({
         publicClient,
         challengeAddress: challengeAddress as `0x${string}`,
-        chainId: config.HERMES_CHAIN_ID,
+        chainId: config.AGORA_CHAIN_ID,
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -134,9 +134,9 @@ router.post(
     let challengeInsert;
     try {
       const factoryAddress =
-        normalizeAddress(receipt.to) ?? config.HERMES_FACTORY_ADDRESS;
+        normalizeAddress(receipt.to) ?? config.AGORA_FACTORY_ADDRESS;
       challengeInsert = await buildChallengeInsert({
-        chainId: config.HERMES_CHAIN_ID,
+        chainId: config.AGORA_CHAIN_ID,
         contractAddress: challengeAddress,
         factoryAddress,
         factoryChallengeId: Number(challengeId),
@@ -194,17 +194,17 @@ router.get("/:id/claimable", async (c) => {
     await Promise.all([
       publicClient.readContract({
         address: contractAddress,
-        abi: HermesChallengeAbi,
+        abi: AgoraChallengeAbi,
         functionName: "status",
       }),
       publicClient.readContract({
         address: contractAddress,
-        abi: HermesChallengeAbi,
+        abi: AgoraChallengeAbi,
         functionName: "deadline",
       }) as Promise<bigint>,
       publicClient.readContract({
         address: contractAddress,
-        abi: HermesChallengeAbi,
+        abi: AgoraChallengeAbi,
         functionName: "disputeWindowHours",
       }) as Promise<bigint>,
     ]);
@@ -229,7 +229,7 @@ router.get("/:id/claimable", async (c) => {
     try {
       const payout = await publicClient.readContract({
         address: contractAddress,
-        abi: HermesChallengeAbi,
+        abi: AgoraChallengeAbi,
         functionName: "payoutByAddress",
         args: [address as `0x${string}`],
       }) as bigint;

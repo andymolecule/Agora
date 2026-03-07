@@ -19,7 +19,7 @@ const typedData = getPinSpecAuthorizationTypedData({
   nonce: "abc123",
 });
 
-assert.equal(typedData.domain.name, "Hermes");
+assert.equal(typedData.domain.name, "Agora");
 assert.equal(typedData.domain.chainId, 84532);
 assert.equal(typedData.primaryType, "PinSpecAuthorization");
 assert.equal(

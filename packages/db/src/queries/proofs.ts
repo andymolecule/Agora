@@ -1,4 +1,4 @@
-import type { HermesDbClient } from "../index";
+import type { AgoraDbClient } from "../index";
 
 export interface ProofBundleInsert {
   submission_id: string;
@@ -19,7 +19,7 @@ export interface VerificationInsert {
 }
 
 export async function upsertProofBundle(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   payload: ProofBundleInsert,
 ) {
   const isDuplicateKeyError = (error: { code?: string; message: string }) =>
@@ -50,7 +50,7 @@ export async function upsertProofBundle(
 }
 
 export async function createVerification(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   payload: VerificationInsert,
 ) {
   const { data, error } = await db
@@ -65,7 +65,7 @@ export async function createVerification(
 }
 
 export async function getProofBundleBySubmissionId(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   submissionId: string,
 ) {
   const { data, error } = await db

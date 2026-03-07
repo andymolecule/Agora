@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @title HermesConstants — protocol-wide numeric bounds
+/// @title AgoraConstants — protocol-wide numeric bounds
 /// @dev Review before mainnet: MIN_DISPUTE_WINDOW_HOURS is 0 for testnet e2e
 ///      testing. Restore to 168 (7 days) before any production deployment.
-library HermesConstants {
+library AgoraConstants {
     uint256 internal constant MIN_REWARD_USDC = 1_000_000; // $1 (6 decimals)
     uint256 internal constant MAX_REWARD_USDC = 30_000_000; // $30 (6 decimals)
 

@@ -1,4 +1,4 @@
-import type { HermesDbClient } from "../index";
+import type { AgoraDbClient } from "../index";
 
 export interface ScoreUpdate {
   submission_id: string;
@@ -8,7 +8,7 @@ export interface ScoreUpdate {
   scored_at: string;
 }
 
-export async function updateScore(db: HermesDbClient, payload: ScoreUpdate) {
+export async function updateScore(db: AgoraDbClient, payload: ScoreUpdate) {
   const { data, error } = await db
     .from("submissions")
     .update({

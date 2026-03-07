@@ -1,5 +1,5 @@
 {
-  "name": "@hermes/scorer",
+  "name": "@agora/scorer",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -20,10 +20,10 @@
     }
   },
   "dependencies": {
-    "@hermes/chain": "workspace:*",
-    "@hermes/common": "workspace:*",
-    "@hermes/db": "workspace:*",
-    "@hermes/ipfs": "workspace:^",
+    "@agora/chain": "workspace:*",
+    "@agora/common": "workspace:*",
+    "@agora/db": "workspace:*",
+    "@agora/ipfs": "workspace:^",
     "viem": "^2.21.15"
   }
 }

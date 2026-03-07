@@ -2,16 +2,16 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import {HermesFactory} from "../src/HermesFactory.sol";
-import {IHermesChallenge} from "../src/interfaces/IHermesChallenge.sol";
-import {HermesErrors} from "../src/libraries/HermesErrors.sol";
+import {AgoraFactory} from "../src/AgoraFactory.sol";
+import {IAgoraChallenge} from "../src/interfaces/IAgoraChallenge.sol";
+import {AgoraErrors} from "../src/libraries/AgoraErrors.sol";
 import {MockUSDC} from "./MockUSDC.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
-contract HermesFactoryTest is Test {
+contract AgoraFactoryTest is Test {
     MockUSDC private usdc;
-    HermesFactory private factory;
+    AgoraFactory private factory;
 
     address private poster = address(0x123);
     address private oracle = address(0x456);
@@ -19,7 +19,7 @@ contract HermesFactoryTest is Test {
 
     function setUp() public {
         usdc = new MockUSDC();
-        factory = new HermesFactory(usdc, oracle, treasury);
+        factory = new AgoraFactory(usdc, oracle, treasury);
         usdc.mint(poster, 1_000_000e6);
         vm.prank(poster);
         usdc.approve(address(factory), 1_000_000e6);
@@ -33,7 +33,7 @@ contract HermesFactoryTest is Test {
             uint64(block.timestamp + 1 days),
             168,
             0,
-            uint8(IHermesChallenge.DistributionType.WinnerTakeAll),
+            uint8(IAgoraChallenge.DistributionType.WinnerTakeAll),
             address(0),
             0, 0
         );
@@ -47,7 +47,7 @@ contract HermesFactoryTest is Test {
         vm.prank(poster);
         (uint256 id,) = factory.createChallenge(
             "cid", 10e6, uint64(block.timestamp + 1 days), 168, 0,
-            uint8(IHermesChallenge.DistributionType.WinnerTakeAll), labTba, 0, 0
+            uint8(IAgoraChallenge.DistributionType.WinnerTakeAll), labTba, 0, 0
         );
         assertEq(id, 0);
     }
@@ -69,7 +69,7 @@ contract HermesFactoryTest is Test {
     }
 
     function testSetOracleRevertsZeroAddress() public {
-        vm.expectRevert(HermesErrors.InvalidAddress.selector);
+        vm.expectRevert(AgoraErrors.InvalidAddress.selector);
         factory.setOracle(address(0));
     }
 
@@ -86,7 +86,7 @@ contract HermesFactoryTest is Test {
     }
 
     function testSetTreasuryRevertsZeroAddress() public {
-        vm.expectRevert(HermesErrors.InvalidAddress.selector);
+        vm.expectRevert(AgoraErrors.InvalidAddress.selector);
         factory.setTreasury(address(0));
     }
 
@@ -97,18 +97,18 @@ contract HermesFactoryTest is Test {
     }
 
     function testConstructorRevertsZeroOracle() public {
-        vm.expectRevert(HermesErrors.InvalidAddress.selector);
-        new HermesFactory(usdc, address(0), treasury);
+        vm.expectRevert(AgoraErrors.InvalidAddress.selector);
+        new AgoraFactory(usdc, address(0), treasury);
     }
 
     function testConstructorRevertsZeroUsdc() public {
-        vm.expectRevert(HermesErrors.InvalidAddress.selector);
-        new HermesFactory(IERC20(address(0)), oracle, treasury);
+        vm.expectRevert(AgoraErrors.InvalidAddress.selector);
+        new AgoraFactory(IERC20(address(0)), oracle, treasury);
     }
 
     function testConstructorRevertsZeroTreasury() public {
-        vm.expectRevert(HermesErrors.InvalidAddress.selector);
-        new HermesFactory(usdc, oracle, address(0));
+        vm.expectRevert(AgoraErrors.InvalidAddress.selector);
+        new AgoraFactory(usdc, oracle, address(0));
     }
 
     function testChallengesMappingStoresAddress() public {
@@ -127,7 +127,7 @@ contract HermesFactoryTest is Test {
             uint64(block.timestamp + 1 days),
             168,
             0,
-            uint8(IHermesChallenge.DistributionType.WinnerTakeAll),
+            uint8(IAgoraChallenge.DistributionType.WinnerTakeAll),
             address(0),
             0, 0,
             block.timestamp + 1 days,
@@ -152,7 +152,7 @@ contract HermesFactoryTest is Test {
             uint64(block.timestamp + 1 days),
             168,
             0,
-            uint8(IHermesChallenge.DistributionType.WinnerTakeAll),
+            uint8(IAgoraChallenge.DistributionType.WinnerTakeAll),
             address(0),
             0, 0,
             block.timestamp + 1 days,
@@ -164,7 +164,7 @@ contract HermesFactoryTest is Test {
 
     function testCreateChallengeRevertsOnInvalidDistributionType() public {
         vm.prank(poster);
-        vm.expectRevert(HermesErrors.InvalidDistribution.selector);
+        vm.expectRevert(AgoraErrors.InvalidDistribution.selector);
         factory.createChallenge(
             "cid",
             10e6,

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { loadConfig } from "@hermes/common";
-import { DEFAULT_IPFS_GATEWAY } from "@hermes/common";
+import { loadConfig } from "@agora/common";
+import { DEFAULT_IPFS_GATEWAY } from "@agora/common";
 
 let warnedSharedGateway = false;
 
@@ -20,17 +20,17 @@ function envInt(name: string, fallback: number, min = 0) {
 }
 
 const FETCH_TIMEOUT_MS = envInt(
-  "HERMES_IPFS_FETCH_TIMEOUT_MS",
+  "AGORA_IPFS_FETCH_TIMEOUT_MS",
   DEFAULT_FETCH_TIMEOUT_MS,
   1,
 );
 const FETCH_MAX_ATTEMPTS = envInt(
-  "HERMES_IPFS_FETCH_MAX_ATTEMPTS",
+  "AGORA_IPFS_FETCH_MAX_ATTEMPTS",
   DEFAULT_FETCH_MAX_ATTEMPTS,
   1,
 );
 const FETCH_RETRY_BASE_MS = envInt(
-  "HERMES_IPFS_FETCH_RETRY_BASE_MS",
+  "AGORA_IPFS_FETCH_RETRY_BASE_MS",
   DEFAULT_FETCH_RETRY_BASE_MS,
   0,
 );
@@ -44,7 +44,7 @@ function resolveGateway(cidOrUrl: string): string {
   if (isCid) {
     const config = loadConfig();
     const gateway =
-      config.HERMES_IPFS_GATEWAY ?? DEFAULT_IPFS_GATEWAY;
+      config.AGORA_IPFS_GATEWAY ?? DEFAULT_IPFS_GATEWAY;
     if (
       !warnedSharedGateway
       && process.env.NODE_ENV === "production"
@@ -52,7 +52,7 @@ function resolveGateway(cidOrUrl: string): string {
     ) {
       warnedSharedGateway = true;
       console.warn(
-        "Using shared IPFS gateway in production. Set HERMES_IPFS_GATEWAY to a dedicated gateway to reduce rate limiting.",
+        "Using shared IPFS gateway in production. Set AGORA_IPFS_GATEWAY to a dedicated gateway to reduce rate limiting.",
       );
     }
     const bareHash = cidOrUrl.replace("ipfs://", "");

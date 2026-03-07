@@ -6,7 +6,7 @@ import type { ChallengeRow, ScoreJobRow, SubmissionRow, WorkerLogFn } from "../s
 const challenge: ChallengeRow = {
   id: "challenge-1",
   contract_address: "0x0000000000000000000000000000000000000001",
-  scoring_container: "ghcr.io/hermes-science/repro-scorer:latest",
+  scoring_container: "ghcr.io/agora-science/repro-scorer:latest",
   scoring_metric: "custom",
   dataset_test_cid: "ipfs://bundle",
   scoring_preset_id: "csv_comparison_v1",
@@ -61,7 +61,7 @@ test("processJob skips repost when submission becomes scored before post", async
       proof: {
         inputHash: "input-hash",
         outputHash: "output-hash",
-        containerImageDigest: "ghcr.io/hermes-science/repro-scorer@sha256:abc",
+        containerImageDigest: "ghcr.io/agora-science/repro-scorer@sha256:abc",
         scorerLog: "ok",
       },
     }),

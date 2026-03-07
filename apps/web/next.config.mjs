@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@hermes/common", "@hermes/ipfs"],
+  transpilePackages: ["@agora/common", "@agora/ipfs"],
   webpack: (config, { isServer }) => {
     // Suppress warnings from MetaMask SDK and WalletConnect dependencies
     // that try to resolve React Native / optional modules at build time

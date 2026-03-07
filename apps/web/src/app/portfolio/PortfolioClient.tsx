@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
 import Link from "next/link";
 import { User, FileText, FlaskConical, ExternalLink } from "lucide-react";
-import { CHALLENGE_STATUS } from "@hermes/common";
+import { CHALLENGE_STATUS } from "@agora/common";
 import { getSolverPortfolio } from "../../lib/api";
 import { getStatusStyle } from "../../lib/status-styles";
 import type { SolverSubmission } from "../../lib/types";

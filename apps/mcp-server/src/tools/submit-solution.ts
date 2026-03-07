@@ -6,7 +6,7 @@ export interface SubmitSolutionInput {
   privateKey?: string;
 }
 
-export async function hermesSubmitSolution(
+export async function agoraSubmitSolution(
   input: SubmitSolutionInput,
   options?: { allowRemotePrivateKey?: boolean },
 ) {

@@ -4,7 +4,7 @@ export interface GetSubmissionStatusInput {
   submissionId: string;
 }
 
-export async function hermesGetSubmissionStatus(
+export async function agoraGetSubmissionStatus(
   input: GetSubmissionStatusInput,
 ) {
   return getSubmissionStatus(input.submissionId);

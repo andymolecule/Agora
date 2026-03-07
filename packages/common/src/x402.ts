@@ -17,11 +17,11 @@ export function readX402RuntimeConfig(
     enabled: policy.x402Enabled,
     reportOnly: policy.x402ReportOnly,
     facilitatorUrl:
-      env.HERMES_X402_FACILITATOR_URL ?? "https://x402.org/facilitator",
-    network: env.HERMES_X402_NETWORK ?? DEFAULT_X402_NETWORK,
+      env.AGORA_X402_FACILITATOR_URL ?? "https://x402.org/facilitator",
+    network: env.AGORA_X402_NETWORK ?? DEFAULT_X402_NETWORK,
     payTo:
-      env.HERMES_TREASURY_ADDRESS ??
-      env.HERMES_USDC_ADDRESS ??
+      env.AGORA_TREASURY_ADDRESS ??
+      env.AGORA_USDC_ADDRESS ??
       "0x0000000000000000000000000000000000000000",
   };
 }

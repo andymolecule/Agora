@@ -19,7 +19,7 @@ export function resolvePrivateKeyFromArg(keyArg?: string): string | undefined {
   return value;
 }
 
-export function prepareHermesEnv(
+export function prepareAgoraEnv(
   requiredKeys: (keyof ReturnType<typeof loadCliConfig>)[],
 ) {
   const config = loadCliConfig();
@@ -32,10 +32,10 @@ export function ensurePrivateKey(keyArg?: string) {
   const config = loadCliConfig();
   const resolved = resolvePrivateKeyFromArg(keyArg) ?? config.private_key;
   if (resolved) {
-    process.env.HERMES_PRIVATE_KEY = resolved;
+    process.env.AGORA_PRIVATE_KEY = resolved;
     return resolved;
   }
   throw new Error(
-    "No private key available. Set HERMES_PRIVATE_KEY or use --key env:HERMES_PRIVATE_KEY.",
+    "No private key available. Set AGORA_PRIVATE_KEY or use --key env:AGORA_PRIVATE_KEY.",
   );
 }

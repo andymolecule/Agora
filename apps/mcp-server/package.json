@@ -1,5 +1,5 @@
 {
-  "name": "@hermes/mcp-server",
+  "name": "@agora/mcp-server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,11 +12,11 @@
     "test": "echo 'no tests'"
   },
   "dependencies": {
-    "@hermes/chain": "workspace:*",
-    "@hermes/common": "workspace:*",
-    "@hermes/db": "workspace:*",
-    "@hermes/ipfs": "workspace:*",
-    "@hermes/scorer": "workspace:*",
+    "@agora/chain": "workspace:*",
+    "@agora/common": "workspace:*",
+    "@agora/db": "workspace:*",
+    "@agora/ipfs": "workspace:*",
+    "@agora/scorer": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "viem": "^2.21.0",
     "zod": "^3.23.8"

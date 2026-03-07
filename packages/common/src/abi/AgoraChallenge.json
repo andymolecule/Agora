@@ -5,7 +5,7 @@
       {
         "name": "cfg",
         "type": "tuple",
-        "internalType": "struct IHermesChallenge.ChallengeConfig",
+        "internalType": "struct IAgoraChallenge.ChallengeConfig",
         "components": [
           {
             "name": "usdc",
@@ -55,7 +55,7 @@
           {
             "name": "distributionType",
             "type": "uint8",
-            "internalType": "enum IHermesChallenge.DistributionType"
+            "internalType": "enum IAgoraChallenge.DistributionType"
           },
           {
             "name": "maxSubmissions",
@@ -172,7 +172,7 @@
       {
         "name": "",
         "type": "uint8",
-        "internalType": "enum IHermesChallenge.DistributionType"
+        "internalType": "enum IAgoraChallenge.DistributionType"
       }
     ],
     "stateMutability": "view"
@@ -216,7 +216,7 @@
       {
         "name": "",
         "type": "tuple",
-        "internalType": "struct IHermesChallenge.Submission",
+        "internalType": "struct IAgoraChallenge.Submission",
         "components": [
           {
             "name": "solver",
@@ -439,7 +439,7 @@
       {
         "name": "",
         "type": "uint8",
-        "internalType": "enum IHermesChallenge.Status"
+        "internalType": "enum IAgoraChallenge.Status"
       }
     ],
     "stateMutability": "view"

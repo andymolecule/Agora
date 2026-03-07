@@ -3,14 +3,14 @@ import path from "node:path";
 
 const pairs = [
   {
-    artifact: "packages/contracts/out/HermesFactory.sol/HermesFactory.json",
-    source: "packages/common/src/abi/HermesFactory.json",
-    label: "HermesFactory",
+    artifact: "packages/contracts/out/AgoraFactory.sol/AgoraFactory.json",
+    source: "packages/common/src/abi/AgoraFactory.json",
+    label: "AgoraFactory",
   },
   {
-    artifact: "packages/contracts/out/HermesChallenge.sol/HermesChallenge.json",
-    source: "packages/common/src/abi/HermesChallenge.json",
-    label: "HermesChallenge",
+    artifact: "packages/contracts/out/AgoraChallenge.sol/AgoraChallenge.json",
+    source: "packages/common/src/abi/AgoraChallenge.json",
+    label: "AgoraChallenge",
   },
 ];
 

@@ -8,8 +8,8 @@ import {
   updateScore,
   upsertProofBundle,
   type createSupabaseClient,
-} from "@hermes/db";
-import { getPublicClient } from "@hermes/chain";
+} from "@agora/db";
+import { getPublicClient } from "@agora/chain";
 import {
   handlePreviouslyPostedScoreTx,
   postScoreAndWaitForConfirmation,

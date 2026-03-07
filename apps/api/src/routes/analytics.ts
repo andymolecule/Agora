@@ -1,5 +1,5 @@
-import { createSupabaseClient, getPlatformAnalytics } from "@hermes/db";
-import type { PlatformAnalytics } from "@hermes/db";
+import { createSupabaseClient, getPlatformAnalytics } from "@agora/db";
+import type { PlatformAnalytics } from "@agora/db";
 import { Hono } from "hono";
 import type { ApiEnv } from "../types.js";
 
