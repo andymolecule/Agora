@@ -6,7 +6,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getPublicClient, postScore } from "@hermes/chain";
-import { loadConfig, resolveEvalSpec, type ChallengeEvalRow } from "@hermes/common";
+import {
+  loadConfig,
+  resolveEvalSpec,
+  SUBMISSION_RESULT_FORMAT,
+  type ChallengeEvalRow,
+} from "@hermes/common";
 import {
   type HermesDbClient,
   getChallengeById,
@@ -83,7 +88,14 @@ export async function oracleScore(
 
   try {
     // 3. Build proof bundle
-    const proof = await buildProofBundle({
+    const replaySubmissionCid =
+      submission.result_format === SUBMISSION_RESULT_FORMAT.sealedV1
+        ? await pinFile(
+          run.submissionPath,
+          `submission-input-${submission.id}.bin`,
+        )
+        : submission.result_cid;
+    const baseProof = await buildProofBundle({
       challengeId: challenge.id,
       submissionId: submission.id,
       score: run.result.score,
@@ -92,6 +104,13 @@ export async function oracleScore(
       inputPaths: run.inputPaths,
       outputPath: run.result.outputPath,
     });
+    const proof = {
+      ...baseProof,
+      challengeSpecCid:
+        (challenge as { spec_cid?: string | null }).spec_cid ?? null,
+      evaluationBundleCid: evalPlan.evaluationBundleCid ?? null,
+      replaySubmissionCid,
+    };
 
     const proofPath = path.join(run.workspaceRoot, "proof-bundle.json");
     await fs.writeFile(proofPath, JSON.stringify(proof, null, 2), "utf8");

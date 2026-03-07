@@ -26,6 +26,7 @@ export type Challenge = {
 };
 
 export type Submission = {
+  id: string;
   on_chain_sub_id: number;
   solver_address: string;
   score: string | null;
@@ -131,6 +132,27 @@ export type WorkerHealth = {
   };
   checkedAt: string;
   error?: string;
+};
+
+export type SubmissionVerification = {
+  challengeId: string;
+  challengeAddress: string;
+  challengeSpecCid: string | null;
+  submissionId: string;
+  onChainSubId: number;
+  solverAddress: string;
+  score: string | null;
+  scored: boolean;
+  submittedAt: string;
+  scoredAt?: string | null;
+  proofBundleCid: string | null;
+  proofBundleHash: string | null;
+  evaluationBundleCid: string | null;
+  replaySubmissionCid: string | null;
+  containerImageDigest: string | null;
+  inputHash: string | null;
+  outputHash: string | null;
+  reproducible: boolean;
 };
 
 export type IndexerHealth = {

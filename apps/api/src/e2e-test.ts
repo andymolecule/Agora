@@ -2,7 +2,7 @@
  * End-to-end test: post → submit → score → finalize → verify claimable
  * Uses the test factory with MIN_DISPUTE_WINDOW_HOURS = 0
  */
-import { CHALLENGE_STATUS, loadConfig } from "@hermes/common";
+import { CHALLENGE_STATUS, SUBMISSION_LIMITS, loadConfig } from "@hermes/common";
 import { getPublicClient, getWalletClient, finalizeChallenge } from "@hermes/chain";
 import { createSupabaseClient, upsertChallenge, buildChallengeInsert, createScoreJob } from "@hermes/db";
 import { pinJSON, pinFile } from "@hermes/ipfs";
@@ -72,7 +72,17 @@ async function main() {
         address: config.HERMES_FACTORY_ADDRESS,
         abi: HermesFactoryAbi,
         functionName: "createChallenge",
-        args: [specCidClean, rewardAmount, deadlineSeconds, 0n, 0n, 0, "0x0000000000000000000000000000000000000000", 0n, 0n], // 0h dispute, 0 minScore, WinnerTakeAll, no labTBA, unlimited submissions
+        args: [
+            specCidClean,
+            rewardAmount,
+            deadlineSeconds,
+            0n,
+            0n,
+            0,
+            "0x0000000000000000000000000000000000000000",
+            BigInt(SUBMISSION_LIMITS.maxPerChallenge),
+            BigInt(SUBMISSION_LIMITS.maxPerSolverPerChallenge),
+        ], // 0h dispute, 0 minScore, WinnerTakeAll, no labTBA, bounded submissions
     });
 
     const createReceipt = await publicClient.waitForTransactionReceipt({ hash: createTxHash });

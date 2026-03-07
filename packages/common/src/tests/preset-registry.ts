@@ -19,6 +19,25 @@ assert.equal(uniqueIds.length, 1, "regression container should map to a single p
 assert.equal(uniqueIds[0], "regression_v1");
 assert.equal(inferPresetIdByContainer(regression.container), "regression_v1");
 
+const resolvedRegressionDigest =
+  "ghcr.io/hermes-science/regression-scorer@sha256:" + "e".repeat(64);
+const digestIds = findPresetIdsByContainer(resolvedRegressionDigest);
+assert.equal(
+  digestIds.length,
+  1,
+  "resolved official digest should still map back to the managed preset",
+);
+assert.equal(
+  digestIds[0],
+  "regression_v1",
+  "resolved official digest should preserve preset resolution",
+);
+assert.equal(
+  inferPresetIdByContainer(resolvedRegressionDigest),
+  "regression_v1",
+  "resolved official digest should infer the same preset when unique",
+);
+
 assert.equal(
   defaultPresetIdForChallengeType("reproducibility"),
   "csv_comparison_v1",
@@ -48,6 +67,17 @@ const mismatchError = validatePresetIntegrity("regression_v1", csvPreset.contain
 assert.ok(
   mismatchError?.includes("Container mismatch"),
   "mismatched preset/container should be rejected",
+);
+
+const officialDigestIntegrity = validatePresetIntegrity(
+  "regression_v1",
+  resolvedRegressionDigest,
+  { requirePinnedPresetDigest: true },
+);
+assert.equal(
+  officialDigestIntegrity,
+  null,
+  "managed preset should accept a pinned digest for the same official image",
 );
 
 const unpinnedCustomError = validatePresetIntegrity(

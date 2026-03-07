@@ -7,6 +7,7 @@ import {
   lookupPreset,
   resolveEvalSpec,
   resolveSubmissionLimits,
+  SUBMISSION_RESULT_FORMAT,
   type RunnerLimits,
   validatePresetIntegrity,
 } from "@hermes/common";
@@ -129,6 +130,7 @@ export interface ScoringOutcomeSuccess {
     inputHash: string;
     outputHash: string;
     containerImageDigest: string;
+    replaySubmissionCid: string | null;
     scorerLog?: string;
   };
 }
@@ -269,7 +271,14 @@ export async function scoreSubmissionAndBuildProof(
       "pin_proof",
       phaseMeta,
       async () => {
-        const proof = await buildProofBundle({
+        const replaySubmissionCid =
+          submission.result_format === SUBMISSION_RESULT_FORMAT.sealedV1
+            ? await pinFile(
+              run.submissionPath,
+              `submission-input-${submission.id}.bin`,
+            )
+            : (submission.result_cid ?? null);
+        const baseProof = await buildProofBundle({
           challengeId: challenge.id,
           submissionId: submission.id,
           score: result.score,
@@ -278,6 +287,13 @@ export async function scoreSubmissionAndBuildProof(
           inputPaths: run.inputPaths,
           outputPath: result.outputPath,
         });
+        const proof = {
+          ...baseProof,
+          challengeSpecCid:
+            (challenge as { spec_cid?: string | null }).spec_cid ?? null,
+          evaluationBundleCid: evalPlan.evaluationBundleCid ?? null,
+          replaySubmissionCid,
+        };
 
         const proofPath = path.join(run.workspaceRoot, "proof-bundle.json");
         await fs.writeFile(proofPath, JSON.stringify(proof, null, 2), "utf8");
@@ -303,6 +319,7 @@ export async function scoreSubmissionAndBuildProof(
         inputHash: proof.inputHash,
         outputHash: proof.outputHash,
         containerImageDigest: proof.containerImageDigest,
+        replaySubmissionCid: proof.replaySubmissionCid ?? null,
         scorerLog: proof.scorerLog,
       },
     };

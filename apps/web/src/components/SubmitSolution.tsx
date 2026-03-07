@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { CHAIN_ID } from "../lib/config";
 import { createSubmissionRecord, getSubmissionPublicKey } from "../lib/api";
+import { ScoringTrustNotice } from "./ScoringTrustNotice";
 
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 
@@ -227,6 +228,10 @@ export function SubmitSolution({
                 Submit Solution
             </h3>
 
+            <div className="mb-5">
+                <ScoringTrustNotice compact />
+            </div>
+
             {/* Wallet connection */}
             {!isConnected ? (
                 <div className="space-y-4">
@@ -344,7 +349,7 @@ export function SubmitSolution({
                                 )}
                             </div>
                             <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/50 mt-2">
-                                Only the scorer can decrypt after deadline.
+                                Hidden from the public. Hermes-operated scoring can decrypt for scoring.
                             </p>
                         </div>
                     )}
@@ -367,7 +372,7 @@ export function SubmitSolution({
                                 Encrypted locally, sealed to IPFS, hash recorded on-chain.
                             </p>
                             <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/50 mt-1">
-                                Only the scorer can decrypt after deadline.
+                                Hidden from the public. Hermes-operated scoring can decrypt for scoring.
                             </p>
                         </div>
                     )}

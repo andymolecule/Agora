@@ -5,6 +5,7 @@ import analyticsRoutes from "./routes/analytics.js";
 import authRoutes from "./routes/auth.js";
 import challengeRoutes from "./routes/challenges.js";
 import indexerHealthRoutes from "./routes/indexer-health.js";
+import pinSpecRoutes from "./routes/pin-spec.js";
 import scorePreviewRoutes from "./routes/score-preview.js";
 import portfolioRoutes from "./routes/portfolio.js";
 import workerHealthRoutes from "./routes/worker-health.js";
@@ -81,6 +82,7 @@ export function createApp() {
   app.route("/api/auth", authRoutes);
   app.route("/api/challenges", challengeRoutes);
   app.route("/api/indexer-health", indexerHealthRoutes);
+  app.route("/api/pin-spec", pinSpecRoutes);
   app.route("/api/worker-health", workerHealthRoutes);
   app.route("/api/agent/challenges", agentChallengeRoutes);
   app.route("/api/submissions", submissionRoutes);

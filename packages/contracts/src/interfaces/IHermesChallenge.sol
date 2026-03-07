@@ -60,8 +60,6 @@ interface IHermesChallenge {
     function cancel() external;
     function timeoutRefund() external;
     function claim() external;
-    function proposeOracleRotation(address newOracle) external;
-    function executeOracleRotation() external;
 
     function getSubmission(uint256 subId) external view returns (Submission memory);
     function getLeaderboard() external view returns (uint256[] memory subIds, uint256[] memory scores);

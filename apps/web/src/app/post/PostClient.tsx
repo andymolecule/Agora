@@ -2,9 +2,12 @@
 
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
 import {
+  computeSpecHash,
   defaultPresetIdForChallengeType,
+  getPinSpecAuthorizationTypedData,
   isTestnetChain,
   PRESET_REGISTRY,
+  SUBMISSION_LIMITS,
   validateChallengeScoreability,
   validateChallengeSpec,
   validatePresetIntegrity,
@@ -12,7 +15,7 @@ import {
 } from "@hermes/common";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { type Abi, parseSignature, parseUnits } from "viem";
-import { useAccount, usePublicClient, useSignMessage, useSignTypedData, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useSignTypedData, useWriteContract } from "wagmi";
 import { useConnectModal, useChainModal } from "@rainbow-me/rainbowkit";
 import {
   Wallet, ArrowRight, AlertCircle, Loader2, CheckCircle,
@@ -20,10 +23,10 @@ import {
   Upload, Eye, X, Tag
 } from "lucide-react";
 import { motion } from "motion/react";
-import { buildPinSpecMessage, computeSpecHash } from "../../lib/pin-spec-auth";
 import { accelerateChallengeIndex } from "../../lib/api";
 import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../../lib/config";
 import { formatUsdc, computeProtocolFee } from "../../lib/format";
+import { ScoringTrustNotice } from "../../components/ScoringTrustNotice";
 
 const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
@@ -910,7 +913,6 @@ export function PostClient() {
   const { isConnected, chainId, address } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
-  const { signMessageAsync } = useSignMessage();
   const { signTypedDataAsync } = useSignTypedData();
   const { openConnectModal } = useConnectModal();
   const { openChainModal } = useChainModal();
@@ -1160,15 +1162,29 @@ export function PostClient() {
 
     setStatus("Pinning spec to IPFS...");
     const spec = { ...buildSpec(state), deadline: computeDeadlineIso(state.deadlineDays) };
-    const timestamp = Date.now();
     const specHash = computeSpecHash(spec);
-    const message = buildPinSpecMessage({ address, timestamp, specHash });
-    const signature = await signMessageAsync({ account: address, message });
+    const nonceRes = await fetch("/api/pin-spec", {
+      method: "GET",
+      cache: "no-store",
+    });
+    if (!nonceRes.ok) throw new Error(await nonceRes.text());
+
+    const { nonce } = (await nonceRes.json()) as { nonce: string };
+    const typedData = getPinSpecAuthorizationTypedData({
+      chainId: CHAIN_ID,
+      wallet: address,
+      specHash,
+      nonce,
+    });
+    const signature = await signTypedDataAsync({
+      account: address,
+      ...typedData,
+    });
 
     const pinRes = await fetch("/api/pin-spec", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ spec, auth: { address, timestamp, specHash, signature } }),
+      body: JSON.stringify({ spec, auth: { address, nonce, specHash, signature } }),
     });
     if (!pinRes.ok) throw new Error(await pinRes.text());
 
@@ -1332,8 +1348,8 @@ export function PostClient() {
             prepared.minimumScoreWad,
             prepared.distributionType,
             ZERO_ADDRESS,
-            0n,
-            0n,
+            BigInt(SUBMISSION_LIMITS.maxPerChallenge),
+            BigInt(SUBMISSION_LIMITS.maxPerSolverPerChallenge),
             permitDeadline,
             permitV,
             parsedSignature.r,
@@ -1365,8 +1381,8 @@ export function PostClient() {
           prepared.minimumScoreWad,
           prepared.distributionType,
           ZERO_ADDRESS,
-          0n,
-          0n,
+          BigInt(SUBMISSION_LIMITS.maxPerChallenge),
+          BigInt(SUBMISSION_LIMITS.maxPerSolverPerChallenge),
         ],
       });
       const createTx = await writeContractAsync(request);
@@ -1912,6 +1928,10 @@ export function PostClient() {
               </div>
             )}
 
+            <div className="span-full">
+              <ScoringTrustNotice />
+            </div>
+
           </div>
         </div>
       </div>
@@ -2059,9 +2079,9 @@ export function PostClient() {
                 <div className="summary-trust-copy">
                   <span className="summary-trust-icon" aria-hidden="true">🔒</span>
                   <div>
-                    <p className="summary-trust-title">Secure Escrow</p>
+                    <p className="summary-trust-title">Checkable Scoring</p>
                     <p className="summary-trust-text">
-                      Funds are locked in a verified smart contract until scoring completes and the dispute window clears.
+                      Hermes operates scoring first, but the scorer image, challenge inputs, and published outputs are intended to be replayable and independently checked.
                     </p>
                   </div>
                 </div>

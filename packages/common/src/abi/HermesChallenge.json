@@ -74,19 +74,6 @@
   },
   {
     "type": "function",
-    "name": "ORACLE_ROTATION_DELAY",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "PROTOCOL_FEE_BPS",
     "inputs": [],
     "outputs": [
@@ -189,13 +176,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "executeOracleRotation",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -327,19 +307,6 @@
   },
   {
     "type": "function",
-    "name": "oracleRotationTimestamp",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "payoutByAddress",
     "inputs": [
       {
@@ -353,19 +320,6 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "pendingOracle",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -405,19 +359,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "proposeOracleRotation",
-    "inputs": [
-      {
-        "name": "newOracle",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -672,44 +613,6 @@
   },
   {
     "type": "event",
-    "name": "OracleRotated",
-    "inputs": [
-      {
-        "name": "oldOracle",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "newOracle",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "OracleRotationProposed",
-    "inputs": [
-      {
-        "name": "newOracle",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "effectiveAt",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Scored",
     "inputs": [
       {
@@ -855,11 +758,6 @@
   },
   {
     "type": "error",
-    "name": "NoPendingRotation",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "NotOracle",
     "inputs": []
   },
@@ -871,11 +769,6 @@
   {
     "type": "error",
     "name": "NothingToClaim",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "OracleRotationNotReady",
     "inputs": []
   },
   {

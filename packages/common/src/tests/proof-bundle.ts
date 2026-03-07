@@ -5,6 +5,9 @@ const proofBundle: ProofBundle = {
   outputHash: "output-hash",
   containerImageDigest:
     "ghcr.io/hermes-science/repro-scorer@sha256:abc123",
+  challengeSpecCid: "ipfs://bafy-spec",
+  evaluationBundleCid: "ipfs://bafy-eval",
+  replaySubmissionCid: "ipfs://bafy-replay",
   score: 0.75,
   scorerLog: "scorer output",
   meta: {
@@ -21,6 +24,11 @@ if (!proofBundle.containerImageDigest.includes("@sha256:")) {
 
 if (proofBundle.meta?.challengeId !== "challenge-1") {
   console.error("ProofBundle meta should remain optional debug metadata");
+  process.exit(1);
+}
+
+if (proofBundle.replaySubmissionCid !== "ipfs://bafy-replay") {
+  console.error("ProofBundle should support public replay artifacts");
   process.exit(1);
 }
 

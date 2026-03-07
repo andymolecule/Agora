@@ -1,4 +1,4 @@
-import { loadConfig } from "@hermes/common";
+import { SUBMISSION_LIMITS, loadConfig } from "@hermes/common";
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json" with { type: "json" };
 import { type Abi, parseUnits } from "viem";
 import { getWalletClient } from "./client.js";
@@ -35,8 +35,11 @@ export async function createChallenge(params: CreateChallengeParams) {
       params.minimumScore,
       params.distributionType,
       params.labTba,
-      BigInt(params.maxSubmissions ?? 0),
-      BigInt(params.maxSubmissionsPerSolver ?? 0),
+      BigInt(params.maxSubmissions ?? SUBMISSION_LIMITS.maxPerChallenge),
+      BigInt(
+        params.maxSubmissionsPerSolver ??
+          SUBMISSION_LIMITS.maxPerSolverPerChallenge,
+      ),
     ],
   });
 }

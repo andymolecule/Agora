@@ -11,6 +11,9 @@ export interface ProofBundleInput {
   containerImageDigest: string;
   inputPaths: string[];
   outputPath: string;
+  challengeSpecCid?: string | null;
+  evaluationBundleCid?: string | null;
+  replaySubmissionCid?: string | null;
 }
 
 export interface ProofBundle extends SharedProofBundle {
@@ -48,6 +51,15 @@ export async function buildProofBundle(
     outputHash,
     containerImageDigest: input.containerImageDigest,
     ...(input.scorerLog ? { scorerLog: input.scorerLog } : {}),
+    ...(input.challengeSpecCid !== undefined
+      ? { challengeSpecCid: input.challengeSpecCid }
+      : {}),
+    ...(input.evaluationBundleCid !== undefined
+      ? { evaluationBundleCid: input.evaluationBundleCid }
+      : {}),
+    ...(input.replaySubmissionCid !== undefined
+      ? { replaySubmissionCid: input.replaySubmissionCid }
+      : {}),
     meta: {
       challengeId: input.challengeId,
       submissionId: input.submissionId,

@@ -16,6 +16,7 @@ import { buildScoreLocalCommand } from "./commands/score-local";
 import { buildStatusCommand } from "./commands/status";
 import { buildSubmitCommand } from "./commands/submit";
 import { buildVerifyCommand } from "./commands/verify";
+import { buildVerifyPublicCommand } from "./commands/verify-public";
 import { buildValidateCommand } from "./commands/validate";
 import { handleCommandError } from "./lib/errors";
 
@@ -40,6 +41,7 @@ async function main() {
   program.addCommand(buildScoreLocalCommand());
   program.addCommand(buildScoreCommand());
   program.addCommand(buildVerifyCommand());
+  program.addCommand(buildVerifyPublicCommand());
   program.addCommand(buildValidateCommand());
   program.addCommand(buildRetryFailedJobsCommand());
 

@@ -5,6 +5,7 @@ import {
   computeSubmissionResultHash,
   getSubmissionLimitViolation,
   loadConfig,
+  resolveEvalSpec,
   resolveSubmissionLimits,
 } from "@hermes/common";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
@@ -20,6 +21,7 @@ import {
   setSubmissionResultCid,
   upsertSubmissionOnChain,
 } from "@hermes/db";
+import { getJSON } from "@hermes/ipfs";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { type Abi, parseEventLogs } from "viem";
@@ -59,6 +61,36 @@ function getLogArg(
   return undefined;
 }
 
+type PublicSubmissionVerification = {
+  challengeId: string;
+  challengeAddress: string;
+  challengeSpecCid: string | null;
+  submissionId: string;
+  onChainSubId: number;
+  solverAddress: string;
+  score: string | null;
+  scored: boolean;
+  submittedAt: string;
+  scoredAt?: string | null;
+  proofBundleCid: string | null;
+  proofBundleHash: string | null;
+  evaluationBundleCid: string | null;
+  replaySubmissionCid: string | null;
+  containerImageDigest: string | null;
+  inputHash: string | null;
+  outputHash: string | null;
+  reproducible: boolean;
+};
+
+type PublicProofBundle = {
+  inputHash?: string;
+  outputHash?: string;
+  containerImageDigest?: string;
+  challengeSpecCid?: string | null;
+  evaluationBundleCid?: string | null;
+  replaySubmissionCid?: string | null;
+};
+
 export function extractSubmissionIdFromSubmittedEvent(
   args: readonly unknown[] | Record<string, unknown> | undefined,
 ): bigint | undefined {
@@ -93,6 +125,52 @@ router.get("/public-key", async (c) => {
       publicKeyPem: config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
     },
   });
+});
+
+router.get("/:id/public", async (c) => {
+  const submissionId = c.req.param("id");
+  const db = createSupabaseClient(true);
+  const submission = await getSubmissionById(db, submissionId);
+  const challenge = await getChallengeById(db, submission.challenge_id);
+  const proofBundle = await getProofBundleBySubmissionId(db, submissionId);
+  const evalPlan = resolveEvalSpec(challenge);
+
+  let proofPayload: PublicProofBundle | null = null;
+  if (proofBundle?.cid) {
+    proofPayload = await getJSON<PublicProofBundle>(proofBundle.cid);
+  }
+
+  const replaySubmissionCid =
+    proofPayload?.replaySubmissionCid
+    ?? (submission.result_format === SUBMISSION_RESULT_FORMAT.plainV0
+      ? submission.result_cid
+      : null);
+
+  const verification: PublicSubmissionVerification = {
+    challengeId: challenge.id,
+    challengeAddress: challenge.contract_address,
+    challengeSpecCid:
+      proofPayload?.challengeSpecCid ?? challenge.spec_cid ?? null,
+    submissionId: submission.id,
+    onChainSubId: submission.on_chain_sub_id,
+    solverAddress: submission.solver_address,
+    score: submission.score,
+    scored: submission.scored,
+    submittedAt: submission.submitted_at,
+    scoredAt: submission.scored_at ?? null,
+    proofBundleCid: proofBundle?.cid ?? submission.proof_bundle_cid ?? null,
+    proofBundleHash: submission.proof_bundle_hash ?? null,
+    evaluationBundleCid:
+      proofPayload?.evaluationBundleCid ?? evalPlan.evaluationBundleCid ?? null,
+    replaySubmissionCid,
+    containerImageDigest:
+      proofPayload?.containerImageDigest ?? proofBundle?.container_image_hash ?? null,
+    inputHash: proofPayload?.inputHash ?? proofBundle?.input_hash ?? null,
+    outputHash: proofPayload?.outputHash ?? proofBundle?.output_hash ?? null,
+    reproducible: proofBundle?.reproducible ?? false,
+  };
+
+  return c.json({ data: verification });
 });
 
 router.get("/:id", requireSiweSession, async (c) => {

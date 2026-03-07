@@ -9,6 +9,7 @@ import {
   Database,
   ExternalLink,
   FileText,
+  ShieldCheck,
   Target,
   Trophy,
 } from "lucide-react";
@@ -18,9 +19,10 @@ import { LeaderboardTable } from "../../../components/LeaderboardTable";
 import { SubmitSolution } from "../../../components/SubmitSolution";
 import { TimelineStatus } from "../../../components/TimelineStatus";
 import { ChallengeActions } from "../../../components/ChallengeActions";
-import { getChallenge, getChallengeSpec } from "../../../lib/api";
+import { getChallenge, getChallengeSpec, getPublicSubmissionVerification } from "../../../lib/api";
 import { formatUsdc } from "../../../lib/format";
 import type { ChallengeSpecOutput } from "@hermes/common";
+import type { SubmissionVerification } from "../../../lib/types";
 
 function InfoRow({
   label,
@@ -292,6 +294,13 @@ export function DetailClient({ id }: { id: string }) {
   const { challenge, submissions, leaderboard } = detailQuery.data;
   const allEntries = leaderboard.length > 0 ? leaderboard : submissions;
   const spec = specQuery.data;
+  const firstScoredSubmission = allEntries.find((entry) => entry.scored && entry.score !== null);
+  const verificationQuery = useQuery<SubmissionVerification>({
+    queryKey: ["submission-verification", firstScoredSubmission?.id],
+    queryFn: () => getPublicSubmissionVerification(firstScoredSubmission?.id as string),
+    enabled: Boolean(firstScoredSubmission?.id),
+    staleTime: 5 * 60 * 1000,
+  });
   const submissionArtifact = inferSubmissionArtifact(spec);
   const expectedColumns = [
     ...(challenge.expected_columns ?? []),
@@ -309,6 +318,10 @@ export function DetailClient({ id }: { id: string }) {
     spec?.evaluation?.criteria
     ?? "Submit a valid solution in the expected format. Higher-ranked valid scores receive the reward distribution for this challenge.";
   const technicalSpecsLoading = Boolean(challenge.spec_cid) && specQuery.isLoading;
+  const verification = verificationQuery.data;
+  const verifyCommand = verification
+    ? `hm verify-public ${challenge.id} --sub ${verification.submissionId}`
+    : null;
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -448,6 +461,93 @@ export function DetailClient({ id }: { id: string }) {
             )}
 
             <TechnicalDetailsSection challenge={challenge} />
+
+            {firstScoredSubmission && (
+              <Section title="Public Verification" icon={ShieldCheck}>
+                {verificationQuery.isLoading ? (
+                  <div className="space-y-3">
+                    <div className="skeleton h-4 w-full" />
+                    <div className="skeleton h-4 w-5/6" />
+                    <div className="skeleton h-16 w-full" />
+                  </div>
+                ) : verification ? (
+                  <div className="space-y-5">
+                    <p className="text-sm leading-relaxed text-black/75">
+                      Hermes currently operates scoring, but this submission exposes the public artifacts needed to replay the scorer and check the published result independently.
+                    </p>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="rounded-[2px] border border-black/15 bg-[#f7f7f3] px-5 py-4">
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/50">
+                          Proof Bundle
+                        </div>
+                        <div className="mt-2 break-all font-mono text-xs font-bold text-black">
+                          <LinkedValue
+                            href={cidHref(verification.proofBundleCid)}
+                            value={verification.proofBundleCid ?? "—"}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="rounded-[2px] border border-black/15 bg-[#f7f7f3] px-5 py-4">
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/50">
+                          Replay Submission
+                        </div>
+                        <div className="mt-2 break-all font-mono text-xs font-bold text-black">
+                          {verification.replaySubmissionCid ? (
+                            <LinkedValue
+                              href={cidHref(verification.replaySubmissionCid)}
+                              value={verification.replaySubmissionCid}
+                            />
+                          ) : (
+                            "Not published for this older submission."
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-[2px] border border-black/15 bg-[#f7f7f3] px-5 py-4">
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/50">
+                          Evaluation Bundle
+                        </div>
+                        <div className="mt-2 break-all font-mono text-xs font-bold text-black">
+                          <LinkedValue
+                            href={cidHref(verification.evaluationBundleCid)}
+                            value={verification.evaluationBundleCid ?? "—"}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="rounded-[2px] border border-black/15 bg-[#f7f7f3] px-5 py-4">
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/50">
+                          Scorer Image
+                        </div>
+                        <div className="mt-2 break-all font-mono text-xs font-bold text-black">
+                          <LinkedValue
+                            href={containerHref(verification.containerImageDigest)}
+                            value={verification.containerImageDigest ?? "—"}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {verifyCommand && (
+                      <div className="rounded-[2px] border border-black/15 bg-black p-4 text-white">
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-white/60">
+                          One-command replay
+                        </div>
+                        <pre className="mt-2 overflow-x-auto font-mono text-xs font-bold text-white">
+                          {verifyCommand}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm leading-relaxed text-black/60">
+                    Verification artifacts are not available for this submission yet.
+                  </p>
+                )}
+              </Section>
+            )}
           </div>
 
           {/* Right column: incentives, submission, and timeline */}

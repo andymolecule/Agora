@@ -68,6 +68,9 @@ contract HermesInvariantHandler is Test {
         if (score == 0) return;
         HermesChallenge.Submission memory submission = challenge.getSubmission(subA);
         if (submission.scored) return;
+        if (block.timestamp <= challenge.deadline()) {
+            vm.warp(uint256(challenge.deadline()) + 1);
+        }
         vm.prank(oracle);
         challenge.postScore(subA, score, keccak256("p1"));
     }
@@ -77,6 +80,9 @@ contract HermesInvariantHandler is Test {
         if (score == 0) return;
         HermesChallenge.Submission memory submission = challenge.getSubmission(subB);
         if (submission.scored) return;
+        if (block.timestamp <= challenge.deadline()) {
+            vm.warp(uint256(challenge.deadline()) + 1);
+        }
         vm.prank(oracle);
         challenge.postScore(subB, score, keccak256("p2"));
     }
