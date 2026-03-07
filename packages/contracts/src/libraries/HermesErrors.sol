@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 library HermesErrors {
-    error NotOwner();
     error NotOracle();
     error NotPoster();
     error InvalidStatus();
@@ -27,8 +26,6 @@ library HermesErrors {
     error DeadlineInPast();
     error ScoringIncomplete();
     error MinimumScoreNotMet();
-    error OracleRotationNotReady();
-    error NoPendingRotation();
     error TransferFailed();
     error TransferFromFailed();
     error MaxSubmissionsReached();

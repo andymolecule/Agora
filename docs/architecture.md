@@ -147,8 +147,6 @@ classDiagram
         +cancel()
         +claim()
         +timeoutRefund()
-        +proposeOracleRotation(addr)
-        +executeOracleRotation()
     }
 
     class Submission {
@@ -596,7 +594,7 @@ flowchart TB
 | Layer | Threat | Mitigation |
 |-------|--------|------------|
 | **Smart Contract** | Reentrancy | `ReentrancyGuard` on all state-changing + transfer functions |
-| **Smart Contract** | Oracle compromise | `proposeOracleRotation` + 2-day timelock |
+| **Smart Contract** | Poster judge manipulation | Oracle fixed at challenge creation; poster cannot rotate it mid-challenge |
 | **Smart Contract** | Stuck escrow | 30-day `timeoutRefund()` on unresolved disputes |
 | **Smart Contract** | Score manipulation | Proof bundle hash on-chain; anyone can verify |
 | **Scoring** | Container escape | `--network=none`, `--read-only`, `--cap-drop=ALL`, non-root |

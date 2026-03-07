@@ -35,8 +35,8 @@ export interface ScorerPresetV2 {
     description: string;
     /**
      * Official presets may use local/dev mutable refs in source.
-     * Production challenge creation must resolve those validated refs to
-     * immutable @sha256 digests before persistence.
+     * Challenge publication should resolve those validated refs to immutable
+     * @sha256 digests before pinning or persistence.
      */
     container: string;
     /** Auto-generated scoring description (read-only for presets) */
@@ -113,10 +113,49 @@ export function getPresetIds(): string[] {
     return Object.keys(PRESET_REGISTRY);
 }
 
+type ParsedGhcrImageRef = {
+    imagePath: string;
+    tag?: string;
+    digest?: string;
+};
+
+function parseGhcrImageReference(image: string): ParsedGhcrImageRef | null {
+    const match =
+        /^ghcr\.io\/([^/]+\/[^:@]+)(?::([^@]+))?(?:@(sha256:[a-fA-F0-9]{64}))?$/.exec(
+            image.trim(),
+        );
+    if (!match) return null;
+    return {
+        imagePath: match[1]!,
+        tag: match[2],
+        digest: match[3],
+    };
+}
+
+function sharesGhcrRepository(left: string, right: string): boolean {
+    const leftRef = parseGhcrImageReference(left);
+    const rightRef = parseGhcrImageReference(right);
+    return (
+        typeof leftRef?.imagePath === "string"
+        && typeof rightRef?.imagePath === "string"
+        && leftRef.imagePath === rightRef.imagePath
+    );
+}
+
+function matchesPresetContainer(
+    presetContainer: string,
+    candidateContainer: string,
+): boolean {
+    const preset = presetContainer.trim();
+    const candidate = candidateContainer.trim();
+    if (preset === candidate) return true;
+    return candidate.includes("@sha256:") && sharesGhcrRepository(preset, candidate);
+}
+
 /** Find all preset IDs that point to a given container image. */
 export function findPresetIdsByContainer(container: string): string[] {
     return Object.values(PRESET_REGISTRY)
-        .filter((preset) => preset.container === container)
+        .filter((preset) => matchesPresetContainer(preset.container, container))
         .map((preset) => preset.id);
 }
 
@@ -164,7 +203,15 @@ const officialContainerSet = new Set<string>(Object.values(OFFICIAL_IMAGES));
 
 /** Check whether a container string is one of our official presets. */
 export function isOfficialContainer(container: string): boolean {
-    return officialContainerSet.has(container);
+    const trimmed = container.trim();
+    return (
+        officialContainerSet.has(trimmed)
+        || Object.values(OFFICIAL_IMAGES).some(
+            (officialImage) =>
+                trimmed.includes("@sha256:")
+                && sharesGhcrRepository(officialImage, trimmed),
+        )
+    );
 }
 
 /**
@@ -223,7 +270,7 @@ export function validatePresetIntegrity(
         return `Unknown preset ID: ${presetId}`;
     }
 
-    if (preset.container !== container) {
+    if (!matchesPresetContainer(preset.container, container)) {
         return `Container mismatch for preset ${presetId}: expected ${preset.container}, got ${container}`;
     }
 
@@ -243,4 +290,139 @@ export function getUnpinnedOfficialImages(): string[] {
     return Object.values(OFFICIAL_IMAGES).filter(
         (image) => !image.includes("@sha256:"),
     );
+}
+
+const GHCR_RESOLUTION_TIMEOUT_MS = 5_000;
+const GHCR_CACHE_TTL_MS = 5 * 60 * 1000;
+const ghcrDigestCache = new Map<string, { digest: string; expiresAt: number }>();
+
+function getGhcrHeaders(env: Record<string, string | undefined>) {
+    const headers: Record<string, string> = {
+        Accept:
+            "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json",
+    };
+    const token =
+        env.HERMES_GHCR_TOKEN
+        ?? env.GHCR_TOKEN
+        ?? env.GITHUB_TOKEN;
+    if (typeof token === "string" && token.length > 0) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+    return headers;
+}
+
+export class GhcrResolutionError extends Error {
+    constructor(
+        readonly code:
+            | "auth_failure"
+            | "rate_limit"
+            | "missing_digest_header"
+            | "network_timeout"
+            | "network_error"
+            | "http_error"
+            | "unsupported_image_reference",
+        message: string,
+    ) {
+        super(message);
+        this.name = "GhcrResolutionError";
+    }
+}
+
+export async function resolveOfficialImageToDigest(
+    image: string,
+    options: {
+        env?: Record<string, string | undefined>;
+        fetchImpl?: typeof fetch;
+    } = {},
+): Promise<string> {
+    const trimmed = image.trim();
+    if (trimmed.includes("@sha256:")) {
+        return trimmed;
+    }
+    if (!officialContainerSet.has(trimmed)) {
+        return trimmed;
+    }
+
+    const cached = ghcrDigestCache.get(trimmed);
+    if (cached && cached.expiresAt > Date.now()) {
+        return cached.digest;
+    }
+
+    const parsed = parseGhcrImageReference(trimmed);
+    if (!parsed?.imagePath) {
+        throw new GhcrResolutionError(
+            "unsupported_image_reference",
+            `Failed to resolve digest for official preset image ${trimmed}: unsupported image reference format.`,
+        );
+    }
+
+    const fetchImpl = options.fetchImpl ?? fetch;
+    const env = options.env ?? process.env;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), GHCR_RESOLUTION_TIMEOUT_MS);
+
+    try {
+        const response = await fetchImpl(
+            `https://ghcr.io/v2/${parsed.imagePath}/manifests/${parsed.tag ?? "latest"}`,
+            {
+                method: "GET",
+                headers: getGhcrHeaders(env),
+                signal: controller.signal,
+            },
+        );
+
+        if (response.status === 401 || response.status === 403) {
+            throw new GhcrResolutionError(
+                "auth_failure",
+                `GHCR auth failure while resolving official preset image ${trimmed}. Configure HERMES_GHCR_TOKEN, GHCR_TOKEN, or GITHUB_TOKEN with pull access.`,
+            );
+        }
+
+        if (response.status === 429) {
+            throw new GhcrResolutionError(
+                "rate_limit",
+                `GHCR rate limit while resolving official preset image ${trimmed}. Please retry shortly.`,
+            );
+        }
+
+        if (!response.ok) {
+            throw new GhcrResolutionError(
+                "http_error",
+                `Failed to resolve digest for official preset image ${trimmed}: GHCR responded ${response.status}.`,
+            );
+        }
+
+        const digest = response.headers.get("docker-content-digest");
+        if (!digest || !digest.startsWith("sha256:")) {
+            throw new GhcrResolutionError(
+                "missing_digest_header",
+                `Failed to resolve digest for official preset image ${trimmed}: missing docker-content-digest header.`,
+            );
+        }
+
+        const resolvedDigest = `ghcr.io/${parsed.imagePath}@${digest}`;
+        ghcrDigestCache.set(trimmed, {
+            digest: resolvedDigest,
+            expiresAt: Date.now() + GHCR_CACHE_TTL_MS,
+        });
+        return resolvedDigest;
+    } catch (error) {
+        if (error instanceof GhcrResolutionError) {
+            throw error;
+        }
+        if (error instanceof Error && (error.name === "AbortError" || controller.signal.aborted)) {
+            throw new GhcrResolutionError(
+                "network_timeout",
+                `Timed out resolving official preset image ${trimmed} from GHCR.`,
+            );
+        }
+        throw new GhcrResolutionError(
+            "network_error",
+            `Network error resolving official preset image ${trimmed} from GHCR: ${
+                error instanceof Error ? error.message : String(error)
+            }`,
+        );
+    } finally {
+        clearTimeout(timeout);
+    }
 }

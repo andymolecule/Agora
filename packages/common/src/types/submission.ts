@@ -20,11 +20,35 @@ export interface ProofBundle {
   containerImageDigest: string;
   score: number;
   scorerLog?: string;
+  challengeSpecCid?: string | null;
+  evaluationBundleCid?: string | null;
+  replaySubmissionCid?: string | null;
   meta?: {
     challengeId?: string;
     submissionId?: string;
     createdAt?: string;
   };
+}
+
+export interface PublicSubmissionVerification {
+  challengeId: string;
+  challengeAddress: string;
+  challengeSpecCid: string | null;
+  submissionId: string;
+  onChainSubId: number;
+  solverAddress: string;
+  score: string | null;
+  scored: boolean;
+  submittedAt: string;
+  scoredAt?: string | null;
+  proofBundleCid: string | null;
+  proofBundleHash: string | null;
+  evaluationBundleCid: string | null;
+  replaySubmissionCid: string | null;
+  containerImageDigest: string | null;
+  inputHash: string | null;
+  outputHash: string | null;
+  reproducible: boolean;
 }
 
 export interface VerificationRecord {

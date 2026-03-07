@@ -1,4 +1,5 @@
 import {
+  canonicalizeChallengeSpec,
   CHALLENGE_TYPE_SCOREABILITY,
   getChallengeTypeScoreabilityProfile,
   challengeSpecSchema,
@@ -579,6 +580,65 @@ for (const challengeType of CHALLENGE_TYPES) {
   }
   if (CHALLENGE_TYPE_SCOREABILITY[challengeType] !== profile) {
     console.error(`Scoreability profile lookup mismatch for challenge type: ${challengeType}`);
+    process.exit(1);
+  }
+}
+
+{
+  const canonicalized = await canonicalizeChallengeSpec(
+    challengeSpecSchema.parse({
+      id: "ch-015",
+      preset_id: "regression_v1",
+      title: "Canonicalize official scorer",
+      domain: "omics",
+      type: "prediction",
+      description: "Prediction challenge with an official mutable scorer ref.",
+      dataset: {
+        hidden_labels: "ipfs://QmCanonicalHidden",
+      },
+      scoring: {
+        container: "ghcr.io/hermes-science/regression-scorer:latest",
+        metric: "rmse",
+      },
+      reward: {
+        total: 10,
+        distribution: "winner_take_all",
+      },
+      deadline: "2026-03-04T23:59:59Z",
+      dispute_window_hours: 168,
+    }),
+    {
+      fetchImpl: (async () =>
+        new Response(null, {
+          status: 200,
+          headers: {
+            "docker-content-digest": "sha256:" + "c".repeat(64),
+          },
+        })) as typeof fetch,
+    },
+  );
+
+  const expectedDigest =
+    "ghcr.io/hermes-science/regression-scorer@sha256:" + "c".repeat(64);
+  if (canonicalized.scoring.container !== expectedDigest) {
+    console.error(
+      "canonicalizeChallengeSpec should rewrite official scorer refs to immutable digests",
+      canonicalized.scoring.container,
+    );
+    process.exit(1);
+  }
+  if (canonicalized.eval_spec?.engine_digest !== expectedDigest) {
+    console.error(
+      "canonicalizeChallengeSpec should align eval_spec.engine_digest with the resolved scorer digest",
+      canonicalized.eval_spec,
+    );
+    process.exit(1);
+  }
+  if (canonicalized.eval_spec?.engine_id !== "regression_v1") {
+    console.error(
+      "canonicalizeChallengeSpec should preserve or infer the managed engine id",
+      canonicalized.eval_spec,
+    );
     process.exit(1);
   }
 }

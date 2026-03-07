@@ -1,7 +1,8 @@
+import { getPublicClient } from "@hermes/chain";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { SiweMessage } from "siwe";
+import { SiweError, SiweErrorType, SiweMessage } from "siwe";
 import { z } from "zod";
 import { DEFAULT_CHAIN_ID } from "@hermes/common";
 import {
@@ -10,31 +11,27 @@ import {
   createSession,
   deleteSession,
   getSession,
-} from "../lib/session-store.js";
+} from "../lib/auth-store.js";
 import type { ApiEnv } from "../types.js";
 
 const verifyBodySchema = z.object({
   message: z.string().min(1),
-  signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/),
+  signature: z.string().regex(/^0x(?:[0-9a-fA-F]{2})+$/),
 });
 
 const router = new Hono<ApiEnv>();
 
-router.get("/nonce", (c) => c.json({ nonce: createNonce() }));
+router.get("/nonce", async (c) => c.json({ nonce: await createNonce("siwe") }));
 
 router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
   const { message, signature } = c.req.valid("json");
+  const publicClient = getPublicClient();
 
   let siweMessage: SiweMessage;
   try {
     siweMessage = new SiweMessage(message);
   } catch {
     return c.json({ error: "Invalid SIWE message." }, 401);
-  }
-
-  // Consume early to guarantee one-time nonce semantics under concurrent requests.
-  if (!consumeNonce(siweMessage.nonce)) {
-    return c.json({ error: "SIWE nonce is invalid or expired." }, 401);
   }
 
   const apiUrl = process.env.HERMES_API_URL;
@@ -68,18 +65,43 @@ router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
     }
   }
 
-  const verified = await siweMessage.verify({
-    signature,
-    nonce: siweMessage.nonce,
-    domain: expectedDomain,
-  });
+  const verified = await siweMessage.verify(
+    {
+      signature,
+      nonce: siweMessage.nonce,
+      domain: expectedDomain,
+    },
+    {
+      suppressExceptions: true,
+      verificationFallback: async (_params, _opts, parsedMessage, _eip1271Promise) => {
+        const isValid = await publicClient.verifyMessage({
+          address: parsedMessage.address.toLowerCase() as `0x${string}`,
+          message: parsedMessage.prepareMessage(),
+          signature: signature as `0x${string}`,
+        });
+
+        return isValid
+          ? { success: true, data: parsedMessage }
+          : {
+              success: false,
+              data: parsedMessage,
+              error: new SiweError(SiweErrorType.INVALID_SIGNATURE),
+            };
+      },
+    },
+  );
 
   if (!verified.success) {
     return c.json({ error: "SIWE signature verification failed." }, 401);
   }
 
   const address = verified.data.address.toLowerCase() as `0x${string}`;
-  const { token, expiresAt } = createSession(address);
+  const nonceAccepted = await consumeNonce("siwe", siweMessage.nonce, address);
+  if (!nonceAccepted) {
+    return c.json({ error: "SIWE nonce is invalid or expired." }, 401);
+  }
+
+  const { token, expiresAt } = await createSession(address);
   const cookieSecure =
     process.env.NODE_ENV === "production" || requestProtocol === "https";
 
@@ -98,15 +120,15 @@ router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
   });
 });
 
-router.post("/logout", (c) => {
+router.post("/logout", async (c) => {
   const token = getCookie(c, "hermes_session");
-  deleteSession(token);
+  await deleteSession(token);
   deleteCookie(c, "hermes_session", { path: "/" });
   return c.json({ ok: true });
 });
 
-router.get("/session", (c) => {
-  const session = getSession(getCookie(c, "hermes_session"));
+router.get("/session", async (c) => {
+  const session = await getSession(getCookie(c, "hermes_session"));
   if (!session) {
     return c.json({ authenticated: false });
   }

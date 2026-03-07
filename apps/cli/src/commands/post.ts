@@ -12,6 +12,8 @@ import {
 import {
   CHALLENGE_LIMITS,
   DEFAULT_CHAIN_ID,
+  SUBMISSION_LIMITS,
+  canonicalizeChallengeSpec,
   defaultMinimumScoreForChallengeType,
   type ChallengeSpecOutput,
   validateChallengeSpec,
@@ -191,7 +193,7 @@ export function buildPostCommand() {
             `Invalid challenge spec:\n${formatZodError(validation.error)}`,
           );
         }
-        const spec = validation.data;
+        const spec = await canonicalizeChallengeSpec(validation.data);
 
         if (!(spec.reward.distribution in distributionMap)) {
           throw new Error(
@@ -272,8 +274,11 @@ export function buildPostCommand() {
           distributionType: distributionMap[spec.reward.distribution] ?? 0,
           labTba: (spec.lab_tba ??
             "0x0000000000000000000000000000000000000000") as `0x${string}`,
-          maxSubmissions: spec.max_submissions_total ?? 0,
-          maxSubmissionsPerSolver: spec.max_submissions_per_solver ?? 0,
+          maxSubmissions:
+            spec.max_submissions_total ?? SUBMISSION_LIMITS.maxPerChallenge,
+          maxSubmissionsPerSolver:
+            spec.max_submissions_per_solver ??
+            SUBMISSION_LIMITS.maxPerSolverPerChallenge,
         });
         createSpinnerInstance.succeed(`Challenge tx sent: ${txHash}`);
 

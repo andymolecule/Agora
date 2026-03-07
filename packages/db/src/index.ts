@@ -32,3 +32,4 @@ export * from "./queries/indexer-cursors.js";
 export * from "./queries/proofs.js";
 export * from "./queries/score-jobs.js";
 export * from "./queries/analytics.js";
+export * from "./queries/auth.js";

@@ -13,6 +13,7 @@ export * from "./ipfs.js";
 export * from "./presets.js";
 export * from "./submission-limits.js";
 export * from "./submission-sealing.js";
+export * from "./pin-spec-auth.js";
 export * from "./x402.js";
 export * from "./x402-facilitator.js";
 export * from "./validation/csv.js";

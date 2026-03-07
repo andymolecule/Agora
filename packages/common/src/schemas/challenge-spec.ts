@@ -2,6 +2,11 @@ import { z } from "zod";
 import { CHALLENGE_LIMITS } from "../constants.js";
 import { getDisputeWindowMinHours } from "../dispute-policy.js";
 import {
+  inferPresetIdByContainer,
+  isOfficialContainer,
+  resolveOfficialImageToDigest,
+} from "../presets.js";
+import {
   CHALLENGE_TYPES,
   type ChallengeType,
 } from "../types/challenge.js";
@@ -243,6 +248,72 @@ export function challengeSpecSchemaForChain(chainId: number) {
  */
 export function validateChallengeSpec(raw: unknown, chainId: number) {
   return challengeSpecSchemaForChain(chainId).safeParse(raw);
+}
+
+export async function canonicalizeChallengeSpec(
+  spec: ChallengeSpecOutput,
+  options: {
+    env?: Record<string, string | undefined>;
+    fetchImpl?: typeof fetch;
+    resolveOfficialPresetDigests?: boolean;
+  } = {},
+): Promise<ChallengeSpecOutput> {
+  const scoringContainer = spec.scoring.container.trim();
+  const explicitPresetId =
+    typeof spec.preset_id === "string" && spec.preset_id.trim().length > 0
+      ? spec.preset_id.trim()
+      : undefined;
+  const usesCustomScorer =
+    spec.type === "custom" || spec.type === "optimization";
+  const inferredPresetId =
+    explicitPresetId ??
+    (usesCustomScorer ? "custom" : inferPresetIdByContainer(scoringContainer) ?? undefined);
+
+  let resolvedImage =
+    spec.eval_spec?.engine_digest?.trim() || scoringContainer;
+  if (
+    options.resolveOfficialPresetDigests !== false &&
+    inferredPresetId &&
+    inferredPresetId !== "custom" &&
+    isOfficialContainer(scoringContainer) &&
+    !scoringContainer.includes("@sha256:")
+  ) {
+    resolvedImage = await resolveOfficialImageToDigest(
+      scoringContainer,
+      options,
+    );
+  } else if (scoringContainer.includes("@sha256:")) {
+    resolvedImage = scoringContainer;
+  }
+
+  const resolvedEngineId =
+    spec.eval_spec?.engine_id?.trim() || inferredPresetId;
+  const nextEvalSpec = resolvedEngineId
+    ? {
+        ...(spec.eval_spec ?? {}),
+        engine_id: resolvedEngineId,
+        ...(resolvedImage.includes("@sha256:")
+          ? { engine_digest: resolvedImage }
+          : {}),
+      }
+    : spec.eval_spec
+      ? {
+          ...spec.eval_spec,
+          ...(resolvedImage.includes("@sha256:")
+            ? { engine_digest: resolvedImage }
+            : {}),
+        }
+      : undefined;
+
+  return {
+    ...spec,
+    ...(explicitPresetId ? { preset_id: explicitPresetId } : {}),
+    scoring: {
+      ...spec.scoring,
+      container: resolvedImage,
+    },
+    ...(nextEvalSpec ? { eval_spec: nextEvalSpec } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -46,12 +46,24 @@ contract HermesChallengeTest is Test {
         usdc.transfer(address(challenge), 10e6);
     }
 
+    function _warpToScoring(HermesChallenge target) internal {
+        uint256 scoringStart = uint256(target.deadline()) + 1;
+        if (block.timestamp < scoringStart) {
+            vm.warp(scoringStart);
+        }
+    }
+
+    function _postScore(HermesChallenge target, uint256 subId, uint256 score, bytes32 proofBundleHash) internal {
+        _warpToScoring(target);
+        vm.prank(oracle);
+        target.postScore(subId, score, proofBundleHash);
+    }
+
     function testSubmitAndScore() public {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
 
-        vm.prank(oracle);
-        challenge.postScore(subId, 100e18, keccak256("proof"));
+        _postScore(challenge, subId, 100e18, keccak256("proof"));
 
         HermesChallenge.Submission memory submission = challenge.getSubmission(subId);
         assertEq(submission.scored, true);
@@ -86,8 +98,18 @@ contract HermesChallengeTest is Test {
     function testPostScoreOnlyOracle() public {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
+        _warpToScoring(challenge);
         vm.prank(solver);
         vm.expectRevert(HermesErrors.NotOracle.selector);
+        challenge.postScore(subId, 100e18, keccak256("proof"));
+    }
+
+    function testPostScoreRevertsBeforeScoringPhase() public {
+        vm.prank(solver);
+        uint256 subId = challenge.submit(keccak256("result"));
+
+        vm.prank(oracle);
+        vm.expectRevert(HermesErrors.InvalidStatus.selector);
         challenge.postScore(subId, 100e18, keccak256("proof"));
     }
 
@@ -95,8 +117,7 @@ contract HermesChallengeTest is Test {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
 
-        vm.prank(oracle);
-        challenge.postScore(subId, 100e18, keccak256("proof"));
+        _postScore(challenge, subId, 100e18, keccak256("proof"));
 
         vm.warp(block.timestamp + 9 days);
 
@@ -110,10 +131,9 @@ contract HermesChallengeTest is Test {
     function testFinalizeRequiresDisputeWindowElapsed() public {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
-        vm.prank(oracle);
-        challenge.postScore(subId, 100e18, keccak256("proof"));
+        _postScore(challenge, subId, 100e18, keccak256("proof"));
 
-        vm.warp(block.timestamp + 1 days + 1 hours); // Before dispute window
+        vm.warp(uint256(challenge.deadline()) + 1 hours); // Inside scoring, before dispute window end
         vm.expectRevert(HermesErrors.DeadlineNotPassed.selector);
         challenge.finalize();
     }
@@ -133,12 +153,9 @@ contract HermesChallengeTest is Test {
         vm.prank(address(0x3));
         uint256 subC = top3.submit(keccak256("c"));
 
-        vm.prank(oracle);
-        top3.postScore(subA, 30, keccak256("p1"));
-        vm.prank(oracle);
-        top3.postScore(subB, 20, keccak256("p2"));
-        vm.prank(oracle);
-        top3.postScore(subC, 10, keccak256("p3"));
+        _postScore(top3, subA, 30, keccak256("p1"));
+        _postScore(top3, subB, 20, keccak256("p2"));
+        _postScore(top3, subC, 10, keccak256("p3"));
 
         vm.warp(block.timestamp + 9 days);
         top3.finalize();
@@ -166,10 +183,8 @@ contract HermesChallengeTest is Test {
         vm.prank(address(0x2));
         uint256 subB = proportional.submit(keccak256("b"));
 
-        vm.prank(oracle);
-        proportional.postScore(subA, 2, keccak256("p1"));
-        vm.prank(oracle);
-        proportional.postScore(subB, 1, keccak256("p2"));
+        _postScore(proportional, subA, 2, keccak256("p1"));
+        _postScore(proportional, subB, 1, keccak256("p2"));
 
         vm.warp(block.timestamp + 9 days);
         proportional.finalize();
@@ -188,8 +203,7 @@ contract HermesChallengeTest is Test {
     function testDisputeResolvePayoutsWinner() public {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
-        vm.prank(oracle);
-        challenge.postScore(subId, 100e18, keccak256("proof"));
+        _postScore(challenge, subId, 100e18, keccak256("proof"));
 
         vm.warp(block.timestamp + 1 days + 1 hours);
         vm.prank(address(0x999));
@@ -218,10 +232,8 @@ contract HermesChallengeTest is Test {
         vm.prank(solverB);
         uint256 subB = proportional.submit(keccak256("b"));
 
-        vm.prank(oracle);
-        proportional.postScore(subA, 10, keccak256("p1"));
-        vm.prank(oracle);
-        proportional.postScore(subB, 30, keccak256("p2"));
+        _postScore(proportional, subA, 10, keccak256("p1"));
+        _postScore(proportional, subB, 30, keccak256("p2"));
 
         // Warp to within the dispute window (after deadline at day 1, before deadline + 168h)
         vm.warp(block.timestamp + 1 days + 12 hours);
@@ -256,8 +268,7 @@ contract HermesChallengeTest is Test {
         vm.assume(score > 0);
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
-        vm.prank(oracle);
-        challenge.postScore(subId, score, keccak256("proof"));
+        _postScore(challenge, subId, score, keccak256("proof"));
         HermesChallenge.Submission memory submission = challenge.getSubmission(subId);
         assertEq(submission.score, score);
     }
@@ -273,8 +284,7 @@ contract HermesChallengeTest is Test {
     function testClaimAfterFinalization() public {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
-        vm.prank(oracle);
-        challenge.postScore(subId, 100e18, keccak256("proof"));
+        _postScore(challenge, subId, 100e18, keccak256("proof"));
         vm.warp(block.timestamp + 9 days);
         challenge.finalize();
 
@@ -297,8 +307,7 @@ contract HermesChallengeTest is Test {
     function testClaimRevertsNothingToClaim() public {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
-        vm.prank(oracle);
-        challenge.postScore(subId, 100e18, keccak256("proof"));
+        _postScore(challenge, subId, 100e18, keccak256("proof"));
         vm.warp(block.timestamp + 9 days);
         challenge.finalize();
 
@@ -310,8 +319,7 @@ contract HermesChallengeTest is Test {
     function testDoubleClaimReverts() public {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
-        vm.prank(oracle);
-        challenge.postScore(subId, 100e18, keccak256("proof"));
+        _postScore(challenge, subId, 100e18, keccak256("proof"));
         vm.warp(block.timestamp + 9 days);
         challenge.finalize();
 
@@ -366,10 +374,8 @@ contract HermesChallengeTest is Test {
         vm.prank(address(0x2));
         uint256 subB = challenge.submit(keccak256("b"));
 
-        vm.prank(oracle);
-        challenge.postScore(subA, 50e18, keccak256("p1"));
-        vm.prank(oracle);
-        challenge.postScore(subB, 100e18, keccak256("p2"));
+        _postScore(challenge, subA, 50e18, keccak256("p1"));
+        _postScore(challenge, subB, 100e18, keccak256("p2"));
 
         (uint256[] memory ids, uint256[] memory scores) = challenge.getLeaderboard();
         assertEq(ids.length, 2);
@@ -485,8 +491,7 @@ contract HermesChallengeTest is Test {
     function testFinalizeRevertsIfAlreadyFinalized() public {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
-        vm.prank(oracle);
-        challenge.postScore(subId, 100e18, keccak256("proof"));
+        _postScore(challenge, subId, 100e18, keccak256("proof"));
         vm.warp(block.timestamp + 9 days);
         challenge.finalize();
         vm.expectRevert(HermesErrors.ChallengeFinalized.selector);
@@ -509,14 +514,14 @@ contract HermesChallengeTest is Test {
     function testPostScoreRevertsAlreadyScored() public {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
-        vm.prank(oracle);
-        challenge.postScore(subId, 100e18, keccak256("proof"));
+        _postScore(challenge, subId, 100e18, keccak256("proof"));
         vm.prank(oracle);
         vm.expectRevert(HermesErrors.AlreadyScored.selector);
         challenge.postScore(subId, 200e18, keccak256("proof2"));
     }
 
     function testPostScoreRevertsInvalidSubmission() public {
+        _warpToScoring(challenge);
         vm.prank(oracle);
         vm.expectRevert(HermesErrors.InvalidSubmission.selector);
         challenge.postScore(999, 100e18, keccak256("proof"));
@@ -549,8 +554,7 @@ contract HermesChallengeTest is Test {
 
         vm.prank(address(0x1));
         uint256 subA = top3.submit(keccak256("a"));
-        vm.prank(oracle);
-        top3.postScore(subA, 100, keccak256("p1"));
+        _postScore(top3, subA, 100, keccak256("p1"));
 
         vm.warp(block.timestamp + 9 days);
         top3.finalize();
@@ -573,10 +577,8 @@ contract HermesChallengeTest is Test {
         uint256 subA = top3.submit(keccak256("a"));
         vm.prank(address(0x2));
         uint256 subB = top3.submit(keccak256("b"));
-        vm.prank(oracle);
-        top3.postScore(subA, 100, keccak256("p1"));
-        vm.prank(oracle);
-        top3.postScore(subB, 50, keccak256("p2"));
+        _postScore(top3, subA, 100, keccak256("p1"));
+        _postScore(top3, subB, 50, keccak256("p2"));
 
         vm.warp(block.timestamp + 9 days);
         top3.finalize();
@@ -608,10 +610,8 @@ contract HermesChallengeTest is Test {
         vm.prank(address(0x2));
         uint256 subB = challenge.submit(keccak256("b"));
 
-        vm.prank(oracle);
-        challenge.postScore(subA, 50e18, keccak256("p1"));
-        vm.prank(oracle);
-        challenge.postScore(subB, 100e18, keccak256("p2"));
+        _postScore(challenge, subA, 50e18, keccak256("p1"));
+        _postScore(challenge, subB, 100e18, keccak256("p2"));
 
         vm.warp(block.timestamp + 9 days);
         challenge.finalize();
@@ -634,10 +634,8 @@ contract HermesChallengeTest is Test {
         uint256 subA = top3.submit(keccak256("a"));
         vm.prank(address(0x2));
         uint256 subB = top3.submit(keccak256("b"));
-        vm.prank(oracle);
-        top3.postScore(subA, 100, keccak256("p1"));
-        vm.prank(oracle);
-        top3.postScore(subB, 50, keccak256("p2"));
+        _postScore(top3, subA, 100, keccak256("p1"));
+        _postScore(top3, subB, 50, keccak256("p2"));
 
         vm.warp(block.timestamp + 1 days + 1 hours);
         vm.prank(address(0x999));
@@ -660,8 +658,7 @@ contract HermesChallengeTest is Test {
     function testCancelRevertsAfterFinalize() public {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
-        vm.prank(oracle);
-        challenge.postScore(subId, 100e18, keccak256("proof"));
+        _postScore(challenge, subId, 100e18, keccak256("proof"));
         vm.warp(block.timestamp + 9 days);
         challenge.finalize();
         vm.prank(poster);
@@ -672,6 +669,7 @@ contract HermesChallengeTest is Test {
     function testPostScoreAfterCancelReverts() public {
         vm.prank(poster);
         challenge.cancel();
+        _warpToScoring(challenge);
         vm.prank(oracle);
         vm.expectRevert(HermesErrors.InvalidStatus.selector);
         challenge.postScore(0, 100e18, keccak256("proof"));
@@ -684,8 +682,7 @@ contract HermesChallengeTest is Test {
         uint256 subB = challenge.submit(keccak256("b"));
 
         // Only score one submission
-        vm.prank(oracle);
-        challenge.postScore(subB, 100e18, keccak256("p1"));
+        _postScore(challenge, subB, 100e18, keccak256("p1"));
 
         (uint256[] memory ids, uint256[] memory scores) = challenge.getLeaderboard();
         assertEq(ids.length, 1);
@@ -729,8 +726,7 @@ contract HermesChallengeTest is Test {
 
         vm.prank(solver);
         uint256 subId = gated.submit(keccak256("result"));
-        vm.prank(oracle);
-        gated.postScore(subId, 10e18, keccak256("proof"));
+        _postScore(gated, subId, 10e18, keccak256("proof"));
 
         // Past dispute window and scoring grace period.
         vm.warp(block.timestamp + 9 days);
@@ -751,8 +747,7 @@ contract HermesChallengeTest is Test {
 
         vm.prank(solver);
         uint256 subId = gated.submit(keccak256("result"));
-        vm.prank(oracle);
-        gated.postScore(subId, 10e18, keccak256("proof"));
+        _postScore(gated, subId, 10e18, keccak256("proof"));
 
         vm.warp(block.timestamp + 1 days + 1 hours);
         vm.prank(address(0x999));

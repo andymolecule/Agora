@@ -4,7 +4,15 @@ import {
   type ChallengeSpecOutput,
 } from "@hermes/common";
 import { API_BASE_URL } from "./config";
-import type { AnalyticsData, Challenge, ChallengeDetails, SolverPortfolio, Stats, WorkerHealth } from "./types";
+import type {
+  AnalyticsData,
+  Challenge,
+  ChallengeDetails,
+  SolverPortfolio,
+  Stats,
+  SubmissionVerification,
+  WorkerHealth,
+} from "./types";
 
 const BASE = API_BASE_URL.replace(/\/$/, "");
 
@@ -117,4 +125,10 @@ export async function getSubmissionPublicKey() {
     kid: string;
     publicKeyPem: string;
   }>("/api/submissions/public-key");
+}
+
+export async function getPublicSubmissionVerification(
+  submissionId: string,
+): Promise<SubmissionVerification> {
+  return request<SubmissionVerification>(`/api/submissions/${submissionId}/public`);
 }

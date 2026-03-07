@@ -27,6 +27,7 @@ type ProofBundleRow = {
 
 export function toPublicSubmission(row: SubmissionRow) {
   return {
+    id: row.id,
     on_chain_sub_id: row.on_chain_sub_id,
     solver_address: row.solver_address,
     score: row.score,

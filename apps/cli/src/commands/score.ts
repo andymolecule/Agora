@@ -4,6 +4,7 @@ import { getPublicClient, postScore } from "@hermes/chain";
 import {
   loadConfig,
   resolveEvalSpec,
+  SUBMISSION_RESULT_FORMAT,
   type ChallengeEvalRow,
 } from "@hermes/common";
 import {
@@ -112,7 +113,14 @@ export function buildScoreCommand() {
         runSpinner.succeed(`Scored submission: ${run.result.score}`);
 
         try {
-          const proof = await buildProofBundle({
+          const replaySubmissionCid =
+            submission.result_format === SUBMISSION_RESULT_FORMAT.sealedV1
+              ? await pinFile(
+                run.submissionPath,
+                `submission-input-${submission.id}.bin`,
+              )
+              : submission.result_cid;
+          const baseProof = await buildProofBundle({
             challengeId: challenge.id,
             submissionId: submission.id,
             score: run.result.score,
@@ -121,6 +129,13 @@ export function buildScoreCommand() {
             inputPaths: run.inputPaths,
             outputPath: run.result.outputPath,
           });
+          const proof = {
+            ...baseProof,
+            challengeSpecCid:
+              (challenge as { spec_cid?: string | null }).spec_cid ?? null,
+            evaluationBundleCid: evalPlan.evaluationBundleCid ?? null,
+            replaySubmissionCid,
+          };
 
           const proofPath = path.join(run.workspaceRoot, "proof-bundle.json");
           await fs.writeFile(proofPath, JSON.stringify(proof, null, 2), "utf8");

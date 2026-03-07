@@ -11,7 +11,6 @@ import {IHermesChallenge} from "./interfaces/IHermesChallenge.sol";
 contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
     uint256 public constant PROTOCOL_FEE_BPS = 500; // 5%
     uint64 public constant SCORING_GRACE_PERIOD = 7 days;
-    uint64 public constant ORACLE_ROTATION_DELAY = 2 days;
 
     IERC20 public immutable usdc;
     address public immutable poster;
@@ -37,10 +36,6 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
     uint256 public maxSubmissions;
     uint256 public maxSubmissionsPerSolver;
     mapping(address => uint256) public solverSubmissionCount;
-
-    // Oracle rotation
-    address public pendingOracle;
-    uint64 public oracleRotationTimestamp;
 
     Submission[] private submissions;
 
@@ -120,9 +115,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
 
     function postScore(uint256 subId, uint256 score, bytes32 proofBundleHash) external override onlyOracle {
         _updateStatusAfterDeadline();
-        if (status == Status.Cancelled || status == Status.Finalized) {
-            revert HermesErrors.InvalidStatus();
-        }
+        if (status != Status.Scoring) revert HermesErrors.InvalidStatus();
         if (subId >= submissions.length) revert HermesErrors.InvalidSubmission();
         Submission storage submission = submissions[subId];
         if (submission.scored) revert HermesErrors.AlreadyScored();
@@ -140,6 +133,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         if (status == Status.Disputed) revert HermesErrors.DisputeActive();
         if (status == Status.Cancelled) revert HermesErrors.ChallengeCancelled();
         if (status == Status.Finalized) revert HermesErrors.ChallengeFinalized();
+        if (status != Status.Scoring) revert HermesErrors.InvalidStatus();
         if (block.timestamp <= deadline + (uint256(disputeWindowHours) * 1 hours)) {
             revert HermesErrors.DeadlineNotPassed();
         }
@@ -184,9 +178,10 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
 
     function dispute(string calldata reason) external override {
         _updateStatusAfterDeadline();
+        if (block.timestamp <= deadline) revert HermesErrors.DisputeWindowNotStarted();
         if (status == Status.Disputed) revert HermesErrors.DisputeActive();
         if (status == Status.Finalized || status == Status.Cancelled) revert HermesErrors.InvalidStatus();
-        if (block.timestamp <= deadline) revert HermesErrors.DisputeWindowNotStarted();
+        if (status != Status.Scoring) revert HermesErrors.InvalidStatus();
 
         uint256 disputeEnd = deadline + (uint256(disputeWindowHours) * 1 hours);
         if (block.timestamp >= disputeEnd) revert HermesErrors.DisputeWindowClosed();
@@ -280,26 +275,6 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
     function submissionCount() external view override returns (uint256) {
         return submissions.length;
     }
-
-    // --- Oracle rotation with timelock ---
-
-    function proposeOracleRotation(address newOracle) external override onlyPoster {
-        if (newOracle == address(0)) revert HermesErrors.InvalidAddress();
-        pendingOracle = newOracle;
-        oracleRotationTimestamp = uint64(block.timestamp) + ORACLE_ROTATION_DELAY;
-        emit HermesEvents.OracleRotationProposed(newOracle, oracleRotationTimestamp);
-    }
-
-    function executeOracleRotation() external override {
-        if (pendingOracle == address(0)) revert HermesErrors.NoPendingRotation();
-        if (block.timestamp < oracleRotationTimestamp) revert HermesErrors.OracleRotationNotReady();
-        address oldOracle = oracle;
-        oracle = pendingOracle;
-        pendingOracle = address(0);
-        oracleRotationTimestamp = 0;
-        emit HermesEvents.OracleRotated(oldOracle, oracle);
-    }
-
     function _updateStatusAfterDeadline() internal {
         if (status == Status.Active && block.timestamp >= deadline) {
             status = Status.Scoring;
