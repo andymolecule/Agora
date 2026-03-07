@@ -1,10 +1,10 @@
-import { getPublicClient } from "@hermes/chain";
+import { getPublicClient } from "@agora/chain";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { SiweError, SiweErrorType, SiweMessage } from "siwe";
 import { z } from "zod";
-import { DEFAULT_CHAIN_ID } from "@hermes/common";
+import { DEFAULT_CHAIN_ID } from "@agora/common";
 import {
   consumeNonce,
   createNonce,
@@ -34,7 +34,7 @@ router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
     return c.json({ error: "Invalid SIWE message." }, 401);
   }
 
-  const apiUrl = process.env.HERMES_API_URL;
+  const apiUrl = process.env.AGORA_API_URL;
   const forwardedProto = c.req.header("x-forwarded-proto");
   const requestProtocol =
     forwardedProto ?? new URL(c.req.url).protocol.replace(":", "");
@@ -45,7 +45,7 @@ router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
       ? `${requestProtocol}://${requestHost}`
       : undefined;
   const expectedDomain = apiUrl ? new URL(apiUrl).host : requestHost;
-  const expectedChainId = Number(process.env.HERMES_CHAIN_ID ?? DEFAULT_CHAIN_ID);
+  const expectedChainId = Number(process.env.AGORA_CHAIN_ID ?? DEFAULT_CHAIN_ID);
 
   if (expectedDomain && siweMessage.domain !== expectedDomain) {
     return c.json({ error: "SIWE domain mismatch." }, 401);
@@ -105,7 +105,7 @@ router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
   const cookieSecure =
     process.env.NODE_ENV === "production" || requestProtocol === "https";
 
-  setCookie(c, "hermes_session", token, {
+  setCookie(c, "agora_session", token, {
     httpOnly: true,
     sameSite: "Lax",
     secure: cookieSecure,
@@ -121,14 +121,14 @@ router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
 });
 
 router.post("/logout", async (c) => {
-  const token = getCookie(c, "hermes_session");
+  const token = getCookie(c, "agora_session");
   await deleteSession(token);
-  deleteCookie(c, "hermes_session", { path: "/" });
+  deleteCookie(c, "agora_session", { path: "/" });
   return c.json({ ok: true });
 });
 
 router.get("/session", async (c) => {
-  const session = await getSession(getCookie(c, "hermes_session"));
+  const session = await getSession(getCookie(c, "agora_session"));
   if (!session) {
     return c.json({ authenticated: false });
   }

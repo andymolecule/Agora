@@ -5,8 +5,8 @@ import {
   getLastScoredJobTime,
   getOldestRunningStartedAt,
   runningOverThresholdCount,
-} from "@hermes/db";
-import { getSubmissionSealHealth, loadConfig } from "@hermes/common";
+} from "@agora/db";
+import { getSubmissionSealHealth, loadConfig } from "@agora/common";
 import { Hono } from "hono";
 import type { ApiEnv } from "../types.js";
 
@@ -106,9 +106,9 @@ router.get("/", async (c) => {
       getOldestRunningStartedAt(db),
       runningOverThresholdCount(db, RUNNING_STALE_THRESHOLD_MS),
       getSubmissionSealHealth({
-        keyId: config.HERMES_SUBMISSION_SEAL_KEY_ID,
-        publicKeyPem: config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
-        privateKeyPem: config.HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+        keyId: config.AGORA_SUBMISSION_SEAL_KEY_ID,
+        publicKeyPem: config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+        privateKeyPem: config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
       }),
     ]);
 

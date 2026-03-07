@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { PIN_SPEC_AUTH_MAX_AGE_MS } from "@hermes/common";
+import { PIN_SPEC_AUTH_MAX_AGE_MS } from "@agora/common";
 import {
   createAuthNonce,
   createAuthSession,
@@ -8,7 +8,7 @@ import {
   getAuthSession,
   revokeAuthSession,
   type AuthNoncePurpose,
-} from "@hermes/db";
+} from "@agora/db";
 
 interface SessionRecord {
   address: `0x${string}`;

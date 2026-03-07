@@ -6,6 +6,6 @@ export interface VerifySubmissionInput {
   tolerance?: number;
 }
 
-export async function hermesVerifySubmission(input: VerifySubmissionInput) {
+export async function agoraVerifySubmission(input: VerifySubmissionInput) {
   return verifySubmission(input);
 }

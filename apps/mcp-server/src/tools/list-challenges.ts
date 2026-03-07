@@ -7,6 +7,6 @@ export interface ListChallengesInput {
   limit?: number;
 }
 
-export async function hermesListChallenges(input: ListChallengesInput) {
+export async function agoraListChallenges(input: ListChallengesInput) {
   return listChallenges(input);
 }

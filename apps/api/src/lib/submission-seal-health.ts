@@ -2,14 +2,14 @@ import {
   getSubmissionSealHealth,
   loadConfig,
   runSubmissionSealSelfCheck,
-} from "@hermes/common";
+} from "@agora/common";
 
 export async function readSubmissionSealHealth() {
   const config = loadConfig();
   const health = await getSubmissionSealHealth({
-    keyId: config.HERMES_SUBMISSION_SEAL_KEY_ID,
-    publicKeyPem: config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
-    privateKeyPem: config.HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+    keyId: config.AGORA_SUBMISSION_SEAL_KEY_ID,
+    publicKeyPem: config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+    privateKeyPem: config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
   });
 
   if (!health.enabled) {
@@ -21,9 +21,9 @@ export async function readSubmissionSealHealth() {
 
   try {
     await runSubmissionSealSelfCheck({
-      keyId: config.HERMES_SUBMISSION_SEAL_KEY_ID as string,
-      publicKeyPem: config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM as string,
-      privateKeyPem: config.HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM as string,
+      keyId: config.AGORA_SUBMISSION_SEAL_KEY_ID as string,
+      publicKeyPem: config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM as string,
+      privateKeyPem: config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM as string,
     });
     return {
       ...health,

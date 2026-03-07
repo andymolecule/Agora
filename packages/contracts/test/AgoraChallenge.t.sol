@@ -2,15 +2,15 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import {HermesChallenge} from "../src/HermesChallenge.sol";
-import {IHermesChallenge} from "../src/interfaces/IHermesChallenge.sol";
-import {HermesErrors} from "../src/libraries/HermesErrors.sol";
+import {AgoraChallenge} from "../src/AgoraChallenge.sol";
+import {IAgoraChallenge} from "../src/interfaces/IAgoraChallenge.sol";
+import {AgoraErrors} from "../src/libraries/AgoraErrors.sol";
 import {MockUSDC} from "./MockUSDC.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
-contract HermesChallengeTest is Test {
+contract AgoraChallengeTest is Test {
     MockUSDC private usdc;
-    HermesChallenge private challenge;
+    AgoraChallenge private challenge;
 
     address private poster = address(0x123);
     address private oracle = address(0x456);
@@ -18,8 +18,8 @@ contract HermesChallengeTest is Test {
     address private solver = address(0xabc);
 
     /// @dev Default config for tests. Override individual fields as needed.
-    function _cfg() internal view returns (IHermesChallenge.ChallengeConfig memory) {
-        return IHermesChallenge.ChallengeConfig({
+    function _cfg() internal view returns (IAgoraChallenge.ChallengeConfig memory) {
+        return IAgoraChallenge.ChallengeConfig({
             usdc: IERC20(address(usdc)),
             poster: poster,
             oracle: oracle,
@@ -29,7 +29,7 @@ contract HermesChallengeTest is Test {
             deadline: uint64(block.timestamp + 1 days),
             disputeWindowHours: 168,
             minimumScore: 0,
-            distributionType: IHermesChallenge.DistributionType.WinnerTakeAll,
+            distributionType: IAgoraChallenge.DistributionType.WinnerTakeAll,
             maxSubmissions: 0,
             maxSubmissionsPerSolver: 0
         });
@@ -40,20 +40,20 @@ contract HermesChallengeTest is Test {
         usdc.mint(poster, 1_000_000e6);
 
         vm.prank(poster);
-        challenge = new HermesChallenge(_cfg());
+        challenge = new AgoraChallenge(_cfg());
 
         vm.prank(poster);
         usdc.transfer(address(challenge), 10e6);
     }
 
-    function _warpToScoring(HermesChallenge target) internal {
+    function _warpToScoring(AgoraChallenge target) internal {
         uint256 scoringStart = uint256(target.deadline()) + 1;
         if (block.timestamp < scoringStart) {
             vm.warp(scoringStart);
         }
     }
 
-    function _postScore(HermesChallenge target, uint256 subId, uint256 score, bytes32 proofBundleHash) internal {
+    function _postScore(AgoraChallenge target, uint256 subId, uint256 score, bytes32 proofBundleHash) internal {
         _warpToScoring(target);
         vm.prank(oracle);
         target.postScore(subId, score, proofBundleHash);
@@ -65,7 +65,7 @@ contract HermesChallengeTest is Test {
 
         _postScore(challenge, subId, 100e18, keccak256("proof"));
 
-        HermesChallenge.Submission memory submission = challenge.getSubmission(subId);
+        AgoraChallenge.Submission memory submission = challenge.getSubmission(subId);
         assertEq(submission.scored, true);
         assertEq(submission.score, 100e18);
     }
@@ -82,16 +82,16 @@ contract HermesChallengeTest is Test {
 
 
     function testConstructorRejectsPastDeadline() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.deadline = uint64(block.timestamp);
-        vm.expectRevert(HermesErrors.DeadlineInPast.selector);
-        new HermesChallenge(cfg);
+        vm.expectRevert(AgoraErrors.DeadlineInPast.selector);
+        new AgoraChallenge(cfg);
     }
 
     function testSubmitAfterDeadlineReverts() public {
         vm.warp(block.timestamp + 2 days);
         vm.prank(solver);
-        vm.expectRevert(HermesErrors.InvalidStatus.selector);
+        vm.expectRevert(AgoraErrors.InvalidStatus.selector);
         challenge.submit(keccak256("late"));
     }
 
@@ -100,7 +100,7 @@ contract HermesChallengeTest is Test {
         uint256 subId = challenge.submit(keccak256("result"));
         _warpToScoring(challenge);
         vm.prank(solver);
-        vm.expectRevert(HermesErrors.NotOracle.selector);
+        vm.expectRevert(AgoraErrors.NotOracle.selector);
         challenge.postScore(subId, 100e18, keccak256("proof"));
     }
 
@@ -109,7 +109,7 @@ contract HermesChallengeTest is Test {
         uint256 subId = challenge.submit(keccak256("result"));
 
         vm.prank(oracle);
-        vm.expectRevert(HermesErrors.InvalidStatus.selector);
+        vm.expectRevert(AgoraErrors.InvalidStatus.selector);
         challenge.postScore(subId, 100e18, keccak256("proof"));
     }
 
@@ -134,15 +134,15 @@ contract HermesChallengeTest is Test {
         _postScore(challenge, subId, 100e18, keccak256("proof"));
 
         vm.warp(uint256(challenge.deadline()) + 1 hours); // Inside scoring, before dispute window end
-        vm.expectRevert(HermesErrors.DeadlineNotPassed.selector);
+        vm.expectRevert(AgoraErrors.DeadlineNotPassed.selector);
         challenge.finalize();
     }
 
     function testTopThreeDistribution() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.rewardAmount = 30e6;
-        cfg.distributionType = IHermesChallenge.DistributionType.TopThree;
-        HermesChallenge top3 = new HermesChallenge(cfg);
+        cfg.distributionType = IAgoraChallenge.DistributionType.TopThree;
+        AgoraChallenge top3 = new AgoraChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(top3), 30e6);
 
@@ -171,10 +171,10 @@ contract HermesChallengeTest is Test {
     }
 
     function testProportionalDistribution() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.rewardAmount = 20e6;
-        cfg.distributionType = IHermesChallenge.DistributionType.Proportional;
-        HermesChallenge proportional = new HermesChallenge(cfg);
+        cfg.distributionType = IAgoraChallenge.DistributionType.Proportional;
+        AgoraChallenge proportional = new AgoraChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(proportional), 20e6);
 
@@ -218,10 +218,10 @@ contract HermesChallengeTest is Test {
     }
 
     function testDisputeResolveProportionalHonorsWinnerDust() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.rewardAmount = 20e6;
-        cfg.distributionType = IHermesChallenge.DistributionType.Proportional;
-        HermesChallenge proportional = new HermesChallenge(cfg);
+        cfg.distributionType = IAgoraChallenge.DistributionType.Proportional;
+        AgoraChallenge proportional = new AgoraChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(proportional), 20e6);
 
@@ -269,7 +269,7 @@ contract HermesChallengeTest is Test {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
         _postScore(challenge, subId, score, keccak256("proof"));
-        HermesChallenge.Submission memory submission = challenge.getSubmission(subId);
+        AgoraChallenge.Submission memory submission = challenge.getSubmission(subId);
         assertEq(submission.score, score);
     }
 
@@ -300,7 +300,7 @@ contract HermesChallengeTest is Test {
         vm.prank(solver);
         challenge.submit(keccak256("result"));
         vm.prank(solver);
-        vm.expectRevert(HermesErrors.InvalidStatus.selector);
+        vm.expectRevert(AgoraErrors.InvalidStatus.selector);
         challenge.claim();
     }
 
@@ -312,7 +312,7 @@ contract HermesChallengeTest is Test {
         challenge.finalize();
 
         vm.prank(address(0xDEAD)); // not the winner
-        vm.expectRevert(HermesErrors.NothingToClaim.selector);
+        vm.expectRevert(AgoraErrors.NothingToClaim.selector);
         challenge.claim();
     }
 
@@ -326,7 +326,7 @@ contract HermesChallengeTest is Test {
         vm.prank(solver);
         challenge.claim();
         vm.prank(solver);
-        vm.expectRevert(HermesErrors.NothingToClaim.selector);
+        vm.expectRevert(AgoraErrors.NothingToClaim.selector);
         challenge.claim();
     }
 
@@ -349,7 +349,7 @@ contract HermesChallengeTest is Test {
     }
 
     function testTimeoutRefundRevertsIfNotDisputed() public {
-        vm.expectRevert(HermesErrors.InvalidStatus.selector);
+        vm.expectRevert(AgoraErrors.InvalidStatus.selector);
         challenge.timeoutRefund();
     }
 
@@ -362,7 +362,7 @@ contract HermesChallengeTest is Test {
 
         // Only 10 days, not 30
         vm.warp(block.timestamp + 10 days);
-        vm.expectRevert(HermesErrors.DeadlineNotPassed.selector);
+        vm.expectRevert(AgoraErrors.DeadlineNotPassed.selector);
         challenge.timeoutRefund();
     }
 
@@ -394,47 +394,47 @@ contract HermesChallengeTest is Test {
     // ===== getSubmission() tests =====
 
     function testGetSubmissionRevertsInvalidId() public {
-        vm.expectRevert(HermesErrors.InvalidSubmission.selector);
+        vm.expectRevert(AgoraErrors.InvalidSubmission.selector);
         challenge.getSubmission(999);
     }
 
     // ===== Constructor validation tests =====
 
     function testConstructorRevertsZeroPoster() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.poster = address(0);
-        vm.expectRevert(HermesErrors.InvalidAddress.selector);
-        new HermesChallenge(cfg);
+        vm.expectRevert(AgoraErrors.InvalidAddress.selector);
+        new AgoraChallenge(cfg);
     }
 
     function testConstructorRevertsRewardTooLow() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.rewardAmount = 0;
-        vm.expectRevert(HermesErrors.InvalidRewardAmount.selector);
-        new HermesChallenge(cfg);
+        vm.expectRevert(AgoraErrors.InvalidRewardAmount.selector);
+        new AgoraChallenge(cfg);
     }
 
     function testConstructorRevertsRewardTooHigh() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.rewardAmount = 31_000_000;
-        vm.expectRevert(HermesErrors.InvalidRewardAmount.selector);
-        new HermesChallenge(cfg);
+        vm.expectRevert(AgoraErrors.InvalidRewardAmount.selector);
+        new AgoraChallenge(cfg);
     }
 
 
 
     function testConstructorAcceptsZeroDisputeWindow() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.disputeWindowHours = 0;
-        HermesChallenge c = new HermesChallenge(cfg);
+        AgoraChallenge c = new AgoraChallenge(cfg);
         assertEq(c.disputeWindowHours(), 0);
     }
 
     function testConstructorRevertsDisputeWindowTooLong() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.disputeWindowHours = 2200;
-        vm.expectRevert(HermesErrors.InvalidDisputeWindow.selector);
-        new HermesChallenge(cfg);
+        vm.expectRevert(AgoraErrors.InvalidDisputeWindow.selector);
+        new AgoraChallenge(cfg);
     }
 
     // ===== cancel() edge cases =====
@@ -443,20 +443,20 @@ contract HermesChallengeTest is Test {
         vm.prank(solver);
         challenge.submit(keccak256("result"));
         vm.prank(poster);
-        vm.expectRevert(HermesErrors.SubmissionsExist.selector);
+        vm.expectRevert(AgoraErrors.SubmissionsExist.selector);
         challenge.cancel();
     }
 
     function testCancelRevertsAfterDeadline() public {
         vm.warp(block.timestamp + 2 days);
         vm.prank(poster);
-        vm.expectRevert(HermesErrors.InvalidStatus.selector);
+        vm.expectRevert(AgoraErrors.InvalidStatus.selector);
         challenge.cancel();
     }
 
     function testCancelRevertsNotPoster() public {
         vm.prank(address(0x999));
-        vm.expectRevert(HermesErrors.NotPoster.selector);
+        vm.expectRevert(AgoraErrors.NotPoster.selector);
         challenge.cancel();
     }
 
@@ -464,14 +464,14 @@ contract HermesChallengeTest is Test {
 
     function testDisputeRevertsBeforeDeadline() public {
         vm.prank(address(0x999));
-        vm.expectRevert(HermesErrors.DisputeWindowNotStarted.selector);
+        vm.expectRevert(AgoraErrors.DisputeWindowNotStarted.selector);
         challenge.dispute("too early");
     }
 
     function testDisputeRevertsAfterWindow() public {
         vm.warp(block.timestamp + 9 days);
         vm.prank(address(0x999));
-        vm.expectRevert(HermesErrors.DisputeWindowClosed.selector);
+        vm.expectRevert(AgoraErrors.DisputeWindowClosed.selector);
         challenge.dispute("too late");
     }
 
@@ -482,7 +482,7 @@ contract HermesChallengeTest is Test {
         vm.prank(address(0x999));
         challenge.dispute("first");
         vm.prank(address(0xAAA));
-        vm.expectRevert(HermesErrors.DisputeActive.selector);
+        vm.expectRevert(AgoraErrors.DisputeActive.selector);
         challenge.dispute("second");
     }
 
@@ -494,7 +494,7 @@ contract HermesChallengeTest is Test {
         _postScore(challenge, subId, 100e18, keccak256("proof"));
         vm.warp(block.timestamp + 9 days);
         challenge.finalize();
-        vm.expectRevert(HermesErrors.ChallengeFinalized.selector);
+        vm.expectRevert(AgoraErrors.ChallengeFinalized.selector);
         challenge.finalize();
     }
 
@@ -505,7 +505,7 @@ contract HermesChallengeTest is Test {
         vm.prank(address(0x999));
         challenge.dispute("bad");
         vm.warp(block.timestamp + 3 days);
-        vm.expectRevert(HermesErrors.DisputeActive.selector);
+        vm.expectRevert(AgoraErrors.DisputeActive.selector);
         challenge.finalize();
     }
 
@@ -516,14 +516,14 @@ contract HermesChallengeTest is Test {
         uint256 subId = challenge.submit(keccak256("result"));
         _postScore(challenge, subId, 100e18, keccak256("proof"));
         vm.prank(oracle);
-        vm.expectRevert(HermesErrors.AlreadyScored.selector);
+        vm.expectRevert(AgoraErrors.AlreadyScored.selector);
         challenge.postScore(subId, 200e18, keccak256("proof2"));
     }
 
     function testPostScoreRevertsInvalidSubmission() public {
         _warpToScoring(challenge);
         vm.prank(oracle);
-        vm.expectRevert(HermesErrors.InvalidSubmission.selector);
+        vm.expectRevert(AgoraErrors.InvalidSubmission.selector);
         challenge.postScore(999, 100e18, keccak256("proof"));
     }
 
@@ -531,7 +531,7 @@ contract HermesChallengeTest is Test {
 
     function testResolveDisputeRevertsNotDisputed() public {
         vm.prank(oracle);
-        vm.expectRevert(HermesErrors.InvalidStatus.selector);
+        vm.expectRevert(AgoraErrors.InvalidStatus.selector);
         challenge.resolveDispute(0);
     }
 
@@ -545,10 +545,10 @@ contract HermesChallengeTest is Test {
     // ===== Additional edge case coverage =====
 
     function testTopThreeWithOnlyOneSolver() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.rewardAmount = 20e6;
-        cfg.distributionType = IHermesChallenge.DistributionType.TopThree;
-        HermesChallenge top3 = new HermesChallenge(cfg);
+        cfg.distributionType = IAgoraChallenge.DistributionType.TopThree;
+        AgoraChallenge top3 = new AgoraChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(top3), 20e6);
 
@@ -566,10 +566,10 @@ contract HermesChallengeTest is Test {
     }
 
     function testTopThreeWithTwoSolvers() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.rewardAmount = 20e6;
-        cfg.distributionType = IHermesChallenge.DistributionType.TopThree;
-        HermesChallenge top3 = new HermesChallenge(cfg);
+        cfg.distributionType = IAgoraChallenge.DistributionType.TopThree;
+        AgoraChallenge top3 = new AgoraChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(top3), 20e6);
 
@@ -600,7 +600,7 @@ contract HermesChallengeTest is Test {
         vm.warp(block.timestamp + 9 days);
         uint256 posterBefore = usdc.balanceOf(poster);
         challenge.finalize();
-        assertEq(uint8(challenge.status()), uint8(IHermesChallenge.Status.Cancelled));
+        assertEq(uint8(challenge.status()), uint8(IAgoraChallenge.Status.Cancelled));
         assertEq(usdc.balanceOf(poster), posterBefore + 10e6);
     }
 
@@ -623,10 +623,10 @@ contract HermesChallengeTest is Test {
     }
 
     function testResolveDisputeTopThree() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.rewardAmount = 20e6;
-        cfg.distributionType = IHermesChallenge.DistributionType.TopThree;
-        HermesChallenge top3 = new HermesChallenge(cfg);
+        cfg.distributionType = IAgoraChallenge.DistributionType.TopThree;
+        AgoraChallenge top3 = new AgoraChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(top3), 20e6);
 
@@ -662,7 +662,7 @@ contract HermesChallengeTest is Test {
         vm.warp(block.timestamp + 9 days);
         challenge.finalize();
         vm.prank(poster);
-        vm.expectRevert(HermesErrors.InvalidStatus.selector);
+        vm.expectRevert(AgoraErrors.InvalidStatus.selector);
         challenge.cancel();
     }
 
@@ -671,7 +671,7 @@ contract HermesChallengeTest is Test {
         challenge.cancel();
         _warpToScoring(challenge);
         vm.prank(oracle);
-        vm.expectRevert(HermesErrors.InvalidStatus.selector);
+        vm.expectRevert(AgoraErrors.InvalidStatus.selector);
         challenge.postScore(0, 100e18, keccak256("proof"));
     }
 
@@ -699,7 +699,7 @@ contract HermesChallengeTest is Test {
         challenge.dispute("bad");
 
         vm.prank(oracle);
-        vm.expectRevert(HermesErrors.InvalidSubmission.selector);
+        vm.expectRevert(AgoraErrors.InvalidSubmission.selector);
         challenge.resolveDispute(subId);
     }
 
@@ -712,15 +712,15 @@ contract HermesChallengeTest is Test {
         challenge.dispute("bad");
 
         vm.prank(oracle);
-        vm.expectRevert(HermesErrors.InvalidSubmission.selector);
+        vm.expectRevert(AgoraErrors.InvalidSubmission.selector);
         challenge.resolveDispute(999);
     }
 
     function testFinalizeRefundsPosterWhenNoSubmissionMeetsMinimumScore() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.rewardAmount = 20e6;
         cfg.minimumScore = 90e18;
-        HermesChallenge gated = new HermesChallenge(cfg);
+        AgoraChallenge gated = new AgoraChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(gated), 20e6);
 
@@ -733,15 +733,15 @@ contract HermesChallengeTest is Test {
         uint256 posterBefore = usdc.balanceOf(poster);
         gated.finalize();
 
-        assertEq(uint8(gated.status()), uint8(IHermesChallenge.Status.Cancelled));
+        assertEq(uint8(gated.status()), uint8(IAgoraChallenge.Status.Cancelled));
         assertEq(usdc.balanceOf(poster), posterBefore + 20e6);
     }
 
     function testResolveDisputeRevertsWhenWinnerBelowMinimumScore() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.rewardAmount = 20e6;
         cfg.minimumScore = 90e18;
-        HermesChallenge gated = new HermesChallenge(cfg);
+        AgoraChallenge gated = new AgoraChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(gated), 20e6);
 
@@ -754,16 +754,16 @@ contract HermesChallengeTest is Test {
         gated.dispute("below minimum");
 
         vm.prank(oracle);
-        vm.expectRevert(HermesErrors.MinimumScoreNotMet.selector);
+        vm.expectRevert(AgoraErrors.MinimumScoreNotMet.selector);
         gated.resolveDispute(subId);
     }
 
     // ===== On-chain submission limits =====
 
     function testMaxSubmissionsEnforced() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.maxSubmissions = 2;
-        HermesChallenge limited = new HermesChallenge(cfg);
+        AgoraChallenge limited = new AgoraChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(limited), 10e6);
 
@@ -774,21 +774,21 @@ contract HermesChallengeTest is Test {
 
         // Third submission should revert
         vm.prank(address(0x3));
-        vm.expectRevert(HermesErrors.MaxSubmissionsReached.selector);
+        vm.expectRevert(AgoraErrors.MaxSubmissionsReached.selector);
         limited.submit(keccak256("c"));
     }
 
     function testMaxSubmissionsPerSolverEnforced() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.maxSubmissionsPerSolver = 2;
-        HermesChallenge limited = new HermesChallenge(cfg);
+        AgoraChallenge limited = new AgoraChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(limited), 10e6);
 
         vm.startPrank(solver);
         limited.submit(keccak256("a"));
         limited.submit(keccak256("b"));
-        vm.expectRevert(HermesErrors.MaxSubmissionsPerSolverReached.selector);
+        vm.expectRevert(AgoraErrors.MaxSubmissionsPerSolverReached.selector);
         limited.submit(keccak256("c"));
         vm.stopPrank();
 
@@ -808,17 +808,17 @@ contract HermesChallengeTest is Test {
     }
 
     function testConstructorRevertsPerSolverExceedsTotal() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.maxSubmissions = 5;
         cfg.maxSubmissionsPerSolver = 10;
-        vm.expectRevert(HermesErrors.InvalidSubmissionLimits.selector);
-        new HermesChallenge(cfg);
+        vm.expectRevert(AgoraErrors.InvalidSubmissionLimits.selector);
+        new AgoraChallenge(cfg);
     }
 
     function testSolverSubmissionCountTracked() public {
-        IHermesChallenge.ChallengeConfig memory cfg = _cfg();
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.maxSubmissionsPerSolver = 3;
-        HermesChallenge limited = new HermesChallenge(cfg);
+        AgoraChallenge limited = new AgoraChallenge(cfg);
         vm.prank(poster);
         usdc.transfer(address(limited), 10e6);
 

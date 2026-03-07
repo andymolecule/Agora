@@ -2,16 +2,16 @@ import {
   isValidPinnedSpecCid,
   validateChallengeSpec,
   type ChallengeSpecOutput,
-} from "@hermes/common";
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with {
+} from "@agora/common";
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
 };
-import { getText } from "@hermes/ipfs";
+import { getText } from "@agora/ipfs";
 import { type Abi } from "viem";
 import yaml from "yaml";
 import { getPublicClient } from "./client.js";
 
-const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
+const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 export async function fetchValidatedChallengeSpec(
   specCid: string,
@@ -47,12 +47,12 @@ export async function loadChallengeDefinitionFromChain(input: {
   const [specCid, onChainDeadline] = await Promise.all([
     publicClient.readContract({
       address: input.challengeAddress,
-      abi: HermesChallengeAbi,
+      abi: AgoraChallengeAbi,
       functionName: "specCid",
     }) as Promise<string>,
     publicClient.readContract({
       address: input.challengeAddress,
-      abi: HermesChallengeAbi,
+      abi: AgoraChallengeAbi,
       functionName: "deadline",
     }) as Promise<bigint>,
   ]);

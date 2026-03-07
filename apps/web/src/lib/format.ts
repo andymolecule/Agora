@@ -1,4 +1,4 @@
-/** Compute protocol fee using the same integer math as HermesChallenge.sol */
+/** Compute protocol fee using the same integer math as AgoraChallenge.sol */
 export function computeProtocolFee(rewardUsdc: number) {
   const units = BigInt(Math.round(rewardUsdc * 1e6)); // USDC 6 decimals
   const fee = (units * 500n) / 10_000n;

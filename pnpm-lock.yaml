@@ -23,19 +23,19 @@ importers:
 
   apps/api:
     dependencies:
-      '@hermes/chain':
+      '@agora/chain':
         specifier: workspace:*
         version: link:../../packages/chain
-      '@hermes/common':
+      '@agora/common':
         specifier: workspace:*
         version: link:../../packages/common
-      '@hermes/db':
+      '@agora/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@hermes/ipfs':
+      '@agora/ipfs':
         specifier: workspace:*
         version: link:../../packages/ipfs
-      '@hermes/scorer':
+      '@agora/scorer':
         specifier: workspace:*
         version: link:../../packages/scorer
       '@hono/node-server':
@@ -71,19 +71,19 @@ importers:
 
   apps/cli:
     dependencies:
-      '@hermes/chain':
+      '@agora/chain':
         specifier: workspace:*
         version: link:../../packages/chain
-      '@hermes/common':
+      '@agora/common':
         specifier: workspace:*
         version: link:../../packages/common
-      '@hermes/db':
+      '@agora/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@hermes/ipfs':
+      '@agora/ipfs':
         specifier: workspace:*
         version: link:../../packages/ipfs
-      '@hermes/scorer':
+      '@agora/scorer':
         specifier: workspace:*
         version: link:../../packages/scorer
       '@pinata/sdk':
@@ -117,19 +117,19 @@ importers:
 
   apps/mcp-server:
     dependencies:
-      '@hermes/chain':
+      '@agora/chain':
         specifier: workspace:*
         version: link:../../packages/chain
-      '@hermes/common':
+      '@agora/common':
         specifier: workspace:*
         version: link:../../packages/common
-      '@hermes/db':
+      '@agora/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@hermes/ipfs':
+      '@agora/ipfs':
         specifier: workspace:*
         version: link:../../packages/ipfs
-      '@hermes/scorer':
+      '@agora/scorer':
         specifier: workspace:*
         version: link:../../packages/scorer
       '@modelcontextprotocol/sdk':
@@ -148,10 +148,10 @@ importers:
 
   apps/web:
     dependencies:
-      '@hermes/common':
+      '@agora/common':
         specifier: workspace:*
         version: link:../../packages/common
-      '@hermes/ipfs':
+      '@agora/ipfs':
         specifier: workspace:*
         version: link:../../packages/ipfs
       '@rainbow-me/rainbowkit':
@@ -200,13 +200,13 @@ importers:
 
   packages/chain:
     dependencies:
-      '@hermes/common':
+      '@agora/common':
         specifier: workspace:*
         version: link:../common
-      '@hermes/db':
+      '@agora/db':
         specifier: workspace:*
         version: link:../db
-      '@hermes/ipfs':
+      '@agora/ipfs':
         specifier: workspace:*
         version: link:../ipfs
       viem:
@@ -243,7 +243,7 @@ importers:
 
   packages/db:
     dependencies:
-      '@hermes/common':
+      '@agora/common':
         specifier: workspace:*
         version: link:../common
       '@supabase/supabase-js':
@@ -259,7 +259,7 @@ importers:
 
   packages/ipfs:
     dependencies:
-      '@hermes/common':
+      '@agora/common':
         specifier: workspace:*
         version: link:../common
       '@pinata/sdk':
@@ -272,16 +272,16 @@ importers:
 
   packages/scorer:
     dependencies:
-      '@hermes/chain':
+      '@agora/chain':
         specifier: workspace:*
         version: link:../chain
-      '@hermes/common':
+      '@agora/common':
         specifier: workspace:*
         version: link:../common
-      '@hermes/db':
+      '@agora/db':
         specifier: workspace:*
         version: link:../db
-      '@hermes/ipfs':
+      '@agora/ipfs':
         specifier: workspace:^
         version: link:../ipfs
       viem:

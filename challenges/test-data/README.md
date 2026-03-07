@@ -1,6 +1,6 @@
 # Test Data
 
-Human-oriented fixture kits for posting and testing Hermes challenge types through the web UI.
+Human-oriented fixture kits for posting and testing Agora challenge types through the web UI.
 
 Each subdirectory is organized around one category and contains:
 - a realistic posting walkthrough

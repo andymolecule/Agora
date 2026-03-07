@@ -1,8 +1,8 @@
 import {
   SUBMISSION_RESULT_FORMAT,
   type SubmissionResultFormat,
-} from "@hermes/common";
-import type { HermesDbClient } from "../index";
+} from "@agora/common";
+import type { AgoraDbClient } from "../index";
 
 export interface SubmissionOnChainWrite {
   challenge_id: string;
@@ -28,7 +28,7 @@ export interface SubmissionOnChainWrite {
  * This function intentionally never writes result_cid/proof_bundle_cid/rank.
  */
 export async function upsertSubmissionOnChain(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   payload: SubmissionOnChainWrite,
 ) {
   const normalizedPayload: SubmissionOnChainWrite = {
@@ -76,7 +76,7 @@ export async function upsertSubmissionOnChain(
 }
 
 export async function getSubmissionByChainId(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   challengeId: string,
   onChainSubId: number,
 ) {
@@ -92,7 +92,7 @@ export async function getSubmissionByChainId(
   return data ?? null;
 }
 
-export async function getSubmissionById(db: HermesDbClient, id: string) {
+export async function getSubmissionById(db: AgoraDbClient, id: string) {
   const { data, error } = await db
     .from("submissions")
     .select("*")
@@ -105,7 +105,7 @@ export async function getSubmissionById(db: HermesDbClient, id: string) {
 }
 
 export async function listSubmissionsForChallenge(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   challengeId: string,
 ) {
   const { data, error } = await db
@@ -120,7 +120,7 @@ export async function listSubmissionsForChallenge(
 }
 
 export async function countSubmissionsForChallenge(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   challengeId: string,
 ) {
   const { count, error } = await db
@@ -134,7 +134,7 @@ export async function countSubmissionsForChallenge(
 }
 
 export async function countSubmissionsBySolverForChallenge(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   challengeId: string,
   solverAddress: string,
 ) {
@@ -152,7 +152,7 @@ export async function countSubmissionsBySolverForChallenge(
 }
 
 export async function countSubmissionsForChallengeUpToOnChainSubId(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   challengeId: string,
   onChainSubId: number,
 ) {
@@ -168,7 +168,7 @@ export async function countSubmissionsForChallengeUpToOnChainSubId(
 }
 
 export async function countSubmissionsBySolverForChallengeUpToOnChainSubId(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   challengeId: string,
   solverAddress: string,
   onChainSubId: number,
@@ -188,7 +188,7 @@ export async function countSubmissionsBySolverForChallengeUpToOnChainSubId(
 }
 
 export async function listSubmissionsBySolver(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   solverAddress: string,
   limit = 50,
 ) {
@@ -210,7 +210,7 @@ export async function listSubmissionsBySolver(
 }
 
 export async function setSubmissionResultCid(
-  db: HermesDbClient,
+  db: AgoraDbClient,
   challengeId: string,
   onChainSubId: number,
   resultCid: string,

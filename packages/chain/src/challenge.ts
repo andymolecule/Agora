@@ -1,12 +1,12 @@
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with { type: "json" };
 import type { Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { getPublicClient, getWalletClient } from "./client.js";
-import { CHAIN_IDS, loadConfig } from "@hermes/common";
+import { CHAIN_IDS, loadConfig } from "@agora/common";
 import { createWalletClient, http } from "viem";
 import { base, baseSepolia } from "viem/chains";
 
-const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
+const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 export async function submitChallengeResult(
   challengeAddress: `0x${string}`,
@@ -15,7 +15,7 @@ export async function submitChallengeResult(
   const walletClient = getWalletClient();
   return walletClient.writeContract({
     address: challengeAddress,
-    abi: HermesChallengeAbi,
+    abi: AgoraChallengeAbi,
     functionName: "submit",
     args: [resultHash],
   });
@@ -27,16 +27,16 @@ export async function submitChallengeResultWithPrivateKey(
   privateKey: `0x${string}`,
 ) {
   const config = loadConfig();
-  const chainId = config.HERMES_CHAIN_ID;
+  const chainId = config.AGORA_CHAIN_ID;
   const chain = chainId === CHAIN_IDS.baseMainnet ? base : baseSepolia;
   const walletClient = createWalletClient({
     chain,
-    transport: http(config.HERMES_RPC_URL),
+    transport: http(config.AGORA_RPC_URL),
     account: privateKeyToAccount(privateKey),
   });
   return walletClient.writeContract({
     address: challengeAddress,
-    abi: HermesChallengeAbi,
+    abi: AgoraChallengeAbi,
     functionName: "submit",
     args: [resultHash],
   });
@@ -51,7 +51,7 @@ export async function postScore(
   const walletClient = getWalletClient();
   return walletClient.writeContract({
     address: challengeAddress,
-    abi: HermesChallengeAbi,
+    abi: AgoraChallengeAbi,
     functionName: "postScore",
     args: [submissionId, score, proofBundleHash],
   });
@@ -61,7 +61,7 @@ export async function finalizeChallenge(challengeAddress: `0x${string}`) {
   const walletClient = getWalletClient();
   return walletClient.writeContract({
     address: challengeAddress,
-    abi: HermesChallengeAbi,
+    abi: AgoraChallengeAbi,
     functionName: "finalize",
     args: [],
   });
@@ -74,7 +74,7 @@ export async function disputeChallenge(
   const walletClient = getWalletClient();
   return walletClient.writeContract({
     address: challengeAddress,
-    abi: HermesChallengeAbi,
+    abi: AgoraChallengeAbi,
     functionName: "dispute",
     args: [reason],
   });
@@ -87,7 +87,7 @@ export async function resolveDispute(
   const walletClient = getWalletClient();
   return walletClient.writeContract({
     address: challengeAddress,
-    abi: HermesChallengeAbi,
+    abi: AgoraChallengeAbi,
     functionName: "resolveDispute",
     args: [winnerSubId],
   });
@@ -97,7 +97,7 @@ export async function claimPayout(challengeAddress: `0x${string}`) {
   const walletClient = getWalletClient();
   return walletClient.writeContract({
     address: challengeAddress,
-    abi: HermesChallengeAbi,
+    abi: AgoraChallengeAbi,
     functionName: "claim",
     args: [],
   });
@@ -108,16 +108,16 @@ export async function claimPayoutWithPrivateKey(
   privateKey: `0x${string}`,
 ) {
   const config = loadConfig();
-  const chainId = config.HERMES_CHAIN_ID;
+  const chainId = config.AGORA_CHAIN_ID;
   const chain = chainId === CHAIN_IDS.baseMainnet ? base : baseSepolia;
   const walletClient = createWalletClient({
     chain,
-    transport: http(config.HERMES_RPC_URL),
+    transport: http(config.AGORA_RPC_URL),
     account: privateKeyToAccount(privateKey),
   });
   return walletClient.writeContract({
     address: challengeAddress,
-    abi: HermesChallengeAbi,
+    abi: AgoraChallengeAbi,
     functionName: "claim",
     args: [],
   });
@@ -139,7 +139,7 @@ export async function getOnChainSubmission(
   const publicClient = getPublicClient();
   const raw: unknown = await publicClient.readContract({
     address: challengeAddress,
-    abi: HermesChallengeAbi,
+    abi: AgoraChallengeAbi,
     functionName: "getSubmission",
     args: [subId],
   });

@@ -1,4 +1,4 @@
-import { CHALLENGE_STATUS, type ChallengeStatus } from "@hermes/common";
+import { CHALLENGE_STATUS, type ChallengeStatus } from "@agora/common";
 
 export type StatusStyle = { bg: string; text: string; borderColor: string };
 

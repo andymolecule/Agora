@@ -1,4 +1,4 @@
-import { createSupabaseClient, listSubmissionsBySolver } from "@hermes/db";
+import { createSupabaseClient, listSubmissionsBySolver } from "@agora/db";
 import { Hono } from "hono";
 import type { ApiEnv } from "../types.js";
 

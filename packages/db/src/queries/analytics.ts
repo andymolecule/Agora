@@ -1,4 +1,4 @@
-import type { HermesDbClient } from "../index";
+import type { AgoraDbClient } from "../index";
 
 export interface PlatformAnalytics {
   totalChallenges: number;
@@ -44,7 +44,7 @@ export interface PlatformAnalytics {
  * JS post-processing groups/aggregates the small result sets.
  */
 export async function getPlatformAnalytics(
-  db: HermesDbClient,
+  db: AgoraDbClient,
 ): Promise<PlatformAnalytics> {
   const [
     challengesResult,

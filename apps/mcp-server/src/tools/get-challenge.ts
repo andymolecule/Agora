@@ -4,6 +4,6 @@ export interface GetChallengeInput {
   challengeId: string;
 }
 
-export async function hermesGetChallenge(input: GetChallengeInput) {
+export async function agoraGetChallenge(input: GetChallengeInput) {
   return getChallenge(input.challengeId);
 }

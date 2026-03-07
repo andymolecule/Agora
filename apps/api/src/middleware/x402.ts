@@ -5,7 +5,7 @@ import {
   extractX402PaymentHeader,
   readX402RuntimeConfig,
   verifyAndSettleX402Payment,
-} from "@hermes/common";
+} from "@agora/common";
 import type { Context, MiddlewareHandler, Next } from "hono";
 import type { ApiEnv } from "../types.js";
 
@@ -218,7 +218,7 @@ export function createX402Middleware(): MiddlewareHandler<ApiEnv> {
       console.info(
         `[x402][report-only] would charge route=${matched.id} method=${c.req.method} path=${c.req.path} price=$${matched.priceUsd.toFixed(3)}`,
       );
-      c.res.headers.set("X-Hermes-X402-Report", "would-charge");
+      c.res.headers.set("X-Agora-X402-Report", "would-charge");
       await next();
       return;
     }

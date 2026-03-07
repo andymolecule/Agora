@@ -2,7 +2,7 @@ import {
   DEFAULT_IPFS_GATEWAY,
   challengeSpecSchema,
   type ChallengeSpecOutput,
-} from "@hermes/common";
+} from "@agora/common";
 import { API_BASE_URL } from "./config";
 import type {
   AnalyticsData,

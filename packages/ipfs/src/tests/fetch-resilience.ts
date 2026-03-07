@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
 
-process.env.HERMES_IPFS_FETCH_TIMEOUT_MS = "20";
-process.env.HERMES_IPFS_FETCH_MAX_ATTEMPTS = "2";
-process.env.HERMES_IPFS_FETCH_RETRY_BASE_MS = "0";
+process.env.AGORA_IPFS_FETCH_TIMEOUT_MS = "20";
+process.env.AGORA_IPFS_FETCH_MAX_ATTEMPTS = "2";
+process.env.AGORA_IPFS_FETCH_RETRY_BASE_MS = "0";
 
 const { getText } = await import("../fetch");
 

@@ -167,7 +167,7 @@ export function ActivityPanel() {
                         <div className="feed-detail">
                             {hasConfig
                                 ? `Factory: ${FACTORY_ADDRESS.slice(0, 6)}...${FACTORY_ADDRESS.slice(-4)}`
-                                : "Set NEXT_PUBLIC_HERMES_FACTORY_ADDRESS in .env"}
+                                : "Set NEXT_PUBLIC_AGORA_FACTORY_ADDRESS in .env"}
                         </div>
                     </div>
                     <StatusDot ok={hasConfig} />

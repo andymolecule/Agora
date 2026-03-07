@@ -4,7 +4,7 @@ const proofBundle: ProofBundle = {
   inputHash: "input-hash",
   outputHash: "output-hash",
   containerImageDigest:
-    "ghcr.io/hermes-science/repro-scorer@sha256:abc123",
+    "ghcr.io/agora-science/repro-scorer@sha256:abc123",
   challengeSpecCid: "ipfs://bafy-spec",
   evaluationBundleCid: "ipfs://bafy-eval",
   replaySubmissionCid: "ipfs://bafy-replay",

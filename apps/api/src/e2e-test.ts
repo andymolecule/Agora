@@ -2,26 +2,26 @@
  * End-to-end test: post → submit → score → finalize → verify claimable
  * Uses the test factory with MIN_DISPUTE_WINDOW_HOURS = 0
  */
-import { CHALLENGE_STATUS, SUBMISSION_LIMITS, loadConfig } from "@hermes/common";
-import { getPublicClient, getWalletClient, finalizeChallenge } from "@hermes/chain";
-import { createSupabaseClient, upsertChallenge, buildChallengeInsert, createScoreJob } from "@hermes/db";
-import { pinJSON, pinFile } from "@hermes/ipfs";
-import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json" with { type: "json" };
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
+import { CHALLENGE_STATUS, SUBMISSION_LIMITS, loadConfig } from "@agora/common";
+import { getPublicClient, getWalletClient, finalizeChallenge } from "@agora/chain";
+import { createSupabaseClient, upsertChallenge, buildChallengeInsert, createScoreJob } from "@agora/db";
+import { pinJSON, pinFile } from "@agora/ipfs";
+import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with { type: "json" };
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with { type: "json" };
 import { type Abi, parseUnits, parseEventLogs, keccak256, toBytes } from "viem";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
-const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
+const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
+const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
-// Uses whichever factory is configured in .env (HERMES_FACTORY_ADDRESS)
+// Uses whichever factory is configured in .env (AGORA_FACTORY_ADDRESS)
 
 async function main() {
     const config = loadConfig();
-    if (process.env.HERMES_ORACLE_KEY && !process.env.HERMES_PRIVATE_KEY) {
-        process.env.HERMES_PRIVATE_KEY = process.env.HERMES_ORACLE_KEY;
+    if (process.env.AGORA_ORACLE_KEY && !process.env.AGORA_PRIVATE_KEY) {
+        process.env.AGORA_PRIVATE_KEY = process.env.AGORA_ORACLE_KEY;
     }
 
     const db = createSupabaseClient(true);
@@ -39,7 +39,7 @@ async function main() {
         description: "Answer with a number. Score = 100 - answer - 42",
         domain: "other",
         type: "deterministic",
-        scoring_container: "hermes/toy-arithmetic-scorer:latest",
+        scoring_container: "agora/toy-arithmetic-scorer:latest",
         scoring_metric: "exact_match",
         submission_format: "JSON with {answer: number}",
         success_definition: "answer = 42",
@@ -50,7 +50,7 @@ async function main() {
 
     // ── Step 2: Approve USDC and create challenge ──
     console.log("2️⃣  Approving USDC...");
-    const usdcAddress = config.HERMES_USDC_ADDRESS;
+    const usdcAddress = config.AGORA_USDC_ADDRESS;
     const rewardAmount = parseUnits("1", 6); // 1 USDC
 
     const usdcAbi = [
@@ -61,7 +61,7 @@ async function main() {
         address: usdcAddress,
         abi: usdcAbi,
         functionName: "approve",
-        args: [config.HERMES_FACTORY_ADDRESS, rewardAmount],
+        args: [config.AGORA_FACTORY_ADDRESS, rewardAmount],
     });
 
     console.log("3️⃣  Creating challenge (3-min deadline, 0h dispute)...");
@@ -69,8 +69,8 @@ async function main() {
     const specCidClean = specCid.replace("ipfs://", "");
 
     const createTxHash = await walletClient.writeContract({
-        address: config.HERMES_FACTORY_ADDRESS,
-        abi: HermesFactoryAbi,
+        address: config.AGORA_FACTORY_ADDRESS,
+        abi: AgoraFactoryAbi,
         functionName: "createChallenge",
         args: [
             specCidClean,
@@ -86,16 +86,16 @@ async function main() {
     });
 
     const createReceipt = await publicClient.waitForTransactionReceipt({ hash: createTxHash });
-    const logs = parseEventLogs({ abi: HermesFactoryAbi, logs: createReceipt.logs });
+    const logs = parseEventLogs({ abi: AgoraFactoryAbi, logs: createReceipt.logs });
     const createdEvent = logs.find((l: any) => l.eventName === "ChallengeCreated") as any;
     const challengeAddress = createdEvent?.args?.challenge as `0x${string}`;
     console.log("   Challenge address:", challengeAddress);
 
     // Register in DB directly (skip buildChallengeInsert which expects full parsed spec)
     const chalRow = {
-        chain_id: config.HERMES_CHAIN_ID,
+        chain_id: config.AGORA_CHAIN_ID,
         contract_address: challengeAddress.toLowerCase(),
-        factory_address: config.HERMES_FACTORY_ADDRESS,
+        factory_address: config.AGORA_FACTORY_ADDRESS,
         factory_challenge_id: Number(createdEvent?.args?.id ?? 0),
         poster_address: account.address.toLowerCase(),
         title: spec.title,
@@ -129,7 +129,7 @@ async function main() {
     const resultHash = keccak256(toBytes(resultCid.replace("ipfs://", "")));
     const submitTxHash = await walletClient.writeContract({
         address: challengeAddress,
-        abi: HermesChallengeAbi,
+        abi: AgoraChallengeAbi,
         functionName: "submit",
         args: [resultHash],
     });
@@ -199,7 +199,7 @@ async function main() {
     console.log("7️⃣  Checking claimable balance...");
     const claimable = await publicClient.readContract({
         address: challengeAddress,
-        abi: HermesChallengeAbi,
+        abi: AgoraChallengeAbi,
         functionName: "payoutByAddress",
         args: [account.address],
     }) as bigint;

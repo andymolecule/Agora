@@ -1,4 +1,4 @@
-# Hermes Operations Runbook
+# Agora Operations Runbook
 
 This runbook covers day-2 operations for posting, indexing, scoring, and settlement.
 
@@ -9,13 +9,13 @@ Run these checks first during any incident:
 ```bash
 curl -sS http://localhost:3000/healthz
 curl -sS http://localhost:3000/api/indexer-health
-hm doctor
+agora doctor
 ```
 
 Expected:
 - API health returns `{"ok":true}`.
 - Indexer health is `ok` or `warning`, not `critical`.
-- `hm doctor` passes RPC/Supabase/factory checks.
+- `agora doctor` passes RPC/Supabase/factory checks.
 
 ## 2. Submission / Scoring Safety Limits
 
@@ -35,7 +35,7 @@ Per-challenge overrides can be set in challenge spec:
 ## 3. Indexer Reorg Safety
 
 Indexer processes only finalized head minus confirmation depth:
-- `HERMES_INDEXER_CONFIRMATION_DEPTH` (default: `3`)
+- `AGORA_INDEXER_CONFIRMATION_DEPTH` (default: `3`)
 
 If indexer falls behind:
 1. Restart indexer.
@@ -47,19 +47,19 @@ If indexer falls behind:
 Preview:
 
 ```bash
-hm reindex --from-block 123456 --dry-run
+agora reindex --from-block 123456 --dry-run
 ```
 
 Apply cursor rewind:
 
 ```bash
-hm reindex --from-block 123456
+agora reindex --from-block 123456
 ```
 
 Deep replay (also purge dedupe markers from that block onward):
 
 ```bash
-hm reindex --from-block 123456 --purge-indexed-events
+agora reindex --from-block 123456 --purge-indexed-events
 ```
 
 Notes:
@@ -71,13 +71,13 @@ Notes:
 Rules:
 - Never log private key env values.
 - Rotate oracle keys on suspected compromise.
-- Keep `HERMES_PRIVATE_KEY` and `HERMES_ORACLE_KEY` scoped to required services.
+- Keep `AGORA_PRIVATE_KEY` and `AGORA_ORACLE_KEY` scoped to required services.
 
 Rotation sequence:
 1. Pause worker scoring.
 2. Rotate oracle on-chain via governance flow.
 3. Update service env.
-4. Resume worker after `hm doctor` + smoke validation.
+4. Resume worker after `agora doctor` + smoke validation.
 
 ## 6. Recovery Scenarios
 
@@ -100,5 +100,5 @@ Rotation sequence:
 ### D) DB restoration / migration rollback
 1. Restore DB snapshot.
 2. Re-apply migrations.
-3. Rewind indexer (`hm reindex --from-block <known-good-block>`).
+3. Rewind indexer (`agora reindex --from-block <known-good-block>`).
 4. Monitor event replay and challenge/submission consistency.

@@ -7,4 +7,4 @@ export {
   stageSubmissionFile,
   stageSubmissionFromCid,
   wadToScore,
-} from "@hermes/scorer";
+} from "@agora/scorer";

@@ -1,6 +1,6 @@
 # Red Team Test Data
 
-Realistic posting fixtures for the Hermes red-team category.
+Realistic posting fixtures for the Agora red-team category.
 
 This category currently relies on a poster-supplied custom scorer image. The folder is therefore aimed at human posting quality and solver-format clarity rather than built-in executable scoring.
 

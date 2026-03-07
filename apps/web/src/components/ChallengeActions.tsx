@@ -3,12 +3,12 @@
 import { useEffect, useState } from "react";
 import { useAccount, useWriteContract, usePublicClient } from "wagmi";
 import { CheckCircle, Clock, Loader2, Coins, Gavel } from "lucide-react";
-import { CHALLENGE_STATUS } from "@hermes/common";
+import { CHALLENGE_STATUS } from "@agora/common";
 import { API_BASE_URL } from "../lib/config";
-import HermesChallengeAbi from "@hermes/common/abi/HermesChallenge.json";
+import AgoraChallengeAbi from "@agora/common/abi/AgoraChallenge.json";
 import { type Abi } from "viem";
 
-const abi = HermesChallengeAbi as unknown as Abi;
+const abi = AgoraChallengeAbi as unknown as Abi;
 
 interface Props {
     challengeId: string;

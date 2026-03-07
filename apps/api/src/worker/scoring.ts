@@ -10,20 +10,20 @@ import {
   SUBMISSION_RESULT_FORMAT,
   type RunnerLimits,
   validatePresetIntegrity,
-} from "@hermes/common";
+} from "@agora/common";
 import {
   countSubmissionsBySolverForChallengeUpToOnChainSubId,
   countSubmissionsForChallengeUpToOnChainSubId,
   type createSupabaseClient,
-} from "@hermes/db";
-import { pinFile } from "@hermes/ipfs";
+} from "@agora/db";
+import { pinFile } from "@agora/ipfs";
 import {
   buildProofBundle,
   executeScoringPipeline,
   SealedSubmissionError,
   resolveSubmissionSource,
   scoreToWad,
-} from "@hermes/scorer";
+} from "@agora/scorer";
 import { keccak256, toBytes } from "viem";
 import { createWorkerPhaseObserver, runWorkerPhase } from "./phases.js";
 import type { ChallengeRow, SubmissionRow, WorkerLogFn } from "./types.js";
@@ -220,7 +220,7 @@ export async function scoreSubmissionAndBuildProof(
       resultFormat: submission.result_format,
       challengeId: challenge.id,
       solverAddress: submission.solver_address,
-      privateKeyPem: loadConfig().HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+      privateKeyPem: loadConfig().AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
     });
   } catch (error) {
     if (error instanceof SealedSubmissionError) {

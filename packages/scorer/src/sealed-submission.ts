@@ -3,8 +3,8 @@ import {
   importSubmissionOpenPrivateKey,
   openSubmission,
   parseSealedSubmissionEnvelope,
-} from "@hermes/common";
-import { getText } from "@hermes/ipfs";
+} from "@agora/common";
+import { getText } from "@agora/ipfs";
 import type { ScoringInputSource } from "./pipeline.js";
 
 export class SealedSubmissionError extends Error {

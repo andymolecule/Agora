@@ -55,17 +55,17 @@ const originalEnv = { ...process.env };
 try {
   process.env = {
     ...originalEnv,
-    HERMES_RPC_URL: "https://example-rpc.invalid",
-    HERMES_FACTORY_ADDRESS: "0x0000000000000000000000000000000000000001",
-    HERMES_USDC_ADDRESS: "0x0000000000000000000000000000000000000002",
+    AGORA_RPC_URL: "https://example-rpc.invalid",
+    AGORA_FACTORY_ADDRESS: "0x0000000000000000000000000000000000000001",
+    AGORA_USDC_ADDRESS: "0x0000000000000000000000000000000000000002",
   };
-  delete process.env.HERMES_CHAIN_ID;
-  delete process.env.HERMES_X402_NETWORK;
+  delete process.env.AGORA_CHAIN_ID;
+  delete process.env.AGORA_X402_NETWORK;
 
   resetConfigCache();
   const config = loadConfig();
-  assert.equal(config.HERMES_CHAIN_ID, DEFAULT_CHAIN_ID);
-  assert.equal(config.HERMES_X402_NETWORK, DEFAULT_X402_NETWORK);
+  assert.equal(config.AGORA_CHAIN_ID, DEFAULT_CHAIN_ID);
+  assert.equal(config.AGORA_X402_NETWORK, DEFAULT_X402_NETWORK);
 
   const featurePolicy = readFeaturePolicy();
   assert.equal(featurePolicy.enableNonCoreFeatures, false);
@@ -73,19 +73,19 @@ try {
   assert.equal(featurePolicy.x402Enabled, false);
   assert.equal(featurePolicy.allowMcpRemotePrivateKeys, false);
 
-  process.env.HERMES_SUBMISSION_SEAL_KEY_ID = "kid-only";
+  process.env.AGORA_SUBMISSION_SEAL_KEY_ID = "kid-only";
   resetConfigCache();
   assert.throws(
     () => loadConfig(),
     /Submission sealing config must be fully specified/,
     "partial submission sealing config should be rejected",
   );
-  delete process.env.HERMES_SUBMISSION_SEAL_KEY_ID;
+  delete process.env.AGORA_SUBMISSION_SEAL_KEY_ID;
   resetConfigCache();
 
-  process.env.HERMES_ENABLE_NON_CORE_FEATURES = "true";
-  process.env.HERMES_X402_ENABLED = "true";
-  process.env.HERMES_X402_REPORT_ONLY = "true";
+  process.env.AGORA_ENABLE_NON_CORE_FEATURES = "true";
+  process.env.AGORA_X402_ENABLED = "true";
+  process.env.AGORA_X402_REPORT_ONLY = "true";
   const x402Config = readX402RuntimeConfig();
   assert.equal(x402Config.enabled, true);
   assert.equal(x402Config.reportOnly, true);

@@ -3,13 +3,13 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "forge-std/StdInvariant.sol";
-import {HermesChallenge} from "../src/HermesChallenge.sol";
-import {IHermesChallenge} from "../src/interfaces/IHermesChallenge.sol";
+import {AgoraChallenge} from "../src/AgoraChallenge.sol";
+import {IAgoraChallenge} from "../src/interfaces/IAgoraChallenge.sol";
 import {MockUSDC} from "./MockUSDC.sol";
 
-contract HermesInvariantHandler is Test {
+contract AgoraInvariantHandler is Test {
     MockUSDC public usdc;
-    HermesChallenge public challenge;
+    AgoraChallenge public challenge;
 
     address public poster = address(0x111);
     address public oracle = address(0x222);
@@ -28,8 +28,8 @@ contract HermesInvariantHandler is Test {
         usdc.mint(poster, 1_000_000e6);
 
         vm.prank(poster);
-        challenge = new HermesChallenge(
-            IHermesChallenge.ChallengeConfig({
+        challenge = new AgoraChallenge(
+            IAgoraChallenge.ChallengeConfig({
                 usdc: usdc,
                 poster: poster,
                 oracle: oracle,
@@ -39,7 +39,7 @@ contract HermesInvariantHandler is Test {
                 deadline: uint64(block.timestamp + 1 days),
                 disputeWindowHours: 168,
                 minimumScore: 0,
-                distributionType: IHermesChallenge.DistributionType.WinnerTakeAll,
+                distributionType: IAgoraChallenge.DistributionType.WinnerTakeAll,
                 maxSubmissions: 0,
                 maxSubmissionsPerSolver: 0
             })
@@ -66,7 +66,7 @@ contract HermesInvariantHandler is Test {
     function scoreA(uint256 score) public {
         if (subA == type(uint256).max) return;
         if (score == 0) return;
-        HermesChallenge.Submission memory submission = challenge.getSubmission(subA);
+        AgoraChallenge.Submission memory submission = challenge.getSubmission(subA);
         if (submission.scored) return;
         if (block.timestamp <= challenge.deadline()) {
             vm.warp(uint256(challenge.deadline()) + 1);
@@ -78,7 +78,7 @@ contract HermesInvariantHandler is Test {
     function scoreB(uint256 score) public {
         if (subB == type(uint256).max) return;
         if (score == 0) return;
-        HermesChallenge.Submission memory submission = challenge.getSubmission(subB);
+        AgoraChallenge.Submission memory submission = challenge.getSubmission(subB);
         if (submission.scored) return;
         if (block.timestamp <= challenge.deadline()) {
             vm.warp(uint256(challenge.deadline()) + 1);
@@ -92,7 +92,7 @@ contract HermesInvariantHandler is Test {
     }
 
     function finalizeIfReady() public {
-        if (challenge.status() == IHermesChallenge.Status.Finalized) return;
+        if (challenge.status() == IAgoraChallenge.Status.Finalized) return;
         if (block.timestamp <= challenge.deadline() + (uint256(challenge.disputeWindowHours()) * 1 hours)) {
             return;
         }
@@ -102,7 +102,7 @@ contract HermesInvariantHandler is Test {
     }
 
     function assertAccounting() public view {
-        if (challenge.status() != IHermesChallenge.Status.Finalized) return;
+        if (challenge.status() != IAgoraChallenge.Status.Finalized) return;
         uint256 remaining = rewardAmount - fee;
         uint256 payoutA = challenge.payoutByAddress(solverA);
         uint256 payoutB = challenge.payoutByAddress(solverB);
@@ -110,11 +110,11 @@ contract HermesInvariantHandler is Test {
     }
 }
 
-contract HermesInvariantTest is StdInvariant, Test {
-    HermesInvariantHandler private handler;
+contract AgoraInvariantTest is StdInvariant, Test {
+    AgoraInvariantHandler private handler;
 
     function setUp() public {
-        handler = new HermesInvariantHandler();
+        handler = new AgoraInvariantHandler();
         targetContract(address(handler));
     }
 

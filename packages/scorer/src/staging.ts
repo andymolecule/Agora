@@ -5,7 +5,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { downloadToPath } from "@hermes/ipfs";
+import { downloadToPath } from "@agora/ipfs";
 
 const WAD_SCALE = 1_000_000_000_000_000_000n;
 
@@ -14,7 +14,7 @@ const WAD_SCALE = 1_000_000_000_000_000_000n;
 // ---------------------------------------------------------------------------
 
 export async function createScoringWorkspace() {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-score-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "agora-score-"));
     const inputDir = path.join(root, "input");
     await fs.mkdir(inputDir, { recursive: true });
     return { root, inputDir };

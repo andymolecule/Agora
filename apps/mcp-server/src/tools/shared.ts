@@ -6,7 +6,7 @@ import {
   getWalletClient,
   submitChallengeResult,
   submitChallengeResultWithPrivateKey,
-} from "@hermes/chain";
+} from "@agora/chain";
 import {
   CHALLENGE_DB_STATUS,
   CHALLENGE_STATUS,
@@ -22,8 +22,8 @@ import {
   resolveEvalSpec,
   resolveSubmissionLimits,
   sealSubmission,
-} from "@hermes/common";
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
+} from "@agora/common";
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with { type: "json" };
 import {
   countSubmissionsBySolverForChallenge,
   countSubmissionsForChallenge,
@@ -36,20 +36,20 @@ import {
   markScoreJobSkipped,
   setSubmissionResultCid,
   upsertSubmissionOnChain,
-} from "@hermes/db";
-import { pinJSON, unpinCid } from "@hermes/ipfs";
+} from "@agora/db";
+import { pinJSON, unpinCid } from "@agora/ipfs";
 import {
   executeScoringPipeline,
   resolveSubmissionSource,
   wadToScore,
-} from "@hermes/scorer";
+} from "@agora/scorer";
 import { parseEventLogs } from "viem";
 import type { Abi } from "viem";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { privateKeyToAccount } from "viem/accounts";
 
-const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
+const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 /**
  * Simple semaphore to limit concurrent Docker scorer runs.
@@ -228,17 +228,17 @@ export async function submitSolution(input: {
 
   if (normalizedPrivateKey && !input.allowRemotePrivateKey) {
     throw new Error(
-      "privateKey over MCP HTTP is disabled. Use MCP stdio mode, or set HERMES_ENABLE_NON_CORE_FEATURES=true and HERMES_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true.",
+      "privateKey over MCP HTTP is disabled. Use MCP stdio mode, or set AGORA_ENABLE_NON_CORE_FEATURES=true and AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true.",
     );
   }
 
   const config = loadConfig();
-  if (!config.HERMES_API_URL) {
-    throw new Error("HERMES_API_URL is required for sealed submissions.");
+  if (!config.AGORA_API_URL) {
+    throw new Error("AGORA_API_URL is required for sealed submissions.");
   }
 
   const publicKeyResponse = await fetch(
-    `${config.HERMES_API_URL.replace(/\/$/, "")}/api/submissions/public-key`,
+    `${config.AGORA_API_URL.replace(/\/$/, "")}/api/submissions/public-key`,
   );
   if (!publicKeyResponse.ok) {
     throw new Error(
@@ -304,7 +304,7 @@ export async function submitSolution(input: {
     hash: txHash,
   });
   const parsed = parseEventLogs({
-    abi: HermesChallengeAbi,
+    abi: AgoraChallengeAbi,
     logs: receipt.logs,
     strict: false,
   });
@@ -391,7 +391,7 @@ export async function claimChallengePayout(input: {
   }
   if (normalizedPrivateKey && !input.allowRemotePrivateKey) {
     throw new Error(
-      "privateKey over MCP HTTP is disabled. Use MCP stdio mode, or set HERMES_ENABLE_NON_CORE_FEATURES=true and HERMES_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true.",
+      "privateKey over MCP HTTP is disabled. Use MCP stdio mode, or set AGORA_ENABLE_NON_CORE_FEATURES=true and AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true.",
     );
   }
 
@@ -467,7 +467,7 @@ export async function verifySubmission(input: {
         resultFormat: submission.result_format,
         challengeId: challenge.id,
         solverAddress: submission.solver_address,
-        privateKeyPem: loadConfig().HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+        privateKeyPem: loadConfig().AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
       }),
     });
     try {

@@ -1,7 +1,7 @@
 "use client";
 
 import { SlidersHorizontal, X } from "lucide-react";
-import { ON_CHAIN_STATUS_ORDER } from "@hermes/common";
+import { ON_CHAIN_STATUS_ORDER } from "@agora/common";
 
 export type ChallengeFilterState = {
   domain: string;

@@ -1,21 +1,21 @@
-import { loadConfig } from "@hermes/common";
+import { loadConfig } from "@agora/common";
 import { type SupabaseClient, createClient } from "@supabase/supabase-js";
 
-export type HermesDbClient = SupabaseClient;
+export type AgoraDbClient = SupabaseClient;
 
-export function createSupabaseClient(useServiceKey = false): HermesDbClient {
+export function createSupabaseClient(useServiceKey = false): AgoraDbClient {
   const config = loadConfig();
-  const url = config.HERMES_SUPABASE_URL;
+  const url = config.AGORA_SUPABASE_URL;
   if (!url) {
-    throw new Error("HERMES_SUPABASE_URL is required for database access.");
+    throw new Error("AGORA_SUPABASE_URL is required for database access.");
   }
 
   const key = useServiceKey
-    ? config.HERMES_SUPABASE_SERVICE_KEY
-    : config.HERMES_SUPABASE_ANON_KEY;
+    ? config.AGORA_SUPABASE_SERVICE_KEY
+    : config.AGORA_SUPABASE_ANON_KEY;
   if (!key) {
     throw new Error(
-      `Supabase key missing. Provide ${useServiceKey ? "HERMES_SUPABASE_SERVICE_KEY" : "HERMES_SUPABASE_ANON_KEY"}.`,
+      `Supabase key missing. Provide ${useServiceKey ? "AGORA_SUPABASE_SERVICE_KEY" : "AGORA_SUPABASE_ANON_KEY"}.`,
     );
   }
 

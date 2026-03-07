@@ -1,4 +1,4 @@
-import { DEFAULT_CHAIN_ID } from "@hermes/common";
+import { DEFAULT_CHAIN_ID } from "@agora/common";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { Command } from "commander";
 import {

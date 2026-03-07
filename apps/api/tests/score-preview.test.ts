@@ -6,17 +6,17 @@ test("score preview uses resolved evaluation values", () => {
   const input = createScorePreviewInput(
     {
       id: "challenge-1",
-      scoring_container: "ghcr.io/hermes-science/repro-scorer:latest",
+      scoring_container: "ghcr.io/agora-science/repro-scorer:latest",
       scoring_metric: "custom",
       dataset_test_cid: "ipfs://legacy-bundle",
-      eval_engine_digest: "ghcr.io/hermes-science/repro-scorer@sha256:resolved",
+      eval_engine_digest: "ghcr.io/agora-science/repro-scorer@sha256:resolved",
       eval_bundle_cid: "ipfs://resolved-bundle",
     },
     "ipfs://submission",
   );
 
   assert.deepEqual(input, {
-    image: "ghcr.io/hermes-science/repro-scorer@sha256:resolved",
+    image: "ghcr.io/agora-science/repro-scorer@sha256:resolved",
     evaluationBundle: { cid: "ipfs://resolved-bundle" },
     submission: { cid: "ipfs://submission" },
   });
@@ -27,10 +27,10 @@ test("score preview reports missing bundle from resolved challenge values", () =
     () =>
       createScorePreviewInput(
         {
-          scoring_container: "ghcr.io/hermes-science/repro-scorer:latest",
+          scoring_container: "ghcr.io/agora-science/repro-scorer:latest",
           scoring_metric: "custom",
           dataset_test_cid: null,
-          eval_engine_digest: "ghcr.io/hermes-science/repro-scorer@sha256:resolved",
+          eval_engine_digest: "ghcr.io/agora-science/repro-scorer@sha256:resolved",
           eval_bundle_cid: null,
         },
         "ipfs://submission",

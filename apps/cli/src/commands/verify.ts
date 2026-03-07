@@ -1,22 +1,22 @@
-import { getOnChainSubmission } from "@hermes/chain";
+import { getOnChainSubmission } from "@agora/chain";
 import {
   loadConfig,
   resolveEvalSpec,
   type ChallengeEvalRow,
-} from "@hermes/common";
+} from "@agora/common";
 import {
   createSupabaseClient,
   createVerification,
   getChallengeById,
   getProofBundleBySubmissionId,
   getSubmissionById,
-} from "@hermes/db";
-import type { ProofBundle as ProofBundlePayload } from "@hermes/common";
-import { getJSON } from "@hermes/ipfs";
+} from "@agora/db";
+import type { ProofBundle as ProofBundlePayload } from "@agora/common";
+import { getJSON } from "@agora/ipfs";
 import {
   executeScoringPipeline,
   resolveSubmissionSource,
-} from "@hermes/scorer";
+} from "@agora/scorer";
 import { Command } from "commander";
 import { keccak256, toBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -185,7 +185,7 @@ export function buildVerifyCommand() {
           resultFormat: submission.result_format,
           challengeId: challenge.id,
           solverAddress: submission.solver_address,
-          privateKeyPem: loadConfig().HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+          privateKeyPem: loadConfig().AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
         });
         const run = await executeScoringPipeline({
           image:
@@ -203,8 +203,8 @@ export function buildVerifyCommand() {
         if (opts.key) {
           ensurePrivateKey(opts.key);
         }
-        const verifierAddress = process.env.HERMES_PRIVATE_KEY
-          ? privateKeyToAccount(process.env.HERMES_PRIVATE_KEY as `0x${string}`)
+        const verifierAddress = process.env.AGORA_PRIVATE_KEY
+          ? privateKeyToAccount(process.env.AGORA_PRIVATE_KEY as `0x${string}`)
             .address
           : ZERO_ADDRESS;
 

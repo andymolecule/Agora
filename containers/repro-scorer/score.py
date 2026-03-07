@@ -23,7 +23,7 @@ def deterministic_json_write(payload: dict) -> None:
 
 
 def main() -> None:
-    tolerance = float(os.getenv("HERMES_TOLERANCE", "0.001"))
+    tolerance = float(os.getenv("AGORA_TOLERANCE", "0.001"))
 
     if not GROUND_TRUTH_PATH.exists():
         fail("Missing required file: /input/ground_truth.csv")

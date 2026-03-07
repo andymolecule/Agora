@@ -2,7 +2,7 @@ import { getPublicClient } from "../client.js";
 
 export const POLL_INTERVAL_MS = 30_000;
 const confirmationDepthValue = Number(
-  process.env.HERMES_INDEXER_CONFIRMATION_DEPTH ?? 3,
+  process.env.AGORA_INDEXER_CONFIRMATION_DEPTH ?? 3,
 );
 export const CONFIRMATION_DEPTH = BigInt(
   Number.isFinite(confirmationDepthValue) && confirmationDepthValue > 0
@@ -11,13 +11,13 @@ export const CONFIRMATION_DEPTH = BigInt(
 );
 const MAX_BLOCK_RANGE = BigInt(9_999);
 const RETRYABLE_EVENT_MAX_ATTEMPTS = Number(
-  process.env.HERMES_INDEXER_RETRY_MAX_ATTEMPTS ?? 8,
+  process.env.AGORA_INDEXER_RETRY_MAX_ATTEMPTS ?? 8,
 );
 const RETRYABLE_EVENT_BASE_DELAY_MS = Number(
-  process.env.HERMES_INDEXER_RETRY_BASE_DELAY_MS ?? 30_000,
+  process.env.AGORA_INDEXER_RETRY_BASE_DELAY_MS ?? 30_000,
 );
 const RETRY_REPLAY_WINDOW_BLOCKS = BigInt(
-  Number(process.env.HERMES_INDEXER_REPLAY_WINDOW_BLOCKS ?? 2000),
+  Number(process.env.AGORA_INDEXER_REPLAY_WINDOW_BLOCKS ?? 2000),
 );
 
 export const sleep = (ms: number) =>

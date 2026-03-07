@@ -1,3 +1,3 @@
-# Hermes Agent Runbook
+# Agora Agent Runbook
 
-Moved to `/Users/changyuesin/Hermes/docs/agent-guide.md`.
+Moved to `docs/agent-guide.md`.

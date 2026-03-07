@@ -4,16 +4,16 @@ import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { loadConfig, readFeaturePolicy } from "@hermes/common";
+import { loadConfig, readFeaturePolicy } from "@agora/common";
 import { z } from "zod";
-import { hermesClaimPayout } from "./tools/claim-payout.js";
-import { hermesGetChallenge } from "./tools/get-challenge.js";
-import { hermesGetLeaderboard } from "./tools/get-leaderboard.js";
-import { hermesGetSubmissionStatus } from "./tools/get-submission-status.js";
-import { hermesListChallenges } from "./tools/list-challenges.js";
-import { hermesScoreLocal } from "./tools/score-local.js";
-import { hermesSubmitSolution } from "./tools/submit-solution.js";
-import { hermesVerifySubmission } from "./tools/verify-submission.js";
+import { agoraClaimPayout } from "./tools/claim-payout.js";
+import { agoraGetChallenge } from "./tools/get-challenge.js";
+import { agoraGetLeaderboard } from "./tools/get-leaderboard.js";
+import { agoraGetSubmissionStatus } from "./tools/get-submission-status.js";
+import { agoraListChallenges } from "./tools/list-challenges.js";
+import { agoraScoreLocal } from "./tools/score-local.js";
+import { agoraSubmitSolution } from "./tools/submit-solution.js";
+import { agoraVerifySubmission } from "./tools/verify-submission.js";
 import { enforceMcpSessionPayment, getMcpX402Metadata } from "./x402.js";
 
 function asToolResult(payload: unknown) {
@@ -29,12 +29,12 @@ function asToolResult(payload: unknown) {
 
 function createServer(options?: { allowRemotePrivateKey?: boolean }) {
   const server = new McpServer({
-    name: "hermes-mcp",
+    name: "agora-mcp",
     version: "0.1.0",
   });
 
   server.registerTool(
-    "hermes-list-challenges",
+    "agora-list-challenges",
     {
       description:
         "List open science bounties. Filter by status (active, scoring, finalized), domain (longevity, drug_discovery, protein_design, omics, other), minimum USDC reward, or limit. Returns challenge UUID, title, reward, deadline, and current status.",
@@ -45,23 +45,23 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
         limit: z.number().int().positive().optional().describe("Max results to return"),
       }),
     },
-    async (input) => asToolResult(await hermesListChallenges(input)),
+    async (input) => asToolResult(await agoraListChallenges(input)),
   );
 
   server.registerTool(
-    "hermes-get-challenge",
+    "agora-get-challenge",
     {
       description:
         "Get full challenge details including description, datasets, submissions, and leaderboard. Response includes 'datasets' object with both canonical IPFS CIDs (train_cid, test_cid, spec_cid) and HTTP gateway download URLs (train_url, test_url, spec_url).",
       inputSchema: z.object({
-        challengeId: z.string().uuid().describe("Challenge UUID from hermes-list-challenges"),
+        challengeId: z.string().uuid().describe("Challenge UUID from agora-list-challenges"),
       }),
     },
-    async (input) => asToolResult(await hermesGetChallenge(input)),
+    async (input) => asToolResult(await agoraGetChallenge(input)),
   );
 
   server.registerTool(
-    "hermes-score-local",
+    "agora-score-local",
     {
       description:
         "Dry-run the Docker scorer on your submission file without submitting on-chain. Free and unlimited — use this to test your solution before committing gas. Returns score (0-1), details, and container digest.",
@@ -70,14 +70,14 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
         filePath: z.string().min(1).describe("Absolute path to your submission file (e.g. results.csv)"),
       }),
     },
-    async (input) => asToolResult(await hermesScoreLocal(input)),
+    async (input) => asToolResult(await agoraScoreLocal(input)),
   );
 
   server.registerTool(
-    "hermes-submit-solution",
+    "agora-submit-solution",
     {
       description:
-        "Pin a submission file to IPFS and submit its hash on-chain. Costs gas. Use hermes-score-local first to verify your score. The submission is automatically queued for scoring by the oracle worker. In stdio mode, uses the server's configured wallet. SECURITY: Only provide privateKey in local stdio mode. Never send private keys over HTTP/network connections — keys are transmitted in plaintext and could be intercepted.",
+        "Pin a submission file to IPFS and submit its hash on-chain. Costs gas. Use agora-score-local first to verify your score. The submission is automatically queued for scoring by the oracle worker. In stdio mode, uses the server's configured wallet. SECURITY: Only provide privateKey in local stdio mode. Never send private keys over HTTP/network connections — keys are transmitted in plaintext and could be intercepted.",
       inputSchema: z.object({
         challengeId: z.string().uuid().describe("Challenge UUID"),
         filePath: z.string().min(1).describe("Absolute path to submission file"),
@@ -86,14 +86,14 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
     },
     async (input) =>
       asToolResult(
-        await hermesSubmitSolution(input, {
+        await agoraSubmitSolution(input, {
           allowRemotePrivateKey: options?.allowRemotePrivateKey ?? false,
         }),
       ),
   );
 
   server.registerTool(
-    "hermes-claim-payout",
+    "agora-claim-payout",
     {
       description:
         "Claim your USDC payout after a challenge is finalized. Only callable by winning solvers. The challenge must be in 'finalized' status (deadline passed + dispute window elapsed + finalize() called). Returns the claim transaction hash. SECURITY: Only provide privateKey in local stdio mode. Never send private keys over HTTP/network connections.",
@@ -104,14 +104,14 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
     },
     async (input) =>
       asToolResult(
-        await hermesClaimPayout(input, {
+        await agoraClaimPayout(input, {
           allowRemotePrivateKey: options?.allowRemotePrivateKey ?? false,
         }),
       ),
   );
 
   server.registerTool(
-    "hermes-get-leaderboard",
+    "agora-get-leaderboard",
     {
       description:
         "Get ranked submissions for a challenge, sorted by score (highest first). Each entry includes solver address, score, and submission ID.",
@@ -119,23 +119,23 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
         challengeId: z.string().uuid().describe("Challenge UUID"),
       }),
     },
-    async (input) => asToolResult(await hermesGetLeaderboard(input)),
+    async (input) => asToolResult(await agoraGetLeaderboard(input)),
   );
 
   server.registerTool(
-    "hermes-get-submission-status",
+    "agora-get-submission-status",
     {
       description:
         "Check the scoring status of a specific submission. Returns score, proof bundle CID, and whether the submission has been scored on-chain.",
       inputSchema: z.object({
-        submissionId: z.string().uuid().describe("Submission UUID from hermes-get-challenge or hermes-submit-solution"),
+        submissionId: z.string().uuid().describe("Submission UUID from agora-get-challenge or agora-submit-solution"),
       }),
     },
-    async (input) => asToolResult(await hermesGetSubmissionStatus(input)),
+    async (input) => asToolResult(await agoraGetSubmissionStatus(input)),
   );
 
   server.registerTool(
-    "hermes-verify-submission",
+    "agora-verify-submission",
     {
       description:
         "Re-run the Docker scorer independently and compare against the on-chain score. Returns MATCH if scores agree within tolerance, MISMATCH otherwise. Requires Docker.",
@@ -145,7 +145,7 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
         tolerance: z.number().optional().describe("Score comparison tolerance (default 0.001)"),
       }),
     },
-    async (input) => asToolResult(await hermesVerifySubmission(input)),
+    async (input) => asToolResult(await agoraVerifySubmission(input)),
   );
 
   return server;
@@ -200,9 +200,9 @@ async function createHttpMcpSession(
 
 function assertRequiredConfig() {
   const config = loadConfig();
-  if (!config.HERMES_PINATA_JWT) {
+  if (!config.AGORA_PINATA_JWT) {
     throw new Error(
-      "HERMES_PINATA_JWT is not set. Submissions require IPFS pinning. Set it in .env or environment.",
+      "AGORA_PINATA_JWT is not set. Submissions require IPFS pinning. Set it in .env or environment.",
     );
   }
 }
@@ -216,7 +216,7 @@ async function startStdioMode() {
 
 function startHttpMode() {
   assertRequiredConfig();
-  const port = Number(process.env.HERMES_MCP_PORT ?? 3001);
+  const port = Number(process.env.AGORA_MCP_PORT ?? 3001);
   const allowRemotePrivateKey = readFeaturePolicy().allowMcpRemotePrivateKeys;
   const sessions = new Map<string, HttpMcpSession>();
 
@@ -311,7 +311,7 @@ function startHttpMode() {
     })();
   });
 
-  const host = process.env.HERMES_MCP_HOST ?? "127.0.0.1";
+  const host = process.env.AGORA_MCP_HOST ?? "127.0.0.1";
   if (host !== "127.0.0.1" && host !== "localhost" && allowRemotePrivateKey) {
     console.warn(
       "WARNING: MCP HTTP server bound to non-localhost with remote private keys enabled. " +
@@ -320,7 +320,7 @@ function startHttpMode() {
   }
 
   server.listen(port, host, () => {
-    console.log(`Hermes MCP server listening on http://${host}:${port}`);
+    console.log(`Agora MCP server listening on http://${host}:${port}`);
   });
 }
 

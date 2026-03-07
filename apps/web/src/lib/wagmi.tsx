@@ -25,12 +25,12 @@ const chain =
     : {
       ...baseSepolia,
       id: CHAIN_ID,
-      name: "Hermes Chain",
+      name: "Agora Chain",
     };
 
 const config = getDefaultConfig({
-  appName: "Hermes",
-  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "hermes-dev",
+  appName: "Agora",
+  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "agora-dev",
   chains: [chain],
   transports: {
     [chain.id]: http(RPC_URL),

@@ -1,6 +1,6 @@
 # Reproducibility Test Data
 
-Test fixtures for the current Hermes reproducibility flow using the CSV comparison scorer in `containers/repro-scorer`.
+Test fixtures for the current Agora reproducibility flow using the CSV comparison scorer in `containers/repro-scorer`.
 
 This folder is meant to feel like a small but believable computational reproducibility bounty:
 - public input data is given to solvers
@@ -17,7 +17,7 @@ The reproducibility scorer currently expects:
 
 The built-in preset is:
 - `CSV Comparison`
-- official container: `ghcr.io/hermes-science/repro-scorer:latest`
+- official container: `ghcr.io/agora-science/repro-scorer:latest`
 
 ## Files
 

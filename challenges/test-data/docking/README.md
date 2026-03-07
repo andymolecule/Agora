@@ -1,6 +1,6 @@
 # Docking Test Data
 
-Realistic posting fixtures for the Hermes docking category.
+Realistic posting fixtures for the Agora docking category.
 
 This folder is useful for:
 - testing the web posting flow for docking challenges

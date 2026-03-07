@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 const SECRET_ENV_PATTERN =
-  /console\.(log|info|warn|error)\([\s\S]{0,400}?process\.env\.(HERMES_PRIVATE_KEY|HERMES_ORACLE_KEY|PRIVATE_KEY)/m;
+  /console\.(log|info|warn|error)\([\s\S]{0,400}?process\.env\.(AGORA_PRIVATE_KEY|AGORA_ORACLE_KEY|PRIVATE_KEY)/m;
 
 function collectSourceFiles(rootDir: string): string[] {
   const queue = [rootDir];

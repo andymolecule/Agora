@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { downloadToPath, getText } from "@hermes/ipfs";
+import { downloadToPath, getText } from "@agora/ipfs";
 import { Command } from "commander";
 import {
   applyConfigToEnv,

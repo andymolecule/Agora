@@ -3,7 +3,7 @@ import { ClientLayout } from "../components/ClientLayout";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Hermes",
+  title: "Agora",
   description: "On-chain science bounties on Base",
 };
 
@@ -15,7 +15,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("hermes-theme");if(t==="dark"||t==="light"){document.documentElement.setAttribute("data-theme",t)}else if(window.matchMedia("(prefers-color-scheme: dark)").matches){document.documentElement.setAttribute("data-theme","dark")}}catch(e){}})()`,
+            __html: `(function(){try{var t=localStorage.getItem("agora-theme");if(t==="dark"||t==="light"){document.documentElement.setAttribute("data-theme",t)}else if(window.matchMedia("(prefers-color-scheme: dark)").matches){document.documentElement.setAttribute("data-theme","dark")}}catch(e){}})()`,
           }}
         />
       </head>

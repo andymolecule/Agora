@@ -3,7 +3,7 @@ import {
   getChallengeById,
   listChallengesWithDetails,
   listSubmissionsForChallenge,
-} from "@hermes/db";
+} from "@agora/db";
 import {
   CHALLENGE_DB_STATUS,
   CHALLENGE_STATUS,
@@ -12,7 +12,7 @@ import {
   isChallengeDbStatus,
   type ChallengeDbStatus,
   type ChallengeDisplayStatus,
-} from "@hermes/common";
+} from "@agora/common";
 import { z } from "zod";
 
 type SubmissionRow = Awaited<ReturnType<typeof listSubmissionsForChallenge>>[number];

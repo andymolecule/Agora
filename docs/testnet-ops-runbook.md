@@ -1,6 +1,6 @@
-# Hermes Testnet Ops Runbook
+# Agora Testnet Ops Runbook
 
-This runbook is for Base Sepolia operations before opening Hermes to real users.
+This runbook is for Base Sepolia operations before opening Agora to real users.
 
 ## 1. Pre-Launch Checklist
 
@@ -8,7 +8,7 @@ This runbook is for Base Sepolia operations before opening Hermes to real users.
 2. Ensure all required environment variables are set in your host platform.
 3. Apply Supabase migrations in `packages/db/supabase/migrations`.
 4. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker, CLI, and web env.
-5. Set API CORS allowlist via `HERMES_CORS_ORIGINS` (comma-separated exact origins).
+5. Set API CORS allowlist via `AGORA_CORS_ORIGINS` (comma-separated exact origins).
 6. Build and run preflight:
 
 ```bash
@@ -23,17 +23,17 @@ Four processes run in production: **API**, **Indexer**, **Worker** (scoring auto
 
 | Process | Entrypoint | Role |
 |---------|-----------|------|
-| `hermes-api` | `apps/api/dist/index.js` | REST API + web backend |
-| `hermes-indexer` | `packages/chain/dist/indexer.js` | Chain event poller → Supabase |
-| `hermes-worker` | `apps/api/dist/worker.js` | Polls `score_jobs`, runs Docker scorer, posts scores on-chain |
-| `hermes-mcp` | `apps/mcp-server/dist/index.js` | MCP server for AI agent discovery, submission, and payout |
+| `agora-api` | `apps/api/dist/index.js` | REST API + web backend |
+| `agora-indexer` | `packages/chain/dist/indexer.js` | Chain event poller → Supabase |
+| `agora-worker` | `apps/api/dist/worker.js` | Polls `score_jobs`, runs Docker scorer, posts scores on-chain |
+| `agora-mcp` | `apps/mcp-server/dist/index.js` | MCP server for AI agent discovery, submission, and payout |
 
 ### Option A: Manual
 
 ```bash
-pnpm --filter @hermes/api start
-pnpm --filter @hermes/chain indexer
-pnpm --filter @hermes/api worker
+pnpm --filter @agora/api start
+pnpm --filter @agora/chain indexer
+pnpm --filter @agora/api worker
 ```
 
 ### Option B: PM2 (recommended)
@@ -41,14 +41,14 @@ pnpm --filter @hermes/api worker
 ```bash
 pm2 start scripts/ops/ecosystem.config.cjs
 pm2 save
-pm2 status   # should show 4 processes: hermes-api, hermes-indexer, hermes-worker, hermes-mcp
+pm2 status   # should show 4 processes: agora-api, agora-indexer, agora-worker, agora-mcp
 ```
 
 ### Architecture boundary
 
 - **API** creates `score_jobs` rows when submissions arrive (via indexer events).
 - **Worker** polls the `score_jobs` table, claims jobs atomically (Postgres RPC), runs the Docker scorer container, and posts scores + proof bundles on-chain.
-- **Scorer** is the Docker container itself (e.g. `ghcr.io/hermes-science/repro-scorer:v1`) — stateless, sandboxed, no network access.
+- **Scorer** is the Docker container itself (e.g. `ghcr.io/agora-science/repro-scorer:v1`) — stateless, sandboxed, no network access.
 
 The worker and API share no runtime state. The only coordination point is the `score_jobs` table.
 
@@ -61,12 +61,12 @@ Run one partial loop on Base Sepolia:
 ```
 
 Expected flow (same-session):
-- `hm post` succeeds
+- `agora post` succeeds
 - challenge appears via indexer/API
-- `hm submit` succeeds
-- `hm score` + `hm verify` succeed
+- `agora submit` succeeds
+- `agora score` + `agora verify` succeed
 
-> **Note:** `hm finalize` and `hm claim` require the dispute window (168–2160 hours) to elapse after deadline. These cannot be tested in the same session on live Base Sepolia. To test the full lifecycle including finalization, use a local Anvil RPC with `evm_increaseTime` for time travel.
+> **Note:** `agora finalize` and `agora claim` require the dispute window (168–2160 hours) to elapse after deadline. These cannot be tested in the same session on live Base Sepolia. To test the full lifecycle including finalization, use a local Anvil RPC with `evm_increaseTime` for time travel.
 
 ## 4. Monitoring
 
@@ -75,9 +75,9 @@ Check every 15-30 minutes during first launch window:
 1. API `/healthz` returns 200.
 2. Indexer logs show new blocks processed.
 3. `indexed_events` block number continues advancing.
-4. `hm doctor` passes all required checks.
+4. `agora doctor` passes all required checks.
 5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true`.
-6. Tail worker logs: `pm2 logs hermes-worker --lines 50`.
+6. Tail worker logs: `pm2 logs agora-worker --lines 50`.
 7. Indexer health: `curl <API_URL>/api/indexer-health` should report the intended factory address and no active alternate factories.
 
 ### Confirming the worker is scoring
@@ -92,7 +92,7 @@ Check every 15-30 minutes during first launch window:
 ### API down
 
 1. Restart API process.
-2. Verify `HERMES_*` env vars in host.
+2. Verify `AGORA_*` env vars in host.
 3. Verify Supabase connectivity.
 
 ### Indexer stalled
@@ -104,12 +104,12 @@ Check every 15-30 minutes during first launch window:
 5. Rewind cursors with CLI (dry-run first):
 
 ```bash
-hm reindex --from-block <block_number> --dry-run
-hm reindex --from-block <block_number>
+agora reindex --from-block <block_number> --dry-run
+agora reindex --from-block <block_number>
 ```
 
 6. If a deep replay is required, include `--purge-indexed-events`.
-7. Ensure `HERMES_INDEXER_START_BLOCK` is set before restarting indexer when bootstrapping a new factory.
+7. Ensure `AGORA_INDEXER_START_BLOCK` is set before restarting indexer when bootstrapping a new factory.
 8. If the factory address changed, align API/indexer/worker/web env first, restart all services, then rewind the new factory cursor.
 
 ### Bad deploy / regression
@@ -121,18 +121,18 @@ hm reindex --from-block <block_number>
 ### Worker stalled
 
 1. Check `GET /api/worker-health` — if `status: "warning"`, the oldest queued job has been waiting > 5 minutes.
-2. Tail logs: `pm2 logs hermes-worker --lines 100`.
+2. Tail logs: `pm2 logs agora-worker --lines 100`.
 3. Common causes:
-   - Docker daemon not running or unreachable → restart Docker, then `pm2 restart hermes-worker`.
-   - RPC errors → check `HERMES_RPC_URL` reachability.
-   - All jobs stuck in `failed` → inspect `last_error` column, then retry: `hm retry-failed-jobs` (dry-run first), `hm retry-failed-jobs --yes` to execute.
-4. If the worker process itself crashed: `pm2 restart hermes-worker`. PM2 uses exponential backoff (3s base).
+   - Docker daemon not running or unreachable → restart Docker, then `pm2 restart agora-worker`.
+   - RPC errors → check `AGORA_RPC_URL` reachability.
+   - All jobs stuck in `failed` → inspect `last_error` column, then retry: `agora retry-failed-jobs` (dry-run first), `agora retry-failed-jobs --yes` to execute.
+4. If the worker process itself crashed: `pm2 restart agora-worker`. PM2 uses exponential backoff (3s base).
 
 ### Oracle key issue
 
 1. Stop scoring operations immediately.
 2. Rotate oracle key and reconfigure env.
-3. Resume scoring only after `hm doctor` and one dry-run check.
+3. Resume scoring only after `agora doctor` and one dry-run check.
 
 ## 6. Rollback Criteria
 

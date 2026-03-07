@@ -3,7 +3,7 @@ import {
   extractX402PaymentHeader,
   readX402RuntimeConfig,
   verifyAndSettleX402Payment,
-} from "@hermes/common";
+} from "@agora/common";
 
 const MCP_SESSION_PRICE_USD = 0.01;
 let x402ConfigLogged = false;

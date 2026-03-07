@@ -1,15 +1,15 @@
-import { createSupabaseClient, getChallengeById, listSubmissionsForChallenge } from "@hermes/db";
+import { createSupabaseClient, getChallengeById, listSubmissionsForChallenge } from "@agora/db";
 import {
   readFeaturePolicy,
   resolveEvalSpec,
   type ChallengeEvalRow,
   type ChallengeSpecOutput,
-} from "@hermes/common";
+} from "@agora/common";
 import {
   executeScoringPipeline,
   scoreToWad,
   type ExecuteScoringPipelineInput,
-} from "@hermes/scorer";
+} from "@agora/scorer";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -89,7 +89,7 @@ router.post(
       return c.json(
         {
           error:
-            "Score preview is disabled in v0 core mode. Enable HERMES_ENABLE_NON_CORE_FEATURES=true and HERMES_ENABLE_SCORE_PREVIEW=true to use it.",
+            "Score preview is disabled in v0 core mode. Enable AGORA_ENABLE_NON_CORE_FEATURES=true and AGORA_ENABLE_SCORE_PREVIEW=true to use it.",
         },
         403,
       );

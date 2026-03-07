@@ -3,7 +3,7 @@ import {
   DEFAULT_CHAIN_ID,
   SUBMISSION_LIMITS,
   challengeSpecSchema,
-} from "@hermes/common";
+} from "@agora/common";
 import { buildChallengeInsert } from "../queries/challenges";
 
 const baseInput = {
@@ -29,7 +29,7 @@ const regressionSpec = challengeSpecSchema.parse({
     hidden_labels: "ipfs://QmHiddenLabelsOnly",
   },
   scoring: {
-    container: "ghcr.io/hermes-science/regression-scorer:latest",
+    container: "ghcr.io/agora-science/regression-scorer:latest",
     metric: "rmse",
   },
   reward: {
@@ -71,7 +71,7 @@ const inferredSpec = challengeSpecSchema.parse({
     test: "ipfs://QmLegacyTest",
   },
   scoring: {
-    container: "ghcr.io/hermes-science/regression-scorer:latest",
+    container: "ghcr.io/agora-science/regression-scorer:latest",
     metric: "rmse",
   },
   reward: {
@@ -104,7 +104,7 @@ const mismatchSpec = challengeSpecSchema.parse({
   id: "ch-3",
   preset_id: "regression_v1",
   scoring: {
-    container: "ghcr.io/hermes-science/repro-scorer:latest",
+    container: "ghcr.io/agora-science/repro-scorer:latest",
     metric: "rmse",
   },
 });
@@ -185,7 +185,7 @@ const reproMissingBundleSpec = challengeSpecSchema.parse({
   type: "reproducibility",
   description: "desc",
   scoring: {
-    container: "ghcr.io/hermes-science/repro-scorer:latest",
+    container: "ghcr.io/agora-science/repro-scorer:latest",
     metric: "custom",
   },
   reward: {
@@ -206,11 +206,11 @@ await assert.rejects(
   /Reproducibility challenges require an evaluation bundle/,
 );
 
-const originalRequirePinned = process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS;
+const originalRequirePinned = process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS;
 const originalFetch = globalThis.fetch;
 const originalDateNow = Date.now;
 try {
-  process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS = "true";
+  process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS = "true";
 
   let fetchCalls = 0;
   globalThis.fetch = (async () => {
@@ -230,11 +230,11 @@ try {
   });
   assert.equal(
     pinnedInsert.scoring_container,
-    "ghcr.io/hermes-science/regression-scorer@sha256:" + "b".repeat(64),
+    "ghcr.io/agora-science/regression-scorer@sha256:" + "b".repeat(64),
   );
   assert.equal(
     pinnedInsert.eval_engine_digest,
-    "ghcr.io/hermes-science/regression-scorer@sha256:" + "b".repeat(64),
+    "ghcr.io/agora-science/regression-scorer@sha256:" + "b".repeat(64),
   );
   assert.equal(pinnedInsert.eval_engine_id, "regression_v1");
 
@@ -245,7 +245,7 @@ try {
   });
   assert.equal(
     cachedInsert.scoring_container,
-    "ghcr.io/hermes-science/regression-scorer@sha256:" + "b".repeat(64),
+    "ghcr.io/agora-science/regression-scorer@sha256:" + "b".repeat(64),
   );
   assert.equal(fetchCalls, 1);
 
@@ -262,7 +262,7 @@ try {
       test: "ipfs://QmReproBundle",
     },
     scoring: {
-      container: "ghcr.io/hermes-science/repro-scorer:latest",
+      container: "ghcr.io/agora-science/repro-scorer:latest",
       metric: "custom",
     },
     reward: {
@@ -329,7 +329,7 @@ try {
     /Timed out resolving official preset image/,
   );
 
-  delete process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS;
+  delete process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS;
   let nonStrictFetchCalls = 0;
   globalThis.fetch = (async () => {
     nonStrictFetchCalls += 1;
@@ -347,16 +347,16 @@ try {
   });
   assert.equal(
     nonStrictInsert.scoring_container,
-    "ghcr.io/hermes-science/regression-scorer:latest",
+    "ghcr.io/agora-science/regression-scorer:latest",
   );
   assert.equal(nonStrictFetchCalls, 0);
 } finally {
   globalThis.fetch = originalFetch;
   Date.now = originalDateNow;
   if (originalRequirePinned === undefined) {
-    delete process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS;
+    delete process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS;
   } else {
-    process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS = originalRequirePinned;
+    process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS = originalRequirePinned;
   }
 }
 

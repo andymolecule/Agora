@@ -1,14 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import { loadConfig } from "@hermes/common";
+import { loadConfig } from "@agora/common";
 import pinataSDK from "@pinata/sdk";
 
 function createClient() {
   const config = loadConfig();
-  if (!config.HERMES_PINATA_JWT) {
-    throw new Error("HERMES_PINATA_JWT is required to pin to IPFS.");
+  if (!config.AGORA_PINATA_JWT) {
+    throw new Error("AGORA_PINATA_JWT is required to pin to IPFS.");
   }
-  return new pinataSDK({ pinataJWTKey: config.HERMES_PINATA_JWT });
+  return new pinataSDK({ pinataJWTKey: config.AGORA_PINATA_JWT });
 }
 
 let cachedClient: ReturnType<typeof createClient> | null = null;

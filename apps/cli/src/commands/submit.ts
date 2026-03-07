@@ -4,21 +4,21 @@ import {
   getPublicClient,
   getWalletClient,
   submitChallengeResult,
-} from "@hermes/chain";
+} from "@agora/chain";
 import {
   CHALLENGE_STATUS,
   SUBMISSION_RESULT_FORMAT,
   computeSubmissionResultHash,
   importSubmissionSealPublicKey,
   sealSubmission,
-} from "@hermes/common";
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
+} from "@agora/common";
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json";
 import {
   createSupabaseClient,
   getChallengeById,
   setSubmissionResultCid,
-} from "@hermes/db";
-import { pinJSON } from "@hermes/ipfs";
+} from "@agora/db";
+import { pinJSON } from "@agora/ipfs";
 import { Command } from "commander";
 import { parseEventLogs } from "viem";
 import {
@@ -30,8 +30,8 @@ import { printJson, printSuccess, printWarning } from "../lib/output";
 import { createSpinner } from "../lib/spinner";
 import { ensurePrivateKey } from "../lib/wallet";
 
-const HermesChallengeAbi =
-  HermesChallengeAbiJson as unknown as readonly unknown[];
+const AgoraChallengeAbi =
+  AgoraChallengeAbiJson as unknown as readonly unknown[];
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
 
 type ChallengeRecord = {
@@ -60,7 +60,7 @@ export function buildSubmitCommand() {
     .argument("<file>", "Result file path")
     .requiredOption("--challenge <id>", "Challenge id")
     .option("--dry-run", "Pin only, skip on-chain submission", false)
-    .option("--key <ref>", "Private key reference, e.g. env:HERMES_PRIVATE_KEY")
+    .option("--key <ref>", "Private key reference, e.g. env:AGORA_PRIVATE_KEY")
     .option("--format <format>", "table or json", "table")
     .action(
       async (
@@ -94,7 +94,7 @@ export function buildSubmitCommand() {
         const sourcePath = path.resolve(process.cwd(), file);
         const sourceBytes = await fs.readFile(sourcePath);
         const publicKeyResponse = await fetch(
-          `${process.env.HERMES_API_URL?.replace(/\/$/, "")}/api/submissions/public-key`,
+          `${process.env.AGORA_API_URL?.replace(/\/$/, "")}/api/submissions/public-key`,
         );
         if (!publicKeyResponse.ok) {
           throw new Error(`Failed to fetch submission public key: ${await publicKeyResponse.text()}`);
@@ -177,7 +177,7 @@ export function buildSubmitCommand() {
           hash: txHash,
         });
         const parsedLogs = parseEventLogs({
-          abi: HermesChallengeAbi,
+          abi: AgoraChallengeAbi,
           logs: receipt.logs,
           strict: false,
         }) as Array<{ eventName?: string; args?: readonly unknown[] }>;
@@ -214,7 +214,7 @@ export function buildSubmitCommand() {
               "Failed to update result CID (indexer may not have processed the submission yet).";
             if (opts.format !== "json") {
               printWarning(
-                `${cidUpdateWarning} Retry 'hm submit' in a few seconds if scoring cannot find the CID.`,
+                `${cidUpdateWarning} Retry 'agora submit' in a few seconds if scoring cannot find the CID.`,
               );
             }
           }

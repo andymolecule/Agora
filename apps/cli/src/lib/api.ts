@@ -1,7 +1,7 @@
 export async function fetchApiJson<T>(pathname: string): Promise<T> {
-  const apiUrl = process.env.HERMES_API_URL;
+  const apiUrl = process.env.AGORA_API_URL;
   if (!apiUrl) {
-    throw new Error("HERMES_API_URL is required for API requests.");
+    throw new Error("AGORA_API_URL is required for API requests.");
   }
 
   const normalizedPath = pathname.startsWith("/") ? pathname : `/${pathname}`;

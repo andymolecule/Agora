@@ -4,12 +4,12 @@ pragma solidity ^0.8.24;
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IERC20Permit} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
-import {HermesChallenge} from "./HermesChallenge.sol";
-import {IHermesChallenge} from "./interfaces/IHermesChallenge.sol";
-import {HermesErrors} from "./libraries/HermesErrors.sol";
-import {HermesEvents} from "./libraries/HermesEvents.sol";
+import {AgoraChallenge} from "./AgoraChallenge.sol";
+import {IAgoraChallenge} from "./interfaces/IAgoraChallenge.sol";
+import {AgoraErrors} from "./libraries/AgoraErrors.sol";
+import {AgoraEvents} from "./libraries/AgoraEvents.sol";
 
-contract HermesFactory is Ownable {
+contract AgoraFactory is Ownable {
     IERC20 public immutable usdc;
     address public oracle;
     address public treasury;
@@ -18,7 +18,7 @@ contract HermesFactory is Ownable {
 
     constructor(IERC20 usdc_, address oracle_, address treasury_) Ownable(msg.sender) {
         if (address(usdc_) == address(0) || oracle_ == address(0) || treasury_ == address(0)) {
-            revert HermesErrors.InvalidAddress();
+            revert AgoraErrors.InvalidAddress();
         }
         usdc = usdc_;
         oracle = oracle_;
@@ -26,12 +26,12 @@ contract HermesFactory is Ownable {
     }
 
     function setOracle(address newOracle) external onlyOwner {
-        if (newOracle == address(0)) revert HermesErrors.InvalidAddress();
+        if (newOracle == address(0)) revert AgoraErrors.InvalidAddress();
         oracle = newOracle;
     }
 
     function setTreasury(address newTreasury) external onlyOwner {
-        if (newTreasury == address(0)) revert HermesErrors.InvalidAddress();
+        if (newTreasury == address(0)) revert AgoraErrors.InvalidAddress();
         treasury = newTreasury;
     }
 
@@ -81,13 +81,13 @@ contract HermesFactory is Ownable {
         uint256 maxSubmissions_,
         uint256 maxSubmissionsPerSolver_
     ) internal returns (uint256 challengeId, address challengeAddr) {
-        if (distributionType > uint8(IHermesChallenge.DistributionType.Proportional)) {
-            revert HermesErrors.InvalidDistribution();
+        if (distributionType > uint8(IAgoraChallenge.DistributionType.Proportional)) {
+            revert AgoraErrors.InvalidDistribution();
         }
-        IHermesChallenge.DistributionType dist = IHermesChallenge.DistributionType(distributionType);
+        IAgoraChallenge.DistributionType dist = IAgoraChallenge.DistributionType(distributionType);
 
-        HermesChallenge challenge = new HermesChallenge(
-            IHermesChallenge.ChallengeConfig({
+        AgoraChallenge challenge = new AgoraChallenge(
+            IAgoraChallenge.ChallengeConfig({
                 usdc: usdc,
                 poster: msg.sender,
                 oracle: oracle,
@@ -109,11 +109,11 @@ contract HermesFactory is Ownable {
         challengeCount += 1;
 
         bool success = usdc.transferFrom(msg.sender, challengeAddr, rewardAmount);
-        if (!success) revert HermesErrors.TransferFromFailed();
+        if (!success) revert AgoraErrors.TransferFromFailed();
 
-        emit HermesEvents.ChallengeCreated(challengeId, challengeAddr, msg.sender, rewardAmount);
+        emit AgoraEvents.ChallengeCreated(challengeId, challengeAddr, msg.sender, rewardAmount);
         if (labTBA != address(0)) {
-            emit HermesEvents.ChallengeLinkedToLab(challengeId, labTBA);
+            emit AgoraEvents.ChallengeLinkedToLab(challengeId, labTBA);
         }
     }
 }

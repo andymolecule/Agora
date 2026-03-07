@@ -1,5 +1,5 @@
 {
-  "name": "@hermes/chain",
+  "name": "@agora/chain",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -18,9 +18,9 @@
     "indexer:local": "node dist/indexer.js"
   },
   "dependencies": {
-    "@hermes/common": "workspace:*",
-    "@hermes/db": "workspace:*",
-    "@hermes/ipfs": "workspace:*",
+    "@agora/common": "workspace:*",
+    "@agora/db": "workspace:*",
+    "@agora/ipfs": "workspace:*",
     "viem": "^2.21.15",
     "yaml": "^2.6.1"
   },

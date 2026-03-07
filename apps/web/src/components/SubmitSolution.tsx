@@ -1,6 +1,6 @@
 "use client";
 
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json";
 import {
     CHALLENGE_STATUS,
     SUBMISSION_RESULT_FORMAT,
@@ -10,7 +10,7 @@ import {
     sealSubmission,
     serializeSealedSubmissionEnvelope,
     validateCsvHeaders,
-} from "@hermes/common";
+} from "@agora/common";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useRef, useState } from "react";
 import type { Abi } from "viem";
@@ -29,7 +29,7 @@ import { CHAIN_ID } from "../lib/config";
 import { createSubmissionRecord, getSubmissionPublicKey } from "../lib/api";
 import { ScoringTrustNotice } from "./ScoringTrustNotice";
 
-const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
+const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 interface SubmitSolutionProps {
     challengeId: string;
@@ -186,7 +186,7 @@ export function SubmitSolution({
             const tx = await writeContractAsync({
                 account: address,
                 address: challengeAddress as `0x${string}`,
-                abi: HermesChallengeAbi,
+                abi: AgoraChallengeAbi,
                 functionName: "submit",
                 args: [resultHash],
             });
@@ -349,7 +349,7 @@ export function SubmitSolution({
                                 )}
                             </div>
                             <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/50 mt-2">
-                                Hidden from the public. Hermes-operated scoring can decrypt for scoring.
+                                Hidden from the public. Agora-operated scoring can decrypt for scoring.
                             </p>
                         </div>
                     )}
@@ -372,7 +372,7 @@ export function SubmitSolution({
                                 Encrypted locally, sealed to IPFS, hash recorded on-chain.
                             </p>
                             <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/50 mt-1">
-                                Hidden from the public. Hermes-operated scoring can decrypt for scoring.
+                                Hidden from the public. Agora-operated scoring can decrypt for scoring.
                             </p>
                         </div>
                     )}

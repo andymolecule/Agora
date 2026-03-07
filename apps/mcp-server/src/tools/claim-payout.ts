@@ -1,6 +1,6 @@
 import { claimChallengePayout } from "./shared.js";
 
-export async function hermesClaimPayout(
+export async function agoraClaimPayout(
   input: { challengeId: string; privateKey?: string },
   options: { allowRemotePrivateKey: boolean },
 ) {

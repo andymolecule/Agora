@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ScoreResult } from "@hermes/common";
+import type { ScoreResult } from "@agora/common";
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_RUNNER_LIMITS = {
@@ -155,7 +155,7 @@ export async function runScorer(
   const outputDir = path.join(path.dirname(inputDir), "output");
   await fs.rm(outputDir, { recursive: true, force: true });
   await fs.mkdir(outputDir, { recursive: true, mode: 0o777 });
-  const containerName = `hermes-score-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const containerName = `agora-score-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const pull = await runCommand("docker", ["pull", input.image], timeoutMs);
   if (pull.code !== 0) {

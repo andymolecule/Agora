@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Clock } from "lucide-react";
-import { CHALLENGE_STATUS } from "@hermes/common";
+import { CHALLENGE_STATUS } from "@agora/common";
 import { deadlineCountdown, formatUsdc } from "../lib/format";
 import type { Challenge } from "../lib/types";
 

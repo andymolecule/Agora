@@ -1,4 +1,4 @@
--- Hermes initial schema
+-- Agora initial schema
 create extension if not exists "pgcrypto";
 
 create table if not exists challenges (

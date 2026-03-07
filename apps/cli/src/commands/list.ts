@@ -1,11 +1,11 @@
-import { createSupabaseClient, listChallengesWithDetails } from "@hermes/db";
+import { createSupabaseClient, listChallengesWithDetails } from "@agora/db";
 import {
   CHALLENGE_DB_STATUS,
   CHALLENGE_STATUS,
   deriveDisplayStatus,
   isChallengeDbStatus,
   type ChallengeDbStatus,
-} from "@hermes/common";
+} from "@agora/common";
 import { Command } from "commander";
 import {
   applyConfigToEnv,

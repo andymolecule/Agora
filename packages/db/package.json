@@ -1,5 +1,5 @@
 {
-  "name": "@hermes/db",
+  "name": "@agora/db",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "test": "node --import tsx src/tests/challenge-insert-presets.ts && node --import tsx src/tests/submission-write-ownership.ts && node --import tsx src/tests/score-job-heartbeat.ts && node --import tsx src/tests/score-job-observability.ts && node --import tsx src/tests/db-queries.ts"
   },
   "dependencies": {
-    "@hermes/common": "workspace:*",
+    "@agora/common": "workspace:*",
     "@supabase/supabase-js": "^2.45.4"
   },
   "devDependencies": {

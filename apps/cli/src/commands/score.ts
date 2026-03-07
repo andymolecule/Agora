@@ -1,25 +1,25 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getPublicClient, postScore } from "@hermes/chain";
+import { getPublicClient, postScore } from "@agora/chain";
 import {
   loadConfig,
   resolveEvalSpec,
   SUBMISSION_RESULT_FORMAT,
   type ChallengeEvalRow,
-} from "@hermes/common";
+} from "@agora/common";
 import {
   createSupabaseClient,
   getChallengeById,
   getSubmissionById,
   updateScore,
   upsertProofBundle,
-} from "@hermes/db";
-import { pinFile } from "@hermes/ipfs";
+} from "@agora/db";
+import { pinFile } from "@agora/ipfs";
 import {
   buildProofBundle,
   executeScoringPipeline,
   resolveSubmissionSource,
-} from "@hermes/scorer";
+} from "@agora/scorer";
 import { Command } from "commander";
 import { keccak256, toBytes } from "viem";
 import {
@@ -52,7 +52,7 @@ export function buildScoreCommand() {
   const cmd = new Command("score")
     .description("Oracle scoring flow: run scorer, pin proof, post on-chain")
     .argument("<submissionId>", "Submission UUID")
-    .option("--key <ref>", "Private key reference, e.g. env:HERMES_ORACLE_KEY")
+    .option("--key <ref>", "Private key reference, e.g. env:AGORA_ORACLE_KEY")
     .option("--format <format>", "table or json", "table")
     .action(
       async (submissionId: string, opts: { key?: string; format: string }) => {
@@ -69,11 +69,11 @@ export function buildScoreCommand() {
 
         if (opts.key) {
           ensurePrivateKey(opts.key);
-        } else if (process.env.HERMES_ORACLE_KEY) {
-          process.env.HERMES_PRIVATE_KEY = process.env.HERMES_ORACLE_KEY;
+        } else if (process.env.AGORA_ORACLE_KEY) {
+          process.env.AGORA_PRIVATE_KEY = process.env.AGORA_ORACLE_KEY;
         } else {
           throw new Error(
-            "hm score is oracle-only. Provide --key env:HERMES_ORACLE_KEY or set HERMES_ORACLE_KEY.",
+            "agora score is oracle-only. Provide --key env:AGORA_ORACLE_KEY or set AGORA_ORACLE_KEY.",
           );
         }
         ensurePrivateKey();
@@ -102,7 +102,7 @@ export function buildScoreCommand() {
           resultFormat: submission.result_format,
           challengeId: challenge.id,
           solverAddress: submission.solver_address,
-          privateKeyPem: loadConfig().HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+          privateKeyPem: loadConfig().AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
         });
         const run = await executeScoringPipeline({
           image: evalPlan.image,

@@ -1,6 +1,6 @@
-import { createSupabaseClient, getChallengeById } from "@hermes/db";
-import { resolveEvalSpec, type ChallengeEvalRow } from "@hermes/common";
-import { executeScoringPipeline } from "@hermes/scorer";
+import { createSupabaseClient, getChallengeById } from "@agora/db";
+import { resolveEvalSpec, type ChallengeEvalRow } from "@agora/common";
+import { executeScoringPipeline } from "@agora/scorer";
 import { Command } from "commander";
 import {
   applyConfigToEnv,

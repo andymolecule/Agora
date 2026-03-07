@@ -1,16 +1,16 @@
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import {
-  getHermesRuntimeIdentity,
+  getAgoraRuntimeIdentity,
   loadConfig,
   runSubmissionSealSelfCheck,
-} from "@hermes/common";
+} from "@agora/common";
 import {
   claimNextJob,
   createSupabaseClient,
   heartbeatScoreJobLease,
-} from "@hermes/db";
-import { ensureDockerReady } from "@hermes/scorer";
+} from "@agora/db";
+import { ensureDockerReady } from "@agora/scorer";
 import { sweepFinalizable } from "./chain.js";
 import { processJob } from "./jobs.js";
 import { FINALIZE_SWEEP_INTERVAL_MS, POLL_INTERVAL_MS, sleep } from "./policy.js";
@@ -76,27 +76,27 @@ export async function startWorker() {
   loadConfig();
   const config = loadConfig();
 
-  if (!process.env.HERMES_ORACLE_KEY && !process.env.HERMES_PRIVATE_KEY) {
+  if (!process.env.AGORA_ORACLE_KEY && !process.env.AGORA_PRIVATE_KEY) {
     throw new Error(
-      "HERMES_ORACLE_KEY or HERMES_PRIVATE_KEY is required for the scoring worker.",
+      "AGORA_ORACLE_KEY or AGORA_PRIVATE_KEY is required for the scoring worker.",
     );
   }
-  if (process.env.HERMES_ORACLE_KEY && !process.env.HERMES_PRIVATE_KEY) {
-    process.env.HERMES_PRIVATE_KEY = process.env.HERMES_ORACLE_KEY;
+  if (process.env.AGORA_ORACLE_KEY && !process.env.AGORA_PRIVATE_KEY) {
+    process.env.AGORA_PRIVATE_KEY = process.env.AGORA_ORACLE_KEY;
   }
 
   if (
-    config.HERMES_SUBMISSION_SEAL_KEY_ID &&
-    config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM &&
-    config.HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM
+    config.AGORA_SUBMISSION_SEAL_KEY_ID &&
+    config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM &&
+    config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM
   ) {
     await runSubmissionSealSelfCheck({
-      keyId: config.HERMES_SUBMISSION_SEAL_KEY_ID,
-      publicKeyPem: config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
-      privateKeyPem: config.HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+      keyId: config.AGORA_SUBMISSION_SEAL_KEY_ID,
+      publicKeyPem: config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+      privateKeyPem: config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
     });
     log("info", "Submission sealing self-check passed", {
-      keyId: config.HERMES_SUBMISSION_SEAL_KEY_ID,
+      keyId: config.AGORA_SUBMISSION_SEAL_KEY_ID,
     });
   }
 
@@ -114,7 +114,7 @@ export async function startWorker() {
     pollIntervalMs: POLL_INTERVAL_MS,
     finalizeSweepIntervalMs: FINALIZE_SWEEP_INTERVAL_MS,
     workerId: WORKER_ID,
-    runtimeIdentity: getHermesRuntimeIdentity(config),
+    runtimeIdentity: getAgoraRuntimeIdentity(config),
   });
 
   let lastFinalizeSweepAt = 0;

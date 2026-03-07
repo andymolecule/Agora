@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-library HermesEvents {
+library AgoraEvents {
     event ChallengeCreated(uint256 indexed id, address indexed challenge, address indexed poster, uint256 reward);
     event ChallengeLinkedToLab(uint256 indexed id, address indexed labTBA);
 

@@ -12,18 +12,18 @@ if [[ -f ".env" ]]; then
 fi
 
 required_env=(
-  HERMES_RPC_URL
-  HERMES_CHAIN_ID
-  HERMES_FACTORY_ADDRESS
-  HERMES_USDC_ADDRESS
-  HERMES_PRIVATE_KEY
-  HERMES_ORACLE_KEY
-  HERMES_PINATA_JWT
-  HERMES_SUPABASE_URL
-  HERMES_SUPABASE_ANON_KEY
-  HERMES_SUPABASE_SERVICE_KEY
-  HERMES_API_URL
-  HERMES_CORS_ORIGINS
+  AGORA_RPC_URL
+  AGORA_CHAIN_ID
+  AGORA_FACTORY_ADDRESS
+  AGORA_USDC_ADDRESS
+  AGORA_PRIVATE_KEY
+  AGORA_ORACLE_KEY
+  AGORA_PINATA_JWT
+  AGORA_SUPABASE_URL
+  AGORA_SUPABASE_ANON_KEY
+  AGORA_SUPABASE_SERVICE_KEY
+  AGORA_API_URL
+  AGORA_CORS_ORIGINS
 )
 
 required_cmds=(node pnpm docker forge)
@@ -50,7 +50,7 @@ check_env() {
   fi
 }
 
-echo "== Hermes Testnet Preflight =="
+echo "== Agora Testnet Preflight =="
 
 for cmd in "${required_cmds[@]}"; do
   check_cmd "$cmd"
@@ -75,12 +75,12 @@ echo "[STEP] Running CLI doctor"
 node apps/cli/dist/index.js doctor --format table
 
 echo "[STEP] Checking API health endpoint"
-API_HEALTH_URL="${HERMES_API_URL%/}/healthz"
-http_status=$(curl -s -o /tmp/hermes_preflight_healthz.json -w "%{http_code}" "$API_HEALTH_URL" || true)
+API_HEALTH_URL="${AGORA_API_URL%/}/healthz"
+http_status=$(curl -s -o /tmp/agora_preflight_healthz.json -w "%{http_code}" "$API_HEALTH_URL" || true)
 if [[ "$http_status" != "200" ]]; then
   echo "[FAIL] API health check failed ($API_HEALTH_URL => HTTP $http_status)"
   echo "Response:"
-  cat /tmp/hermes_preflight_healthz.json || true
+  cat /tmp/agora_preflight_healthz.json || true
   exit 1
 fi
 echo "[OK] API health check passed ($API_HEALTH_URL)"

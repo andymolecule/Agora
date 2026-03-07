@@ -27,7 +27,7 @@ function isPrivateKey(value: string | undefined) {
 
 export function buildDoctorCommand() {
   const cmd = new Command("doctor")
-    .description("Validate Hermes CLI configuration and connectivity")
+    .description("Validate Agora CLI configuration and connectivity")
     .option("--format <format>", "table or json", "table")
     .action(async (opts: { format: string }) => {
       const checks: DoctorCheck[] = [];
@@ -37,7 +37,7 @@ export function buildDoctorCommand() {
       checks.push({
         name: "Config file",
         status: hasConfigFile ? "ok" : "warn",
-        detail: hasConfigFile ? configPath : "No ~/.hermes/config.json found",
+        detail: hasConfigFile ? configPath : "No ~/.agora/config.json found",
       });
 
       const config = loadCliConfig();
@@ -46,21 +46,21 @@ export function buildDoctorCommand() {
       checks.push({
         name: "RPC URL",
         status: config.rpc_url ? "ok" : "error",
-        detail: config.rpc_url ? "configured" : "HERMES_RPC_URL missing",
+        detail: config.rpc_url ? "configured" : "AGORA_RPC_URL missing",
       });
       checks.push({
         name: "Factory address",
         status: isHexAddress(config.factory_address) ? "ok" : "error",
         detail: isHexAddress(config.factory_address)
           ? "valid address"
-          : "HERMES_FACTORY_ADDRESS missing or invalid",
+          : "AGORA_FACTORY_ADDRESS missing or invalid",
       });
       checks.push({
         name: "USDC address",
         status: isHexAddress(config.usdc_address) ? "ok" : "error",
         detail: isHexAddress(config.usdc_address)
           ? "valid address"
-          : "HERMES_USDC_ADDRESS missing or invalid",
+          : "AGORA_USDC_ADDRESS missing or invalid",
       });
       checks.push({
         name: "Runtime identity",
@@ -76,19 +76,19 @@ export function buildDoctorCommand() {
         detail:
           config.supabase_url && config.supabase_anon_key
             ? "configured"
-            : "HERMES_SUPABASE_URL or HERMES_SUPABASE_ANON_KEY missing",
+            : "AGORA_SUPABASE_URL or AGORA_SUPABASE_ANON_KEY missing",
       });
       checks.push({
         name: "Pinata JWT",
         status: config.pinata_jwt ? "ok" : "warn",
-        detail: config.pinata_jwt ? "configured" : "HERMES_PINATA_JWT missing",
+        detail: config.pinata_jwt ? "configured" : "AGORA_PINATA_JWT missing",
       });
       checks.push({
         name: "Private key",
         status: isPrivateKey(config.private_key) ? "ok" : "warn",
         detail: isPrivateKey(config.private_key)
           ? "configured"
-          : "HERMES_PRIVATE_KEY missing or invalid",
+          : "AGORA_PRIVATE_KEY missing or invalid",
       });
 
       if (config.rpc_url) {

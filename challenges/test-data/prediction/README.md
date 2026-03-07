@@ -1,6 +1,6 @@
 # Prediction Test Data
 
-Test fixtures for the current Hermes prediction flow using the regression scorer in `containers/regression-scorer`.
+Test fixtures for the current Agora prediction flow using the regression scorer in `containers/regression-scorer`.
 
 This folder is designed for two related workflows:
 - posting a prediction challenge through the web UI as a human poster
@@ -264,7 +264,7 @@ cat /tmp/regression-output/score.json
 
 For local direct runs:
 - `ground_truth.csv` is provided as a convenience alias
-- `sample_submission.csv` should be copied or mounted as `/input/submission.csv` if you are not using the Hermes staging pipeline
+- `sample_submission.csv` should be copied or mounted as `/input/submission.csv` if you are not using the Agora staging pipeline
 
 ## Robustness Gaps These Fixtures Expose
 

@@ -1,9 +1,9 @@
-import { SUBMISSION_LIMITS, loadConfig } from "@hermes/common";
-import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json" with { type: "json" };
+import { SUBMISSION_LIMITS, loadConfig } from "@agora/common";
+import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with { type: "json" };
 import { type Abi, parseUnits } from "viem";
 import { getWalletClient } from "./client.js";
 
-const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
+const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
 
 export interface CreateChallengeParams {
   specCid: string;
@@ -20,12 +20,12 @@ export interface CreateChallengeParams {
 export async function createChallenge(params: CreateChallengeParams) {
   const config = loadConfig();
   const walletClient = getWalletClient();
-  const factoryAddress = config.HERMES_FACTORY_ADDRESS;
+  const factoryAddress = config.AGORA_FACTORY_ADDRESS;
   const reward = parseUnits(params.rewardAmount.toString(), 6);
 
   return walletClient.writeContract({
     address: factoryAddress,
-    abi: HermesFactoryAbi,
+    abi: AgoraFactoryAbi,
     functionName: "createChallenge",
     args: [
       params.specCid,
