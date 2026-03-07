@@ -10,9 +10,9 @@ import {
   validatePresetIntegrity,
   validateScoringContainer,
 } from "@hermes/common";
-import { useRef, useState } from "react";
-import { type Abi, parseUnits } from "viem";
-import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
+import { useEffect, useRef, useState } from "react";
+import { type Abi, parseSignature, parseUnits } from "viem";
+import { useAccount, usePublicClient, useSignMessage, useSignTypedData, useWriteContract } from "wagmi";
 import { useConnectModal, useChainModal } from "@rainbow-me/rainbowkit";
 import {
   Wallet, ArrowRight, AlertCircle, Loader2, CheckCircle,
@@ -26,6 +26,9 @@ import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../../lib/config";
 import { formatUsdc, computeProtocolFee } from "../../lib/format";
 
 const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
+const DEFAULT_PERMIT_VERSION = "1";
+const PERMIT_LIFETIME_SECONDS = 60 * 60;
 
 const DISTRIBUTION_TO_ENUM = {
   winner_take_all: 0,
@@ -61,7 +64,164 @@ const erc20Abi = [
     inputs: [{ name: "owner", type: "address" }],
     outputs: [{ name: "", type: "uint256" }],
   },
+  {
+    type: "function",
+    name: "name",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+  },
+  {
+    type: "function",
+    name: "version",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+  },
+  {
+    type: "function",
+    name: "nonces",
+    stateMutability: "view",
+    inputs: [{ name: "owner", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "DOMAIN_SEPARATOR",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bytes32" }],
+  },
 ] as const;
+
+type FundingMethod = "permit" | "approve";
+type FundingStatus = "idle" | "checking" | "ready" | "error";
+type PendingAction = "idle" | "approving" | "signingPermit" | "creating";
+type WalletPublicClient = NonNullable<ReturnType<typeof usePublicClient>>;
+
+type PostingFundingState = {
+  status: FundingStatus;
+  method: FundingMethod;
+  tokenName: string;
+  permitVersion: string;
+  allowance: bigint;
+  balance: bigint;
+  message?: string;
+};
+
+const initialPostingFundingState: PostingFundingState = {
+  status: "idle",
+  method: "approve",
+  tokenName: "USDC",
+  permitVersion: DEFAULT_PERMIT_VERSION,
+  allowance: 0n,
+  balance: 0n,
+};
+
+function getRewardUnitsFromInput(reward: string) {
+  return parseUnits(reward.trim() || "0", 6);
+}
+
+async function loadPostingFundingState({
+  publicClient,
+  address,
+  usdcAddress,
+  factoryAddress,
+  rewardUnits,
+}: {
+  publicClient: WalletPublicClient;
+  address: `0x${string}`;
+  usdcAddress: `0x${string}`;
+  factoryAddress: `0x${string}`;
+  rewardUnits: bigint;
+}): Promise<PostingFundingState> {
+  const [
+    balanceResult,
+    allowanceResult,
+    nameResult,
+    noncesResult,
+    domainSeparatorResult,
+    versionResult,
+  ] = await Promise.allSettled([
+    publicClient.readContract({
+      address: usdcAddress,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [address],
+    }),
+    publicClient.readContract({
+      address: usdcAddress,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [address, factoryAddress],
+    }),
+    publicClient.readContract({
+      address: usdcAddress,
+      abi: erc20Abi,
+      functionName: "name",
+    }),
+    publicClient.readContract({
+      address: usdcAddress,
+      abi: erc20Abi,
+      functionName: "nonces",
+      args: [address],
+    }),
+    publicClient.readContract({
+      address: usdcAddress,
+      abi: erc20Abi,
+      functionName: "DOMAIN_SEPARATOR",
+    }),
+    publicClient.readContract({
+      address: usdcAddress,
+      abi: erc20Abi,
+      functionName: "version",
+    }),
+  ]);
+
+  if (balanceResult.status !== "fulfilled" || allowanceResult.status !== "fulfilled") {
+    return {
+      ...initialPostingFundingState,
+      status: "error",
+      message: "Unable to read token balance or allowance.",
+    };
+  }
+
+  const tokenName = nameResult.status === "fulfilled" ? String(nameResult.value) : "USDC";
+  const permitSupported =
+    nameResult.status === "fulfilled"
+    && noncesResult.status === "fulfilled"
+    && domainSeparatorResult.status === "fulfilled";
+
+  const balance = balanceResult.value as bigint;
+  const allowance = allowanceResult.value as bigint;
+
+  if (balance < rewardUnits) {
+    return {
+      status: "ready",
+      method: permitSupported ? "permit" : "approve",
+      tokenName,
+      permitVersion:
+        versionResult.status === "fulfilled"
+          ? String(versionResult.value)
+          : DEFAULT_PERMIT_VERSION,
+      allowance,
+      balance,
+      message: `Wallet needs ${formatUsdc(Number(rewardUnits - balance) / 1e6)} more USDC.`,
+    };
+  }
+
+  return {
+    status: "ready",
+    method: permitSupported ? "permit" : "approve",
+    tokenName,
+    permitVersion:
+      versionResult.status === "fulfilled"
+        ? String(versionResult.value)
+        : DEFAULT_PERMIT_VERSION,
+    allowance,
+    balance,
+  };
+}
 
 type PostChallengeType = "prediction" | "optimization" | "reproducibility" | "docking" | "red_team" | "custom";
 
@@ -492,6 +652,25 @@ function computeDeadlineIso(days: string): string {
   return new Date(Date.now() + d * 24 * 60 * 60 * 1000).toISOString();
 }
 
+function isUserRejectedError(message: string) {
+  const normalized = message.toLowerCase();
+  return normalized.includes("user rejected")
+    || normalized.includes("user denied")
+    || normalized.includes("rejected the request")
+    || normalized.includes("denied transaction signature");
+}
+
+function isPermitUnsupportedError(message: string) {
+  const normalized = message.toLowerCase();
+  return normalized.includes("typed data")
+    || normalized.includes("sign typed data")
+    || normalized.includes("eth_signtypeddata")
+    || normalized.includes("method not supported")
+    || normalized.includes("unsupported method")
+    || normalized.includes("not implemented")
+    || normalized.includes("does not support");
+}
+
 /** Format a deadline date for display. */
 function formatDeadlineDate(days: string): string {
   return new Date(computeDeadlineIso(days)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -642,7 +821,8 @@ function DataUploadField({
 export function PostClient() {
   const [state, setState] = useState<FormState>(initialState);
   const [status, setStatus] = useState<string>("");
-  const [isPosting, setIsPosting] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction>("idle");
+  const [fundingState, setFundingState] = useState<PostingFundingState>(initialPostingFundingState);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [uploadingField, setUploadingField] = useState<"train" | "test" | "hiddenLabels" | null>(null);
@@ -653,16 +833,75 @@ export function PostClient() {
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
+  const { signTypedDataAsync } = useSignTypedData();
   const { openConnectModal } = useConnectModal();
   const { openChainModal } = useChainModal();
 
   const isWrongChain = isConnected && chainId !== CHAIN_ID;
   const walletReady = isConnected && !isWrongChain;
+  const isBusy = pendingAction !== "idle";
 
   const rewardValue = Number(state.reward || 0);
   const { feeUsdc: protocolFeeValue, payoutUsdc: winnerPayoutValue } = computeProtocolFee(rewardValue);
+  const previewRewardUnits = (() => {
+    try {
+      return getRewardUnitsFromInput(state.reward);
+    } catch {
+      return 0n;
+    }
+  })();
+  const allowanceReady = fundingState.allowance >= previewRewardUnits;
+  const balanceReady = fundingState.balance >= previewRewardUnits;
 
   const isCustomType = state.type === "custom" || state.type === "optimization" || state.type === "red_team";
+
+  useEffect(() => {
+    if (!showPreview) {
+      setFundingState(initialPostingFundingState);
+      return;
+    }
+    if (!walletReady || !publicClient || !address || !FACTORY_ADDRESS || !USDC_ADDRESS) {
+      setFundingState(initialPostingFundingState);
+      return;
+    }
+    const checkedPublicClient = publicClient;
+    const checkedAddress = address as `0x${string}`;
+
+    let cancelled = false;
+
+    async function checkFundingPath() {
+      setFundingState((current) => ({
+        ...current,
+        status: "checking",
+        message: undefined,
+      }));
+
+      try {
+        const nextState = await loadPostingFundingState({
+          publicClient: checkedPublicClient,
+          address: checkedAddress,
+          usdcAddress: USDC_ADDRESS,
+          factoryAddress: FACTORY_ADDRESS,
+          rewardUnits: previewRewardUnits,
+        });
+        if (!cancelled) setFundingState(nextState);
+      } catch {
+        if (!cancelled) {
+          setFundingState({
+            ...initialPostingFundingState,
+            status: "error",
+            message: "Unable to determine the posting flow for this token.",
+          });
+        }
+      }
+    }
+
+    void checkFundingPath();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showPreview, walletReady, publicClient, address, previewRewardUnits]);
 
   async function handleFileUpload(file: File, field: "train" | "test" | "hiddenLabels") {
     setUploadingField(field);
@@ -828,108 +1067,258 @@ export function PostClient() {
     return null;
   }
 
-  async function handleSubmit() {
-    if (!walletReady) return; // button is disabled — should not reach here
-    if (!FACTORY_ADDRESS || !USDC_ADDRESS) {
-      setStatus("Missing NEXT_PUBLIC_HERMES_FACTORY_ADDRESS or NEXT_PUBLIC_HERMES_USDC_ADDRESS.");
-      return;
+  async function refreshPostingFundingState(rewardUnits: bigint) {
+    if (!walletReady || !publicClient || !address || !FACTORY_ADDRESS || !USDC_ADDRESS) {
+      const nextState = { ...initialPostingFundingState };
+      setFundingState(nextState);
+      return nextState;
     }
-    if (!publicClient) { setStatus("Wallet client is not ready. Reconnect wallet and retry."); return; }
-    const error = validateInput();
-    if (error) { setStatus(error); return; }
+    const checkedPublicClient = publicClient;
+    const checkedAddress = address as `0x${string}`;
+    const nextState = await loadPostingFundingState({
+      publicClient: checkedPublicClient,
+      address: checkedAddress,
+      usdcAddress: USDC_ADDRESS,
+      factoryAddress: FACTORY_ADDRESS,
+      rewardUnits,
+    });
+    setFundingState(nextState);
+    return nextState;
+  }
+
+  async function prepareChallengeCreation() {
+    if (!walletReady) throw new Error("Connect the correct wallet before posting.");
+    if (!FACTORY_ADDRESS || !USDC_ADDRESS) {
+      throw new Error("Missing NEXT_PUBLIC_HERMES_FACTORY_ADDRESS or NEXT_PUBLIC_HERMES_USDC_ADDRESS.");
+    }
+    if (!publicClient) throw new Error("Wallet client is not ready. Reconnect wallet and retry.");
+    if (!address) throw new Error("Wallet address is required to post a challenge.");
+
+    const validationError = validateInput();
+    if (validationError) throw new Error(validationError);
+
+    setStatus("Pinning spec to IPFS...");
+    const spec = { ...buildSpec(state), deadline: computeDeadlineIso(state.deadlineDays) };
+    const timestamp = Date.now();
+    const specHash = computeSpecHash(spec);
+    const message = buildPinSpecMessage({ address, timestamp, specHash });
+    const signature = await signMessageAsync({ account: address, message });
+
+    const pinRes = await fetch("/api/pin-spec", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ spec, auth: { address, timestamp, specHash, signature } }),
+    });
+    if (!pinRes.ok) throw new Error(await pinRes.text());
+
+    const { specCid } = (await pinRes.json()) as { specCid: string };
+
+    return {
+      specCid,
+      rewardUnits: parseUnits(String(spec.reward.total), 6),
+      deadlineSeconds: BigInt(Math.floor(new Date(spec.deadline).getTime() / 1000)),
+      disputeWindowHours: BigInt(spec.dispute_window_hours ?? 168),
+      minimumScoreWad: parseUnits(String(spec.minimum_score ?? 0), 18),
+      distributionType:
+        DISTRIBUTION_TO_ENUM[spec.reward.distribution as keyof typeof DISTRIBUTION_TO_ENUM] ?? 0,
+    };
+  }
+
+  async function finalizeChallengePost(createTx: `0x${string}`) {
+    if (!publicClient) throw new Error("Wallet client is not ready. Reconnect wallet and retry.");
+    await publicClient.waitForTransactionReceipt({ hash: createTx });
+    setStatus("Challenge confirmed on-chain. Accelerating indexer sync...");
+    try {
+      await accelerateChallengeIndex({ txHash: createTx });
+      setStatus(`success: Challenge posted. tx=${createTx}. Indexed immediately.`);
+    } catch {
+      setStatus(`success: Challenge posted on-chain (tx=${createTx}). Indexer will sync it shortly.`);
+    }
+    setShowPreview(false);
+  }
+
+  async function handleApprove() {
+    if (!walletReady || !publicClient || !address || !FACTORY_ADDRESS || !USDC_ADDRESS) return;
 
     try {
-      setIsPosting(true);
-      setStatus("Pinning spec to IPFS...");
-      // Build spec with a fresh deadline computed NOW — ensures IPFS spec and
-      // on-chain deadline are identical and not stale from form interaction time.
-      const spec = { ...buildSpec(state), deadline: computeDeadlineIso(state.deadlineDays) };
-      if (!address) throw new Error("Wallet address is required to authorize spec pinning.");
+      setPendingAction("approving");
+      setStatus("");
 
-      const timestamp = Date.now();
-      const specHash = computeSpecHash(spec);
-      const message = buildPinSpecMessage({ address, timestamp, specHash });
-      const signature = await signMessageAsync({ account: address, message });
+      const validationError = validateInput();
+      if (validationError) throw new Error(validationError);
 
-      const pinRes = await fetch("/api/pin-spec", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ spec, auth: { address, timestamp, specHash, signature } }),
-      });
-      if (!pinRes.ok) throw new Error(await pinRes.text());
-      const { specCid } = (await pinRes.json()) as { specCid: string };
-
-      const rewardUnits = parseUnits(String(spec.reward.total), 6);
-      const minimumScoreWad = parseUnits(String(spec.minimum_score ?? 0), 18);
-      const deadlineTs = new Date(spec.deadline).getTime();
-
-      const currentBalance = await publicClient.readContract({
-        address: USDC_ADDRESS,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [address],
-      }) as bigint;
-      if (currentBalance < rewardUnits) {
-        const missing = rewardUnits - currentBalance;
-        throw new Error(
-          `Insufficient USDC balance. Need ${formatUsdc(Number(rewardUnits) / 1e6)} USDC, missing ${formatUsdc(Number(missing) / 1e6)} USDC.`,
-        );
+      const rewardUnits = getRewardUnitsFromInput(state.reward);
+      const latestFunding = await refreshPostingFundingState(rewardUnits);
+      if (latestFunding.balance < rewardUnits) {
+        throw new Error(latestFunding.message ?? "Insufficient USDC balance.");
+      }
+      if (latestFunding.allowance >= rewardUnits) {
+        setStatus("USDC allowance already confirmed. Click Create Challenge to continue.");
+        return;
       }
 
-      const currentAllowance = await publicClient.readContract({
+      setStatus("Approve USDC in your wallet...");
+      const { request } = await publicClient.simulateContract({
+        account: address,
         address: USDC_ADDRESS,
         abi: erc20Abi,
-        functionName: "allowance",
-        args: [address, FACTORY_ADDRESS],
-      }) as bigint;
+        functionName: "approve",
+        args: [FACTORY_ADDRESS, rewardUnits],
+      });
+      const approveTx = await writeContractAsync(request);
+      setStatus("Approval submitted. Waiting for confirmation...");
+      await publicClient.waitForTransactionReceipt({ hash: approveTx });
 
-      if (currentAllowance < rewardUnits) {
-        setStatus("Approving USDC allowance...");
-        const approveTx = await writeContractAsync({
-          account: address,
+      const refreshedFunding = await refreshPostingFundingState(rewardUnits);
+      if (refreshedFunding.allowance < rewardUnits) {
+        throw new Error("Allowance did not update after approval. Please retry.");
+      }
+      setStatus("USDC approved. Click Create Challenge to post on-chain.");
+    } catch (approveError) {
+      const message = approveError instanceof Error ? approveError.message : "Approval failed.";
+      setStatus(message);
+    } finally {
+      setPendingAction("idle");
+    }
+  }
+
+  async function handleCreate() {
+    if (!walletReady || !publicClient || !address || !FACTORY_ADDRESS || !USDC_ADDRESS) return;
+
+    try {
+      setStatus("");
+
+      const validationError = validateInput();
+      if (validationError) throw new Error(validationError);
+
+      const rewardUnits = getRewardUnitsFromInput(state.reward);
+      const latestFunding = await refreshPostingFundingState(rewardUnits);
+      if (latestFunding.balance < rewardUnits) {
+        throw new Error(latestFunding.message ?? "Insufficient USDC balance.");
+      }
+
+      if (latestFunding.method === "permit" && latestFunding.allowance < rewardUnits) {
+        setPendingAction("signingPermit");
+        setStatus(`Sign ${latestFunding.tokenName} permit in your wallet...`);
+        const permitDeadline = BigInt(Math.floor(Date.now() / 1000) + PERMIT_LIFETIME_SECONDS);
+        const permitNonce = await publicClient.readContract({
           address: USDC_ADDRESS,
           abi: erc20Abi,
-          functionName: "approve",
-          args: [FACTORY_ADDRESS, rewardUnits],
+          functionName: "nonces",
+          args: [address],
+        }) as bigint;
+
+        let signature: `0x${string}`;
+        try {
+          signature = await signTypedDataAsync({
+            account: address,
+            domain: {
+              name: latestFunding.tokenName,
+              version: latestFunding.permitVersion,
+              chainId: CHAIN_ID,
+              verifyingContract: USDC_ADDRESS,
+            },
+            types: {
+              Permit: [
+                { name: "owner", type: "address" },
+                { name: "spender", type: "address" },
+                { name: "value", type: "uint256" },
+                { name: "nonce", type: "uint256" },
+                { name: "deadline", type: "uint256" },
+              ],
+            },
+            primaryType: "Permit",
+            message: {
+              owner: address,
+              spender: FACTORY_ADDRESS,
+              value: rewardUnits,
+              nonce: permitNonce,
+              deadline: permitDeadline,
+            },
+          });
+        } catch (permitError) {
+          const permitMessage = permitError instanceof Error ? permitError.message : "Permit signature failed.";
+          if (isUserRejectedError(permitMessage)) throw permitError;
+          if (isPermitUnsupportedError(permitMessage)) {
+            setFundingState((current) => ({
+              ...current,
+              method: "approve",
+              status: "ready",
+              message: "Wallet cannot sign token permits. Approve USDC first, then create the challenge.",
+            }));
+            setStatus("Wallet cannot sign token permits. Approve USDC first, then create the challenge.");
+            return;
+          }
+          throw permitError;
+        }
+
+        const prepared = await prepareChallengeCreation();
+        const parsedSignature = parseSignature(signature);
+        const permitV = Number(parsedSignature.v ?? BigInt(27 + parsedSignature.yParity));
+
+        setPendingAction("creating");
+        setStatus("Creating challenge on-chain...");
+        const { request } = await publicClient.simulateContract({
+          account: address,
+          address: FACTORY_ADDRESS,
+          abi: HermesFactoryAbi,
+          functionName: "createChallengeWithPermit",
+          args: [
+            prepared.specCid,
+            prepared.rewardUnits,
+            prepared.deadlineSeconds,
+            prepared.disputeWindowHours,
+            prepared.minimumScoreWad,
+            prepared.distributionType,
+            ZERO_ADDRESS,
+            0n,
+            0n,
+            permitDeadline,
+            permitV,
+            parsedSignature.r,
+            parsedSignature.s,
+          ],
         });
-        await publicClient.waitForTransactionReceipt({ hash: approveTx });
-      } else {
-        setStatus("USDC already approved, creating challenge...");
+        const createTx = await writeContractAsync(request);
+        await finalizeChallengePost(createTx);
+        return;
       }
 
+      if (latestFunding.allowance < rewardUnits) {
+        throw new Error("Approve USDC before creating the challenge.");
+      }
+
+      const prepared = await prepareChallengeCreation();
+      setPendingAction("creating");
       setStatus("Creating challenge on-chain...");
-      const createTx = await writeContractAsync({
+      const { request } = await publicClient.simulateContract({
         account: address,
         address: FACTORY_ADDRESS,
         abi: HermesFactoryAbi,
         functionName: "createChallenge",
         args: [
-          specCid, rewardUnits, BigInt(Math.floor(deadlineTs / 1000)),
-          BigInt(spec.dispute_window_hours ?? 168), minimumScoreWad,
-          DISTRIBUTION_TO_ENUM[spec.reward.distribution as keyof typeof DISTRIBUTION_TO_ENUM] ?? 0,
-          "0x0000000000000000000000000000000000000000",
-          0n, // maxSubmissions (0 = use off-chain defaults)
-          0n, // maxSubmissionsPerSolver (0 = use off-chain defaults)
+          prepared.specCid,
+          prepared.rewardUnits,
+          prepared.deadlineSeconds,
+          prepared.disputeWindowHours,
+          prepared.minimumScoreWad,
+          prepared.distributionType,
+          ZERO_ADDRESS,
+          0n,
+          0n,
         ],
       });
-
-      await publicClient.waitForTransactionReceipt({ hash: createTx });
-      setStatus("Challenge confirmed on-chain. Accelerating indexer sync...");
-      try {
-        await accelerateChallengeIndex({ txHash: createTx });
-        setStatus(`success: Challenge posted. tx=${createTx}. Indexed immediately.`);
-      } catch {
-        setStatus(`success: Challenge posted on-chain (tx=${createTx}). Indexer will sync it shortly.`);
-      }
-    } catch (submitError) {
-      const message = submitError instanceof Error ? submitError.message : "Failed to post challenge.";
-      if (message.includes("USDC_TRANSFER_FAILED")) {
-        setStatus("createChallenge reverted: USDC transfer failed. Confirm wallet has enough USDC and allowance for the same connected address.");
+      const createTx = await writeContractAsync(request);
+      await finalizeChallengePost(createTx);
+    } catch (createError) {
+      const message = createError instanceof Error ? createError.message : "Failed to post challenge.";
+      if (message.includes("USDC_TRANSFER_FAILED") || message.includes("TransferFromFailed")) {
+        setStatus("createChallenge reverted during USDC transfer. Confirm the connected wallet still has enough USDC and allowance for the factory.");
       } else {
         setStatus(message);
       }
     } finally {
-      setIsPosting(false);
+      setPendingAction("idle");
     }
   }
 
@@ -1616,7 +2005,7 @@ export function PostClient() {
       <div className="post-submit-row">
         <button
           type="button"
-          disabled={isPosting || !walletReady}
+          disabled={isBusy || !walletReady}
           onClick={() => {
             const error = validateInput();
             if (error) { setStatus(error); return; }
@@ -1624,8 +2013,8 @@ export function PostClient() {
           }}
           className="post-submit-btn"
         >
-          {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
-          {isPosting ? "Posting…" : "Review & Post"}
+          {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+          {isBusy ? "Waiting for wallet…" : "Review Challenge"}
         </button>
         {!isConnected ? (
           <button type="button" onClick={() => openConnectModal?.()} className="post-submit-hint" style={{ cursor: "pointer", background: "none", border: "none", padding: 0 }}>
@@ -1688,18 +2077,61 @@ export function PostClient() {
               <div className="preview-row"><span className="preview-label">Submission window</span><span className="preview-value">{state.deadlineDays === "0" ? "15 min" : `${state.deadlineDays} days`}</span></div>
               <div className="preview-row"><span className="preview-label">Dispute window</span><span className="preview-value">{state.disputeWindow === "0" ? "none" : `${state.disputeWindow}h`}</span></div>
               <div className="preview-row"><span className="preview-label">Payout released</span><span className="preview-value">{formatPayoutDate(state.deadlineDays, state.disputeWindow)}</span></div>
-
+              <div className="preview-divider" />
+              <div className="preview-row span-full">
+                <span className="preview-label">Funding path</span>
+                <span className="preview-value">
+                  {fundingState.status === "checking"
+                    ? "Checking token support and allowance..."
+                    : fundingState.status === "error"
+                      ? fundingState.message ?? "Unable to determine posting flow."
+                      : !balanceReady
+                        ? fundingState.message ?? "Wallet balance is too low for this reward."
+                        : fundingState.method === "permit" && !allowanceReady
+                          ? `${fundingState.tokenName} supports permit. Sign once, then submit the challenge in one transaction.`
+                          : allowanceReady
+                            ? "Allowance already covers this reward. You can create the challenge now."
+                            : "This token requires approval before challenge creation."}
+                </span>
+              </div>
             </div>
             <div className="preview-actions">
               <button type="button" onClick={() => setShowPreview(false)}
                 className="dash-btn" style={{ fontSize: "0.8rem" }}>
                 ← Edit
               </button>
-              <button type="button" disabled={isPosting}
-                onClick={() => { setShowPreview(false); handleSubmit(); }}
-                className="dash-btn dash-btn-primary" style={{ fontSize: "0.8rem" }}>
-                {isPosting ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
-                Confirm &amp; Post On-Chain
+              {fundingState.status === "ready" && fundingState.method === "approve" && (
+                <button
+                  type="button"
+                  disabled={isBusy || fundingState.status !== "ready" || allowanceReady || !balanceReady}
+                  onClick={() => { void handleApprove(); }}
+                  className="dash-btn"
+                  style={{ fontSize: "0.8rem" }}
+                >
+                  {pendingAction === "approving"
+                    ? <Loader2 size={14} className="animate-spin" />
+                    : <Check size={14} />}
+                  {allowanceReady ? "USDC Approved" : "Approve USDC"}
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={
+                  isBusy
+                  || fundingState.status !== "ready"
+                  || !balanceReady
+                  || (fundingState.method === "approve" && !allowanceReady)
+                }
+                onClick={() => { void handleCreate(); }}
+                className="dash-btn dash-btn-primary"
+                style={{ fontSize: "0.8rem" }}
+              >
+                {isBusy
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : <ArrowRight size={14} />}
+                {fundingState.method === "permit" && !allowanceReady
+                  ? "Sign Permit & Create"
+                  : "Create Challenge"}
               </button>
             </div>
           </div>
