@@ -10,7 +10,7 @@ import {IAgoraChallenge} from "./interfaces/IAgoraChallenge.sol";
 
 contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
     uint16 public constant CONTRACT_VERSION = 2;
-    uint256 public constant PROTOCOL_FEE_BPS = 500; // 5%
+    uint256 public constant PROTOCOL_FEE_BPS = 1000; // 10%
     uint64 public constant SCORING_GRACE_PERIOD = 7 days;
 
     IERC20 public immutable usdc;

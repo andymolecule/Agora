@@ -108,7 +108,7 @@ See @.env.example for the full documented list.
 
 ## Smart Contract Quick Reference
 
-- **AgoraFactory** — creates challenges, manages oracle/treasury, 5% fee (500 bps)
+- **AgoraFactory** — creates challenges, manages oracle/treasury, 10% fee (1000 bps)
 - **AgoraChallenge** — submissions, scoring, dispute flow, payouts
 - Status flow: Open → Scoring → Finalized | Disputed → Finalized | Cancelled
 - Distribution types: WinnerTakeAll, TopThree (70/20/10), Proportional
