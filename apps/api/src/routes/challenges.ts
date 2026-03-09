@@ -1,11 +1,13 @@
 import {
-  getChallengeLifecycleState,
+  getChallengeFinalizeState,
   getChallengePayoutByAddress,
+  getChallengeContractVersion,
   getPublicClient,
   loadChallengeDefinitionFromChain,
   parseChallengeCreatedReceipt,
 } from "@agora/chain";
 import {
+  ACTIVE_CONTRACT_VERSION,
   CHALLENGE_LIMITS,
   CHALLENGE_STATUS,
   type ChallengeSpecOutput,
@@ -182,23 +184,85 @@ router.get("/:id/claimable", async (c) => {
   if (!challenge) return c.json({ error: "Challenge not found" }, 404);
 
   const contractAddress = challenge.contract_address as `0x${string}`;
-  const lifecycle = await getChallengeLifecycleState(contractAddress);
+  const publicClient = getPublicClient();
+  const contractVersion = await getChallengeContractVersion(contractAddress);
+  const supportedVersion = contractVersion === ACTIVE_CONTRACT_VERSION;
 
-  // Compute finalization timestamp from on-chain fields.
-  const finalizableAfterSeconds =
-    lifecycle.deadline + lifecycle.disputeWindowHours * 3600n;
+  if (!supportedVersion) {
+    return c.json({
+      data: {
+        onChainStatus: "unsupported",
+        contractVersion,
+        supportedVersion: false,
+        reviewEndsAt: null,
+        scoringGraceEndsAt: null,
+        earliestFinalizeAt: null,
+        canFinalize: false,
+        finalizeBlockedReason: "unsupported_version",
+        claimable: "0",
+        canClaim: false,
+      },
+    });
+  }
+
+  const finalizeState = await getChallengeFinalizeState(contractAddress);
+  const latestBlock = await publicClient.getBlock({ blockTag: "latest" });
+  const nowSeconds = latestBlock.timestamp;
+  const reviewEndsAtSeconds =
+    finalizeState.deadline + finalizeState.disputeWindowHours * 3600n;
+  const scoringGraceEndsAtSeconds =
+    finalizeState.deadline + finalizeState.scoringGracePeriod;
+  const allScored = finalizeState.scoredCount >= finalizeState.submissionCount;
+  const earliestFinalizeAtSeconds = allScored
+    ? reviewEndsAtSeconds
+    : reviewEndsAtSeconds > scoringGraceEndsAtSeconds
+      ? reviewEndsAtSeconds
+      : scoringGraceEndsAtSeconds;
+
+  // Compute timestamps from on-chain fields.
+  const timestamps = [
+    reviewEndsAtSeconds,
+    scoringGraceEndsAtSeconds,
+    earliestFinalizeAtSeconds,
+  ];
   if (
-    finalizableAfterSeconds > BigInt(Math.floor(Number.MAX_SAFE_INTEGER / 1000))
+    timestamps.some(
+      (value) => value > BigInt(Math.floor(Number.MAX_SAFE_INTEGER / 1000)),
+    )
   ) {
     return c.json({ error: "Finalization timestamp out of range." }, 500);
   }
-  const finalizableAfter = new Date(
-    Number(finalizableAfterSeconds) * 1000,
+  const reviewEndsAt = new Date(Number(reviewEndsAtSeconds) * 1000).toISOString();
+  const scoringGraceEndsAt = new Date(
+    Number(scoringGraceEndsAtSeconds) * 1000,
   ).toISOString();
+  const earliestFinalizeAt = new Date(
+    Number(earliestFinalizeAtSeconds) * 1000,
+  ).toISOString();
+
+  let canFinalize = false;
+  let finalizeBlockedReason: string | null = null;
+  if (!supportedVersion) {
+    finalizeBlockedReason = "unsupported_version";
+  } else if (finalizeState.status === CHALLENGE_STATUS.open) {
+    finalizeBlockedReason = "open";
+  } else if (finalizeState.status === CHALLENGE_STATUS.disputed) {
+    finalizeBlockedReason = "disputed";
+  } else if (finalizeState.status === CHALLENGE_STATUS.cancelled) {
+    finalizeBlockedReason = "cancelled";
+  } else if (finalizeState.status === CHALLENGE_STATUS.finalized) {
+    finalizeBlockedReason = "finalized";
+  } else if (nowSeconds <= reviewEndsAtSeconds) {
+    finalizeBlockedReason = "review_window_active";
+  } else if (!allScored && nowSeconds <= scoringGraceEndsAtSeconds) {
+    finalizeBlockedReason = "scoring_incomplete";
+  } else {
+    canFinalize = true;
+  }
 
   // Read claimable amount for address (if provided)
   let claimable = "0";
-  if (address && lifecycle.status === CHALLENGE_STATUS.finalized) {
+  if (address && finalizeState.status === CHALLENGE_STATUS.finalized) {
     try {
       const payout = await getChallengePayoutByAddress(
         contractAddress,
@@ -212,9 +276,19 @@ router.get("/:id/claimable", async (c) => {
 
   return c.json({
     data: {
-      onChainStatus: lifecycle.status,
-      finalizableAfter,
+      onChainStatus: finalizeState.status,
+      contractVersion,
+      supportedVersion,
+      reviewEndsAt,
+      scoringGraceEndsAt,
+      earliestFinalizeAt,
+      canFinalize,
+      finalizeBlockedReason,
       claimable,
+      canClaim:
+        supportedVersion &&
+        finalizeState.status === CHALLENGE_STATUS.finalized &&
+        claimable !== "0",
     },
   });
 });

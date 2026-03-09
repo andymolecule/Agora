@@ -1,8 +1,8 @@
 "use client";
 
-import { CHALLENGE_STATUS } from "@agora/common";
+import { ACTIVE_CONTRACT_VERSION, CHALLENGE_STATUS } from "@agora/common";
 import AgoraChallengeAbi from "@agora/common/abi/AgoraChallenge.json";
-import { CheckCircle, Clock, Coins, Gavel, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle, Clock, Coins, Gavel, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Abi } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
@@ -17,8 +17,15 @@ interface Props {
 
 interface ClaimableResponse {
   onChainStatus: string;
-  finalizableAfter: string;
+  contractVersion: number;
+  supportedVersion: boolean;
+  reviewEndsAt: string | null;
+  scoringGraceEndsAt: string | null;
+  earliestFinalizeAt: string | null;
+  canFinalize: boolean;
+  finalizeBlockedReason: string | null;
   claimable: string;
+  canClaim: boolean;
 }
 
 export function ChallengeActions({
@@ -30,20 +37,25 @@ export function ChallengeActions({
   const { writeContractAsync: writeContract } = useWriteContract();
 
   const [info, setInfo] = useState<ClaimableResponse | null>(null);
+  const [fetchError, setFetchError] = useState<string>("");
   const [actionStatus, setActionStatus] = useState<string>("");
   const [txHash, setTxHash] = useState<string>("");
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setInfo(null);
+    setFetchError("");
+  }, [challengeId]);
 
   // Fetch on-chain status + claimable amount
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
 
-    setInfo(null);
-
     async function fetchInfo() {
       try {
+        if (!cancelled) setFetchError("");
         const params = new URLSearchParams();
         if (address) params.set("address", address);
         if (refreshNonce > 0) params.set("refresh", String(refreshNonce));
@@ -57,10 +69,17 @@ export function ChallengeActions({
           throw new Error(`Claimable request failed (${res.status})`);
         }
         const json = (await res.json()) as { data?: ClaimableResponse };
-        if (!cancelled) setInfo(json.data ?? null);
-      } catch {
         if (!cancelled) {
-          setInfo(null);
+          setInfo(json.data ?? null);
+          setFetchError("");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Unable to load challenge actions right now.";
+          setFetchError(message);
         }
       }
     }
@@ -77,24 +96,62 @@ export function ChallengeActions({
     setTxHash("");
   }, [challengeId]);
 
-  if (!info) return null;
+  if (!info && !fetchError) return null;
+  if (!info) {
+    return (
+      <div className="border border-black p-6 bg-white rounded-[2px] space-y-4">
+        <h3 className="text-sm font-bold font-mono tracking-wider uppercase text-black flex items-center gap-2">
+          <Gavel className="w-4 h-4" strokeWidth={2} /> Challenge Actions
+        </h3>
+        <div className="flex items-start gap-2 text-xs font-mono text-black/70">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <div className="space-y-3">
+            <p>{fetchError || "Unable to load challenge actions right now."}</p>
+            <button
+              type="button"
+              onClick={() => setRefreshNonce((value) => value + 1)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold font-mono uppercase tracking-wider border border-black bg-white hover:bg-black hover:text-white transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const now = Date.now();
-  const finalizableAfterMs = new Date(info.finalizableAfter).getTime();
-  const isPastDisputeWindow = now > finalizableAfterMs;
   const isFinalized = info.onChainStatus === CHALLENGE_STATUS.finalized;
   const isCancelled = info.onChainStatus === CHALLENGE_STATUS.cancelled;
+  const isDisputed = info.onChainStatus === CHALLENGE_STATUS.disputed;
+  const isOpen = info.onChainStatus === CHALLENGE_STATUS.open;
   const claimableUsdc = Number(info.claimable) / 1e6; // USDC has 6 decimals
-  const hasClaimable = claimableUsdc > 0;
+  const hasClaimable = info.canClaim && claimableUsdc > 0;
 
-  // Nothing to show while the challenge is still open
-  if (!isPastDisputeWindow && !isFinalized) return null;
+  if (isOpen) return null;
+
+  async function assertSupportedVersion() {
+    if (!publicClient) {
+      throw new Error("Wallet client is not ready.");
+    }
+    const rawVersion = (await publicClient.readContract({
+      address: contractAddress as `0x${string}`,
+      abi,
+      functionName: "contractVersion",
+    })) as bigint;
+    const contractVersion = Number(rawVersion);
+    if (contractVersion !== ACTIVE_CONTRACT_VERSION) {
+      throw new Error(
+        `Unsupported challenge contract version ${contractVersion}. Refresh the app and point it at the active v${ACTIVE_CONTRACT_VERSION} runtime.`,
+      );
+    }
+  }
 
   async function handleFinalize() {
     if (!writeContract || !publicClient) return;
     setLoading(true);
     setActionStatus("Finalizing — confirm in your wallet...");
     try {
+      await assertSupportedVersion();
       const hash = await writeContract({
         address: contractAddress as `0x${string}`,
         abi,
@@ -125,6 +182,7 @@ export function ChallengeActions({
     setLoading(true);
     setActionStatus("Claiming — confirm in your wallet...");
     try {
+      await assertSupportedVersion();
       const hash = await writeContract({
         address: contractAddress as `0x${string}`,
         abi,
@@ -150,17 +208,20 @@ export function ChallengeActions({
     }
   }
 
-  // Format finalize-after date
-  const finalizeDate = new Date(info.finalizableAfter).toLocaleDateString(
-    "en-US",
-    {
+  function formatActionDate(value: string | null) {
+    if (!value) return "unavailable";
+    return new Date(value).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
       hour: "numeric",
       minute: "2-digit",
-    },
-  );
+    });
+  }
+
+  const reviewEndsDate = formatActionDate(info.reviewEndsAt);
+  const scoringGraceDate = formatActionDate(info.scoringGraceEndsAt);
+  const earliestFinalizeDate = formatActionDate(info.earliestFinalizeAt);
 
   return (
     <div className="border border-black p-6 bg-white rounded-[2px] space-y-4">
@@ -168,10 +229,36 @@ export function ChallengeActions({
         <Gavel className="w-4 h-4" strokeWidth={2} /> Challenge Actions
       </h3>
 
+      {fetchError ? (
+        <div className="flex items-start gap-2 text-xs font-mono text-black/70 border-b border-black/10 pb-3">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <div className="space-y-1">
+            <p>{fetchError}</p>
+            <button
+              type="button"
+              onClick={() => setRefreshNonce((value) => value + 1)}
+              className="underline underline-offset-2"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {!info.supportedVersion && (
+        <div className="flex items-start gap-2 text-xs font-mono text-black/70">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>
+            Unsupported challenge contract version {info.contractVersion}. This
+            runtime only supports v{ACTIVE_CONTRACT_VERSION} actions.
+          </span>
+        </div>
+      )}
+
       {/* Finalize section */}
-      {!isFinalized && !isCancelled && (
+      {!isFinalized && !isCancelled && !isDisputed && info.supportedVersion && (
         <div className="space-y-2">
-          {isPastDisputeWindow ? (
+          {info.canFinalize ? (
             <>
               <p className="text-xs text-black/60 font-mono">
                 Dispute window has passed. Finalization runs automatically, but
@@ -197,12 +284,29 @@ export function ChallengeActions({
                 </p>
               )}
             </>
+          ) : info.finalizeBlockedReason === "review_window_active" ? (
+            <div className="flex items-center gap-2 text-xs text-black/50 font-mono">
+              <Clock className="w-3.5 h-3.5" />
+              Review window ends {reviewEndsDate}. Finalization may take longer if scoring is still incomplete.
+            </div>
+          ) : info.finalizeBlockedReason === "scoring_incomplete" ? (
+            <div className="flex items-center gap-2 text-xs text-black/50 font-mono">
+              <Clock className="w-3.5 h-3.5" />
+              Waiting for scorer completion or grace period at {scoringGraceDate}.
+            </div>
           ) : (
             <div className="flex items-center gap-2 text-xs text-black/50 font-mono">
               <Clock className="w-3.5 h-3.5" />
-              Finalization available after {finalizeDate}
+              Earliest finalization check {earliestFinalizeDate}
             </div>
           )}
+        </div>
+      )}
+
+      {isDisputed && (
+        <div className="flex items-start gap-2 text-xs font-mono text-black/60">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>Payout is on hold while this challenge is disputed.</span>
         </div>
       )}
 

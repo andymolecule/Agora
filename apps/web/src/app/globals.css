@@ -895,6 +895,13 @@ a:hover {
   text-decoration: none;
 }
 
+.dash-btn:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+  transform: none;
+  pointer-events: none;
+}
+
 .dash-btn-secondary {
   background-color: transparent;
   color: #000;
@@ -920,6 +927,13 @@ a:hover {
 
 .dash-btn-primary:active {
   transform: translateY(0);
+}
+
+.dash-btn-primary:disabled,
+.dash-btn-secondary:disabled {
+  background-color: #d4d4d8;
+  border-color: #d4d4d8;
+  color: #71717a;
 }
 
 /* Stats Bar */
@@ -2515,6 +2529,29 @@ a:hover {
   gap: 0.5rem;
   padding: 0.85rem 1.25rem;
   border-top: 1px solid var(--border-default, #e5e7eb);
+}
+
+.preview-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: 0 1.25rem 0.85rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-default, #e5e7eb);
+  border-radius: 10px;
+  background: var(--surface-default, #fff);
+}
+
+.preview-status.success {
+  border-color: var(--color-success);
+  background: var(--color-success-bg);
+}
+
+.preview-status p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  word-break: break-word;
 }
 
 @keyframes fade-in {

@@ -402,3 +402,75 @@ export async function getChallengeLifecycleState(
     disputeWindowHours,
   };
 }
+
+export async function getChallengeFinalizeState(
+  challengeAddress: `0x${string}`,
+  blockNumber?: bigint,
+): Promise<{
+  contractVersion: number;
+  status: ChallengeStatus;
+  deadline: bigint;
+  disputeWindowHours: bigint;
+  scoringGracePeriod: bigint;
+  submissionCount: bigint;
+  scoredCount: bigint;
+}> {
+  const publicClient = getPublicClient();
+  const [
+    contractVersion,
+    rawStatus,
+    deadline,
+    disputeWindowHours,
+    scoringGracePeriod,
+    submissionCount,
+    scoredCount,
+  ] = await Promise.all([
+    getChallengeContractVersion(challengeAddress, blockNumber),
+    publicClient.readContract({
+      address: challengeAddress,
+      abi: AgoraChallengeAbi,
+      functionName: "status",
+      ...(blockNumber !== undefined ? { blockNumber } : {}),
+    }) as Promise<bigint>,
+    publicClient.readContract({
+      address: challengeAddress,
+      abi: AgoraChallengeAbi,
+      functionName: "deadline",
+      ...(blockNumber !== undefined ? { blockNumber } : {}),
+    }) as Promise<bigint>,
+    publicClient.readContract({
+      address: challengeAddress,
+      abi: AgoraChallengeAbi,
+      functionName: "disputeWindowHours",
+      ...(blockNumber !== undefined ? { blockNumber } : {}),
+    }) as Promise<bigint>,
+    publicClient.readContract({
+      address: challengeAddress,
+      abi: AgoraChallengeAbi,
+      functionName: "SCORING_GRACE_PERIOD",
+      ...(blockNumber !== undefined ? { blockNumber } : {}),
+    }) as Promise<bigint>,
+    publicClient.readContract({
+      address: challengeAddress,
+      abi: AgoraChallengeAbi,
+      functionName: "submissionCount",
+      ...(blockNumber !== undefined ? { blockNumber } : {}),
+    }) as Promise<bigint>,
+    publicClient.readContract({
+      address: challengeAddress,
+      abi: AgoraChallengeAbi,
+      functionName: "scoredCount",
+      ...(blockNumber !== undefined ? { blockNumber } : {}),
+    }) as Promise<bigint>,
+  ]);
+
+  return {
+    contractVersion,
+    status: decodeChallengeStatusValue(rawStatus),
+    deadline,
+    disputeWindowHours,
+    scoringGracePeriod,
+    submissionCount,
+    scoredCount,
+  };
+}

@@ -822,11 +822,16 @@ function formatDeadlineDate(days: string): string {
   return new Date(computeDeadlineIso(days)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-/** Format payout date (deadline + dispute window). */
-function formatPayoutDate(days: string, disputeWindowHours: string): string {
+/** Format the earliest deterministic point where review can end. */
+function formatFinalizationCheckDate(days: string, disputeWindowHours: string): string {
   const deadlineMs = new Date(computeDeadlineIso(days)).getTime();
-  const payoutMs = deadlineMs + Number(disputeWindowHours) * 3600000;
-  return new Date(payoutMs).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const earliestFinalizeCheckMs =
+    deadlineMs + Number(disputeWindowHours) * 3600000;
+  return new Date(earliestFinalizeCheckMs).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 // ─── CSV Header Detection ───────────────────────────
@@ -2230,7 +2235,7 @@ export function PostClient() {
                 <option value="90">90 days</option>
               </select>
             </FormField>
-            <FormField label="Review window before payout" hint="Time for anyone to challenge scores before funds are released">
+            <FormField label="Review window before settlement" hint="Time for anyone to challenge scores before finalization can proceed">
               <select className="form-select" value={state.disputeWindow}
                 onChange={(e) => setState((s) => ({ ...s, disputeWindow: e.target.value }))}>
                 {isTestnetChain(CHAIN_ID) && <option value="0">No dispute window (testnet only)</option>}
@@ -2245,7 +2250,7 @@ export function PostClient() {
             {state.disputeWindow === "0" && (
               <div className="span-full" style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "#fff3cd", borderRadius: "6px", fontSize: "0.75rem", color: "#856404", border: "1px solid #ffc107" }}>
                 <AlertCircle size={14} />
-                <span>No dispute window means funds are released <strong>immediately after scoring</strong>. Use only for testing.</span>
+                <span>No review window means settlement can proceed <strong>as soon as scoring finishes</strong>. Use only for testing.</span>
               </div>
             )}
           </div>
@@ -2382,13 +2387,13 @@ export function PostClient() {
                     {
                       label: "Review window",
                       detail: state.disputeWindow === "0" ? "Duration: none" : `Duration: ${state.disputeWindow}h`,
-                      note: "Anyone can challenge the result before payout is released.",
+                      note: "Anyone can challenge the result before settlement can proceed.",
                       active: false,
                     },
                     {
-                      label: "Payout",
-                      detail: formatPayoutDate(state.deadlineDays, state.disputeWindow),
-                      note: "Escrowed USDC is released automatically after scoring and disputes clear.",
+                      label: "Earliest finalization check",
+                      detail: formatFinalizationCheckDate(state.deadlineDays, state.disputeWindow),
+                      note: "Finalization still depends on scoring completion or the scoring grace period.",
                       active: false,
                     },
                   ].map((step) => (
@@ -2479,7 +2484,7 @@ export function PostClient() {
               <div className="preview-row"><span className="preview-label">Payout rule</span><span className="preview-value">{state.distribution.replace(/_/g, " ")}</span></div>
               <div className="preview-row"><span className="preview-label">Submission window</span><span className="preview-value">{state.deadlineDays === "0" ? "30 min" : `${state.deadlineDays} days`}</span></div>
               <div className="preview-row"><span className="preview-label">Review window</span><span className="preview-value">{state.disputeWindow === "0" ? "none" : `${state.disputeWindow}h`}</span></div>
-              <div className="preview-row"><span className="preview-label">Payout released</span><span className="preview-value">{formatPayoutDate(state.deadlineDays, state.disputeWindow)}</span></div>
+              <div className="preview-row"><span className="preview-label">Earliest finalization check</span><span className="preview-value">{formatFinalizationCheckDate(state.deadlineDays, state.disputeWindow)}</span></div>
               <div className="preview-divider" />
               <div className="preview-row span-full">
                 <span className="preview-label">Funding path</span>
@@ -2498,6 +2503,15 @@ export function PostClient() {
                 </span>
               </div>
             </div>
+            {status ? (
+              <div className={`preview-status ${isSuccess ? "success" : ""}`}>
+                {isSuccess
+                  ? <CheckCircle size={15} style={{ color: "var(--color-success)", flexShrink: 0, marginTop: 2 }} />
+                  : <AlertCircle size={15} style={{ color: "var(--text-tertiary)", flexShrink: 0, marginTop: 2 }} />
+                }
+                <p>{isSuccess ? status.replace("success: ", "") : status}</p>
+              </div>
+            ) : null}
             <div className="preview-actions">
               <button type="button" onClick={() => setShowPreview(false)}
                 className="dash-btn" style={{ fontSize: "0.8rem" }}>
@@ -2513,7 +2527,9 @@ export function PostClient() {
                 >
                   {pendingAction === "approving"
                     ? <Loader2 size={14} className="animate-spin" />
-                    : <Check size={14} />}
+                    : allowanceReady
+                      ? <Check size={14} />
+                      : <Wallet size={14} />}
                   {allowanceReady ? "USDC Approved" : "Approve USDC"}
                 </button>
               )}
@@ -2532,7 +2548,9 @@ export function PostClient() {
                 {isBusy
                   ? <Loader2 size={14} className="animate-spin" />
                   : <ArrowRight size={14} />}
-                {fundingState.method === "permit" && !allowanceReady
+                {fundingState.method === "approve" && !allowanceReady
+                  ? "Approve USDC First"
+                  : fundingState.method === "permit" && !allowanceReady
                   ? "Sign Permit & Create"
                   : "Create Challenge"}
               </button>
