@@ -138,6 +138,75 @@ function titleCase(value: string) {
   return formatLabel(value).replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function getMetricPresentation(
+  challengeType: string,
+  evalMetric?: string | null,
+  spec?: ChallengeSpecOutput | null,
+) {
+  if (challengeType === "reproducibility") {
+    return {
+      label: "Row match score",
+      helper: spec?.evaluation?.tolerance
+        ? "Score = matched rows / total rows after applying the configured drift tolerance."
+        : "Score = matched rows / total rows from deterministic comparison against the posted reference output.",
+    };
+  }
+
+  switch (evalMetric) {
+    case "rmse":
+      return {
+        label: "RMSE",
+        helper: "Lower is better. Computed against the hidden scoring labels.",
+      };
+    case "mae":
+      return {
+        label: "MAE",
+        helper: "Lower is better. Computed against the hidden scoring labels.",
+      };
+    case "r2":
+      return {
+        label: "R²",
+        helper: "Higher is better. Computed against the hidden scoring labels.",
+      };
+    case "pearson":
+      return {
+        label: "Pearson correlation",
+        helper: "Higher is better. Computed against the hidden scoring labels.",
+      };
+    case "spearman":
+      return {
+        label: "Spearman correlation",
+        helper: "Higher is better. Computed against the hidden scoring labels.",
+      };
+    case "custom":
+      return {
+        label: "Custom scoring metric",
+        helper: "See the official scoring rule and scorer details below for the exact evaluation logic.",
+      };
+    default:
+      return {
+        label: "Scorer-defined metric",
+        helper: "See the official scoring rule and scorer details below for the exact evaluation logic.",
+      };
+  }
+}
+
+function getEligibilityThresholdPresentation(minimumScore?: number | string | null) {
+  const parsed = Number(minimumScore ?? 0);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return {
+      value: "No minimum threshold",
+      helper:
+        "Any valid scored submission can be ranked and considered for payout under the challenge's distribution rule.",
+    };
+  }
+
+  return {
+    value: String(minimumScore),
+    helper: "Scores below this threshold are excluded from ranking and payout.",
+  };
+}
+
 function inferSubmissionArtifact(spec?: ChallengeSpecOutput | null) {
   const submissionFormat = spec?.evaluation?.submission_format?.trim();
   if (submissionFormat) return submissionFormat;
@@ -493,6 +562,14 @@ export function DetailClient({ id }: { id: string }) {
     ? `agora verify-public ${challenge.id} --sub ${verification.submissionId}`
     : null;
   const scorerInfo = getScorerTransparencyInfo(challenge.eval_image);
+  const metricPresentation = getMetricPresentation(
+    challenge.challenge_type,
+    challenge.eval_metric,
+    spec,
+  );
+  const eligibilityThreshold = getEligibilityThresholdPresentation(
+    challenge.minimum_score,
+  );
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -642,26 +719,25 @@ export function DetailClient({ id }: { id: string }) {
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
                           <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                            Metric
+                            Scoring metric
                           </div>
                           <div className="mt-2 text-2xl font-display font-bold text-[var(--color-warm-900)]">
-                            {challenge.eval_metric
-                              ? titleCase(challenge.eval_metric)
-                              : "Custom"}
+                            {metricPresentation.label}
                           </div>
+                          <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+                            {metricPresentation.helper}
+                          </p>
                         </div>
-                        <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
-                          <div>
-                            <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                              Minimum passing score
-                            </div>
-                            <div className="mt-1 text-sm font-medium text-[var(--text-secondary)]">
-                              Below this threshold = not eligible.
-                            </div>
+                        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
+                          <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                            Eligibility threshold
                           </div>
-                          <div className="shrink-0 rounded-md border border-[var(--color-warm-900)] bg-[var(--color-warm-900)] px-3 py-2 font-mono text-lg font-bold text-white">
-                            {String(challenge.minimum_score ?? 0)}
+                          <div className="mt-2 text-2xl font-display font-bold text-[var(--color-warm-900)]">
+                            {eligibilityThreshold.value}
                           </div>
+                          <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+                            {eligibilityThreshold.helper}
+                          </p>
                         </div>
                       </div>
                       <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">

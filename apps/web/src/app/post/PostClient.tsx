@@ -262,6 +262,20 @@ const DISTRIBUTION_SUMMARY_LABELS = {
   proportional: "Proportional",
 } as const;
 
+function getMetricOption(metric: string) {
+  return METRIC_OPTIONS.find((option) => option.value === metric);
+}
+
+function getMetricDisplayLabel(metric: string) {
+  return getMetricOption(metric)?.label ?? metric;
+}
+
+function getMetricDisplaySummary(metric: string) {
+  const option = getMetricOption(metric);
+  if (!option) return metric;
+  return option.hint ? `${option.label} (${option.hint})` : option.label;
+}
+
 function requirePresetForType(type: string) {
   const id = defaultPresetIdForChallengeType(type as Parameters<typeof defaultPresetIdForChallengeType>[0]);
   if (!id || id === "custom") return undefined;
@@ -656,7 +670,7 @@ function engineDisplayName(container: string): string {
 function scoringRuleLabel(state: FormState): string {
   if (state.type === "reproducibility") return "Deterministic CSV comparison";
   if (state.type === "prediction") {
-    const metricLabel = METRIC_OPTIONS.find((metric) => metric.value === state.metric)?.label ?? state.metric;
+    const metricLabel = getMetricDisplayLabel(state.metric);
     return `${metricLabel} on hidden labels`;
   }
   return engineDisplayName(state.container);
@@ -2006,10 +2020,10 @@ export function PostClient() {
                   <input className="form-input form-input-mono" placeholder="prediction"
                     value={state.labelColumn} onChange={(e) => setState((s) => ({ ...s, labelColumn: e.target.value }))} />
                 </FormField>
-                <FormField label="Primary metric" hint={METRIC_OPTIONS.find(m => m.value === state.metric)?.hint ?? ""}>
+                <FormField label="Primary metric" hint={getMetricOption(state.metric)?.hint ?? ""}>
                   <select className="form-select" value={state.metric}
                     onChange={(e) => {
-                      const m = METRIC_OPTIONS.find(o => o.value === e.target.value);
+                      const m = getMetricOption(e.target.value);
                       setState((s) => ({
                         ...s,
                         metric: e.target.value,
@@ -2036,7 +2050,7 @@ export function PostClient() {
                     {`${state.idColumn || "id"},${state.labelColumn || "prediction"}\n1,3.42\n2,7.89\n3,1.05\n...`}
                   </pre>
                   <p style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", margin: "0.35rem 0 0", lineHeight: 1.4 }}>
-                    <code style={{ fontSize: "0.68rem", background: "#FAFAFA", border: "1px solid #E5E7EB", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>{state.idColumn || "id"}</code> must match the IDs in your test set. <code style={{ fontSize: "0.68rem", background: "#FAFAFA", border: "1px solid #E5E7EB", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>{state.labelColumn || "prediction"}</code> is the numeric value scored by {METRIC_OPTIONS.find(m => m.value === state.metric)?.label ?? state.metric}.
+                    <code style={{ fontSize: "0.68rem", background: "#FAFAFA", border: "1px solid #E5E7EB", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>{state.idColumn || "id"}</code> must match the IDs in your test set. <code style={{ fontSize: "0.68rem", background: "#FAFAFA", border: "1px solid #E5E7EB", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>{state.labelColumn || "prediction"}</code> is the numeric value scored by {getMetricDisplayLabel(state.metric)}.
                   </p>
                 </div>
               </>
@@ -2490,7 +2504,7 @@ export function PostClient() {
               )}
               {state.type === "reproducibility" && <div className="preview-row"><span className="preview-label">Official scoring rule</span><span className="preview-value">{scoringRuleLabel(state)}</span></div>}
               {state.type === "reproducibility" && state.tolerance && <div className="preview-row"><span className="preview-label">Allowed drift</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)" }}>{state.tolerance}</span></div>}
-              {state.type === "prediction" && state.metric && <div className="preview-row"><span className="preview-label">Metric</span><span className="preview-value">{state.metric}</span></div>}
+              {state.type === "prediction" && state.metric && <div className="preview-row"><span className="preview-label">Primary metric</span><span className="preview-value">{getMetricDisplaySummary(state.metric)}</span></div>}
               {state.type === "prediction" && state.idColumn && <div className="preview-row"><span className="preview-label">ID column</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)" }}>{state.idColumn}</span></div>}
               {state.type === "prediction" && state.labelColumn && <div className="preview-row"><span className="preview-label">Label column</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)" }}>{state.labelColumn}</span></div>}
               {state.type === "prediction" && state.hiddenLabels && <div className="preview-row"><span className="preview-label">Hidden labels</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)", fontSize: "0.72rem" }}>{state.hiddenLabels.length > 40 ? state.hiddenLabels.slice(0, 40) + "…" : state.hiddenLabels}</span></div>}
