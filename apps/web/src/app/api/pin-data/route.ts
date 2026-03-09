@@ -85,7 +85,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ cid });
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error("[pin-data] Upload failed:", message);
+        console.error("[pin-data] Upload failed:", error);
         return NextResponse.json(
             { error: message || "Upload failed." },
             { status: 500 },
