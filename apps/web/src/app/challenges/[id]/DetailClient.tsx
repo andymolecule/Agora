@@ -693,11 +693,11 @@ export function DetailClient({ id }: { id: string }) {
                 <DollarSign className="w-5 h-5" strokeWidth={2.5} />
                 Rewards
               </h3>
-              <div className="mt-4 rounded-lg border border-[#16A34A]/20 bg-[#F0FDF4] px-5 py-4">
-                <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#16A34A]">
+              <div className="mt-4 rounded-lg border border-[#5B7F5E]/15 bg-[#F4F7F2] px-5 py-4">
+                <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#5B7F5E]">
                   Reward Pool
                 </div>
-                <div className="mt-2 text-4xl font-display font-bold tracking-tight text-[#16A34A]">
+                <div className="mt-2 text-4xl font-display font-bold tracking-tight text-[#4A6B4D]">
                   {formatUsdc(challenge.reward_amount)} USDC
                 </div>
               </div>
