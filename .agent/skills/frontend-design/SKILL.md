@@ -4,39 +4,36 @@ Use this skill when building or modifying any frontend component in `apps/web`.
 
 ## Visual Reference
 
-See @docs/design/design-system/DESIGN-SYSTEM.md for the full colour palette, font stack, and semantic token names.
+See @docs/design/design-system/DESIGN-SYSTEM.md for full specs.
 
-## Key Choices
+## Design Direction
 
-- **Palette:** Warm Neutral — beige base (`--color-warm-100 / #F4F4F0`) with near-black text, warm grey borders, and white card surfaces.
-- **Primary accent:** Black (`#000`) for CTAs and active states. Status colours (green/amber/red) for state feedback.
-- **Fonts:** Space Grotesk (headings/display), Inter (body), JetBrains Mono (numeric/crypto data).
-- **Styling:** Tailwind CSS 4 classes + semantic utility classes bridging CSS custom properties in `globals.css`.
-- **Hover/focus:** CSS-only. Avoid JS `onMouseEnter`/`onMouseLeave` for styling.
-- **Animation:** Framer Motion (`motion/react`) for hero entrances only. CSS transitions for hover/focus.
-- **Icons:** Lucide React.
-- **Themes:** Light (default), Dark. Set via `<head>` blocking script from `localStorage`.
+Warm editorial product UI — calm, premium, intentional. Beige base with muted ink blue accent. Typography-forward. Restrained colour usage.
 
-## Warm Neutral Token Scale
+## Core Rules
 
-| Token | Hex | Use |
-|-------|-----|-----|
-| `warm-50` | `#FAFAF7` | Lightest tint, inset wells |
-| `warm-100` | `#F4F4F0` | **Page background** |
-| `warm-200` | `#E8E6E1` | Subtle borders |
-| `warm-300` | `#D4D1CB` | Default borders |
-| `warm-400` | `#B0ADA6` | Muted/placeholder text |
-| `warm-500` | `#8A8680` | Tertiary text |
-| `warm-600` | `#6B6862` | Secondary text |
-| `warm-700` | `#4A4844` | Primary body text |
-| `warm-800` | `#2D2B28` | Headings |
-| `warm-900` | `#1A1917` | Near-black |
+| Area | Rule |
+|------|------|
+| **Palette** | Warm Neutral (`warm-50`–`warm-900`) + Ink Blue accent (`accent-500: #2F4F7F`) |
+| **No raw black** | Use `warm-900` (`#1E1B18`) for CTAs, headings. Never `#000` in new code. |
+| **Fonts** | Space Grotesk (headings only), Inter (everything else), JetBrains Mono (data) |
+| **Radius** | Buttons/inputs: `--radius-md` (8px). Cards: `--radius-lg` (12px). Panels: `--radius-xl` (16px). |
+| **Height** | Buttons: 40px. Inputs: 40–44px. |
+| **Shadows** | Cards: border only → `--shadow-md` on hover. Modals: `--shadow-lg`. |
+| **Spacing** | Use `--space-*` tokens (4/8/12/16/24/32/48/64). Card padding: 20–24px. Section gaps: 32–48px. |
+| **Motion** | CSS transitions for hover/focus. Framer Motion for hero entrances only. |
+| **Icons** | Lucide React |
+| **Themes** | Light (default), Dark. All semantic tokens swap via CSS custom properties. |
 
-## Buttons
+## Typography Hierarchy
 
-- **Primary:** `#000` bg, white text, `4px` radius, `36px` height.
-- **Secondary:** Transparent bg, black text, 2px black border. Hover inverts.
-- **Disabled:** `#d4d4d8` bg, `#71717a` text.
+- **H1–H3:** Space Grotesk, 600 weight, negative tracking
+- **H4:** Inter, 600 weight
+- **Body:** Inter, 400 weight, 14–16px
+- **Label:** Inter, 500 weight, 13px
+- **Mono:** JetBrains Mono, 500 weight, 13px
+
+Do NOT use Space Grotesk for cards, tabs, labels, buttons, or tables.
 
 ## Implementation
 

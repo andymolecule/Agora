@@ -2,30 +2,39 @@
 
 **Platform:** Agora · **Themes:** Light (default), Dark
 
-> Colour and type reference for the Agora product. Use for quick lookups — not as a rulebook.
+> Colour, type, spacing, and component reference for the Agora product.
 
 ---
 
 ## Colour Palette
 
-The palette is warm-neutral: a light beige page background with near-black typography and minimal colour for status feedback.
+Warm-neutral base with Ink Blue accent. Colour is used sparingly — mostly neutral with accent only where it matters.
 
-### Warm Neutrals (primary scale)
+### Warm Neutrals
 
-| Token | Hex | Typical Use |
-|-------|-----|-------------|
-| `warm-50` | `#FAFAF7` | Lightest tint, inset wells |
-| `warm-100` | `#F4F4F0` | **Page background** |
-| `warm-200` | `#E8E6E1` | Subtle borders, dividers |
-| `warm-300` | `#D4D1CB` | Default borders |
-| `warm-400` | `#B0ADA6` | Muted / placeholder text |
-| `warm-500` | `#8A8680` | Tertiary text, strong muted |
-| `warm-600` | `#6B6862` | Secondary text |
-| `warm-700` | `#4A4844` | Primary body text |
-| `warm-800` | `#2D2B28` | Headings |
-| `warm-900` | `#1A1917` | Near-black, primary text |
+| Token | Hex | Use |
+|-------|-----|-----|
+| `warm-50` | `#FBFAF7` | Inset wells, lightest tint |
+| `warm-100` | `#F5F3EE` | **Page background** |
+| `warm-200` | `#E8E3DA` | Subtle borders, dividers |
+| `warm-300` | `#D8D1C5` | Default borders |
+| `warm-400` | `#B7B0A4` | Muted / placeholder text |
+| `warm-500` | `#8F887D` | Tertiary text |
+| `warm-600` | `#6D675E` | Secondary text |
+| `warm-700` | `#4F4A43` | Primary body text |
+| `warm-800` | `#2F2B27` | Headings, hover states |
+| `warm-900` | `#1E1B18` | **Primary CTA / near-black** |
 
-### Status Colours
+### Ink Blue Accent
+
+| Token | Hex | Use |
+|-------|-----|-----|
+| `accent-50` | `#EEF3FA` | Soft accent background |
+| `accent-500` | `#2F4F7F` | **Primary accent** — links, focus, active |
+| `accent-600` | `#243F67` | Hover accent |
+| `accent-400` | `#5B82B5` | Dark mode accent |
+
+### Status
 
 | State | Text | Background |
 |-------|------|------------|
@@ -33,63 +42,104 @@ The palette is warm-neutral: a light beige page background with near-black typog
 | Warning | `#D97706` | `#FFFBEB` |
 | Error | `#DC2626` | `#FEF2F2` |
 
-### Dark Mode Tokens (reserved)
+---
 
-Blues (`blue-100`–`blue-1100`) and Cobalts (`cobalt-100`–`cobalt-1000`) are defined in `@theme` for dark mode surfaces and accents only.
+## Typography Scale
+
+| Role | Font | Size/Line-height | Weight | Tracking |
+|------|------|-------------------|--------|----------|
+| H1 | Space Grotesk | 40/44 (2.5rem) | 600 | -0.02em |
+| H2 | Space Grotesk | 30/36 (1.875rem) | 600 | -0.02em |
+| H3 | Space Grotesk | 24/30 (1.5rem) | 600 | -0.01em |
+| H4 | Inter | 18/26 (1.125rem) | 600 | — |
+| Body L | Inter | 16/26 (1rem) | 400 | — |
+| Body M | Inter | 15/24 (0.9375rem) | 400 | — |
+| Body S | Inter | 14/22 (0.875rem) | 400 | — |
+| Label | Inter | 13/18 (0.8125rem) | 500 | — |
+| Mono | JetBrains Mono | 13/18 (0.8125rem) | 500 | — |
+
+**Rules:** Space Grotesk for headings and stat highlights only. Let Inter do the heavy lifting. `font-variant-numeric: tabular-nums` on all numeric data.
 
 ---
 
-## Typography
+## Spacing Scale
 
-| Role | Font | Fallback | When |
-|------|------|----------|------|
-| **Display** | Space Grotesk | system-ui, sans-serif | Headings, hero text |
-| **Body** | Inter | system-ui, sans-serif | All UI text |
-| **Data** | JetBrains Mono | monospace | Addresses, USDC, scores, hashes |
+```
+--space-1:  4px    tight inline gaps
+--space-2:  8px    label-to-input, tight inline
+--space-3:  12px   small gaps
+--space-4:  16px   standard gaps
+--space-6:  24px   card padding
+--space-8:  32px   section gaps
+--space-12: 48px   large section gaps
+--space-16: 64px   page-level spacing
+```
 
-Use `font-variant-numeric: tabular-nums` on all numeric data.
+---
+
+## Border Radius
+
+| Token | Value | Use |
+|-------|-------|-----|
+| `--radius-sm` | `4px` | Tags, badges |
+| `--radius-md` | `8px` | Buttons, inputs |
+| `--radius-lg` | `12px` | Cards |
+| `--radius-xl` | `16px` | Panels, dialogs |
+| `--radius-full` | `999px` | Pills, avatars |
+
+---
+
+## Shadows & Elevation
+
+| Token | Value | Use |
+|-------|-------|-----|
+| `--shadow-sm` | `0 1px 3px rgba(30,27,24,0.04)` | Button hover |
+| `--shadow-md` | `0 2px 12px rgba(30,27,24,0.06)` | Card hover |
+| `--shadow-lg` | `0 8px 30px rgba(30,27,24,0.10)` | Modal, dropdown |
+| `--shadow-inner` | `inset 0 1px 3px rgba(30,27,24,0.05)` | Inset fields |
+
+Cards default: border only, no shadow. Hover: `--shadow-md`.
 
 ---
 
 ## Buttons
 
-| Variant | Background | Text | Border | Hover |
-|---------|-----------|------|--------|-------|
-| Primary | `#000` | `#FFF` | 1px `#000` | `#18181b`, lift -2px |
-| Secondary | transparent | `#000` | 2px `#000` | Invert to black bg |
-| Disabled | `#d4d4d8` | `#71717a` | `#d4d4d8` | none |
+| Variant | Background | Text | Border | Radius | Height |
+|---------|-----------|------|--------|--------|--------|
+| Primary | `warm-900` | `#FFF` | `warm-900` | 8px | 40px |
+| Secondary | transparent | `warm-900` | 1.5px `warm-300` | 8px | 40px |
+| Disabled | `warm-200` | `warm-500` | `warm-200` | 8px | 40px |
 
-Border radius: `4px`. Height: `36px`. Font weight: 600.
+Hover: lift -1px + `--shadow-sm`. No raw `#000`.
 
 ---
 
-## Semantic CSS Tokens
-
-Defined in `globals.css`, swap between light/dark themes.
+## Semantic Tokens
 
 ### Surfaces
-```
---surface-base       Page background (warm-100)
---surface-default    Cards, panels (#FFF)
---surface-elevated   Elevated cards (#FFF)
---surface-inset      Inset wells (warm-50)
-```
+| Token | Light | Dark |
+|-------|-------|------|
+| `--surface-base` | `warm-100` | `blue-1100` |
+| `--surface-default` | `#FFF` | `blue-1000` |
+| `--surface-elevated` | `#FFF` | `blue-900` |
+| `--surface-inset` | `warm-50` | `blue-800` |
 
 ### Text
-```
---text-primary       Headings, labels (warm-900)
---text-secondary     Body text (warm-700)
---text-tertiary      Captions (warm-600)
---text-muted         Placeholder (warm-400)
---text-accent        Active items (#000)
-```
+| Token | Light | Dark |
+|-------|-------|------|
+| `--text-primary` | `warm-900` | `#F1F1F1` |
+| `--text-secondary` | `warm-700` | `warm-300` |
+| `--text-tertiary` | `warm-600` | `warm-400` |
+| `--text-muted` | `warm-500` | `warm-500` |
+| `--text-accent` | `accent-500` | `accent-200` |
 
 ### Borders
-```
---border-default     Standard (warm-300)
---border-subtle      Dividers (warm-200)
---border-strong      Emphasis (warm-500)
-```
+| Token | Light | Dark |
+|-------|-------|------|
+| `--border-default` | `warm-300` | `blue-700` |
+| `--border-subtle` | `warm-200` | `blue-800` |
+| `--border-strong` | `warm-500` | `blue-600` |
+| `--border-focus` | `accent-500` | `accent-400` |
 
 ---
 
