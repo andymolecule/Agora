@@ -791,6 +791,8 @@ function buildSpec(state: FormState) {
  *  absorb IPFS pinning, wallet confirmations, and slow RPC round-trips. */
 const QUICK_TEST_MINUTES = 30;
 const QUICK_TEST_BUFFER_MINUTES = 2;
+const APPROVAL_REFRESH_ATTEMPTS = 6;
+const APPROVAL_REFRESH_DELAY_MS = 750;
 
 function computeDeadlineIso(days: string): string {
   const d = Number(days);
@@ -815,6 +817,10 @@ function isPermitUnsupportedError(message: string) {
     || normalized.includes("unsupported method")
     || normalized.includes("not implemented")
     || normalized.includes("does not support");
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Format a deadline date for display. */
@@ -1283,6 +1289,21 @@ export function PostClient() {
     return nextState;
   }
 
+  async function waitForAllowanceUpdate(rewardUnits: bigint) {
+    let latestFunding = await refreshPostingFundingState(rewardUnits);
+    if (latestFunding.allowance >= rewardUnits) return latestFunding;
+
+    for (let attempt = 1; attempt < APPROVAL_REFRESH_ATTEMPTS; attempt += 1) {
+      await wait(APPROVAL_REFRESH_DELAY_MS);
+      latestFunding = await refreshPostingFundingState(rewardUnits);
+      if (latestFunding.allowance >= rewardUnits) return latestFunding;
+    }
+
+    throw new Error(
+      "Allowance confirmation is still catching up on-chain. Wait a moment, then retry Create Challenge.",
+    );
+  }
+
   async function prepareChallengeCreation() {
     if (!walletReady) throw new Error("Connect the correct wallet before posting.");
     if (!FACTORY_ADDRESS || !USDC_ADDRESS) {
@@ -1382,10 +1403,7 @@ export function PostClient() {
       setStatus("Approval submitted. Waiting for confirmation...");
       await publicClient.waitForTransactionReceipt({ hash: approveTx });
 
-      const refreshedFunding = await refreshPostingFundingState(rewardUnits);
-      if (refreshedFunding.allowance < rewardUnits) {
-        throw new Error("Allowance did not update after approval. Please retry.");
-      }
+      await waitForAllowanceUpdate(rewardUnits);
       setStatus("USDC approved. Click Create Challenge to post on-chain.");
     } catch (approveError) {
       const message = approveError instanceof Error ? approveError.message : "Approval failed.";
@@ -2535,28 +2553,33 @@ export function PostClient() {
                     <span className="preview-action-step">Step 1 of 2</span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  disabled={
-                    isBusy
-                    || fundingState.status !== "ready"
-                    || !balanceReady
-                    || (fundingState.method === "approve" && !allowanceReady)
-                  }
-                  onClick={() => { void handleCreate(); }}
-                  className={`dash-btn ${(fundingState.method === "permit" || allowanceReady) && balanceReady ? "dash-btn-primary" : "dash-btn-secondary"}`}
-                  style={{ fontSize: "0.8rem" }}
-                >
-                  {isBusy
-                    ? <Loader2 size={14} className="animate-spin" />
-                    : <ArrowRight size={14} />}
-                  {fundingState.method === "permit" && !allowanceReady
-                    ? "Sign Permit & Create"
-                    : "Create Challenge"}
-                  {fundingState.status === "ready" && fundingState.method === "approve" && (
-                    <span className="preview-action-step">Step 2 of 2</span>
-                  )}
-                </button>
+                <div className="preview-action-stack">
+                  <button
+                    type="button"
+                    disabled={
+                      isBusy
+                      || fundingState.status !== "ready"
+                      || !balanceReady
+                      || (fundingState.method === "approve" && !allowanceReady)
+                    }
+                    onClick={() => { void handleCreate(); }}
+                    className={`dash-btn ${(fundingState.method === "permit" || allowanceReady) && balanceReady ? "dash-btn-primary" : "dash-btn-secondary"}`}
+                    style={{ fontSize: "0.8rem" }}
+                  >
+                    {isBusy
+                      ? <Loader2 size={14} className="animate-spin" />
+                      : <ArrowRight size={14} />}
+                    {fundingState.method === "permit" && !allowanceReady
+                      ? "Sign Permit & Create"
+                      : "Create Challenge"}
+                    {fundingState.status === "ready" && fundingState.method === "approve" && (
+                      <span className="preview-action-step">Step 2 of 2</span>
+                    )}
+                  </button>
+                  {fundingState.status === "ready" && fundingState.method === "approve" && !allowanceReady && balanceReady ? (
+                    <p className="preview-action-helper">Available after approval</p>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>

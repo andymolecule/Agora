@@ -1007,9 +1007,10 @@ a:hover {
 
 .dash-btn-primary:disabled,
 .dash-btn-secondary:disabled {
-  background-color: var(--color-warm-200);
+  background-color: var(--color-warm-100);
   border-color: var(--color-warm-200);
   color: var(--color-warm-500);
+  box-shadow: none;
 }
 
 /* Stats Bar */
@@ -2671,6 +2672,7 @@ a:hover {
   font-size: 0.65rem;
   letter-spacing: 0.06em;
   color: var(--text-muted);
+  text-transform: uppercase;
 }
 
 .preview-status {
