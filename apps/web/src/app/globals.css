@@ -887,8 +887,10 @@ a:hover {
   font-family: var(--font-sans);
   font-size: 0.8rem;
   font-weight: 600;
-  padding: 0.5rem 1rem;
-  border-radius: 2px;
+  padding: 0 1rem;
+  height: 36px;
+  box-sizing: border-box;
+  border-radius: 4px;
   cursor: pointer;
   transition: all 200ms var(--ease-out);
   white-space: nowrap;
@@ -2524,16 +2526,21 @@ a:hover {
 
 .preview-actions {
   display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.85rem 1.25rem;
+  padding: 1rem 1.25rem;
   border-top: 1px solid var(--border-default, #e5e7eb);
+}
+
+.preview-actions>button:first-child {
+  margin-right: auto;
+  align-self: flex-start;
 }
 
 .preview-actions-main {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.75rem;
 }
 
@@ -2541,7 +2548,7 @@ a:hover {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.3rem;
+  gap: 0.5rem;
 }
 
 .preview-action-step {
