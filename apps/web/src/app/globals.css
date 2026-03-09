@@ -1471,6 +1471,75 @@ a:hover {
   max-width: 42rem;
 }
 
+.poster-step-intro {
+  display: grid;
+  gap: 0.25rem;
+  margin-bottom: 1.15rem;
+  max-width: 42rem;
+}
+
+.poster-step-intro-title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.poster-step-intro-copy {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.poster-secondary-panel {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: #FBFBFC;
+}
+
+.poster-secondary-panel-header {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.poster-secondary-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.poster-secondary-copy {
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.poster-secondary-panel-body {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.poster-visibility-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #D8E2EA;
+  border-radius: 10px;
+  background: #F8FAFC;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
 /* ─── Form Fields ─── */
 .form-field {
   display: flex;

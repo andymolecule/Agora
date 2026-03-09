@@ -449,8 +449,8 @@ const PIPELINE_FLOWS: Record<PostChallengeType, PipelineFlow> = {
         tone: "scorer",
       },
     ],
-    helper: "Source data moves directly from the posted challenge spec into solver outputs and deterministic scoring.",
-    systemNote: "No extra middle actor sits between solver and scorer here. The reference bundle stays attached to the scorer stage, and settlement happens later in Reward & Execution.",
+    helper: "Public benchmark workflow: training data and evaluation inputs go in, solver predictions come back, and Agora scores them against the posted benchmark targets.",
+    systemNote: "All three artifacts in this step become challenge materials. Use this flow for public benchmark evaluation, not private holdout scoring.",
   },
   reproducibility: {
     stages: [
@@ -476,7 +476,8 @@ const PIPELINE_FLOWS: Record<PostChallengeType, PipelineFlow> = {
         tone: "scorer",
       },
     ],
-    helper: "Public benchmark workflow: source data in, reproduced CSV out, deterministic comparison against the posted reference.",
+    helper: "Public benchmark workflow: source data goes in, reproduced CSV output comes back, and the official scorer compares it deterministically against the posted reference.",
+    systemNote: "The official reference output is published with the challenge and becomes the benchmark artifact every solver is judged against.",
   },
   optimization: {
     stages: [
@@ -1701,60 +1702,76 @@ export function PostClient() {
               <input className="form-input" placeholder="https://..."
                 value={state.referenceLink} onChange={(e) => setState((s) => ({ ...s, referenceLink: e.target.value }))} />
             </FormField>
-            <ChoiceField
-              label="Marketplace category"
-              hint="Used for discovery on Agora. Does not affect scoring or payout."
-              value={state.domain}
-              options={MARKETPLACE_CATEGORY_OPTIONS}
-              onChange={(next) => setState((s) => ({ ...s, domain: next }))}
-              className="span-full"
-              variant="compact"
-            />
-            <FormField label="Keywords (optional)" hint="Optional search keywords — press Enter or comma to add" className="span-full">
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", alignItems: "center" }}>
-                {state.tags.map((tag) => (
-                  <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", padding: "0.2rem 0.5rem", borderRadius: "12px", background: "#FAFAFA", fontSize: "0.72rem", color: "var(--text-secondary)", border: "1px solid #E5E7EB" }}>
-                    <Tag size={10} />
-                    {tag}
-                    <button type="button" onClick={() => removeTag(tag)}
-                      style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: "var(--text-tertiary)", lineHeight: 1, display: "flex" }}>
-                      <X size={10} />
-                    </button>
-                  </span>
-                ))}
-                <input
-                  className="form-input"
-                  style={{ flex: 1, minWidth: "120px", border: "none", padding: "0.25rem 0", fontSize: "0.8rem", background: "transparent" }}
-                  placeholder={state.tags.length === 0 ? scientistCopy.tagPlaceholder : "Add keyword…"}
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if ((e.key === "Enter" || e.key === ",") && tagInput.trim()) {
-                      e.preventDefault();
-                      addTag(tagInput);
-                    }
-                    if (e.key === "Backspace" && !tagInput && state.tags.length > 0) {
-                      removeTag(state.tags[state.tags.length - 1]!);
-                    }
-                  }}
-                  onBlur={() => { if (tagInput.trim()) addTag(tagInput); }}
-                />
+            <div className="span-full poster-secondary-panel">
+              <div className="poster-secondary-panel-header">
+                <span className="poster-secondary-eyebrow">Discovery metadata (optional)</span>
+                <span className="poster-secondary-copy">
+                  Helps people find the challenge on Agora. Does not affect scoring, ranking, or payout.
+                </span>
               </div>
-            </FormField>
+              <div className="poster-secondary-panel-body">
+                <ChoiceField
+                  label="Marketplace category"
+                  hint="Used for discovery and browsing only."
+                  value={state.domain}
+                  options={MARKETPLACE_CATEGORY_OPTIONS}
+                  onChange={(next) => setState((s) => ({ ...s, domain: next }))}
+                  className="span-full"
+                  variant="compact"
+                />
+                <FormField label="Keywords (optional)" hint="Optional search keywords — press Enter or comma to add" className="span-full">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", alignItems: "center" }}>
+                    {state.tags.map((tag) => (
+                      <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", padding: "0.2rem 0.5rem", borderRadius: "12px", background: "#FAFAFA", fontSize: "0.72rem", color: "var(--text-secondary)", border: "1px solid #E5E7EB" }}>
+                        <Tag size={10} />
+                        {tag}
+                        <button type="button" onClick={() => removeTag(tag)}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: "var(--text-tertiary)", lineHeight: 1, display: "flex" }}>
+                          <X size={10} />
+                        </button>
+                      </span>
+                    ))}
+                    <input
+                      className="form-input"
+                      style={{ flex: 1, minWidth: "120px", border: "none", padding: "0.25rem 0", fontSize: "0.8rem", background: "transparent" }}
+                      placeholder={state.tags.length === 0 ? scientistCopy.tagPlaceholder : "Add keyword…"}
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if ((e.key === "Enter" || e.key === ",") && tagInput.trim()) {
+                          e.preventDefault();
+                          addTag(tagInput);
+                        }
+                        if (e.key === "Backspace" && !tagInput && state.tags.length > 0) {
+                          removeTag(state.tags[state.tags.length - 1]!);
+                        }
+                      }}
+                      onBlur={() => { if (tagInput.trim()) addTag(tagInput); }}
+                    />
+                  </div>
+                </FormField>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* ── Section 2: Data & Inputs (type-adaptive) ── */}
       <div className="form-section">
-        <SectionHeader step={2} title="Data & Reference Artifacts" />
+        <SectionHeader step={2} title="Public Challenge Materials" />
         <div className="form-section-body">
+          <div className="poster-step-intro">
+            <p className="poster-step-intro-title">What challenge materials will Agora publish with this bounty?</p>
+            <p className="poster-step-intro-copy">
+              Upload the public datasets and benchmark artifacts solvers will work from. This step defines the shared materials attached to the challenge.
+            </p>
+          </div>
           <PipelineVisual type={state.type} />
           <div className="form-grid">
             {/* ── Prediction: 3 uploads ── */}
             {state.type === "prediction" && (
               <>
-                <FormField label="Training dataset (with labels)" hint="Public labeled data solvers use to fit and validate their models">
+                <FormField label="Public training dataset" hint="Public labeled data solvers use to fit and validate their models">
                   <DataUploadField
                     value={state.train}
                     onChange={(v) => { setState((s) => ({ ...s, train: v })); if (!v) setFileNames((p) => ({ ...p, train: "" })); }}
@@ -1764,7 +1781,7 @@ export function PostClient() {
                     fileName={fileNames.train}
                   />
                 </FormField>
-                <FormField label="Evaluation inputs (without labels)" hint="Public rows solvers generate predictions for">
+                <FormField label="Public evaluation inputs" hint="Public rows solvers generate predictions for">
                   <DataUploadField
                     value={state.test}
                     onChange={(v) => { setState((s) => ({ ...s, test: v })); if (!v) setFileNames((p) => ({ ...p, test: "" })); }}
@@ -1774,7 +1791,7 @@ export function PostClient() {
                     fileName={fileNames.test}
                   />
                 </FormField>
-                <FormField label="Hidden scoring labels" hint="Ground-truth targets used by the official scorer after submission" className="span-full">
+                <FormField label="Benchmark scoring targets" hint="Ground-truth values Agora uses to score submitted predictions once the submission window closes." className="span-full">
                   <DataUploadField
                     value={state.hiddenLabels}
                     onChange={(v) => { setState((s) => ({ ...s, hiddenLabels: v })); if (!v) setFileNames((p) => ({ ...p, hiddenLabels: "" })); }}
@@ -1784,13 +1801,19 @@ export function PostClient() {
                     fileName={fileNames.hiddenLabels}
                   />
                 </FormField>
+                <div className="span-full poster-visibility-note">
+                  <AlertCircle size={14} />
+                  <span>
+                    Current prediction bounties on Agora are benchmark-style. These targets are published with the challenge materials and become the official benchmark Agora-operated scoring uses after submissions close.
+                  </span>
+                </div>
               </>
             )}
 
             {/* ── Reproducibility: 2 uploads + tolerance ── */}
             {state.type === "reproducibility" && (
               <>
-                <FormField label="Source dataset" hint="Public source data and inputs solvers must reproduce from">
+                <FormField label="Public source dataset" hint="The source data and inputs solvers must reproduce from">
                   <DataUploadField
                     value={state.train}
                     onChange={(v) => { setState((s) => ({ ...s, train: v })); if (!v) setFileNames((p) => ({ ...p, train: "" })); }}
@@ -1801,7 +1824,7 @@ export function PostClient() {
                   />
                 </FormField>
                 <FormField
-                  label="Reference output"
+                  label="Official reference output"
                   hint="This CSV is posted with the challenge and becomes the public reference benchmark the official scorer compares submissions against."
                 >
                   <DataUploadField
@@ -1820,56 +1843,11 @@ export function PostClient() {
                     fileName={fileNames.test}
                   />
                 </FormField>
-                <div className="form-field span-full">
-                  <label className="form-label">Match rule (How strict the official scorer should be when comparing numeric values)</label>
-                  <div className="choice-grid">
-                    <button
-                      type="button"
-                      className={`choice-card choice-card-with-input ${!usesNumericDrift ? "active" : ""}`}
-                      onClick={() => setState((s) => ({ ...s, tolerance: "0" }))}
-                    >
-                      <span className="choice-card-title">Exact match</span>
-                      <span className="choice-card-hint">All numeric values must match exactly.</span>
-                      <div className="choice-card-inline-field">
-                        <span className="choice-card-inline-label">Allowed drift</span>
-                        <span className="choice-card-inline-static">None</span>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      className={`choice-card choice-card-with-input ${usesNumericDrift ? "active" : ""}`}
-                      onClick={() => {
-                        if (!usesNumericDrift) {
-                          setState((s) => ({
-                            ...s,
-                            tolerance: s.tolerance.trim() && Number(s.tolerance) > 0 ? s.tolerance : "0.001",
-                          }));
-                        }
-                      }}
-                    >
-                      <span className="choice-card-title">Allow small drift</span>
-                      <span className="choice-card-hint">Useful when minor rounding or floating-point noise should still count as correct.</span>
-                      <div className="choice-card-inline-field">
-                        <span className="choice-card-inline-label">Allowed drift</span>
-                        <input
-                          className="choice-card-inline-input form-input-mono"
-                          placeholder="0.001"
-                          value={usesNumericDrift ? state.tolerance : ""}
-                          onChange={(e) => setState((s) => ({ ...s, tolerance: e.target.value }))}
-                          onFocus={() => {
-                            if (!usesNumericDrift) {
-                              setState((s) => ({
-                                ...s,
-                                tolerance: s.tolerance.trim() && Number(s.tolerance) > 0 ? s.tolerance : "0.001",
-                              }));
-                            }
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </div>
-                    </button>
-                  </div>
-                  <span className="form-hint">Absolute numeric tolerance is used for official scoring. Example: 0.001 means values within ±0.001 are treated as matching.</span>
+                <div className="span-full poster-visibility-note">
+                  <AlertCircle size={14} />
+                  <span>
+                    Reproducibility challenges are public benchmark tasks. Both the source dataset and the official reference output are published with the challenge so solvers can independently understand the target artifact.
+                  </span>
                 </div>
               </>
             )}
@@ -1971,8 +1949,14 @@ export function PostClient() {
 
       {/* ── Section 3: Evaluation ── */}
       <div className="form-section">
-        <SectionHeader step={3} title="Submission & Scoring" />
+        <SectionHeader step={3} title="Solver Return Artifact" />
         <div className="form-section-body">
+          <div className="poster-step-intro">
+            <p className="poster-step-intro-title">What exactly must solvers send back?</p>
+            <p className="poster-step-intro-copy">
+              Define the returned artifact, the schema it must follow, and any notes solvers need to produce useful outputs rather than merely valid files.
+            </p>
+          </div>
           <div className="form-grid">
             {!AVAILABLE_TYPE_OPTIONS.includes(state.type) && (
               <>
@@ -2005,7 +1989,7 @@ export function PostClient() {
             {state.type === "prediction" && (
               <>
                 <div className="span-full">
-                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Submission artifact</p>
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Required submission file</p>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "6px" }}>
                     <Check size={14} style={{ color: "#000" }} />
                     <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-primary)" }}>CSV predictions only</span>
@@ -2016,26 +2000,11 @@ export function PostClient() {
                   <input className="form-input form-input-mono" placeholder="id"
                     value={state.idColumn} onChange={(e) => setState((s) => ({ ...s, idColumn: e.target.value }))} />
                 </FormField>
-                <FormField label="Target column" hint="Column name solvers must predict in their submission CSV">
+                <FormField label="Prediction column name" hint="Column name solvers must use for predictions in their submission CSV">
                   <input className="form-input form-input-mono" placeholder="prediction"
                     value={state.labelColumn} onChange={(e) => setState((s) => ({ ...s, labelColumn: e.target.value }))} />
                 </FormField>
-                <FormField label="Primary metric" hint={getMetricOption(state.metric)?.hint ?? ""}>
-                  <select className="form-select" value={state.metric}
-                    onChange={(e) => {
-                      const m = getMetricOption(e.target.value);
-                      setState((s) => ({
-                        ...s,
-                        metric: e.target.value,
-                        evaluationCriteria: m ? `Evaluated by ${m.label}. ${m.hint}.` : s.evaluationCriteria,
-                      }));
-                    }}>
-                    {METRIC_OPTIONS.map((m) => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
-                  </select>
-                </FormField>
-                <FormField label="Solver notes (optional)" hint="Add any scientific or dataset context that helps solvers build better predictions">
+                <FormField label="Submission guidance (optional)" hint="Add scientific or dataset context that helps solvers produce stronger predictions">
                   <input className="form-input" placeholder="e.g. Rows are assay replicates and scores are judged on Spearman correlation"
                     value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
                 </FormField>
@@ -2059,44 +2028,15 @@ export function PostClient() {
             {/* ── Reproducibility-specific fields ── */}
             {state.type === "reproducibility" && (
               <>
-                <div
-                  className="span-full"
-                  style={{
-                    display: "grid",
-                    gap: "0.35rem",
-                    padding: "0.75rem 0.9rem",
-                    background: "#FAFAFA",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "6px",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <AlertCircle size={15} style={{ color: "#000" }} />
-                    <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-primary)" }}>
-                      Open reference benchmark
-                    </span>
-                  </div>
-                  <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                    In the current protocol, the reference output is part of the posted challenge materials. This template is best for public artifact-matching and benchmark tasks, not blind holdout evaluation.
-                  </p>
-                </div>
                 <div className="span-full">
-                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Submission artifact</p>
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Required submission file</p>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "6px" }}>
                     <Check size={14} style={{ color: "#000" }} />
                     <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-primary)" }}>CSV output only</span>
                     <span style={{ fontSize: "0.72rem", color: "var(--text-tertiary)" }}>&mdash; Solvers submit a CSV matching the reference output columns and row order</span>
                   </div>
                 </div>
-                <div className="span-full">
-                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Official scoring rule</p>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "6px" }}>
-                    <Check size={14} style={{ color: "#000" }} />
-                    <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-primary)" }}>Exact CSV comparison</span>
-                    <span style={{ fontSize: "0.72rem", color: "var(--text-tertiary)" }}>&mdash; The official scorer compares each row against the posted reference output and applies the allowed numeric drift above</span>
-                  </div>
-                </div>
-                <FormField label="Solver notes (optional)" hint="Add any human guidance that helps solvers reproduce the artifact correctly" className="span-full">
+                <FormField label="Submission guidance (optional)" hint="Add human guidance that helps solvers reproduce the artifact correctly" className="span-full">
                   <textarea className="form-textarea" placeholder="e.g. Rows must stay in the original order and all values should be rounded to three decimals"
                     value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
                 </FormField>
@@ -2237,9 +2177,107 @@ export function PostClient() {
 
       {/* ── Section 4: Reward & Execution ── */}
       <div className="form-section">
-        <SectionHeader step={4} title="Reward & Timeline" />
+        <SectionHeader step={4} title="Judging, Reward & Timeline" />
         <div className="form-section-body">
+          <div className="poster-step-intro">
+            <p className="poster-step-intro-title">How will Agora judge submissions and what are you paying for?</p>
+            <p className="poster-step-intro-copy">
+              This step defines the official judging rule, payout structure, and the operating window for the bounty.
+            </p>
+          </div>
           <div className="form-grid">
+            {state.type === "prediction" && (
+              <div className="span-full">
+                <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Official judging rule</p>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.65rem 0.85rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "8px" }}>
+                  <Check size={14} style={{ color: "#000", flexShrink: 0 }} />
+                  <span style={{ fontSize: "0.8rem", lineHeight: 1.5, color: "var(--text-primary)" }}>
+                    Agora compares submitted predictions against the posted benchmark scoring targets after the submission window closes, then ranks solvers by the selected metric.
+                  </span>
+                </div>
+              </div>
+            )}
+            {state.type === "prediction" && (
+              <FormField label="Primary metric" hint={getMetricOption(state.metric)?.hint ?? ""} className="span-full measure-small">
+                <select className="form-select" value={state.metric}
+                  onChange={(e) => {
+                    const m = getMetricOption(e.target.value);
+                    setState((s) => ({
+                      ...s,
+                      metric: e.target.value,
+                      evaluationCriteria: m ? `Evaluated by ${m.label}. ${m.hint}.` : s.evaluationCriteria,
+                    }));
+                  }}>
+                  {METRIC_OPTIONS.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+              </FormField>
+            )}
+            {state.type === "reproducibility" && (
+              <>
+                <div className="span-full">
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Official judging rule</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.65rem 0.85rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "8px" }}>
+                    <Check size={14} style={{ color: "#000", flexShrink: 0 }} />
+                    <span style={{ fontSize: "0.8rem", lineHeight: 1.5, color: "var(--text-primary)" }}>
+                      Agora compares the returned CSV against the posted reference output row by row. The match rule below controls whether numeric drift is allowed during that comparison.
+                    </span>
+                  </div>
+                </div>
+                <div className="form-field span-full">
+                  <label className="form-label">Match rule (How strict the official scorer should be when comparing numeric values)</label>
+                  <div className="choice-grid">
+                    <button
+                      type="button"
+                      className={`choice-card choice-card-with-input ${!usesNumericDrift ? "active" : ""}`}
+                      onClick={() => setState((s) => ({ ...s, tolerance: "0" }))}
+                    >
+                      <span className="choice-card-title">Exact match</span>
+                      <span className="choice-card-hint">All numeric values must match exactly.</span>
+                      <div className="choice-card-inline-field">
+                        <span className="choice-card-inline-label">Allowed drift</span>
+                        <span className="choice-card-inline-static">None</span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className={`choice-card choice-card-with-input ${usesNumericDrift ? "active" : ""}`}
+                      onClick={() => {
+                        if (!usesNumericDrift) {
+                          setState((s) => ({
+                            ...s,
+                            tolerance: s.tolerance.trim() && Number(s.tolerance) > 0 ? s.tolerance : "0.001",
+                          }));
+                        }
+                      }}
+                    >
+                      <span className="choice-card-title">Allow small drift</span>
+                      <span className="choice-card-hint">Useful when minor rounding or floating-point noise should still count as correct.</span>
+                      <div className="choice-card-inline-field">
+                        <span className="choice-card-inline-label">Allowed drift</span>
+                        <input
+                          className="choice-card-inline-input form-input-mono"
+                          placeholder="0.001"
+                          value={usesNumericDrift ? state.tolerance : ""}
+                          onChange={(e) => setState((s) => ({ ...s, tolerance: e.target.value }))}
+                          onFocus={() => {
+                            if (!usesNumericDrift) {
+                              setState((s) => ({
+                                ...s,
+                                tolerance: s.tolerance.trim() && Number(s.tolerance) > 0 ? s.tolerance : "0.001",
+                              }));
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                    </button>
+                  </div>
+                  <span className="form-hint">Absolute numeric tolerance is used for official scoring. Example: 0.001 means values within ±0.001 are treated as matching.</span>
+                </div>
+              </>
+            )}
             <FormField
               label="Reward pool (USDC)"
               hint={`Escrowed on-chain. Between ${CHALLENGE_LIMITS.rewardMinUsdc} and ${CHALLENGE_LIMITS.rewardMaxUsdc} USDC.`}
@@ -2506,8 +2544,8 @@ export function PostClient() {
               {state.type === "reproducibility" && state.tolerance && <div className="preview-row"><span className="preview-label">Allowed drift</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)" }}>{state.tolerance}</span></div>}
               {state.type === "prediction" && state.metric && <div className="preview-row"><span className="preview-label">Primary metric</span><span className="preview-value">{getMetricDisplaySummary(state.metric)}</span></div>}
               {state.type === "prediction" && state.idColumn && <div className="preview-row"><span className="preview-label">ID column</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)" }}>{state.idColumn}</span></div>}
-              {state.type === "prediction" && state.labelColumn && <div className="preview-row"><span className="preview-label">Label column</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)" }}>{state.labelColumn}</span></div>}
-              {state.type === "prediction" && state.hiddenLabels && <div className="preview-row"><span className="preview-label">Hidden labels</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)", fontSize: "0.72rem" }}>{state.hiddenLabels.length > 40 ? state.hiddenLabels.slice(0, 40) + "…" : state.hiddenLabels}</span></div>}
+              {state.type === "prediction" && state.labelColumn && <div className="preview-row"><span className="preview-label">Prediction column</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)" }}>{state.labelColumn}</span></div>}
+              {state.type === "prediction" && state.hiddenLabels && <div className="preview-row"><span className="preview-label">Benchmark scoring targets</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)", fontSize: "0.72rem" }}>{state.hiddenLabels.length > 40 ? state.hiddenLabels.slice(0, 40) + "…" : state.hiddenLabels}</span></div>}
               {state.submissionFormat && <div className="preview-row"><span className="preview-label">Submission format</span><span className="preview-value">{state.submissionFormat}</span></div>}
               {state.successDefinition && <div className="preview-row"><span className="preview-label">Success criteria</span><span className="preview-value">{state.successDefinition}</span></div>}
               {state.evaluationCriteria && <div className="preview-row span-full"><span className="preview-label">Evaluation</span><span className="preview-value">{state.evaluationCriteria}</span></div>}
