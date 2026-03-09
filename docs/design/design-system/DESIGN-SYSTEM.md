@@ -8,57 +8,35 @@
 
 ## Colour Palette
 
-The palette derives from the platform blue family — a single spectral hue expressed across three ranges.
+The palette is warm-neutral: a light beige page background with black typography and restrained use of colour for status and feedback only.
 
-### A-range: Greys (Neutral Infrastructure)
+### Core Neutrals (Warm)
 
 | Token | Hex | Typical Use |
 |-------|-----|-------------|
-| `grey-100` | `#F4F6F7` | Light page background |
-| `grey-200` | `#C5C7D9` | Borders, disabled text |
+| Surface base | `#f4f4f0` | **Page background** (warm beige) |
+| Surface default | `#FFFFFF` | Cards, panels, overlays |
+| Surface elevated | `#FFFFFF` | Elevated cards |
+| Surface inset | `#F4F6FC` | Inset wells, code blocks |
+
+### Grey Scale (A-range)
+
+| Token | Hex | Typical Use |
+|-------|-----|-------------|
+| `grey-100` | `#F4F6F7` | Subtle borders, dividers |
+| `grey-200` | `#C5C7D9` | Default borders, disabled text |
 | `grey-300` | `#A0A5B9` | Muted / placeholder text |
-| `grey-400` | `#646872` | Secondary body text |
-| `grey-500` | `#464B52` | Primary body text |
-| `grey-600` | `#1C2A3E` | Headings |
-| `grey-700` | `#162731` | Dark surfaces |
-| `grey-800` | `#0E1A21` | Dark backgrounds |
-| `grey-900` | `#0A1419` | Deep dark |
-| `grey-1000` | `#050B0D` | Near-black |
+| `grey-400` | `#646872` | Tertiary text, captions |
+| `grey-500` | `#464B52` | Secondary body text |
+| `grey-600` | `#1C2A3E` | Headings (dark) |
+| `grey-700–1000` | `#162731`–`#050B0D` | Dark surfaces |
 
-### B-range: Blues (Platform Structure)
+### Primary Accent
 
-| Token | Hex | Typical Use |
-|-------|-----|-------------|
-| `blue-100` | `#F4F6FC` | Subtle surface tint, inset wells |
-| `blue-200` | `#BBC6F4` | Inactive highlights |
-| `blue-300` | `#8697F7` | Secondary interactive |
-| `blue-400` | `#6066D5` | Focus rings |
-| `blue-500` | `#3E4BA1` | Active nav states |
-| `blue-600` | `#242E6D` | Dark nav background |
-| `blue-700` | `#1E2A61` | Dark mode borders |
-| `blue-800` | `#0D1648` | Dark mode surfaces |
-| `blue-900` | `#112F3F` | Dark mode elevated |
-| `blue-1000` | `#061726` | Dark mode deep bg |
-| `blue-1100` | `#0D0F20` | Dark mode page bg |
-
-### C-range: Cobalts (Brand Accent)
-
-| Token | Hex | Typical Use |
-|-------|-----|-------------|
-| `cobalt-100` | `#E0F3FF` | Info tint, light accent bg |
-| `cobalt-200` | `#1399F4` | **Primary accent** — CTAs, links, active states |
-| `cobalt-300` | `#0F86D9` | Hover state |
-| `cobalt-400` | `#0A6BB5` | Pressed state |
-| `cobalt-500` | `#006581` | Secondary accent |
-| `cobalt-600–1000` | `#0D4B6E`–`#012B31` | Dark-mode accent range |
-
-### Accent Colours
-
-| Token | Hex | Notes |
-|-------|-----|-------|
-| `purple-500` | `#9562F7` | Secondary accent |
-| `purple-700` | `#6F1CE3` | Strong purple |
-| `turquoise` | `#11F1F1` | Status indicator only |
+| Colour | Hex | Usage |
+|--------|-----|-------|
+| **Black** | `#000000` | CTAs, primary buttons, headings, active states |
+| **White** | `#FFFFFF` | Button text on black, card surfaces |
 
 ### Status Colours
 
@@ -68,22 +46,14 @@ The palette derives from the platform blue family — a single spectral hue expr
 | Warning | `#D97706` | `#FFFBEB` |
 | Error | `#DC2626` | `#FEF2F2` |
 
----
+### Reserved Blue/Cobalt Tokens (Dark Mode)
 
-## Gradients
+The following tokens are defined in `@theme` and used primarily for dark mode surfaces and a few accent details. They are **not** part of the light theme identity.
 
-Guidelines for gradients derived from the Agora colour chips:
-
-- Keep within the same hue, adjusting saturation/brightness
-- Two colours only — never three+
-- Turquoise is for status indicators, not gradients
-
-Example combos:
-```
-Blueprint:   linear-gradient(135deg, #242E6D, #3E4BA1)
-Cobalt CTA:  linear-gradient(135deg, #0F86D9, #1399F4)
-Subtle card:  linear-gradient(180deg, #FFFFFF, #F4F6FC)
-```
+| Range | Example | Light Mode Use |
+|-------|---------|----------------|
+| Blues (`blue-100`–`blue-1100`) | `#F4F6FC`–`#0D0F20` | `--surface-inset`, `--border-focus` only |
+| Cobalts (`cobalt-100`–`cobalt-1000`) | `#E0F3FF`–`#012B31` | `--border-accent` only (hover states) |
 
 ---
 
@@ -99,13 +69,25 @@ Use `font-variant-numeric: tabular-nums` on all numeric data.
 
 ---
 
+## Buttons
+
+| Variant | Background | Text | Border | Hover |
+|---------|-----------|------|--------|-------|
+| Primary | `#000` | `#FFF` | 1px `#000` | `#18181b`, lift -2px |
+| Secondary | transparent | `#000` | 2px `#000` | Invert: `#000` bg, `#FFF` text |
+| Disabled | `#d4d4d8` | `#71717a` | `#d4d4d8` | none |
+
+Border radius: `4px`. Height: `36px`. Font weight: 600.
+
+---
+
 ## Semantic CSS Tokens
 
 These custom properties are defined in `globals.css` and swap automatically between light/dark themes.
 
 ### Surfaces
 ```
---surface-base       Page background
+--surface-base       Page background (#f4f4f0 light, blue-1100 dark)
 --surface-default    Card / panel backgrounds
 --surface-elevated   Elevated cards
 --surface-inset      Inset wells, code blocks
@@ -113,18 +95,18 @@ These custom properties are defined in `globals.css` and swap automatically betw
 
 ### Text
 ```
---text-primary       Headings, labels
---text-secondary     Body text
---text-tertiary      Captions, metadata
---text-muted         Placeholder, disabled
---text-accent        Links, active items (cobalt-200)
+--text-primary       Headings, labels (#000 light)
+--text-secondary     Body text (grey-500)
+--text-tertiary      Captions, metadata (grey-400)
+--text-muted         Placeholder, disabled (grey-300)
+--text-accent        Active items (#000)
 ```
 
 ### Borders
 ```
---border-default     Standard borders
---border-subtle      Light dividers
---border-strong      Emphasis borders
+--border-default     Standard borders (grey-200)
+--border-subtle      Light dividers (grey-100)
+--border-strong      Emphasis borders (grey-300)
 ```
 
 ### Glass (Header / Overlays)
@@ -147,11 +129,11 @@ Defined in `globals.css` to bridge CSS custom properties with class-based stylin
                       .text-accent
 
 .card-hover           Lift + shadow + accent border on hover
-.input-focus          Cobalt focus ring
-.btn-primary          Cobalt CTA button
+.input-focus          Focus ring
+.btn-primary          Black CTA button
 .row-hover            Table row highlight
 ```
 
 ---
 
-*Agora Visual Identity · Last updated February 2026*
+*Agora Visual Identity · Last updated March 2026*

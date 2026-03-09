@@ -1,14 +1,14 @@
 /* ============================================================
    AGORA DESIGN SYSTEM — globals.css
-   v2.0 | Tailwind CSS 4 + Molecule Blue tokens
-   Reference: docs/design-system/DESIGN-SYSTEM.md
+   v2.1 | Tailwind CSS 4 + Warm Neutral tokens
+   Reference: docs/design/design-system/DESIGN-SYSTEM.md
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 /* ============================================================
-   TAILWIND 4 THEME — Molecule Blue palette
+   TAILWIND 4 THEME — Warm Neutral palette
    ============================================================ */
 
 @theme {
