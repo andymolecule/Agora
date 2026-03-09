@@ -718,38 +718,9 @@ export function DetailClient({ id }: { id: string }) {
                             </div>
                             <div>
                               <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                                Read further
-                              </div>
-                              <div className="mt-2 flex flex-wrap gap-3">
-                                {challenge.spec_cid && (
-                                  <a
-                                    href={cidHref(challenge.spec_cid) ?? undefined}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
-                                  >
-                                    <span>Challenge spec</span>
-                                    <ExternalLink
-                                      className="h-3.5 w-3.5 shrink-0"
-                                      strokeWidth={1.75}
-                                    />
-                                  </a>
-                                )}
-                                {resultsVisible && (
-                                  <a
-                                    href="#public-verification"
-                                    className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
-                                  >
-                                    <span>Public verification</span>
-                                  </a>
-                                )}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
                                 Scorer image ref
                               </div>
-                              <p className="mt-1 text-sm leading-relaxed text-black/70">
+                              <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">
                                 Exact OCI container image reference used by the
                                 worker for official scoring.
                               </p>
@@ -757,11 +728,11 @@ export function DetailClient({ id }: { id: string }) {
                                 {challenge.eval_image ?? "—"}
                               </div>
                               {resultsVisible && (
-                                <p className="mt-3 text-sm leading-relaxed text-black/70">
+                                <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
                                   After scoring begins, the{" "}
                                   <a
                                     href="#public-verification"
-                                    className="font-medium text-[var(--color-warm-900)] underline decoration-black/20 underline-offset-4 transition-colors hover:text-[#ff2e63] hover:decoration-[#ff2e63]"
+                                    className="font-medium text-[var(--color-warm-900)] underline decoration-[var(--border-default)] underline-offset-4 transition-colors hover:text-[var(--accent-500)] hover:decoration-[var(--accent-500)]"
                                   >
                                     Public Verification
                                   </a>{" "}
@@ -773,7 +744,7 @@ export function DetailClient({ id }: { id: string }) {
                           </div>
                         ) : (
                           <div className="space-y-3">
-                            <p className="text-sm leading-relaxed text-black/70">
+                            <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
                               Exact OCI container image reference used by the
                               worker for official scoring.
                             </p>
@@ -781,6 +752,37 @@ export function DetailClient({ id }: { id: string }) {
                               {challenge.eval_image ?? "—"}
                             </div>
                           </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Read further — always at the bottom */}
+                    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
+                      <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                        Read further
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-3">
+                        {challenge.spec_cid && (
+                          <a
+                            href={cidHref(challenge.spec_cid) ?? undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
+                          >
+                            <span>Challenge spec</span>
+                            <ExternalLink
+                              className="h-3.5 w-3.5 shrink-0"
+                              strokeWidth={1.75}
+                            />
+                          </a>
+                        )}
+                        {resultsVisible && (
+                          <a
+                            href="#public-verification"
+                            className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
+                          >
+                            <span>Public verification</span>
+                          </a>
                         )}
                       </div>
                     </div>
