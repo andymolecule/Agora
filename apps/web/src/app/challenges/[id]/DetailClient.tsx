@@ -562,7 +562,7 @@ export function DetailClient({ id }: { id: string }) {
                 <Section title="What To Submit" icon={FileText}>
                   <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
                     <div className="space-y-4">
-                      <p className="text-sm leading-relaxed text-black/75">
+                      <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
                         Submit{" "}
                         <span className="font-semibold text-[var(--color-warm-900)]">
                           {submissionArtifact}
@@ -579,7 +579,7 @@ export function DetailClient({ id }: { id: string }) {
                           </>
                         )}
                       </p>
-                      <p className="text-sm leading-relaxed text-black/75">
+                      <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
                         {evaluationCriteria}
                       </p>
                     </div>
@@ -616,7 +616,7 @@ export function DetailClient({ id }: { id: string }) {
                       <div className="mb-2 text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
                         Official scoring rule
                       </div>
-                      <p className="text-sm leading-relaxed text-black/80">
+                      <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
                         {successDefinition}
                       </p>
                     </div>
@@ -626,12 +626,12 @@ export function DetailClient({ id }: { id: string }) {
                         <div className="mb-2 text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
                           Evaluation notes
                         </div>
-                        <p className="text-sm leading-relaxed text-black/75">
+                        <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
                           {spec?.evaluation?.criteria ??
                             "Final scores are produced by the configured evaluation bundle and scorer container."}
                         </p>
                         {spec?.evaluation?.tolerance && (
-                          <p className="mt-3 text-sm font-medium text-black/70">
+                          <p className="mt-3 text-sm font-medium text-[var(--text-secondary)]">
                             Comparison tolerance:{" "}
                             <span className="font-mono font-bold text-[var(--color-warm-900)]">
                               {spec.evaluation.tolerance}
@@ -639,7 +639,7 @@ export function DetailClient({ id }: { id: string }) {
                           </p>
                         )}
                       </div>
-                      <div className="grid gap-4 sm:grid-cols-[170px_minmax(0,1fr)] sm:items-stretch">
+                      <div className="grid gap-4 sm:grid-cols-2">
                         <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
                           <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
                             Metric
@@ -650,13 +650,13 @@ export function DetailClient({ id }: { id: string }) {
                               : "Custom"}
                           </div>
                         </div>
-                        <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-4 py-3">
+                        <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
                           <div>
                             <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
                               Minimum passing score
                             </div>
-                            <div className="mt-1 text-sm font-medium text-black/70">
-                              Submissions below this threshold are not eligible.
+                            <div className="mt-1 text-sm font-medium text-[var(--text-secondary)]">
+                              Below this threshold = not eligible.
                             </div>
                           </div>
                           <div className="shrink-0 rounded-md border border-[var(--color-warm-900)] bg-[var(--color-warm-900)] px-3 py-2 font-mono text-lg font-bold text-white">
@@ -674,7 +674,7 @@ export function DetailClient({ id }: { id: string }) {
                               <div className="text-base font-bold text-[var(--color-warm-900)]">
                                 {scorerInfo.label}
                               </div>
-                              <p className="mt-1 text-sm leading-relaxed text-black/75">
+                              <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">
                                 {scorerInfo.summary}
                               </p>
                             </div>
@@ -682,7 +682,7 @@ export function DetailClient({ id }: { id: string }) {
                               <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
                                 What this scorer does
                               </div>
-                              <ul className="mt-2 space-y-2 text-sm leading-relaxed text-black/75">
+                              <ul className="mt-2 space-y-2 text-sm leading-relaxed text-[var(--text-secondary)]">
                                 {scorerInfo.details.map((detail) => (
                                   <li
                                     key={detail}
