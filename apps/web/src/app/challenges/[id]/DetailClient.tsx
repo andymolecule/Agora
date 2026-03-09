@@ -225,13 +225,6 @@ function cidHref(value: string | null | undefined) {
 
 function containerHref(value: string | null | undefined) {
   if (!value) return null;
-  if (value.startsWith("ghcr.io/")) {
-    const clean = value
-      .replace(/^ghcr\.io\//, "")
-      .split("@")[0]
-      ?.split(":")[0];
-    return clean ? `https://github.com/${clean}` : null;
-  }
   return null;
 }
 
@@ -261,18 +254,33 @@ function TechnicalDetailsSection({
   challenge,
 }: {
   challenge: {
+    spec_cid?: string | null;
     dataset_train_cid?: string | null;
     dataset_test_cid?: string | null;
-    eval_image?: string | null;
   };
 }) {
   return (
     <section className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] p-6">
       <h3 className="mb-4 flex items-center gap-2 text-sm font-mono font-bold uppercase tracking-wider text-[var(--color-warm-900)]">
         <Container className="w-4 h-4" strokeWidth={2} />
-        Technical Specifications
+        Public Challenge Artifacts
       </h3>
       <div className="flex flex-col rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-default)] px-5">
+        <InfoRow
+          label="Challenge spec"
+          value={
+            challenge.spec_cid ? (
+              <LinkedValue
+                href={cidHref(challenge.spec_cid)}
+                value={challenge.spec_cid}
+              />
+            ) : (
+              "—"
+            )
+          }
+          mono
+          icon={FileText}
+        />
         <InfoRow
           label="Dataset (train)"
           value={
@@ -302,21 +310,6 @@ function TechnicalDetailsSection({
           }
           mono
           icon={Database}
-        />
-        <InfoRow
-          label="Evaluation image"
-          value={
-            challenge.eval_image ? (
-              <LinkedValue
-                href={containerHref(challenge.eval_image)}
-                value={challenge.eval_image}
-              />
-            ) : (
-              "—"
-            )
-          }
-          mono
-          icon={Container}
         />
       </div>
     </section>
@@ -522,14 +515,19 @@ export function DetailClient({ id }: { id: string }) {
 
                 <Section title="How You're Judged" icon={Target}>
                   <div className="space-y-5">
-                    <p className="text-base leading-relaxed text-black/80">
-                      {successDefinition}
-                    </p>
+                    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
+                      <div className="mb-2 text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                        Official scoring rule
+                      </div>
+                      <p className="text-sm leading-relaxed text-black/80">
+                        {successDefinition}
+                      </p>
+                    </div>
 
                     <div className="space-y-4">
                       <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
                         <div className="mb-2 text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                          Evaluation Notes
+                          Evaluation notes
                         </div>
                         <p className="text-sm leading-relaxed text-black/75">
                           {spec?.evaluation?.criteria ??
@@ -567,6 +565,17 @@ export function DetailClient({ id }: { id: string }) {
                           <div className="shrink-0 rounded-md border border-[var(--color-warm-900)] bg-[var(--color-warm-900)] px-3 py-2 font-mono text-lg font-bold text-white">
                             {String(challenge.minimum_score ?? 0)}
                           </div>
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
+                        <div className="mb-2 text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                          Scorer image
+                        </div>
+                        <p className="text-sm leading-relaxed text-black/70">
+                          Exact OCI container image used for official scoring.
+                        </p>
+                        <div className="mt-3 break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
+                          {challenge.eval_image ?? "—"}
                         </div>
                       </div>
                     </div>
