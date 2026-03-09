@@ -574,8 +574,6 @@ export function DetailClient({ id }: { id: string }) {
               </>
             )}
 
-            <TechnicalDetailsSection challenge={challenge} />
-
             {/* Submit Solution — main column, full width */}
             <SubmitSolution
               challengeId={challenge.id}
@@ -584,6 +582,8 @@ export function DetailClient({ id }: { id: string }) {
               deadline={challenge.deadline}
               expectedColumns={challenge.expected_columns}
             />
+
+            <TechnicalDetailsSection challenge={challenge} />
 
             {resultsVisible && verificationSubmission && (
               <Section title="Public Verification" icon={ShieldCheck}>

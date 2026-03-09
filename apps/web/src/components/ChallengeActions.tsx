@@ -99,18 +99,18 @@ export function ChallengeActions({
   if (!info && !fetchError) return null;
   if (!info) {
     return (
-      <div className="border border-black p-6 bg-white rounded-[2px] space-y-4">
-        <h3 className="text-sm font-bold font-mono tracking-wider uppercase text-black flex items-center gap-2">
+      <div className="border border-[var(--border-default)] p-6 bg-white rounded-lg space-y-4">
+        <h3 className="text-sm font-bold font-mono tracking-wider uppercase text-[var(--color-warm-900)] flex items-center gap-2">
           <Gavel className="w-4 h-4" strokeWidth={2} /> Challenge Actions
         </h3>
-        <div className="flex items-start gap-2 text-xs font-mono text-black/70">
+        <div className="flex items-start gap-2 text-xs font-mono text-[var(--text-muted)]">
           <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
           <div className="space-y-3">
             <p>{fetchError || "Unable to load challenge actions right now."}</p>
             <button
               type="button"
               onClick={() => setRefreshNonce((value) => value + 1)}
-              className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold font-mono uppercase tracking-wider border border-black bg-white hover:bg-black hover:text-white transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold font-mono uppercase tracking-wider border border-[var(--border-default)] bg-white rounded-md hover:bg-[var(--color-warm-900)] hover:text-white transition-colors"
             >
               Retry
             </button>
@@ -224,13 +224,13 @@ export function ChallengeActions({
   const earliestFinalizeDate = formatActionDate(info.earliestFinalizeAt);
 
   return (
-    <div className="border border-black p-6 bg-white rounded-[2px] space-y-4">
-      <h3 className="text-sm font-bold font-mono tracking-wider uppercase text-black flex items-center gap-2">
+    <div className="border border-[var(--border-default)] p-6 bg-white rounded-lg space-y-4">
+      <h3 className="text-sm font-bold font-mono tracking-wider uppercase text-[var(--color-warm-900)] flex items-center gap-2">
         <Gavel className="w-4 h-4" strokeWidth={2} /> Challenge Actions
       </h3>
 
       {fetchError ? (
-        <div className="flex items-start gap-2 text-xs font-mono text-black/70 border-b border-black/10 pb-3">
+        <div className="flex items-start gap-2 text-xs font-mono text-[var(--text-muted)] border-b border-[var(--border-subtle)] pb-3">
           <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
           <div className="space-y-1">
             <p>{fetchError}</p>
@@ -246,7 +246,7 @@ export function ChallengeActions({
       ) : null}
 
       {!info.supportedVersion && (
-        <div className="flex items-start gap-2 text-xs font-mono text-black/70">
+        <div className="flex items-start gap-2 text-xs font-mono text-[var(--text-muted)]">
           <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
           <span>
             Unsupported challenge contract version {info.contractVersion}. This
@@ -260,7 +260,7 @@ export function ChallengeActions({
         <div className="space-y-2">
           {info.canFinalize ? (
             <>
-              <p className="text-xs text-black/60 font-mono">
+              <p className="text-xs text-[var(--text-muted)] font-mono">
                 Dispute window has passed. Finalization runs automatically, but
                 you can trigger it now.
               </p>
@@ -269,7 +269,7 @@ export function ChallengeActions({
                   type="button"
                   onClick={handleFinalize}
                   disabled={loading}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold font-mono uppercase tracking-wider border border-black bg-white hover:bg-black hover:text-white transition-colors disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold font-mono uppercase tracking-wider border border-[var(--border-default)] bg-white rounded-md hover:bg-[var(--color-warm-900)] hover:text-white transition-colors disabled:opacity-50"
                 >
                   {loading ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -279,23 +279,23 @@ export function ChallengeActions({
                   Finalize Now
                 </button>
               ) : (
-                <p className="text-xs text-black/40 font-mono">
+                <p className="text-xs text-[var(--text-muted)] font-mono">
                   Connect wallet to finalize
                 </p>
               )}
             </>
           ) : info.finalizeBlockedReason === "review_window_active" ? (
-            <div className="flex items-center gap-2 text-xs text-black/50 font-mono">
+            <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] font-mono">
               <Clock className="w-3.5 h-3.5" />
               Review window ends {reviewEndsDate}. Finalization may take longer if scoring is still incomplete.
             </div>
           ) : info.finalizeBlockedReason === "scoring_incomplete" ? (
-            <div className="flex items-center gap-2 text-xs text-black/50 font-mono">
+            <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] font-mono">
               <Clock className="w-3.5 h-3.5" />
               Waiting for scorer completion or grace period at {scoringGraceDate}.
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-xs text-black/50 font-mono">
+            <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] font-mono">
               <Clock className="w-3.5 h-3.5" />
               Earliest finalization check {earliestFinalizeDate}
             </div>
@@ -304,7 +304,7 @@ export function ChallengeActions({
       )}
 
       {isDisputed && (
-        <div className="flex items-start gap-2 text-xs font-mono text-black/60">
+        <div className="flex items-start gap-2 text-xs font-mono text-[var(--text-muted)]">
           <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
           <span>Payout is on hold while this challenge is disputed.</span>
         </div>
@@ -312,7 +312,7 @@ export function ChallengeActions({
 
       {/* Finalized status */}
       {isFinalized && !hasClaimable && (
-        <div className="flex items-center gap-2 text-xs font-mono text-black/60">
+        <div className="flex items-center gap-2 text-xs font-mono text-[var(--text-muted)]">
           <CheckCircle className="w-3.5 h-3.5 text-green-600" />
           Challenge finalized
           {address ? " — no rewards for this wallet" : ""}
@@ -321,7 +321,7 @@ export function ChallengeActions({
 
       {/* Cancelled status */}
       {isCancelled && (
-        <div className="text-xs font-mono text-black/60">
+        <div className="text-xs font-mono text-[var(--text-muted)]">
           Challenge was cancelled. Funds returned to poster.
         </div>
       )}
@@ -329,14 +329,14 @@ export function ChallengeActions({
       {/* Claim section */}
       {isFinalized && hasClaimable && (
         <div className="space-y-2">
-          <p className="text-xs text-black/60 font-mono">
+          <p className="text-xs text-[var(--text-muted)] font-mono">
             You have unclaimed rewards from this challenge.
           </p>
           <button
             type="button"
             onClick={handleClaim}
             disabled={loading}
-            className="inline-flex items-center gap-2 px-6 py-3 text-sm font-bold font-mono uppercase tracking-wider border-2 border-black bg-[#EAB308] text-black hover:bg-[#CA8A04] transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-6 py-3 text-sm font-bold font-mono uppercase tracking-wider border-2 border-[var(--color-warm-900)] bg-[#EAB308] text-[var(--color-warm-900)] rounded-md hover:bg-[#CA8A04] transition-colors disabled:opacity-50"
           >
             {loading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -350,7 +350,7 @@ export function ChallengeActions({
 
       {/* Status message */}
       {actionStatus && (
-        <p className="text-xs font-mono text-black/70 border-t border-black/10 pt-3 mt-3">
+        <p className="text-xs font-mono text-[var(--text-muted)] border-t border-[var(--border-subtle)] pt-3 mt-3">
           {actionStatus}
           {txHash && (
             <>
