@@ -109,6 +109,11 @@ const configSchema = z.object({
 });
 
 export type AgoraConfig = z.infer<typeof configSchema>;
+const ipfsConfigSchema = configSchema.pick({
+  AGORA_PINATA_JWT: true,
+  AGORA_IPFS_GATEWAY: true,
+});
+export type AgoraIpfsConfig = z.infer<typeof ipfsConfigSchema>;
 
 export interface AgoraRuntimeIdentity {
   chainId: number;
@@ -141,6 +146,7 @@ function formatZodError(error: z.ZodError): string {
 }
 
 let cachedConfig: AgoraConfig | null = null;
+let cachedIpfsConfig: AgoraIpfsConfig | null = null;
 
 export function loadConfig(): AgoraConfig {
   if (cachedConfig) return cachedConfig;
@@ -183,6 +189,16 @@ export function loadConfig(): AgoraConfig {
   return cachedConfig;
 }
 
+export function loadIpfsConfig(): AgoraIpfsConfig {
+  if (cachedIpfsConfig) return cachedIpfsConfig;
+  const result = ipfsConfigSchema.safeParse(process.env);
+  if (!result.success) {
+    throw new Error(formatZodError(result.error));
+  }
+  cachedIpfsConfig = result.data;
+  return cachedIpfsConfig;
+}
+
 export function getAgoraRuntimeIdentity(
   config: AgoraConfig = loadConfig(),
 ): AgoraRuntimeIdentity {
@@ -196,4 +212,5 @@ export function getAgoraRuntimeIdentity(
 
 export function resetConfigCache() {
   cachedConfig = null;
+  cachedIpfsConfig = null;
 }

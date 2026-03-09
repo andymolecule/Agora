@@ -2,6 +2,9 @@
 
 Human-oriented fixture kits for posting and testing Agora challenge types through the web UI.
 
+For end-to-end stabilization work, also use:
+- [PHASE1-HARDENING-CHECKLIST.md](/Users/changyuesin/Agora/challenges/test-data/PHASE1-HARDENING-CHECKLIST.md)
+
 Each subdirectory is organized around one category and contains:
 - a realistic posting walkthrough
 - concrete files to upload in the UI

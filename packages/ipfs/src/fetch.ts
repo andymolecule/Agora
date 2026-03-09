@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { loadConfig } from "@agora/common";
+import { loadIpfsConfig } from "@agora/common";
 import { DEFAULT_IPFS_GATEWAY } from "@agora/common";
 
 let warnedSharedGateway = false;
@@ -42,7 +42,7 @@ function isBareIpfsCid(value: string): boolean {
 function resolveGateway(cidOrUrl: string): string {
   const isCid = cidOrUrl.startsWith("ipfs://") || isBareIpfsCid(cidOrUrl);
   if (isCid) {
-    const config = loadConfig();
+    const config = loadIpfsConfig();
     const gateway =
       config.AGORA_IPFS_GATEWAY ?? DEFAULT_IPFS_GATEWAY;
     if (

@@ -1,12 +1,6 @@
-// Skip early if required env vars are missing — check raw process.env
-// because loadConfig() will throw on missing required vars.
-if (
-  !process.env.AGORA_PINATA_JWT ||
-  !process.env.AGORA_RPC_URL ||
-  !process.env.AGORA_FACTORY_ADDRESS ||
-  !process.env.AGORA_USDC_ADDRESS
-) {
-  console.log("SKIP: IPFS test requires AGORA_PINATA_JWT + core env vars");
+// Skip early if Pinata auth is missing.
+if (!process.env.AGORA_PINATA_JWT) {
+  console.log("SKIP: IPFS test requires AGORA_PINATA_JWT");
   process.exit(0);
 }
 

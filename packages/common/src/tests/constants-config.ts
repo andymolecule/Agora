@@ -4,6 +4,7 @@ import {
   DEFAULT_CHAIN_ID,
   DEFAULT_X402_NETWORK,
   getEffectiveChallengeStatus,
+  loadIpfsConfig,
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
   loadConfig,
@@ -79,6 +80,19 @@ try {
   const config = loadConfig();
   assert.equal(config.AGORA_CHAIN_ID, DEFAULT_CHAIN_ID);
   assert.equal(config.AGORA_X402_NETWORK, DEFAULT_X402_NETWORK);
+
+  process.env.AGORA_RPC_URL = undefined;
+  process.env.AGORA_FACTORY_ADDRESS = undefined;
+  process.env.AGORA_USDC_ADDRESS = undefined;
+  process.env.AGORA_IPFS_GATEWAY = "https://example-gateway.invalid/ipfs/";
+  resetConfigCache();
+  const ipfsConfig = loadIpfsConfig();
+  assert.equal(ipfsConfig.AGORA_IPFS_GATEWAY, "https://example-gateway.invalid/ipfs/");
+
+  process.env.AGORA_RPC_URL = "https://example-rpc.invalid";
+  process.env.AGORA_FACTORY_ADDRESS = "0x0000000000000000000000000000000000000001";
+  process.env.AGORA_USDC_ADDRESS = "0x0000000000000000000000000000000000000002";
+  resetConfigCache();
 
   const featurePolicy = readFeaturePolicy();
   assert.equal(featurePolicy.enableNonCoreFeatures, false);

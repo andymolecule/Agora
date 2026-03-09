@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { loadConfig } from "@agora/common";
+import { loadIpfsConfig } from "@agora/common";
 import pinataSDK from "@pinata/sdk";
 
 function createClient() {
-  const config = loadConfig();
+  const config = loadIpfsConfig();
   if (!config.AGORA_PINATA_JWT) {
     throw new Error("AGORA_PINATA_JWT is required to pin to IPFS.");
   }
