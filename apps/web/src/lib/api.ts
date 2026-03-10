@@ -18,6 +18,19 @@ import type {
 
 const BASE = API_BASE_URL.replace(/\/$/, "");
 
+async function getApiErrorMessage(response: Response): Promise<string> {
+  const text = await response.text();
+  try {
+    const parsed = JSON.parse(text) as { error?: unknown };
+    if (typeof parsed.error === "string" && parsed.error.trim().length > 0) {
+      return parsed.error;
+    }
+  } catch {
+    // Fall through to raw text.
+  }
+  return text || `Request failed (${response.status}).`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE}${path}`, {
     ...init,
@@ -28,8 +41,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`API request failed (${response.status}): ${text}`);
+    const message = await getApiErrorMessage(response);
+    throw new Error(`API request failed (${response.status}): ${message}`);
   }
 
   const json = (await response.json()) as { data?: T };
@@ -128,8 +141,8 @@ export async function createSubmissionRecord(input: {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`API request failed (${response.status}): ${text}`);
+    const message = await getApiErrorMessage(response);
+    throw new Error(`API request failed (${response.status}): ${message}`);
   }
 
   return (await response.json()) as {
@@ -187,8 +200,8 @@ export async function verifySiweSession(input: {
     body: JSON.stringify(input),
   });
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`SIWE verification failed (${response.status}): ${text}`);
+    const message = await getApiErrorMessage(response);
+    throw new Error(`SIWE verification failed (${response.status}): ${message}`);
   }
   return (await response.json()) as {
     ok: boolean;

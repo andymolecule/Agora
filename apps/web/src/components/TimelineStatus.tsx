@@ -2,6 +2,7 @@
 
 import { CHALLENGE_LIMITS, CHALLENGE_STATUS, type ChallengeStatus } from "@agora/common";
 import { ArrowUpRight, Calendar, Clock, ExternalLink } from "lucide-react";
+import { getChallengeTimelineFlow } from "../lib/challenge-status-copy";
 import { shortAddress } from "../lib/format";
 import type { Challenge, Submission } from "../lib/types";
 
@@ -12,63 +13,7 @@ export function TimelineStatus({
   submissions = [],
 }: { challenge: Challenge; submissions?: Submission[] }) {
   const flow: Array<{ key: ChallengeStatus; label: string; detail: string }> =
-    (() => {
-      if (challenge.status === CHALLENGE_STATUS.cancelled) {
-        return [
-          {
-            key: CHALLENGE_STATUS.open,
-            label: "Open",
-            detail: "Open for solver submissions",
-          },
-          {
-            key: CHALLENGE_STATUS.cancelled,
-            label: "Cancelled",
-            detail: "Challenge cancelled/refunded",
-          },
-        ];
-      }
-      if (challenge.status === CHALLENGE_STATUS.disputed) {
-        return [
-          {
-            key: CHALLENGE_STATUS.open,
-            label: "Open",
-            detail: "Open for solver submissions",
-          },
-          {
-            key: CHALLENGE_STATUS.scoring,
-            label: "Scoring",
-            detail: "Oracle scoring window",
-          },
-          {
-            key: CHALLENGE_STATUS.disputed,
-            label: "Disputed",
-            detail: "Dispute and resolution period",
-          },
-          {
-            key: CHALLENGE_STATUS.finalized,
-            label: "Finalized",
-            detail: "Payouts claimable",
-          },
-        ];
-      }
-      return [
-        {
-          key: CHALLENGE_STATUS.open,
-          label: "Open",
-          detail: "Open for solver submissions",
-        },
-        {
-          key: CHALLENGE_STATUS.scoring,
-          label: "Scoring",
-          detail: "Oracle scoring window",
-        },
-        {
-          key: CHALLENGE_STATUS.finalized,
-          label: "Finalized",
-          detail: "Payouts claimable",
-        },
-      ];
-    })();
+    getChallengeTimelineFlow(challenge.status);
 
   const current = flow.findIndex((step) => step.key === challenge.status);
 

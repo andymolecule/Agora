@@ -103,6 +103,7 @@ router.post(
           publicClient,
           challengeAddress: challengeAddress as `0x${string}`,
           chainId: config.AGORA_CHAIN_ID,
+          blockNumber: receipt.blockNumber,
         }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

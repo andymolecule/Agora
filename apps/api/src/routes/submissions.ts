@@ -1,4 +1,5 @@
 import {
+  getChallengeSubmissionCount,
   getChallengeLifecycleState,
   getOnChainSubmission,
   getPublicClient,
@@ -92,6 +93,18 @@ export function canServeSubmissionSealPublicKey(input: {
   hasReadyWorkerForActiveKey: boolean;
 }) {
   return input.hasPublicSealConfig && input.hasReadyWorkerForActiveKey;
+}
+
+export function isInvalidOnChainSubmissionReadError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /InvalidSubmission/i.test(message);
+}
+
+export function getSubmissionReadRetryMessage(input: {
+  submissionId: bigint;
+  challengeAddress: string;
+}) {
+  return `Submission transaction is confirmed, but submission #${input.submissionId.toString()} is not readable from challenge ${input.challengeAddress} yet. Next step: retry in a few seconds.`;
 }
 
 const router = new Hono<ApiEnv>();
@@ -260,10 +273,33 @@ router.post(
       return c.json({ error: message }, 400);
     }
 
-    const onChain = await getOnChainSubmission(
-      challenge.contract_address as `0x${string}`,
-      subId,
-    );
+    let onChain;
+    try {
+      onChain = await getOnChainSubmission(
+        challenge.contract_address as `0x${string}`,
+        subId,
+        receipt.blockNumber,
+      );
+    } catch (error) {
+      if (isInvalidOnChainSubmissionReadError(error)) {
+        const submissionCount = await getChallengeSubmissionCount(
+          challenge.contract_address as `0x${string}`,
+          receipt.blockNumber,
+        );
+        if (subId >= submissionCount) {
+          return c.json(
+            {
+              error: getSubmissionReadRetryMessage({
+                submissionId: subId,
+                challengeAddress: challenge.contract_address,
+              }),
+            },
+            409,
+          );
+        }
+      }
+      throw error;
+    }
 
     const expectedHash = computeSubmissionResultHash(normalizedResultCid);
     if (onChain.resultHash.toLowerCase() !== expectedHash.toLowerCase()) {

@@ -43,6 +43,7 @@ export async function loadChallengeDefinitionFromChain(input: {
   publicClient?: ReturnType<typeof getPublicClient>;
   challengeAddress: `0x${string}`;
   chainId: number;
+  blockNumber?: bigint;
 }) {
   const publicClient = input.publicClient ?? getPublicClient();
 
@@ -51,13 +52,15 @@ export async function loadChallengeDefinitionFromChain(input: {
       address: input.challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "specCid",
+      ...(input.blockNumber !== undefined ? { blockNumber: input.blockNumber } : {}),
     }) as Promise<string>,
     publicClient.readContract({
       address: input.challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "deadline",
+      ...(input.blockNumber !== undefined ? { blockNumber: input.blockNumber } : {}),
     }) as Promise<bigint>,
-    getChallengeContractVersion(input.challengeAddress),
+    getChallengeContractVersion(input.challengeAddress, input.blockNumber),
   ]);
 
   const spec = await fetchValidatedChallengeSpec(specCid, input.chainId);

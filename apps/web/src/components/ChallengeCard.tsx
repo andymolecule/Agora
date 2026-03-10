@@ -3,7 +3,11 @@
 import { CHALLENGE_STATUS } from "@agora/common";
 import { Clock } from "lucide-react";
 import Link from "next/link";
-import { deadlineCountdown, formatUsdc } from "../lib/format";
+import {
+  getChallengeBadgeLabel,
+  getChallengeCardFooterLabel,
+} from "../lib/challenge-status-copy";
+import { formatUsdc } from "../lib/format";
 import { getStatusStyle } from "../lib/status-styles";
 import type { Challenge } from "../lib/types";
 
@@ -14,30 +18,8 @@ export function ChallengeCard({
   index?: number;
 }) {
   const statusStyle = getStatusStyle(challenge.status);
-  const badgeLabel =
-    {
-      [CHALLENGE_STATUS.open]: "Live",
-      [CHALLENGE_STATUS.scoring]: "Scoring",
-      [CHALLENGE_STATUS.disputed]: "Disputed",
-      [CHALLENGE_STATUS.finalized]: "Settled",
-      [CHALLENGE_STATUS.cancelled]: "Cancelled",
-    }[challenge.status] ?? challenge.status;
-  const footerLabel = (() => {
-    switch (challenge.status) {
-      case CHALLENGE_STATUS.open:
-        return deadlineCountdown(challenge.deadline);
-      case CHALLENGE_STATUS.scoring:
-        return "Submissions closed";
-      case CHALLENGE_STATUS.disputed:
-        return "Payout on hold";
-      case CHALLENGE_STATUS.finalized:
-        return "Settled on-chain";
-      case CHALLENGE_STATUS.cancelled:
-        return "Challenge cancelled";
-      default:
-        return deadlineCountdown(challenge.deadline);
-    }
-  })();
+  const badgeLabel = getChallengeBadgeLabel(challenge.status);
+  const footerLabel = getChallengeCardFooterLabel(challenge);
 
   return (
     <Link
@@ -78,7 +60,7 @@ export function ChallengeCard({
         </p>
       </div>
 
-      {/* Footer: domain + deadline */}
+      {/* Footer: domain + phase summary */}
       <div className="flex items-center justify-between px-5 py-3 border-t border-black/10">
         <span className="text-[10px] font-mono font-bold uppercase tracking-[0.5px] px-2 py-1 border border-black text-black">
           {challenge.domain}
