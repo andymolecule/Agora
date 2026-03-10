@@ -1,17 +1,21 @@
 import { keccak256, toHex } from "viem";
 import {
-  sealedSubmissionEnvelopeSchema,
   type SealedSubmissionEnvelope,
   type SealedSubmissionEnvelopeInput,
+  type SubmissionSealAlg,
+  type SubmissionSealVersion,
+  sealedSubmissionEnvelopeSchema,
 } from "./schemas/submission.js";
 
-const SUBMISSION_SEAL_VERSION = "sealed_submission_v1";
-const SUBMISSION_SEAL_ALG = "aes-256-gcm+rsa-oaep-256";
+export const SUBMISSION_SEAL_VERSION = "sealed_submission_v2" as const;
+export const SUBMISSION_SEAL_ALG = "aes-256-gcm+rsa-oaep-256" as const;
 
 type SupportedCryptoKey = CryptoKey;
 const SELF_CHECK_CHALLENGE_ID = "00000000-0000-0000-0000-000000000001";
 const SELF_CHECK_SOLVER_ADDRESS = "0x0000000000000000000000000000000000000001";
-const SELF_CHECK_BYTES = new TextEncoder().encode("agora-sealed-submission-self-check");
+const SELF_CHECK_BYTES = new TextEncoder().encode(
+  "agora-sealed-submission-self-check",
+);
 
 function normalizeSolverAddress(value: string) {
   return value.toLowerCase();
@@ -41,7 +45,10 @@ function bytesToBase64Url(bytes: Uint8Array) {
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);
   }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
 function base64UrlToBytes(value: string) {
@@ -79,17 +86,23 @@ function pemToDerBytes(pem: string) {
 }
 
 function buildEnvelopeAad(input: {
-  version: typeof SUBMISSION_SEAL_VERSION;
+  version: SubmissionSealVersion;
+  alg: SubmissionSealAlg;
   kid: string;
   challengeId: string;
   solverAddress: string;
+  fileName: string;
+  mimeType: string;
 }) {
   return new TextEncoder().encode(
     JSON.stringify({
       version: input.version,
+      alg: input.alg,
       kid: input.kid,
       challengeId: input.challengeId,
       solverAddress: normalizeSolverAddress(input.solverAddress),
+      fileName: input.fileName,
+      mimeType: input.mimeType,
     }),
   );
 }
@@ -140,9 +153,12 @@ export async function sealSubmission(input: {
   );
   const aad = buildEnvelopeAad({
     version: SUBMISSION_SEAL_VERSION,
+    alg: SUBMISSION_SEAL_ALG,
     kid: input.keyId,
     challengeId: input.challengeId,
     solverAddress,
+    fileName: input.fileName,
+    mimeType: input.mimeType,
   });
   const ciphertext = new Uint8Array(
     await crypto.subtle.encrypt(
@@ -187,9 +203,12 @@ export async function openSubmission(input: {
   const crypto = await getWebCrypto();
   const aad = buildEnvelopeAad({
     version: envelope.version,
+    alg: envelope.alg,
     kid: envelope.kid,
     challengeId: envelope.challengeId,
     solverAddress: envelope.solverAddress,
+    fileName: envelope.fileName,
+    mimeType: envelope.mimeType,
   });
   const rawAesKey = await crypto.subtle.decrypt(
     { name: "RSA-OAEP" },
@@ -301,11 +320,15 @@ export async function runSubmissionSealSelfCheck(input: {
 
   const roundTrip = new Uint8Array(opened.bytes);
   if (roundTrip.byteLength !== SELF_CHECK_BYTES.byteLength) {
-    throw new Error("Submission sealing self-check failed: plaintext size mismatch.");
+    throw new Error(
+      "Submission sealing self-check failed: plaintext size mismatch.",
+    );
   }
   for (let index = 0; index < SELF_CHECK_BYTES.byteLength; index += 1) {
     if (roundTrip[index] !== SELF_CHECK_BYTES[index]) {
-      throw new Error("Submission sealing self-check failed: plaintext mismatch.");
+      throw new Error(
+        "Submission sealing self-check failed: plaintext mismatch.",
+      );
     }
   }
 

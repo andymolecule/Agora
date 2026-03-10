@@ -23,6 +23,7 @@ export async function resolveSubmissionSource(input: {
   challengeId: string;
   solverAddress: string;
   privateKeyPem?: string;
+  privateKeyPemsByKid?: Record<string, string>;
 }): Promise<ScoringInputSource> {
   if (
     !input.resultFormat ||
@@ -31,14 +32,14 @@ export async function resolveSubmissionSource(input: {
     return { cid: input.resultCid };
   }
 
-  if (input.resultFormat !== SUBMISSION_RESULT_FORMAT.sealedV1) {
+  if (input.resultFormat !== SUBMISSION_RESULT_FORMAT.sealedSubmissionV2) {
     throw new SealedSubmissionError(
       "unsupported_result_format",
       `Unsupported submission result_format: ${input.resultFormat}`,
     );
   }
 
-  if (!input.privateKeyPem) {
+  if (!input.privateKeyPem && !input.privateKeyPemsByKid) {
     throw new SealedSubmissionError(
       "missing_decryption_key",
       "Submission decryption key is not configured.",
@@ -46,28 +47,42 @@ export async function resolveSubmissionSource(input: {
   }
 
   const envelopeText = await getText(input.resultCid);
-  let envelope;
-  try {
-    envelope = parseSealedSubmissionEnvelope(envelopeText);
-  } catch (error) {
+  const envelope = (() => {
+    try {
+      return parseSealedSubmissionEnvelope(envelopeText);
+    } catch (error) {
+      throw new SealedSubmissionError(
+        "invalid_envelope_schema",
+        error instanceof Error
+          ? error.message
+          : "Invalid sealed submission envelope.",
+      );
+    }
+  })();
+  const privateKeyPem =
+    input.privateKeyPemsByKid?.[envelope.kid] ?? input.privateKeyPem;
+  if (!privateKeyPem) {
     throw new SealedSubmissionError(
-      "invalid_envelope_schema",
-      error instanceof Error ? error.message : "Invalid sealed submission envelope.",
+      "missing_decryption_key",
+      `Submission decryption key for kid ${envelope.kid} is not configured.`,
     );
   }
-  const privateKey = await importSubmissionOpenPrivateKey(input.privateKeyPem);
-  let opened;
-  try {
-    opened = await openSubmission({
-      envelope,
-      privateKey,
-    });
-  } catch (error) {
-    throw new SealedSubmissionError(
-      "decrypt_failed",
-      error instanceof Error ? error.message : "Failed to decrypt sealed submission.",
-    );
-  }
+  const privateKey = await importSubmissionOpenPrivateKey(privateKeyPem);
+  const opened = await (async () => {
+    try {
+      return await openSubmission({
+        envelope,
+        privateKey,
+      });
+    } catch (error) {
+      throw new SealedSubmissionError(
+        "decrypt_failed",
+        error instanceof Error
+          ? error.message
+          : "Failed to decrypt sealed submission.",
+      );
+    }
+  })();
 
   if (opened.envelope.challengeId !== input.challengeId) {
     throw new SealedSubmissionError(

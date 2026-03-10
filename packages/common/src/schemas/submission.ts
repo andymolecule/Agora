@@ -14,10 +14,12 @@ export type SubmissionMetadataOutput = z.output<
 >;
 
 const BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
+export const submissionSealVersionSchema = z.literal("sealed_submission_v2");
+export const submissionSealAlgSchema = z.literal("aes-256-gcm+rsa-oaep-256");
 
 export const sealedSubmissionEnvelopeSchema = z.object({
-  version: z.literal("sealed_submission_v1"),
-  alg: z.literal("aes-256-gcm+rsa-oaep-256"),
+  version: submissionSealVersionSchema,
+  alg: submissionSealAlgSchema,
   kid: z.string().min(1),
   challengeId: z.string().uuid(),
   solverAddress: z
@@ -37,3 +39,7 @@ export type SealedSubmissionEnvelopeInput = z.input<
 export type SealedSubmissionEnvelope = z.output<
   typeof sealedSubmissionEnvelopeSchema
 >;
+export type SubmissionSealVersion = z.output<
+  typeof submissionSealVersionSchema
+>;
+export type SubmissionSealAlg = z.output<typeof submissionSealAlgSchema>;

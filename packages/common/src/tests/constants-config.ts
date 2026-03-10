@@ -3,18 +3,23 @@ import {
   CHALLENGE_STATUS,
   DEFAULT_CHAIN_ID,
   DEFAULT_X402_NETWORK,
-  getEffectiveChallengeStatus,
-  loadIpfsConfig,
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
+  getEffectiveChallengeStatus,
   loadConfig,
+  loadIpfsConfig,
   readFeaturePolicy,
   readX402RuntimeConfig,
   resetConfigCache,
+  resolveSubmissionOpenPrivateKeyPem,
 } from "../index.js";
 
 const statusValues = Object.values(CHALLENGE_STATUS);
-assert.equal(statusValues.length, 5, "challenge status registry should stay explicit");
+assert.equal(
+  statusValues.length,
+  5,
+  "challenge status registry should stay explicit",
+);
 
 assert.equal(
   SCORE_JOB_STATUSES.length,
@@ -87,10 +92,14 @@ try {
   process.env.AGORA_IPFS_GATEWAY = "https://example-gateway.invalid/ipfs/";
   resetConfigCache();
   const ipfsConfig = loadIpfsConfig();
-  assert.equal(ipfsConfig.AGORA_IPFS_GATEWAY, "https://example-gateway.invalid/ipfs/");
+  assert.equal(
+    ipfsConfig.AGORA_IPFS_GATEWAY,
+    "https://example-gateway.invalid/ipfs/",
+  );
 
   process.env.AGORA_RPC_URL = "https://example-rpc.invalid";
-  process.env.AGORA_FACTORY_ADDRESS = "0x0000000000000000000000000000000000000001";
+  process.env.AGORA_FACTORY_ADDRESS =
+    "0x0000000000000000000000000000000000000001";
   process.env.AGORA_USDC_ADDRESS = "0x0000000000000000000000000000000000000002";
   resetConfigCache();
 
@@ -113,10 +122,43 @@ try {
   resetConfigCache();
   assert.throws(
     () => loadConfig(),
-    /AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM requires/,
+    /Submission sealing worker config requires/,
     "private sealing key should require the public sealing config",
   );
   process.env.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM = undefined;
+  resetConfigCache();
+
+  process.env.AGORA_SUBMISSION_SEAL_KEY_ID = "active-kid";
+  process.env.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM = "public-key";
+  process.env.AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON = JSON.stringify({
+    "old-kid": "old-private-key",
+  });
+  resetConfigCache();
+  assert.throws(
+    () => loadConfig(),
+    /missing a private key for active kid active-kid/,
+    "worker keyring should include the active key id",
+  );
+
+  process.env.AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON = JSON.stringify({
+    "old-kid": "old-private-key",
+    "active-kid": "active-private-key",
+  });
+  resetConfigCache();
+  const rotatedConfig = loadConfig();
+  assert.equal(
+    resolveSubmissionOpenPrivateKeyPem("old-kid", rotatedConfig),
+    "old-private-key",
+    "worker keyring should resolve historical private keys by kid",
+  );
+  assert.equal(
+    resolveSubmissionOpenPrivateKeyPem("active-kid", rotatedConfig),
+    "active-private-key",
+    "worker keyring should resolve the active private key by kid",
+  );
+  process.env.AGORA_SUBMISSION_SEAL_KEY_ID = undefined;
+  process.env.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM = undefined;
+  process.env.AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON = undefined;
   resetConfigCache();
 
   process.env.AGORA_ENABLE_NON_CORE_FEATURES = "true";

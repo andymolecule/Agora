@@ -123,7 +123,7 @@ flowchart TB
 ```
 
 **Scoring is deterministic:** Same Docker container + same input = same score, every time. This is what makes the system trustworthy.
-**Sealed means public-hidden:** submissions stay hidden from the public and other solvers until scoring begins; Agora-operated scoring can decrypt after deadline.
+**Sealed means public-hidden:** the browser fetches Agora's active sealing public key, seals the answer locally as `sealed_submission_v2`, uploads only the sealed envelope to IPFS, and records the CID hash on-chain. After deadline, Agora's worker resolves the matching private key, decrypts for scoring, and may publish replay artifacts once scoring begins.
 
 ### Phase 4: Settlement
 

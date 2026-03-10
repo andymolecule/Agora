@@ -180,7 +180,7 @@ export function buildSubmitCommand() {
               challenge.id,
               Number(submissionId),
               resultCid,
-              SUBMISSION_RESULT_FORMAT.sealedV1,
+              SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
             );
             cidUpdated = true;
           } catch {

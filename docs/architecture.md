@@ -14,7 +14,7 @@ Engineers working on any part of the system. Reviewers assessing the architectur
 
 ## Source of truth
 
-This doc is authoritative for: system topology, component responsibilities, package boundaries, API route map, security model, and deployment topology. For database schema and indexer details, see [Data and Indexing](data-and-indexing.md). For contract lifecycle and settlement rules, see [Protocol](protocol.md). For operational procedures, see [Operations](operations.md).
+This doc is authoritative for: system topology, component responsibilities, package boundaries, API route map, security model, and deployment topology. For sealed submission format and privacy boundaries, see [Submission Privacy](submission-privacy.md). For database schema and indexer details, see [Data and Indexing](data-and-indexing.md). For contract lifecycle and settlement rules, see [Protocol](protocol.md). For operational procedures, see [Operations](operations.md).
 
 ## Summary
 
@@ -228,6 +228,39 @@ Effective versus persisted status:
 - The contract `status()` view is the read-side truth. After the deadline, it returns `Scoring` even if the persisted storage slot is still `Open`.
 - Write-side transitions stay strict: `postScore()`, `dispute()`, and `finalize()` require a persisted `startScoring()` transaction first.
 - Off-chain consumers should use `status()` for visibility decisions. The DB projection may conservatively lag until the `StatusChanged(Open, Scoring)` event is indexed.
+
+### Sealed Submission Privacy Flow
+
+For the full privacy model, exact envelope fields, and key rotation rules, see [Submission Privacy](submission-privacy.md).
+
+```mermaid
+sequenceDiagram
+    participant Solver as Solver Browser
+    participant API as Agora API
+    participant IPFS as IPFS
+    participant Chain as AgoraChallenge
+    participant Worker as Scoring Worker
+
+    Solver->>API: GET /api/submissions/public-key
+    API-->>Solver: active kid + RSA public key
+    Solver->>Solver: seal locally as sealed_submission_v2
+    Solver->>IPFS: upload sealed-submission.json
+    Solver->>Chain: submit(keccak256(result CID))
+    Solver->>API: record result_cid + result_format
+
+    Note over Solver,Worker: While challenge is Open, public verification stays locked.
+
+    Worker->>IPFS: fetch sealed envelope by CID
+    Worker->>Worker: resolve private key by kid
+    Worker->>Worker: decrypt + score in Docker
+    Worker->>IPFS: pin proof bundle and replay artifact
+```
+
+Current privacy boundary:
+- The browser uploads only the sealed envelope while the challenge is open. Plaintext answer bytes are not uploaded directly.
+- The active public key is served by `GET /api/submissions/public-key`; the worker must hold the matching private key for that `kid`.
+- `sealed_submission_v2` authenticates `challengeId`, `solverAddress`, `fileName`, and `mimeType` as AES-GCM additional data, so those fields cannot be tampered with without breaking decryption.
+- This is anti-copy privacy, not full metadata opacity. Wallet address and transaction remain on-chain. After scoring begins, replay artifacts may be published for public verification.
 
 ### USDC Flow
 

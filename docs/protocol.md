@@ -15,7 +15,7 @@ Engineers working on contracts, chain integration, or settlement logic. Operator
 
 ## Source of truth
 
-This doc is authoritative for: challenge lifecycle states, settlement rules, payout distribution, contract roles, event semantics, and the challenge YAML schema. It is **not** authoritative for: database schema, API routes, or frontend behavior.
+This doc is authoritative for: challenge lifecycle states, settlement rules, payout distribution, contract roles, event semantics, and the challenge YAML schema. It is **not** authoritative for: sealed submission format details, database schema, API routes, or frontend behavior. For the privacy and sealing model, see [Submission Privacy](submission-privacy.md).
 
 ## Summary
 
@@ -84,6 +84,16 @@ stateDiagram-v2
 - **Open:** Submissions are allowed. No public leaderboard, no public verification artifacts, and no score computation. Sealed submissions are hidden from the public and other solvers.
 - **Scoring:** Submissions are closed. The worker may decrypt sealed submissions, compute scores, and publish per-challenge results.
 - **Finalized:** Public global reputation surfaces (win rate, earned USDC) derive from finalized challenges only.
+
+### Sealed submission rules
+
+For the full sealing flow, trust boundary, and envelope details, see [Submission Privacy](submission-privacy.md).
+
+- The canonical sealed submission format is `sealed_submission_v2`.
+- The browser fetches the active submission sealing public key from `GET /api/submissions/public-key`, seals the answer locally, uploads only the sealed envelope to IPFS, and submits the CID hash on-chain.
+- The worker resolves the matching private key by `kid` and decrypts only after the challenge enters `Scoring`.
+- Public verification remains locked while the challenge is `Open`. Once scoring begins, proof bundles and replay artifacts may be published for reproducibility.
+- Privacy guarantee: answer bytes are hidden from the public and other solvers while the challenge is open. Wallet address, transaction metadata, and any replay artifact published after scoring are not private.
 
 ---
 

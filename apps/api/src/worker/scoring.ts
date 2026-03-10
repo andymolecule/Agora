@@ -1,13 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  type RunnerLimits,
+  SUBMISSION_RESULT_FORMAT,
   getSubmissionLimitViolation,
   loadConfig,
   lookupPreset,
   resolveEvalSpec,
   resolveSubmissionLimits,
-  SUBMISSION_RESULT_FORMAT,
-  type RunnerLimits,
+  resolveSubmissionOpenPrivateKeys,
   validatePresetIntegrity,
 } from "@agora/common";
 import {
@@ -17,10 +18,10 @@ import {
 } from "@agora/db";
 import { pinFile } from "@agora/ipfs";
 import {
+  SealedSubmissionError,
   buildProofBundle,
   executeScoringPipeline,
   resolveScoringEnvironmentFromSpecCid,
-  SealedSubmissionError,
   resolveSubmissionSource,
   scoreToWad,
 } from "@agora/scorer";
@@ -55,12 +56,10 @@ function policyFromLimits(
   };
 }
 
-export function resolveRunnerPolicyForChallenge(
-  challenge: {
-    image: string;
-    runner_preset_id: string;
-  },
-): ResolvedRunnerPolicy {
+export function resolveRunnerPolicyForChallenge(challenge: {
+  image: string;
+  runner_preset_id: string;
+}): ResolvedRunnerPolicy {
   const presetId = challenge.runner_preset_id.trim();
 
   if (presetId === "custom") {
@@ -175,14 +174,15 @@ export async function scoreSubmissionAndBuildProof(
   const scoringEnv = await resolveScoringEnvironmentFromSpecCid(
     challenge.spec_cid,
   );
-  let submissionSource;
+  let submissionSource: Awaited<ReturnType<typeof resolveSubmissionSource>>;
   try {
+    const config = loadConfig();
     submissionSource = await resolveSubmissionSource({
       resultCid: submission.result_cid as string,
       resultFormat: submission.result_format,
       challengeId: challenge.id,
       solverAddress: submission.solver_address,
-      privateKeyPem: loadConfig().AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+      privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(config),
     });
   } catch (error) {
     if (error instanceof SealedSubmissionError) {
@@ -235,11 +235,12 @@ export async function scoreSubmissionAndBuildProof(
       phaseMeta,
       async () => {
         const replaySubmissionCid =
-          submission.result_format === SUBMISSION_RESULT_FORMAT.sealedV1
+          submission.result_format ===
+          SUBMISSION_RESULT_FORMAT.sealedSubmissionV2
             ? await pinFile(
-              run.submissionPath,
-              `submission-input-${submission.id}.bin`,
-            )
+                run.submissionPath,
+                `submission-input-${submission.id}.bin`,
+              )
             : (submission.result_cid ?? null);
         const baseProof = await buildProofBundle({
           challengeId: challenge.id,
@@ -260,7 +261,10 @@ export async function scoreSubmissionAndBuildProof(
 
         const proofPath = path.join(run.workspaceRoot, "proof-bundle.json");
         await fs.writeFile(proofPath, JSON.stringify(proof, null, 2), "utf8");
-        const proofCid = await pinFile(proofPath, `proof-${submission.id}.json`);
+        const proofCid = await pinFile(
+          proofPath,
+          `proof-${submission.id}.json`,
+        );
         log("info", "Proof pinned", {
           ...phaseMeta,
           proofCid,

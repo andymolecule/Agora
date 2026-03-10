@@ -1,9 +1,11 @@
 import { getOnChainSubmission } from "@agora/chain";
 import {
+  type ChallengeEvalRow,
   loadConfig,
   resolveEvalSpec,
-  type ChallengeEvalRow,
+  resolveSubmissionOpenPrivateKeys,
 } from "@agora/common";
+import type { ProofBundle as ProofBundlePayload } from "@agora/common";
 import {
   createSupabaseClient,
   createVerification,
@@ -11,7 +13,6 @@ import {
   getProofBundleBySubmissionId,
   getSubmissionById,
 } from "@agora/db";
-import type { ProofBundle as ProofBundlePayload } from "@agora/common";
 import { getJSON } from "@agora/ipfs";
 import {
   executeScoringPipeline,
@@ -27,9 +28,7 @@ import {
   requireConfigValues,
 } from "../lib/config-store";
 import { printJson, printSuccess, printWarning } from "../lib/output";
-import {
-  wadToScore,
-} from "../lib/scoring";
+import { wadToScore } from "../lib/scoring";
 import { createSpinner } from "../lib/spinner";
 import { ensurePrivateKey } from "../lib/wallet";
 
@@ -76,7 +75,11 @@ export function buildVerifyCommand() {
       ) => {
         const config = loadCliConfig();
         applyConfigToEnv(config);
-        requireConfigValues(config, ["supabase_url", "supabase_service_key", "rpc_url"]);
+        requireConfigValues(config, [
+          "supabase_url",
+          "supabase_service_key",
+          "rpc_url",
+        ]);
 
         const db = createSupabaseClient(true);
         const challenge = (await getChallengeById(
@@ -154,10 +157,14 @@ export function buildVerifyCommand() {
 
         // --- P1 FIX: Read score from on-chain contract, not Supabase ---
         if (!challenge.contract_address) {
-          throw new Error("Challenge missing contract_address — cannot verify on-chain.");
+          throw new Error(
+            "Challenge missing contract_address — cannot verify on-chain.",
+          );
         }
         if (submission.on_chain_sub_id == null) {
-          throw new Error("Submission missing on_chain_sub_id — cannot verify on-chain.");
+          throw new Error(
+            "Submission missing on_chain_sub_id — cannot verify on-chain.",
+          );
         }
         const chainSpinner = createSpinner("Reading on-chain submission...");
         const onChainSub = await getOnChainSubmission(
@@ -171,7 +178,7 @@ export function buildVerifyCommand() {
         if (
           submission.proof_bundle_hash &&
           onChainSub.proofBundleHash.toLowerCase() !==
-          submission.proof_bundle_hash.toLowerCase()
+            submission.proof_bundle_hash.toLowerCase()
         ) {
           throw new Error(
             "On-chain proofBundleHash does not match DB proof_bundle_hash.",
@@ -182,12 +189,13 @@ export function buildVerifyCommand() {
         );
 
         const runSpinner = createSpinner("Running scorer for verification...");
+        const runtimeConfig = loadConfig();
         const submissionSource = await resolveSubmissionSource({
           resultCid: submission.result_cid,
           resultFormat: submission.result_format,
           challengeId: challenge.id,
           solverAddress: submission.solver_address,
-          privateKeyPem: loadConfig().AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+          privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(runtimeConfig),
         });
         const run = await executeScoringPipeline({
           image:
@@ -208,7 +216,7 @@ export function buildVerifyCommand() {
         }
         const verifierAddress = process.env.AGORA_PRIVATE_KEY
           ? privateKeyToAccount(process.env.AGORA_PRIVATE_KEY as `0x${string}`)
-            .address
+              .address
           : ZERO_ADDRESS;
 
         await createVerification(db, {

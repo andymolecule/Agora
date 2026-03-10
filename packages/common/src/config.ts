@@ -38,6 +38,7 @@ const configSchema = z.object({
   AGORA_SUBMISSION_SEAL_KEY_ID: z.string().min(1).optional(),
   AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM: z.string().min(1).optional(),
   AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM: z.string().min(1).optional(),
+  AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON: z.string().min(1).optional(),
   AGORA_SUPABASE_URL: z.string().url().optional(),
   AGORA_SUPABASE_ANON_KEY: z.string().min(1).optional(),
   AGORA_SUPABASE_SERVICE_KEY: z.string().min(1).optional(),
@@ -109,6 +110,77 @@ const configSchema = z.object({
 });
 
 export type AgoraConfig = z.infer<typeof configSchema>;
+const submissionSealPrivateKeyringSchema = z.record(
+  z.string().min(1),
+  z.string().min(1),
+);
+
+function normalizePem(value: string) {
+  return value.trim();
+}
+
+function parseSubmissionOpenPrivateKeysJson(
+  raw?: string,
+): Record<string, string> {
+  if (!raw) return {};
+  try {
+    return submissionSealPrivateKeyringSchema.parse(JSON.parse(raw));
+  } catch {
+    throw new Error(
+      "Invalid AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON. Next step: provide a JSON object that maps each key id to a PKCS#8 PEM private key, or remove the env var.",
+    );
+  }
+}
+
+function resolveSubmissionOpenPrivateKeysFromConfig(
+  config: AgoraConfig,
+  parsedKeyring = parseSubmissionOpenPrivateKeysJson(
+    config.AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON,
+  ),
+): Record<string, string> {
+  const privateKeys = Object.fromEntries(
+    Object.entries(parsedKeyring).map(([kid, pem]) => [kid, normalizePem(pem)]),
+  );
+
+  if (
+    config.AGORA_SUBMISSION_SEAL_KEY_ID &&
+    config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM
+  ) {
+    const activeKid = config.AGORA_SUBMISSION_SEAL_KEY_ID;
+    const activePem = normalizePem(
+      config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+    );
+    const existingPem = privateKeys[activeKid];
+    if (existingPem && existingPem !== activePem) {
+      throw new Error(
+        `Conflicting submission sealing private keys configured for active kid ${activeKid}. Next step: make AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM match AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON or remove one source.`,
+      );
+    }
+    privateKeys[activeKid] = activePem;
+  }
+
+  return privateKeys;
+}
+
+export function resolveSubmissionOpenPrivateKeys(
+  config: AgoraConfig = loadConfig(),
+) {
+  return resolveSubmissionOpenPrivateKeysFromConfig(config);
+}
+
+export function resolveSubmissionOpenPrivateKeyPem(
+  kid: string,
+  config: AgoraConfig = loadConfig(),
+) {
+  return resolveSubmissionOpenPrivateKeysFromConfig(config)[kid];
+}
+
+export function listSubmissionOpenPrivateKeyIds(
+  config: AgoraConfig = loadConfig(),
+) {
+  return Object.keys(resolveSubmissionOpenPrivateKeysFromConfig(config)).sort();
+}
+
 const ipfsConfigSchema = configSchema.pick({
   AGORA_PINATA_JWT: true,
   AGORA_IPFS_GATEWAY: true,
@@ -130,11 +202,11 @@ export function hasSubmissionSealPublicConfig(config: AgoraConfig): boolean {
 }
 
 export function hasSubmissionSealWorkerConfig(config: AgoraConfig): boolean {
-  return Boolean(
-    config.AGORA_SUBMISSION_SEAL_KEY_ID &&
-      config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM &&
-      config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
-  );
+  if (!hasSubmissionSealPublicConfig(config)) {
+    return false;
+  }
+  const activeKid = config.AGORA_SUBMISSION_SEAL_KEY_ID as string;
+  return Boolean(resolveSubmissionOpenPrivateKeyPem(activeKid, config));
 }
 
 function formatZodError(error: z.ZodError): string {
@@ -161,6 +233,11 @@ export function loadConfig(): AgoraConfig {
   const hasSealPrivateKey = Boolean(
     config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
   );
+  const parsedSubmissionOpenPrivateKeys = parseSubmissionOpenPrivateKeysJson(
+    config.AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON,
+  );
+  const hasSealPrivateKeyring =
+    Object.keys(parsedSubmissionOpenPrivateKeys).length > 0;
 
   if (hasSealKeyId !== hasSealPublicKey) {
     throw new Error(
@@ -168,10 +245,28 @@ export function loadConfig(): AgoraConfig {
     );
   }
 
-  if (hasSealPrivateKey && !hasSubmissionSealPublicConfig(config)) {
+  if (
+    (hasSealPrivateKey || hasSealPrivateKeyring) &&
+    !hasSubmissionSealPublicConfig(config)
+  ) {
     throw new Error(
-      "AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM requires AGORA_SUBMISSION_SEAL_KEY_ID and AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM.",
+      "Submission sealing worker config requires AGORA_SUBMISSION_SEAL_KEY_ID and AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM. Next step: set the public sealing config first, then add the worker private key config.",
     );
+  }
+
+  if (
+    hasSubmissionSealPublicConfig(config) &&
+    (hasSealPrivateKey || hasSealPrivateKeyring)
+  ) {
+    const activePrivateKeyPem = resolveSubmissionOpenPrivateKeyPem(
+      config.AGORA_SUBMISSION_SEAL_KEY_ID as string,
+      config,
+    );
+    if (!activePrivateKeyPem) {
+      throw new Error(
+        `Submission sealing worker config is missing a private key for active kid ${config.AGORA_SUBMISSION_SEAL_KEY_ID}. Next step: set AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM or include that kid in AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON.`,
+      );
+    }
   }
 
   const missing: string[] = [];

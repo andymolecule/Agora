@@ -5,6 +5,7 @@ import {
   hasSubmissionSealPublicConfig,
   hasSubmissionSealWorkerConfig,
   loadConfig,
+  resolveSubmissionOpenPrivateKeyPem,
   runSubmissionSealSelfCheck,
 } from "@agora/common";
 import {
@@ -96,15 +97,19 @@ export async function startWorker() {
     !hasSubmissionSealWorkerConfig(config)
   ) {
     throw new Error(
-      "Submission sealing is enabled, but the worker is missing AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM.",
+      `Submission sealing is enabled, but the worker is missing a private key for active kid ${config.AGORA_SUBMISSION_SEAL_KEY_ID}.`,
     );
   }
 
   if (hasSubmissionSealWorkerConfig(config)) {
     const keyId = config.AGORA_SUBMISSION_SEAL_KEY_ID as string;
     const publicKeyPem = config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM as string;
-    const privateKeyPem =
-      config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM as string;
+    const privateKeyPem = resolveSubmissionOpenPrivateKeyPem(keyId, config);
+    if (!privateKeyPem) {
+      throw new Error(
+        `Submission sealing is enabled, but no private key is configured for active kid ${keyId}.`,
+      );
+    }
     await runSubmissionSealSelfCheck({
       keyId,
       publicKeyPem,

@@ -117,7 +117,7 @@ create table submissions (
   scored_at timestamptz,
   tx_hash text not null,
   constraint submissions_result_format_check
-    check (result_format in ('plain_v0', 'sealed_v1')),
+    check (result_format in ('plain_v0', 'sealed_submission_v2')),
   constraint submissions_solver_address_lowercase_check
     check (solver_address = lower(solver_address))
 );

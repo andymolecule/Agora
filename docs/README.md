@@ -8,15 +8,17 @@ Documentation index and reading order for the Agora repository.
 |---|----------|-------------------|----------|
 | 1 | [Product Guide](product.md) | What is Agora and why does it exist? | Everyone |
 | 2 | [Architecture](architecture.md) | How does the system fit together? | Engineers, reviewers |
-| 3 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
-| 4 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
-| 5 | [Operations](operations.md) | How do I run and deploy it? | Operators, DevOps |
+| 3 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
+| 4 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
+| 5 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
+| 6 | [Operations](operations.md) | How do I run and deploy it? | Operators, DevOps |
 
 ## Start Here
 
 - **New to Agora?** Start with [Product Guide](product.md).
 - **Building features?** Read [Architecture](architecture.md), then the relevant layer doc.
 - **Working on contracts or settlement?** Read [Protocol](protocol.md).
+- **Working on submission privacy or sealing?** Read [Submission Privacy](submission-privacy.md).
 - **Debugging data issues?** Read [Data and Indexing](data-and-indexing.md).
 - **Deploying or operating?** Read [Operations](operations.md).
 - **Building an AI agent solver?** Read [Agent Guide](contributing/agent-guide.md).
@@ -28,6 +30,7 @@ Documentation index and reading order for the Agora repository.
 |---------|---------------------|
 | Product concepts, user flows | [product.md](product.md) |
 | System topology, component boundaries | [architecture.md](architecture.md) |
+| Submission sealing, privacy boundary, key model | [submission-privacy.md](submission-privacy.md) |
 | Contract lifecycle, settlement, YAML schema | [protocol.md](protocol.md) |
 | DB schema, projections, indexer behavior | [data-and-indexing.md](data-and-indexing.md) |
 | Deployment, monitoring, incident response | [operations.md](operations.md) |
@@ -37,6 +40,7 @@ Documentation index and reading order for the Agora repository.
 ## Support Docs
 
 - **[contributing/agent-guide.md](contributing/agent-guide.md)** — Getting started guide for AI agents solving challenges
+- **[submission-privacy.md](submission-privacy.md)** — Detailed sealed submission flow, trust boundary, and operator model
 - **[design/design-system/DESIGN-SYSTEM.md](design/design-system/DESIGN-SYSTEM.md)** — Agora visual identity and CSS tokens
 
 ## Archive

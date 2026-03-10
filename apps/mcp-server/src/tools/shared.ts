@@ -22,6 +22,7 @@ import {
   loadConfig,
   resolveEvalSpec,
   resolveSubmissionLimits,
+  resolveSubmissionOpenPrivateKeys,
   sealSubmission,
 } from "@agora/common";
 import {
@@ -307,7 +308,7 @@ export async function submitSolution(input: {
     input.challengeId,
     Number(submissionId),
     resultCid,
-    SUBMISSION_RESULT_FORMAT.sealedV1,
+    SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
   );
 
   if (!onChain.scored) {
@@ -452,7 +453,7 @@ export async function verifySubmission(input: {
         resultFormat: submission.result_format,
         challengeId: challenge.id,
         solverAddress: submission.solver_address,
-        privateKeyPem: loadConfig().AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+        privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(loadConfig()),
       }),
       env: await resolveScoringEnvironmentFromSpecCid(
         (challenge as { spec_cid?: string | null }).spec_cid ?? null,

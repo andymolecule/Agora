@@ -16,7 +16,7 @@ Operators and engineers responsible for running Agora in testnet or production e
 
 ## Source of truth
 
-This doc is authoritative for: service startup, deployment procedures, monitoring, incident response, and cutover checklists. It is NOT authoritative for: smart contract logic, database schema, or frontend behavior.
+This doc is authoritative for: service startup, deployment procedures, monitoring, incident response, and cutover checklists. It is NOT authoritative for: smart contract logic, sealed submission format internals, database schema, or frontend behavior. For the privacy model itself, see [Submission Privacy](submission-privacy.md).
 
 ## Summary
 
@@ -86,12 +86,13 @@ pnpm --filter @agora/web dev -- --port 3100
 
 1. Merge latest `main` and deploy from `main` only.
 2. Set all required environment variables in your host platform.
-3. For a clean contract generation: reset the testnet Supabase schema and apply only `001_baseline.sql`.
+3. For a clean contract generation: reset the testnet Supabase schema and apply all current Supabase migrations.
 4. Deploy a fresh `v2` factory. `scripts/deploy.sh` requires explicit `AGORA_ORACLE_ADDRESS` and `AGORA_TREASURY_ADDRESS`.
 5. Set `AGORA_INDEXER_START_BLOCK` to the factory deployment block before restarting the indexer.
 6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker, CLI, and web env.
-7. Set `AGORA_CORS_ORIGINS` (comma-separated exact origins).
-8. Build and run preflight:
+7. If sealed submissions are enabled, set the submission sealing env vars in API and worker.
+8. Set `AGORA_CORS_ORIGINS` (comma-separated exact origins).
+9. Build and run preflight:
 
 ```bash
 pnpm install
@@ -139,6 +140,51 @@ Architecture boundary:
 - Scorer is the Docker container itself (e.g. `ghcr.io/agora-science/repro-scorer:v1`) — stateless, sandboxed, no network access.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
 - Worker and API share no runtime state. The only coordination point is the `score_jobs` table.
+
+---
+
+## Submission Sealing
+
+Sealed submission mode hides answer bytes from the public while a challenge is open.
+
+For the exact envelope format, trust boundary, and end-to-end flow, see [Submission Privacy](submission-privacy.md).
+
+Required env vars:
+
+- API public config: `AGORA_SUBMISSION_SEAL_KEY_ID`, `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM`
+- Worker private config: `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` or `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON`
+
+Key handling rules:
+
+- The API advertises exactly one active public key via `GET /api/submissions/public-key`.
+- The active `kid` must exist in the worker private key set.
+- `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON` is the rotation path. Keep the active key plus any historical keys whose sealed submissions still need to be scored.
+- `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` is the simple single-key path. If both sources are set for the active `kid`, they must match.
+
+Verification checklist:
+
+```bash
+curl -sS http://localhost:3000/healthz
+curl -sS http://localhost:3000/api/worker-health
+curl -sS http://localhost:3000/api/submissions/public-key
+```
+
+Expected results:
+
+- `/healthz` returns `{"ok":true}` and sealing `selfCheck:"ok"` when sealing is enabled.
+- `/api/worker-health` reports `sealing.enabled=true` and the active `keyId`.
+- `/api/submissions/public-key` returns `version:"sealed_submission_v2"` plus the active `kid` and public key.
+
+Existing testnet DBs:
+
+- Fresh environments should apply all migrations.
+- Existing environments that still contain `result_format='sealed_v1'` must apply `002_align_sealed_submission_result_format.sql` before accepting new sealed submissions.
+
+Operational privacy boundary:
+
+- Plaintext answer bytes should not be uploaded directly by clients.
+- Public verification remains locked while the challenge is open.
+- Once scoring begins, replay artifacts may be published for reproducibility, so sealed submissions are not permanent secrecy.
 
 ---
 
@@ -207,6 +253,7 @@ Expected results:
 - API health returns `{"ok":true}`.
 - Indexer health is `ok` or `warning`, not `critical`.
 - `agora doctor` passes RPC/Supabase/factory checks.
+- If sealing is enabled, `/api/submissions/public-key` returns `sealed_submission_v2` and `/api/worker-health` reports the same active `kid`.
 
 ---
 
@@ -274,7 +321,7 @@ sequenceDiagram
     participant Idx as Indexer
     participant Chain as Base Sepolia
 
-    Op->>DB: Reset schema (001_baseline.sql)
+    Op->>DB: Reset schema (apply all migrations)
     Op->>Op: Set AGORA_INDEXER_START_BLOCK
     Op->>Op: Set AGORA_FACTORY_ADDRESS (new v2)
     Op->>Idx: Restart indexer process
@@ -391,7 +438,7 @@ Rollback if any of these occur:
 ```mermaid
 flowchart TB
     A["1. Merge to main"] --> B["2. pnpm install && pnpm turbo build"]
-    B --> C["3. Reset Supabase schema<br/>(apply 001_baseline.sql)"]
+    B --> C["3. Reset Supabase schema<br/>(apply all migrations)"]
     C --> D["4. Deploy fresh v2 factory<br/>(scripts/deploy.sh)"]
     D --> E["5. Update canonical tuple everywhere<br/>(chain_id, factory, USDC)"]
     E --> F["6. Set AGORA_INDEXER_START_BLOCK<br/>to factory deploy block"]
@@ -413,7 +460,7 @@ flowchart TB
 Clean v2 cutover:
 
 1. Run one active factory generation at a time.
-2. Reset Supabase, apply `001_baseline.sql`.
+2. Reset Supabase, apply all migrations.
 3. Deploy fresh `v2` factory.
 4. Update canonical `(chain id, factory address, USDC address)` tuple everywhere.
 5. Set `AGORA_INDEXER_START_BLOCK` and reindex from zero.

@@ -8,6 +8,8 @@ import {
   CHALLENGE_STATUS,
   type ChallengeStatus,
   SUBMISSION_RESULT_FORMAT,
+  SUBMISSION_SEAL_ALG,
+  SUBMISSION_SEAL_VERSION,
   computeSubmissionResultHash,
   getSubmissionLimitViolation,
   loadConfig,
@@ -43,7 +45,10 @@ const createSubmissionBodySchema = z.object({
   resultCid: z.string().min(1),
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
   resultFormat: z
-    .enum([SUBMISSION_RESULT_FORMAT.plainV0, SUBMISSION_RESULT_FORMAT.sealedV1])
+    .enum([
+      SUBMISSION_RESULT_FORMAT.plainV0,
+      SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+    ])
     .optional(),
 });
 
@@ -94,8 +99,8 @@ router.get("/public-key", async (c) => {
 
   return c.json({
     data: {
-      version: "sealed_submission_v1",
-      alg: "aes-256-gcm+rsa-oaep-256",
+      version: SUBMISSION_SEAL_VERSION,
+      alg: SUBMISSION_SEAL_ALG,
       kid: config.AGORA_SUBMISSION_SEAL_KEY_ID,
       publicKeyPem: config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
     },

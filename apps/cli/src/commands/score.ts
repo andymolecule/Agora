@@ -2,10 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { getPublicClient, postScore } from "@agora/chain";
 import {
+  type ChallengeEvalRow,
+  SUBMISSION_RESULT_FORMAT,
   loadConfig,
   resolveEvalSpec,
-  SUBMISSION_RESULT_FORMAT,
-  type ChallengeEvalRow,
+  resolveSubmissionOpenPrivateKeys,
 } from "@agora/common";
 import {
   createSupabaseClient,
@@ -29,9 +30,7 @@ import {
   requireConfigValues,
 } from "../lib/config-store";
 import { printJson, printSuccess, printWarning } from "../lib/output";
-import {
-  scoreToWad,
-} from "../lib/scoring";
+import { scoreToWad } from "../lib/scoring";
 import { createSpinner } from "../lib/spinner";
 import { ensurePrivateKey } from "../lib/wallet";
 
@@ -101,12 +100,13 @@ export function buildOracleScoreCommand() {
         }
 
         const runSpinner = createSpinner("Running scorer container...");
+        const runtimeConfig = loadConfig();
         const submissionSource = await resolveSubmissionSource({
           resultCid: submission.result_cid,
           resultFormat: submission.result_format,
           challengeId: challenge.id,
           solverAddress: submission.solver_address,
-          privateKeyPem: loadConfig().AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+          privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(runtimeConfig),
         });
         const run = await executeScoringPipeline({
           image: evalPlan.image,
@@ -119,11 +119,12 @@ export function buildOracleScoreCommand() {
 
         try {
           const replaySubmissionCid =
-            submission.result_format === SUBMISSION_RESULT_FORMAT.sealedV1
+            submission.result_format ===
+            SUBMISSION_RESULT_FORMAT.sealedSubmissionV2
               ? await pinFile(
-                run.submissionPath,
-                `submission-input-${submission.id}.bin`,
-              )
+                  run.submissionPath,
+                  `submission-input-${submission.id}.bin`,
+                )
               : submission.result_cid;
           const baseProof = await buildProofBundle({
             challengeId: challenge.id,

@@ -21,6 +21,7 @@ These apply to every line of code and every design decision:
 
 - @docs/product.md — Product guide (the "what and why")
 - @docs/architecture.md — System architecture with diagrams (the "how")
+- @docs/submission-privacy.md — Sealed submission format, privacy boundary, key rotation
 - @docs/protocol.md — On-chain protocol, lifecycle, settlement (the "rules")
 - @docs/data-and-indexing.md — DB schema, projections, source-of-truth boundaries
 - @docs/operations.md — Running, deploying, monitoring, incident response

@@ -368,7 +368,7 @@ export function SubmitSolution({
         challengeId,
         resultCid: cid,
         txHash: tx,
-        resultFormat: SUBMISSION_RESULT_FORMAT.sealedV1,
+        resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
       });
 
       setTxHash(tx);

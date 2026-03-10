@@ -8,7 +8,7 @@ export interface SubmissionMetadata {
 
 export const SUBMISSION_RESULT_FORMAT = {
   plainV0: "plain_v0",
-  sealedV1: "sealed_v1",
+  sealedSubmissionV2: "sealed_submission_v2",
 } as const;
 
 export type SubmissionResultFormat =
