@@ -170,6 +170,7 @@ check_api_json() {
 
 INDEXER_HEALTH_URL="${AGORA_API_URL%/}/api/indexer-health"
 WORKER_HEALTH_URL="${AGORA_API_URL%/}/api/worker-health"
+SUBMISSION_PUBLIC_KEY_URL="${AGORA_API_URL%/}/api/submissions/public-key"
 
 echo "[STEP] Checking indexer health endpoint"
 check_api_json "Indexer health" "$INDEXER_HEALTH_URL" /tmp/agora_preflight_indexer.json
@@ -254,6 +255,57 @@ console.log(
   `[OK] Worker health verified: status=${payload.status} eligibleQueued=${payload?.jobs?.eligibleQueued ?? "?"} running=${payload?.jobs?.running ?? "?"}`,
 );
 EOF
+
+if node --input-type=module <<'EOF'
+import fs from "node:fs";
+
+const payload = JSON.parse(
+  fs.readFileSync("/tmp/agora_preflight_worker.json", "utf8"),
+);
+
+process.exit(payload?.sealing?.configured ? 0 : 1);
+EOF
+then
+  echo
+  echo "[STEP] Checking submission public-key endpoint"
+  check_api_json "Submission public key" "$SUBMISSION_PUBLIC_KEY_URL" /tmp/agora_preflight_submission_key.json
+
+  EXPECTED_SEAL_KID="$(node --input-type=module <<'EOF'
+import fs from "node:fs";
+
+const payload = JSON.parse(
+  fs.readFileSync("/tmp/agora_preflight_worker.json", "utf8"),
+);
+
+process.stdout.write(String(payload?.sealing?.keyId ?? ""));
+EOF
+)"
+
+  EXPECTED_SEAL_KID="$EXPECTED_SEAL_KID" \
+  node --input-type=module <<'EOF'
+import fs from "node:fs";
+
+const payload = JSON.parse(
+  fs.readFileSync("/tmp/agora_preflight_submission_key.json", "utf8"),
+);
+const expectedKid = process.env.EXPECTED_SEAL_KID;
+const data = payload?.data;
+
+if (!data || data.version !== "sealed_submission_v2") {
+  console.error("[FAIL] Submission public key endpoint is missing sealed_submission_v2 data");
+  process.exit(1);
+}
+
+if (String(data.kid ?? "") !== String(expectedKid ?? "")) {
+  console.error(
+    `[FAIL] Submission public key kid mismatch: expected ${expectedKid}, got ${data?.kid}`,
+  );
+  process.exit(1);
+}
+
+console.log(`[OK] Submission public key verified: kid=${data.kid}`);
+EOF
+fi
 
 echo
 

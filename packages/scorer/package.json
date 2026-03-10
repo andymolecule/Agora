@@ -7,7 +7,6 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "oracle-worker:local": "node dist/oracle-worker.js",
     "test": "echo 'no tests'"
   },
   "devDependencies": {

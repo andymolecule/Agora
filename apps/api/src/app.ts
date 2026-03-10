@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { readSubmissionSealHealth } from "./lib/submission-seal-health.js";
 import { buildX402Metadata, createX402Middleware } from "./middleware/x402.js";
 import agentChallengeRoutes from "./routes/agent-challenges.js";
 import analyticsRoutes from "./routes/analytics.js";
@@ -57,21 +56,12 @@ export function createApp() {
     await next();
   });
 
-  app.get("/healthz", async (c) => {
-    const sealing = await readSubmissionSealHealth();
-    const ok = !sealing.enabled || sealing.selfCheck === "ok";
-    return c.json(
-      {
-        ok,
-        sealing: {
-          enabled: sealing.enabled,
-          keyId: sealing.keyId,
-          publicKeyLoaded: sealing.publicKeyLoaded,
-          selfCheck: sealing.selfCheck,
-        },
-      },
-      ok ? 200 : 503,
-    );
+  app.get("/healthz", (c) => {
+    return c.json({
+      ok: true,
+      service: "api",
+      checkedAt: new Date().toISOString(),
+    });
   });
   app.get("/.well-known/x402", (c) => c.json(buildX402Metadata()));
 

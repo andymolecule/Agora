@@ -18,3 +18,5 @@ broadcast/
 # Supabase
 supabase/.temp/
 .next.bak*
+submission-seal-private.pem
+submission-seal-public.pem

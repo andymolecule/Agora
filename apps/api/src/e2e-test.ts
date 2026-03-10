@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -22,8 +23,11 @@ import {
 import {
   SUBMISSION_RESULT_FORMAT,
   computeSubmissionResultHash,
+  hasSubmissionSealWorkerConfig,
+  importSubmissionSealPublicKey,
   loadConfig,
   resetConfigCache,
+  sealSubmission,
 } from "@agora/common";
 import {
   claimNextJob,
@@ -323,15 +327,16 @@ export async function runLifecycleE2E() {
     path.join(reproducibilityDir, "expected_output.csv"),
     "e2e-expected-output.csv",
   );
-  const submissionCid = await pinFile(
-    path.join(reproducibilityDir, "sample_submission.csv"),
-    "e2e-sample-submission.csv",
+  const submissionSourcePath = path.join(
+    reproducibilityDir,
+    "sample_submission.csv",
   );
+  const useSealedSubmission = hasSubmissionSealWorkerConfig(config);
   const specCid = await pinJSON(
     "e2e-reproducibility-spec.json",
     buildE2ESpec({ trainCid, expectedCid }),
   );
-  console.log("1. Fixtures pinned");
+  console.log("1. Base fixtures pinned");
 
   const approveTxHash = await approve(
     config.AGORA_FACTORY_ADDRESS,
@@ -370,10 +375,37 @@ export async function runLifecycleE2E() {
     }
   });
 
+  const submissionCid = useSealedSubmission
+    ? await (async () => {
+        const publicKeyPem = config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM;
+        const keyId = config.AGORA_SUBMISSION_SEAL_KEY_ID;
+        if (!publicKeyPem || !keyId) {
+          throw new Error(
+            "Sealed lifecycle E2E requires AGORA_SUBMISSION_SEAL_KEY_ID and AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM.",
+          );
+        }
+        const publicKey = await importSubmissionSealPublicKey(publicKeyPem);
+        const sourceBytes = await fs.readFile(submissionSourcePath);
+        const envelope = await sealSubmission({
+          challengeId: challenge.id,
+          solverAddress: account.address.toLowerCase(),
+          fileName: "sample_submission.csv",
+          mimeType: "text/csv",
+          bytes: new Uint8Array(sourceBytes),
+          keyId,
+          publicKey,
+        });
+        return pinJSON("e2e-sealed-submission.json", envelope);
+      })()
+    : await pinFile(submissionSourcePath, "e2e-sample-submission.csv");
+  console.log(
+    `3. Submission payload pinned${useSealedSubmission ? " (sealed path)" : ""}`,
+  );
+
   const resultHash = computeSubmissionResultHash(submissionCid);
   const submitTxHash = await submitChallengeResult(challengeAddress, resultHash);
   await publicClient.waitForTransactionReceipt({ hash: submitTxHash });
-  console.log("3. Submission posted:", submitTxHash);
+  console.log("4. Submission posted:", submitTxHash);
 
   const submissionResponse = await app.request(
     new Request("http://localhost/api/submissions", {
@@ -383,7 +415,9 @@ export async function runLifecycleE2E() {
         challengeId: challenge.id,
         resultCid: submissionCid,
         txHash: submitTxHash,
-        resultFormat: SUBMISSION_RESULT_FORMAT.plainV0,
+        resultFormat: useSealedSubmission
+          ? SUBMISSION_RESULT_FORMAT.sealedSubmissionV2
+          : SUBMISSION_RESULT_FORMAT.plainV0,
       }),
     }),
   );
@@ -409,7 +443,7 @@ export async function runLifecycleE2E() {
       `Expected open challenge public verification to be locked, got ${lockedResponse.status}.`,
     );
   }
-  console.log("4. Open gate confirmed on public verification");
+  console.log("5. Open gate confirmed on public verification");
 
   const deadlineSeconds =
     latestBlock.timestamp + BigInt(E2E_DEADLINE_SECONDS) + 1n;
@@ -424,7 +458,7 @@ export async function runLifecycleE2E() {
     challengeFromBlock: createReceipt.blockNumber,
     txHash: startTxHash,
   });
-  console.log("5. startScoring projected:", startTxHash);
+  console.log("6. startScoring projected:", startTxHash);
 
   const scoreJob = await waitFor("score job", async () =>
     claimNextJob(db, "lifecycle-e2e"),
@@ -438,7 +472,7 @@ export async function runLifecycleE2E() {
   if (!scoredSubmission.scored || !scoredSubmission.proof_bundle_cid) {
     throw new Error("Worker scoring did not persist score and proof bundle.");
   }
-  console.log("6. Worker scoring completed:", scoredSubmission.proof_bundle_cid);
+  console.log("7. Worker scoring completed:", scoredSubmission.proof_bundle_cid);
 
   const verifyResponse = await app.request(
     new Request(`http://localhost/api/submissions/${submissionId}/public`),
@@ -448,7 +482,7 @@ export async function runLifecycleE2E() {
       `Expected scored challenge public verification to be readable, got ${verifyResponse.status}.`,
     );
   }
-  console.log("7. Public verification unlocked after scoring");
+  console.log("8. Public verification unlocked after scoring");
 
   const disputeTxHash = await disputeChallenge(challengeAddress, "e2e dispute");
   await publicClient.waitForTransactionReceipt({ hash: disputeTxHash });
@@ -459,7 +493,7 @@ export async function runLifecycleE2E() {
     challengeFromBlock: createReceipt.blockNumber,
     txHash: disputeTxHash,
   });
-  console.log("8. Dispute opened:", disputeTxHash);
+  console.log("9. Dispute opened:", disputeTxHash);
 
   const resolveTxHash = await resolveDispute(challengeAddress, 0n);
   await publicClient.waitForTransactionReceipt({ hash: resolveTxHash });
@@ -484,7 +518,7 @@ export async function runLifecycleE2E() {
       `Expected 3 payout allocation rows after top_3 settlement, got ${(projectedPayouts ?? []).length}.`,
     );
   }
-  console.log("9. Canonical top_3 payout rows projected");
+  console.log("10. Canonical top_3 payout rows projected");
 
   const payoutBeforeClaim = await getChallengePayoutByAddress(
     challengeAddress,
@@ -531,7 +565,7 @@ export async function runLifecycleE2E() {
       throw new Error("Claim projection did not repair all payout claim rows.");
     }
   }
-  console.log("10. Claim succeeded and all allocation rows were marked claimed");
+  console.log("11. Claim succeeded and all allocation rows were marked claimed");
 }
 
 function maybeRunLifecycleE2ECli(importMetaUrl: string, argv1?: string) {

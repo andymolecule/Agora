@@ -75,3 +75,61 @@ test("worker health stays idle when there is no queued, running, or failed work"
   assert.equal(payload.status, "idle");
   assert.equal(payload.metrics.oldestQueuedAgeMs, null);
 });
+
+test("worker health warns when sealed submissions are configured but no ready worker exists", () => {
+  const payload = buildWorkerHealthResponse({
+    jobs: {
+      queued: 0,
+      eligibleQueued: 0,
+      running: 0,
+      scored: 0,
+      failed: 0,
+      skipped: 0,
+    },
+    oldestPendingAt: null,
+    lastScoredAt: null,
+    oldestRunningStartedAt: null,
+    runningOverThresholdCount: 0,
+    workerRuntime: {
+      healthyWorkers: 0,
+      staleWorkers: 1,
+      latestHeartbeatAt: "2026-03-06T11:58:00.000Z",
+      requireReadySealWorker: true,
+      healthyWorkersForActiveSealKey: 0,
+      staleAfterMs: 90_000,
+    },
+    nowMs: Date.parse("2026-03-06T12:00:00.000Z"),
+  });
+
+  assert.equal(payload.status, "warning");
+  assert.equal(payload.workers?.healthy, 0);
+  assert.equal(payload.workers?.stale, 1);
+});
+
+test("worker health warns when scoring work is queued and no healthy worker exists", () => {
+  const payload = buildWorkerHealthResponse({
+    jobs: {
+      queued: 1,
+      eligibleQueued: 1,
+      running: 0,
+      scored: 0,
+      failed: 0,
+      skipped: 0,
+    },
+    oldestPendingAt: "2026-03-06T11:59:30.000Z",
+    lastScoredAt: null,
+    oldestRunningStartedAt: null,
+    runningOverThresholdCount: 0,
+    workerRuntime: {
+      healthyWorkers: 0,
+      staleWorkers: 0,
+      latestHeartbeatAt: null,
+      requireReadySealWorker: false,
+      healthyWorkersForActiveSealKey: 0,
+      staleAfterMs: 90_000,
+    },
+    nowMs: Date.parse("2026-03-06T12:00:00.000Z"),
+  });
+
+  assert.equal(payload.status, "warning");
+});

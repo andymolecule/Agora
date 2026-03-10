@@ -49,6 +49,7 @@ const configSchema = z.object({
       z.number().int(),
     )
     .optional(),
+  AGORA_WORKER_RUNTIME_ID: z.string().min(1).optional(),
   AGORA_CORS_ORIGINS: z.string().optional(),
   AGORA_MCP_PORT: z
     .preprocess(

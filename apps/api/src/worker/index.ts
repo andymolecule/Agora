@@ -1,5 +1,6 @@
-import crypto from "node:crypto";
+import os from "node:os";
 import { pathToFileURL } from "node:url";
+import crypto from "node:crypto";
 import {
   getAgoraRuntimeIdentity,
   hasSubmissionSealPublicConfig,
@@ -11,7 +12,12 @@ import {
 import {
   claimNextJob,
   createSupabaseClient,
+  DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS,
   heartbeatScoreJobLease,
+  heartbeatWorkerRuntimeState,
+  pruneWorkerRuntimeStates,
+  upsertWorkerRuntimeState,
+  WORKER_RUNTIME_TYPE,
 } from "@agora/db";
 import { ensureDockerReady } from "@agora/scorer";
 import { sweepChallengeLifecycle } from "./chain.js";
@@ -27,13 +33,14 @@ import {
 } from "./scoring.js";
 import type { ScoreJobRow, WorkerLogFn } from "./types.js";
 
-const WORKER_ID = `worker-${crypto.randomBytes(4).toString("hex")}`;
+const PROCESS_WORKER_ID = `worker-${crypto.randomBytes(4).toString("hex")}`;
 const JOB_HEARTBEAT_INTERVAL_MS = 60_000;
+const WORKER_HOST = os.hostname();
 
 const log: WorkerLogFn = (level, message, meta) => {
   const ts = new Date().toISOString();
   const metaStr = meta ? ` ${JSON.stringify(meta)}` : "";
-  console[level](`[${ts}] [${WORKER_ID}] ${message}${metaStr}`);
+  console[level](`[${ts}] [${PROCESS_WORKER_ID}] ${message}${metaStr}`);
 };
 
 export { resolveRunnerPolicyForChallenge };
@@ -49,12 +56,16 @@ function startJobLeaseHeartbeat(
   const tick = async () => {
     if (stopped) return;
     try {
-      const refreshed = await heartbeatScoreJobLease(db, job.id, WORKER_ID);
+      const refreshed = await heartbeatScoreJobLease(
+        db,
+        job.id,
+        PROCESS_WORKER_ID,
+      );
       if (!refreshed && !stopped) {
         log("warn", "Job lease heartbeat lost ownership", {
           jobId: job.id,
           submissionId: job.submission_id,
-          workerId: WORKER_ID,
+          workerId: PROCESS_WORKER_ID,
         });
       }
     } catch (error) {
@@ -79,6 +90,61 @@ function startJobLeaseHeartbeat(
   };
 }
 
+function startWorkerRuntimeHeartbeat(
+  db: ReturnType<typeof createSupabaseClient>,
+  runtimeWorkerId: string,
+  runtimeState: {
+    ready: boolean;
+    docker_ready: boolean;
+    seal_enabled: boolean;
+    seal_key_id: string | null;
+    seal_self_check_ok: boolean;
+  },
+  log: WorkerLogFn,
+) {
+  let stopped = false;
+
+  const tick = async () => {
+    if (stopped) return;
+    try {
+      const refreshed = await heartbeatWorkerRuntimeState(db, runtimeWorkerId, {
+        ...runtimeState,
+        last_error: null,
+      });
+      if (!refreshed && !stopped) {
+        log("warn", "Worker runtime heartbeat lost registration", {
+          workerId: runtimeWorkerId,
+          host: WORKER_HOST,
+        });
+      }
+    } catch (error) {
+      if (!stopped) {
+        log("warn", "Worker runtime heartbeat failed", {
+          workerId: runtimeWorkerId,
+          host: WORKER_HOST,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  };
+
+  const timer = setInterval(() => {
+    void tick();
+  }, DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS);
+  timer.unref?.();
+
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+function resolveWorkerRuntimeId(config: ReturnType<typeof loadConfig>) {
+  const configuredId = config.AGORA_WORKER_RUNTIME_ID?.trim();
+  if (configuredId) return configuredId;
+  return `scoring-${WORKER_HOST}-${config.AGORA_CHAIN_ID}-${config.AGORA_FACTORY_ADDRESS.slice(2, 10)}`;
+}
+
 export async function startWorker() {
   loadConfig();
   const config = loadConfig();
@@ -101,22 +167,24 @@ export async function startWorker() {
     );
   }
 
-  if (hasSubmissionSealWorkerConfig(config)) {
-    const keyId = config.AGORA_SUBMISSION_SEAL_KEY_ID as string;
+  const sealEnabled = hasSubmissionSealWorkerConfig(config);
+  let sealKeyId: string | null = null;
+  if (sealEnabled) {
+    sealKeyId = config.AGORA_SUBMISSION_SEAL_KEY_ID as string;
     const publicKeyPem = config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM as string;
-    const privateKeyPem = resolveSubmissionOpenPrivateKeyPem(keyId, config);
+    const privateKeyPem = resolveSubmissionOpenPrivateKeyPem(sealKeyId, config);
     if (!privateKeyPem) {
       throw new Error(
-        `Submission sealing is enabled, but no private key is configured for active kid ${keyId}.`,
+        `Submission sealing is enabled, but no private key is configured for active kid ${sealKeyId}.`,
       );
     }
     await runSubmissionSealSelfCheck({
-      keyId,
+      keyId: sealKeyId,
       publicKeyPem,
       privateKeyPem,
     });
     log("info", "Submission sealing self-check passed", {
-      keyId,
+      keyId: sealKeyId,
     });
   }
 
@@ -132,55 +200,89 @@ export async function startWorker() {
   }
 
   const db = createSupabaseClient(true);
+  const runtimeWorkerId = resolveWorkerRuntimeId(config);
+  const prunedRuntimeRows = await pruneWorkerRuntimeStates(db, {
+    workerType: WORKER_RUNTIME_TYPE.scoring,
+    host: WORKER_HOST,
+    excludeWorkerId: runtimeWorkerId,
+  });
+  const runtimeState = {
+    ready: true,
+    docker_ready: true,
+    seal_enabled: sealEnabled,
+    seal_key_id: sealKeyId,
+    seal_self_check_ok: sealEnabled,
+  };
+  await upsertWorkerRuntimeState(db, {
+    worker_id: runtimeWorkerId,
+    worker_type: WORKER_RUNTIME_TYPE.scoring,
+    host: WORKER_HOST,
+    ...runtimeState,
+    last_error: null,
+  });
+  const stopRuntimeHeartbeat = startWorkerRuntimeHeartbeat(
+    db,
+    runtimeWorkerId,
+    runtimeState,
+    log,
+  );
 
   log("info", "Scoring worker started", {
     pollIntervalMs: POLL_INTERVAL_MS,
     finalizeSweepIntervalMs: FINALIZE_SWEEP_INTERVAL_MS,
-    workerId: WORKER_ID,
+    heartbeatIntervalMs: DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS,
+    workerId: PROCESS_WORKER_ID,
+    runtimeWorkerId,
+    host: WORKER_HOST,
+    prunedRuntimeRows,
     runtimeIdentity: getAgoraRuntimeIdentity(config),
   });
 
-  let lastFinalizeSweepAt = 0;
-  while (true) {
-    let claimedJob = false;
-    try {
-      const now = Date.now();
-      if (now - lastFinalizeSweepAt >= FINALIZE_SWEEP_INTERVAL_MS) {
-        await sweepChallengeLifecycle(db, log);
-        lastFinalizeSweepAt = now;
-      }
-
-      const job = await claimNextJob(db, WORKER_ID);
-
-      if (job) {
-        claimedJob = true;
-        log("info", `Claimed job ${job.id}`, {
-          submissionId: job.submission_id,
-          challengeId: job.challenge_id,
-          attempt: job.attempts,
-          maxAttempts: job.max_attempts,
-        });
-
-        const stopHeartbeat = startJobLeaseHeartbeat(
-          db,
-          job as ScoreJobRow,
-          log,
-        );
-        try {
-          await processJob(db, job as ScoreJobRow, log);
-        } finally {
-          stopHeartbeat();
+  try {
+    let lastFinalizeSweepAt = 0;
+    while (true) {
+      let claimedJob = false;
+      try {
+        const now = Date.now();
+        if (now - lastFinalizeSweepAt >= FINALIZE_SWEEP_INTERVAL_MS) {
+          await sweepChallengeLifecycle(db, log);
+          lastFinalizeSweepAt = now;
         }
-      }
-    } catch (error) {
-      log("error", "Worker loop error", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
 
-    if (!claimedJob) {
-      await sleep(POLL_INTERVAL_MS);
+        const job = await claimNextJob(db, PROCESS_WORKER_ID);
+
+        if (job) {
+          claimedJob = true;
+          log("info", `Claimed job ${job.id}`, {
+            submissionId: job.submission_id,
+            challengeId: job.challenge_id,
+            attempt: job.attempts,
+            maxAttempts: job.max_attempts,
+          });
+
+          const stopHeartbeat = startJobLeaseHeartbeat(
+            db,
+            job as ScoreJobRow,
+            log,
+          );
+          try {
+            await processJob(db, job as ScoreJobRow, log);
+          } finally {
+            stopHeartbeat();
+          }
+        }
+      } catch (error) {
+        log("error", "Worker loop error", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      if (!claimedJob) {
+        await sleep(POLL_INTERVAL_MS);
+      }
     }
+  } finally {
+    stopRuntimeHeartbeat();
   }
 }
 

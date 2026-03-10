@@ -32,7 +32,7 @@ function useApiHealth() {
     async function check() {
       try {
         const res = await fetch(
-          `${API_BASE_URL.replace(/\/$/, "")}/api/stats`,
+          `${API_BASE_URL.replace(/\/$/, "")}/healthz`,
           {
             signal: AbortSignal.timeout(5000),
           },
@@ -281,6 +281,19 @@ export function ActivityPanel() {
               <div className="feed-detail">
                 Oldest eligible queued:{" "}
                 {formatRelativeAge(workerHealth.metrics.oldestQueuedAgeMs)}
+              </div>
+            )}
+            {workerHealth?.sealing && (
+              <div className="feed-detail">
+                Sealed submissions:{" "}
+                {workerHealth.sealing.workerReady
+                  ? "ready"
+                  : workerHealth.sealing.configured
+                    ? "worker unavailable"
+                    : "disabled"}
+                {workerHealth.sealing.keyId
+                  ? ` · ${workerHealth.sealing.keyId}`
+                  : ""}
               </div>
             )}
           </div>

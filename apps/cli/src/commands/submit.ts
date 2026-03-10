@@ -16,7 +16,6 @@ import {
 import {
   createSupabaseClient,
   getChallengeById,
-  setSubmissionResultCid,
 } from "@agora/db";
 import { pinJSON } from "@agora/ipfs";
 import { Command } from "commander";
@@ -37,6 +36,44 @@ type ChallengeRecord = {
   deadline: string;
   status: string;
 };
+
+async function registerSubmissionWithApi(input: {
+  apiUrl: string;
+  challengeId: string;
+  resultCid: string;
+  txHash: `0x${string}`;
+  resultFormat: "sealed_submission_v2";
+}) {
+  const response = await fetch(
+    `${input.apiUrl.replace(/\/$/, "")}/api/submissions`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        challengeId: input.challengeId,
+        resultCid: input.resultCid,
+        txHash: input.txHash,
+        resultFormat: input.resultFormat,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Failed to register submission with API (${response.status}): ${await response.text()}`,
+    );
+  }
+  const body = (await response.json()) as {
+    ok?: boolean;
+    submission?: { id: string };
+    warning?: string;
+  };
+  if (!body.ok || !body.submission) {
+    throw new Error(
+      "Submission registration response was missing submission details.",
+    );
+  }
+  return body;
+}
 
 export function buildSubmitCommand() {
   const cmd = new Command("submit")
@@ -166,42 +203,23 @@ export function buildSubmitCommand() {
           receipt,
           challenge.contract_address as `0x${string}`,
         );
-        let cidUpdateWarning: string | null = null;
-
-        // Retry: the indexer may not have created the submission row yet
-        let cidUpdated = false;
-        for (let attempt = 0; attempt < 3 && !cidUpdated; attempt++) {
-          try {
-            if (attempt > 0) {
-              await new Promise((r) => setTimeout(r, 5000 * (attempt + 1)));
-            }
-            await setSubmissionResultCid(
-              db,
-              challenge.id,
-              Number(submissionId),
-              resultCid,
-              SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
-            );
-            cidUpdated = true;
-          } catch {
-            // submission row may not exist yet
-          }
-        }
-        if (!cidUpdated) {
-          cidUpdateWarning =
-            "Failed to update result CID (indexer may not have processed the submission yet).";
-          if (opts.format !== "json") {
-            printWarning(
-              `${cidUpdateWarning} Retry 'agora submit' in a few seconds if scoring cannot find the CID.`,
-            );
-          }
+        const registration = await registerSubmissionWithApi({
+          apiUrl: process.env.AGORA_API_URL as string,
+          challengeId: challenge.id,
+          resultCid,
+          txHash,
+          resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+        });
+        const registrationWarning = registration.warning ?? null;
+        if (registrationWarning && opts.format !== "json") {
+          printWarning(registrationWarning);
         }
 
         const output = {
           submissionId: Number(submissionId),
           resultCid,
           txHash,
-          warning: cidUpdateWarning,
+          warning: registrationWarning,
         };
 
         if (opts.format === "json") {

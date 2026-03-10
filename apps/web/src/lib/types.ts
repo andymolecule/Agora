@@ -153,6 +153,20 @@ export type WorkerHealth = {
   metrics?: {
     oldestQueuedAgeMs: number | null;
   };
+  workers?: {
+    healthy: number;
+    stale: number;
+    latestHeartbeatAt: string | null;
+    staleAfterMs: number;
+  };
+  sealing?: {
+    enabled: boolean;
+    configured: boolean;
+    keyId: string | null;
+    publicKeyLoaded: boolean;
+    workerReady: boolean;
+    healthyWorkersForActiveKey: number;
+  };
   checkedAt: string;
   error?: string;
 };

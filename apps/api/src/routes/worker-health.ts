@@ -1,16 +1,17 @@
 import {
-  getSubmissionSealHealth,
   hasSubmissionSealPublicConfig,
   loadConfig,
 } from "@agora/common";
 import {
   createSupabaseClient,
+  listWorkerRuntimeStates,
   getEligibleQueuedJobCount,
   getLastScoredJobTime,
   getOldestPendingJobTime,
   getOldestRunningStartedAt,
   getScoreJobCounts,
   runningOverThresholdCount,
+  summarizeWorkerRuntimeStates,
 } from "@agora/db";
 import { Hono } from "hono";
 import type { ApiEnv } from "../types.js";
@@ -33,6 +34,14 @@ export interface WorkerHealthSnapshotInput {
   lastScoredAt: string | null;
   oldestRunningStartedAt: string | null;
   runningOverThresholdCount: number;
+  workerRuntime?: {
+    healthyWorkers: number;
+    staleWorkers: number;
+    latestHeartbeatAt: string | null;
+    requireReadySealWorker: boolean;
+    healthyWorkersForActiveSealKey: number;
+    staleAfterMs: number;
+  };
   nowMs?: number;
 }
 
@@ -43,6 +52,19 @@ export function deriveWorkerHealthStatus(
   const oldestQueuedAgeMs = input.oldestPendingAt
     ? nowMs - new Date(input.oldestPendingAt).getTime()
     : null;
+
+  if (
+    input.workerRuntime?.requireReadySealWorker &&
+    (input.workerRuntime.healthyWorkersForActiveSealKey ?? 0) === 0
+  ) {
+    return "warning";
+  }
+  if (
+    input.jobs.eligibleQueued > 0 &&
+    (input.workerRuntime?.healthyWorkers ?? 0) === 0
+  ) {
+    return "warning";
+  }
 
   if (
     input.jobs.eligibleQueued === 0 &&
@@ -88,6 +110,14 @@ export function buildWorkerHealthResponse(input: WorkerHealthSnapshotInput) {
       oldestQueuedAgeMs,
     },
     checkedAt: new Date(nowMs).toISOString(),
+    workers: input.workerRuntime
+      ? {
+          healthy: input.workerRuntime.healthyWorkers,
+          stale: input.workerRuntime.staleWorkers,
+          latestHeartbeatAt: input.workerRuntime.latestHeartbeatAt,
+          staleAfterMs: input.workerRuntime.staleAfterMs,
+        }
+      : undefined,
   };
 }
 
@@ -97,6 +127,9 @@ router.get("/", async (c) => {
   try {
     const db = createSupabaseClient(true);
     const config = loadConfig();
+    const activeSealKeyId = hasSubmissionSealPublicConfig(config)
+      ? (config.AGORA_SUBMISSION_SEAL_KEY_ID as string)
+      : null;
 
     const [
       jobs,
@@ -105,7 +138,7 @@ router.get("/", async (c) => {
       lastScoredAt,
       oldestRunningStartedAt,
       runningOverThreshold,
-      sealing,
+      workerRuntimeStates,
     ] = await Promise.all([
       getScoreJobCounts(db),
       getEligibleQueuedJobCount(db),
@@ -113,11 +146,14 @@ router.get("/", async (c) => {
       getLastScoredJobTime(db),
       getOldestRunningStartedAt(db),
       runningOverThresholdCount(db, RUNNING_STALE_THRESHOLD_MS),
-      getSubmissionSealHealth({
-        keyId: config.AGORA_SUBMISSION_SEAL_KEY_ID,
-        publicKeyPem: config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
-      }),
+      listWorkerRuntimeStates(db),
     ]);
+    const workerRuntime = summarizeWorkerRuntimeStates(workerRuntimeStates, {
+      activeSealKeyId,
+    });
+    const sealingConfigured = hasSubmissionSealPublicConfig(config);
+    const sealingReady =
+      sealingConfigured && workerRuntime.healthyWorkersForActiveSealKey > 0;
 
     return c.json({
       ...buildWorkerHealthResponse({
@@ -129,11 +165,24 @@ router.get("/", async (c) => {
         lastScoredAt,
         oldestRunningStartedAt,
         runningOverThresholdCount: runningOverThreshold,
+        workerRuntime: {
+          healthyWorkers: workerRuntime.healthyWorkers,
+          staleWorkers: workerRuntime.staleWorkers,
+          latestHeartbeatAt: workerRuntime.latestHeartbeatAt,
+          requireReadySealWorker: sealingConfigured,
+          healthyWorkersForActiveSealKey:
+            workerRuntime.healthyWorkersForActiveSealKey,
+          staleAfterMs: workerRuntime.staleAfterMs,
+        },
       }),
       sealing: {
-        enabled: hasSubmissionSealPublicConfig(config) && sealing.enabled,
-        keyId: sealing.keyId,
-        publicKeyLoaded: sealing.publicKeyLoaded,
+        enabled: sealingReady,
+        configured: sealingConfigured,
+        keyId: activeSealKeyId,
+        publicKeyLoaded: Boolean(config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM),
+        workerReady: workerRuntime.healthyWorkersForActiveSealKey > 0,
+        healthyWorkersForActiveKey:
+          workerRuntime.healthyWorkersForActiveSealKey,
       },
     });
   } catch (error) {

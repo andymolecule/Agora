@@ -16,27 +16,19 @@ import {
   SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
   computeSubmissionResultHash,
-  getSubmissionLimitViolation,
   importSubmissionSealPublicKey,
   isChallengeStatus,
   loadConfig,
   resolveEvalSpec,
-  resolveSubmissionLimits,
   resolveSubmissionOpenPrivateKeys,
   sealSubmission,
 } from "@agora/common";
 import {
-  countSubmissionsBySolverForChallenge,
-  countSubmissionsForChallenge,
-  createScoreJob,
   createSupabaseClient,
   getChallengeById,
   getProofBundleBySubmissionId,
   getSubmissionById,
   listSubmissionsForChallenge,
-  markScoreJobSkipped,
-  setSubmissionResultCid,
-  upsertSubmissionOnChain,
 } from "@agora/db";
 import { pinJSON, unpinCid } from "@agora/ipfs";
 import {
@@ -83,6 +75,44 @@ function toPublicSubmission(
     scored: submission.scored,
     submitted_at: submission.submitted_at,
   };
+}
+
+async function registerSubmissionWithApi(input: {
+  apiUrl: string;
+  challengeId: string;
+  resultCid: string;
+  txHash: `0x${string}`;
+  resultFormat: "sealed_submission_v2";
+}) {
+  const response = await fetch(
+    `${input.apiUrl.replace(/\/$/, "")}/api/submissions`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        challengeId: input.challengeId,
+        resultCid: input.resultCid,
+        txHash: input.txHash,
+        resultFormat: input.resultFormat,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Failed to register submission with API (${response.status}): ${await response.text()}`,
+    );
+  }
+  const body = (await response.json()) as {
+    ok?: boolean;
+    submission?: { id: string };
+    warning?: string;
+  };
+  if (!body.ok || !body.submission) {
+    throw new Error(
+      "Submission registration response was missing submission details.",
+    );
+  }
+  return body;
 }
 
 export async function listChallenges(input: {
@@ -290,65 +320,20 @@ export async function submitSolution(input: {
     hash: txHash,
   });
   const { submissionId } = parseSubmittedReceipt(receipt, challengeAddress);
-
-  const onChain = await getOnChainSubmission(challengeAddress, submissionId);
-  await upsertSubmissionOnChain(db, {
-    challenge_id: input.challengeId,
-    on_chain_sub_id: Number(submissionId),
-    solver_address: onChain.solver,
-    result_hash: onChain.resultHash,
-    proof_bundle_hash: onChain.proofBundleHash,
-    score: onChain.scored ? onChain.score.toString() : null,
-    scored: onChain.scored,
-    submitted_at: new Date(Number(onChain.submittedAt) * 1000).toISOString(),
-    tx_hash: txHash,
-  });
-  const row = await setSubmissionResultCid(
-    db,
-    input.challengeId,
-    Number(submissionId),
+  const registration = await registerSubmissionWithApi({
+    apiUrl: config.AGORA_API_URL,
+    challengeId: input.challengeId,
     resultCid,
-    SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
-  );
+    txHash,
+    resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+  });
 
-  if (!onChain.scored) {
-    const limits = resolveSubmissionLimits({
-      max_submissions_total: challenge.max_submissions_total,
-      max_submissions_per_solver: challenge.max_submissions_per_solver,
-    });
-    const [totalSubmissions, solverSubmissions] = await Promise.all([
-      countSubmissionsForChallenge(db, input.challengeId),
-      countSubmissionsBySolverForChallenge(
-        db,
-        input.challengeId,
-        onChain.solver,
-      ),
-    ]);
-    const violation = getSubmissionLimitViolation({
-      totalSubmissions,
-      solverSubmissions,
-      limits,
-    });
-
-    if (violation) {
-      await markScoreJobSkipped(
-        db,
-        {
-          submission_id: row.id,
-          challenge_id: input.challengeId,
-        },
-        violation,
-      );
-      return { txHash, resultCid, submission: row, warning: violation };
-    }
-
-    await createScoreJob(db, {
-      submission_id: row.id,
-      challenge_id: input.challengeId,
-    });
-  }
-
-  return { txHash, resultCid, submission: row };
+  return {
+    txHash,
+    resultCid,
+    submission: registration.submission,
+    warning: registration.warning,
+  };
 }
 
 export async function claimChallengePayout(input: {

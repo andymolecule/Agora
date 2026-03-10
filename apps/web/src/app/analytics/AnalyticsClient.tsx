@@ -436,6 +436,25 @@ function WorkerStatus() {
               </p>
             </div>
           </div>
+          {health.sealing && (
+            <div className="pt-1 border-t border-black/10">
+              <div className="flex items-center justify-between gap-3 text-[10px] font-mono font-bold uppercase tracking-wider text-black/50">
+                <span>Sealed submissions</span>
+                <span>
+                  {health.sealing.workerReady
+                    ? "Ready"
+                    : health.sealing.configured
+                      ? "Worker unavailable"
+                      : "Disabled"}
+                </span>
+              </div>
+              {health.sealing.keyId && (
+                <p className="mt-1 text-[10px] font-mono text-black/50">
+                  Active key: {health.sealing.keyId}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <p className="text-sm text-black/40 font-mono">

@@ -21,7 +21,7 @@ This doc is authoritative for: sealed submission format, privacy boundary, trust
 ## Summary
 
 - The canonical sealed submission format is `sealed_submission_v2`.
-- The browser fetches Agora's active submission sealing public key, seals locally, and uploads only the sealed envelope to IPFS.
+- The browser fetches Agora's active submission sealing public key only when the API sees a live worker heartbeat for that same active `kid`, then seals locally and uploads only the sealed envelope to IPFS.
 - The on-chain contract stores only `keccak256(result CID)`, not the plaintext answer.
 - The worker resolves the matching private key by `kid`, decrypts after the challenge enters `Scoring`, and runs the Docker scorer.
 - Public verification stays locked while the challenge is `Open`.
@@ -43,7 +43,8 @@ Key code paths:
 - Worker startup self-check for sealing: `apps/api/src/worker/index.ts`
 - Worker scoring flow and replay publication: `apps/api/src/worker/scoring.ts`
 - Scorer-side sealed envelope resolution and decrypt: `packages/scorer/src/sealed-submission.ts`
-- Database result-format constraint and rename migration: `packages/db/supabase/migrations/001_baseline.sql`, `packages/db/supabase/migrations/002_align_sealed_submission_result_format.sql`
+- Worker heartbeat/readiness queries: `packages/db/src/queries/worker-runtime.ts`
+- Database result-format + worker runtime migrations: `packages/db/supabase/migrations/001_baseline.sql`, `packages/db/supabase/migrations/002_align_sealed_submission_result_format.sql`, `packages/db/supabase/migrations/003_add_worker_runtime_state.sql`
 
 ---
 
@@ -80,6 +81,7 @@ sequenceDiagram
     participant Worker as Scoring Worker
 
     Solver->>API: GET /api/submissions/public-key
+    API->>DB: confirm healthy worker heartbeat for active kid
     API-->>Solver: version + alg + kid + RSA public key
     Solver->>Solver: validate input locally
     Solver->>Solver: seal bytes as sealed_submission_v2
@@ -116,6 +118,8 @@ The contract does not store the plaintext answer and does not store the IPFS CID
 - `submissions.result_cid` points to the IPFS object used for scoring.
 - `submissions.result_format` is either `plain_v0` or `sealed_submission_v2`.
 - For sealed submissions, `result_cid` points to the sealed envelope, not the replay artifact.
+- `worker_runtime_state` tracks live scoring-worker heartbeats, Docker readiness, and sealing self-check state for the active `kid`.
+- `AGORA_WORKER_RUNTIME_ID` can override the worker heartbeat row id when multiple scoring workers share one host.
 
 ### In IPFS
 
@@ -199,13 +203,14 @@ This is why the system should be described as public-hidden answer privacy durin
 ## Browser Submission Flow
 
 1. The challenge page checks `GET /api/submissions/public-key`.
-2. If sealing is unavailable, the UI blocks submission instead of pretending privacy exists.
-3. The browser validates the selected file or text answer locally.
-4. The browser imports the API-provided RSA public key.
-5. The browser seals the submission locally as `sealed_submission_v2`.
-6. The browser uploads only `sealed-submission.json` to IPFS.
-7. The browser submits `keccak256(result CID)` on-chain.
-8. The browser records `challengeId`, `txHash`, `resultCid`, and `resultFormat=sealed_submission_v2` with the API.
+2. The API returns that public key only if it has public sealing config and at least one healthy worker heartbeat for the same active `kid`.
+3. If sealing is unavailable, the UI blocks submission instead of pretending privacy exists.
+4. The browser validates the selected file or text answer locally.
+5. The browser imports the API-provided RSA public key.
+6. The browser seals the submission locally as `sealed_submission_v2`.
+7. The browser uploads only `sealed-submission.json` to IPFS.
+8. The browser submits `keccak256(result CID)` on-chain.
+9. The browser records `challengeId`, `txHash`, `resultCid`, and `resultFormat=sealed_submission_v2` with the API.
 
 Important consequence:
 
@@ -216,15 +221,17 @@ Important consequence:
 ## Worker Decryption and Scoring Flow
 
 1. The worker claims score jobs only after the challenge enters `Scoring`.
-2. The worker fetches the sealed envelope from IPFS using `submissions.result_cid`.
-3. The worker parses the envelope and reads its `kid`.
-4. The worker resolves the matching private key from its configured key set.
-5. The worker decrypts the wrapped AES key and then decrypts the answer bytes.
-6. The worker validates:
+2. On startup, the worker writes a heartbeat row into `worker_runtime_state` only after sealing self-check and Docker checks pass.
+3. The worker refreshes that heartbeat periodically while it stays alive.
+4. The worker fetches the sealed envelope from IPFS using `submissions.result_cid`.
+5. The worker parses the envelope and reads its `kid`.
+6. The worker resolves the matching private key from its configured key set.
+7. The worker decrypts the wrapped AES key and then decrypts the answer bytes.
+8. The worker validates:
    - `envelope.challengeId === submission.challenge_id`
    - `envelope.solverAddress === submission.solver_address`
-7. The worker stages the plaintext bytes into the scoring workspace and runs the Docker scorer.
-8. If scoring succeeds, the worker pins the proof bundle and may pin a replay artifact for public verification.
+9. The worker stages the plaintext bytes into the scoring workspace and runs the Docker scorer.
+10. If scoring succeeds, the worker pins the proof bundle and may pin a replay artifact for public verification.
 
 If the worker cannot resolve the `kid`, or if the envelope metadata was tampered with, decryption fails and the submission is rejected as invalid.
 
@@ -296,9 +303,9 @@ curl -sS http://localhost:3000/api/submissions/public-key
 
 Expected signals:
 
-- `/api/submissions/public-key` returns `version:"sealed_submission_v2"` and the active `kid`.
-- `/healthz` returns sealing `selfCheck:"ok"` when sealing is enabled.
-- `/api/worker-health` reports `sealing.enabled=true` and the same active `keyId`.
+- `/api/submissions/public-key` returns `version:"sealed_submission_v2"` and the active `kid` only while the worker heartbeat for that `kid` is healthy.
+- `/healthz` reports API process liveness only. It does not imply a scoring worker is ready.
+- `/api/worker-health` reports `workers.healthy > 0`, `sealing.workerReady=true`, and the same active `keyId`.
 
 If the public key endpoint returns `503`, the web UI should block private submissions rather than falling back to a fake privacy claim.
 

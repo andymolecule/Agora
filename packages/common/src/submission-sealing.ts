@@ -261,42 +261,6 @@ export function isSealedSubmissionEnvelope(value: unknown) {
   return sealedSubmissionEnvelopeSchema.safeParse(value).success;
 }
 
-export type SubmissionSealHealth =
-  | {
-      enabled: false;
-      keyId: null;
-      publicKeyLoaded: false;
-      privateKeyLoaded: false;
-    }
-  | {
-      enabled: true;
-      keyId: string;
-      publicKeyLoaded: boolean;
-      privateKeyLoaded: boolean;
-    };
-
-export async function getSubmissionSealHealth(input: {
-  keyId?: string;
-  publicKeyPem?: string;
-  privateKeyPem?: string;
-}): Promise<SubmissionSealHealth> {
-  if (!input.keyId && !input.publicKeyPem && !input.privateKeyPem) {
-    return {
-      enabled: false,
-      keyId: null,
-      publicKeyLoaded: false,
-      privateKeyLoaded: false,
-    };
-  }
-
-  return {
-    enabled: true,
-    keyId: input.keyId ?? "unknown",
-    publicKeyLoaded: Boolean(input.publicKeyPem),
-    privateKeyLoaded: Boolean(input.privateKeyPem),
-  };
-}
-
 export async function runSubmissionSealSelfCheck(input: {
   keyId: string;
   publicKeyPem: string;

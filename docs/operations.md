@@ -139,7 +139,7 @@ Architecture boundary:
 - Worker polls `score_jobs` but only claims jobs after the challenge enters `Scoring` at deadline.
 - Scorer is the Docker container itself (e.g. `ghcr.io/agora-science/repro-scorer:v1`) — stateless, sandboxed, no network access.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
-- Worker and API share no runtime state. The only coordination point is the `score_jobs` table.
+- Worker and API coordinate through Supabase. `score_jobs` drives scoring work, and `worker_runtime_state` carries worker heartbeat/readiness for split deployments.
 
 ---
 
@@ -153,6 +153,8 @@ Required env vars:
 
 - API public config: `AGORA_SUBMISSION_SEAL_KEY_ID`, `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM`
 - Worker private config: `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` or `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON`
+- Worker heartbeat tuning: `AGORA_WORKER_HEARTBEAT_MS`, `AGORA_WORKER_HEARTBEAT_STALE_MS`
+- Optional stable worker runtime id: `AGORA_WORKER_RUNTIME_ID`
 
 Key handling rules:
 
@@ -160,6 +162,8 @@ Key handling rules:
 - The active `kid` must exist in the worker private key set.
 - `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON` is the rotation path. Keep the active key plus any historical keys whose sealed submissions still need to be scored.
 - `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` is the simple single-key path. If both sources are set for the active `kid`, they must match.
+- `GET /api/submissions/public-key` now fails closed unless a live worker heartbeat exists for the active `kid` and that worker has passed sealing self-check + Docker startup checks.
+- Set `AGORA_WORKER_RUNTIME_ID` when you intentionally run multiple scoring workers on the same host. Otherwise the worker derives a stable host-based runtime id automatically.
 
 Verification checklist:
 
@@ -171,9 +175,9 @@ curl -sS http://localhost:3000/api/submissions/public-key
 
 Expected results:
 
-- `/healthz` returns `{"ok":true}` and sealing `selfCheck:"ok"` when sealing is enabled.
-- `/api/worker-health` reports `sealing.enabled=true` and the active `keyId`.
-- `/api/submissions/public-key` returns `version:"sealed_submission_v2"` plus the active `kid` and public key.
+- `/healthz` returns `{"ok":true,"service":"api"}` for API process liveness only.
+- `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, and `sealing.workerReady=true` for the active `keyId`.
+- `/api/submissions/public-key` returns `version:"sealed_submission_v2"` only when the active worker heartbeat for that `kid` is healthy.
 
 Existing testnet DBs:
 
@@ -253,7 +257,7 @@ Expected results:
 - API health returns `{"ok":true}`.
 - Indexer health is `ok` or `warning`, not `critical`.
 - `agora doctor` passes RPC/Supabase/factory checks.
-- If sealing is enabled, `/api/submissions/public-key` returns `sealed_submission_v2` and `/api/worker-health` reports the same active `kid`.
+- If sealing is enabled, `/api/submissions/public-key` returns `sealed_submission_v2` only while `/api/worker-health` reports a healthy worker for the same active `kid`.
 
 ---
 

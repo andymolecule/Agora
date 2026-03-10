@@ -1,0 +1,271 @@
+import type { AgoraDbClient } from "../index";
+
+export const WORKER_RUNTIME_TYPE = {
+  scoring: "scoring",
+} as const;
+
+export type WorkerRuntimeType =
+  (typeof WORKER_RUNTIME_TYPE)[keyof typeof WORKER_RUNTIME_TYPE];
+
+export interface WorkerRuntimeStateRow {
+  worker_id: string;
+  worker_type: WorkerRuntimeType;
+  host: string | null;
+  ready: boolean;
+  docker_ready: boolean;
+  seal_enabled: boolean;
+  seal_key_id: string | null;
+  seal_self_check_ok: boolean;
+  last_error: string | null;
+  started_at: string;
+  last_heartbeat_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpsertWorkerRuntimeStateInput {
+  worker_id: string;
+  worker_type?: WorkerRuntimeType;
+  host?: string | null;
+  ready: boolean;
+  docker_ready: boolean;
+  seal_enabled: boolean;
+  seal_key_id?: string | null;
+  seal_self_check_ok: boolean;
+  last_error?: string | null;
+  started_at?: string;
+  last_heartbeat_at?: string;
+}
+
+export interface HeartbeatWorkerRuntimeStateInput {
+  ready?: boolean;
+  docker_ready?: boolean;
+  seal_enabled?: boolean;
+  seal_key_id?: string | null;
+  seal_self_check_ok?: boolean;
+  last_error?: string | null;
+}
+
+export interface WorkerRuntimeSummary {
+  totalWorkers: number;
+  readyWorkers: number;
+  healthyWorkers: number;
+  staleWorkers: number;
+  latestHeartbeatAt: string | null;
+  activeSealKeyId: string | null;
+  healthyWorkersForActiveSealKey: number;
+  staleAfterMs: number;
+}
+
+export const DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS = Number(
+  process.env.AGORA_WORKER_HEARTBEAT_MS ?? 30_000,
+);
+
+export const DEFAULT_WORKER_RUNTIME_STALE_MS = Number(
+  process.env.AGORA_WORKER_HEARTBEAT_STALE_MS ??
+    DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS * 3,
+);
+
+function normalizeWorkerRuntimeInput(
+  input: UpsertWorkerRuntimeStateInput,
+  nowIso: string,
+) {
+  return {
+    worker_id: input.worker_id,
+    worker_type: input.worker_type ?? WORKER_RUNTIME_TYPE.scoring,
+    host: input.host ?? null,
+    ready: input.ready,
+    docker_ready: input.docker_ready,
+    seal_enabled: input.seal_enabled,
+    seal_key_id: input.seal_key_id ?? null,
+    seal_self_check_ok: input.seal_self_check_ok,
+    last_error: input.last_error ?? null,
+    started_at: input.started_at ?? nowIso,
+    last_heartbeat_at: input.last_heartbeat_at ?? nowIso,
+    updated_at: nowIso,
+  };
+}
+
+export async function upsertWorkerRuntimeState(
+  db: AgoraDbClient,
+  input: UpsertWorkerRuntimeStateInput,
+): Promise<WorkerRuntimeStateRow> {
+  const nowIso = new Date().toISOString();
+  const payload = normalizeWorkerRuntimeInput(input, nowIso);
+  const { data, error } = await db
+    .from("worker_runtime_state")
+    .upsert(payload, { onConflict: "worker_id" })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to upsert worker runtime state: ${error.message}`);
+  }
+
+  return data as WorkerRuntimeStateRow;
+}
+
+export async function heartbeatWorkerRuntimeState(
+  db: AgoraDbClient,
+  workerId: string,
+  input: HeartbeatWorkerRuntimeStateInput = {},
+): Promise<boolean> {
+  const heartbeatAt = new Date().toISOString();
+  const { data, error } = await db
+    .from("worker_runtime_state")
+    .update({
+      ...input,
+      last_heartbeat_at: heartbeatAt,
+      updated_at: heartbeatAt,
+    })
+    .eq("worker_id", workerId)
+    .select("worker_id")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to heartbeat worker runtime state: ${error.message}`);
+  }
+
+  return Boolean(data);
+}
+
+export async function listWorkerRuntimeStates(
+  db: AgoraDbClient,
+  workerType: WorkerRuntimeType = WORKER_RUNTIME_TYPE.scoring,
+): Promise<WorkerRuntimeStateRow[]> {
+  const { data, error } = await db
+    .from("worker_runtime_state")
+    .select("*")
+    .eq("worker_type", workerType)
+    .order("last_heartbeat_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to list worker runtime state: ${error.message}`);
+  }
+
+  return (data ?? []) as WorkerRuntimeStateRow[];
+}
+
+export async function pruneWorkerRuntimeStates(
+  db: AgoraDbClient,
+  input: {
+    workerType?: WorkerRuntimeType;
+    host?: string | null;
+    excludeWorkerId?: string | null;
+    staleAfterMs?: number;
+    nowMs?: number;
+  } = {},
+): Promise<number> {
+  const workerType = input.workerType ?? WORKER_RUNTIME_TYPE.scoring;
+  const staleAfterMs = input.staleAfterMs ?? DEFAULT_WORKER_RUNTIME_STALE_MS;
+  const nowMs = input.nowMs ?? Date.now();
+  const cutoffIso = new Date(nowMs - staleAfterMs).toISOString();
+
+  let query = db
+    .from("worker_runtime_state")
+    .delete()
+    .eq("worker_type", workerType)
+    .lt("last_heartbeat_at", cutoffIso);
+
+  if (input.host !== undefined) {
+    query =
+      input.host === null ? query.is("host", null) : query.eq("host", input.host);
+  }
+  if (input.excludeWorkerId) {
+    query = query.neq("worker_id", input.excludeWorkerId);
+  }
+
+  const { data, error } = await query.select("worker_id");
+  if (error) {
+    throw new Error(`Failed to prune worker runtime state: ${error.message}`);
+  }
+
+  return data?.length ?? 0;
+}
+
+export function isWorkerRuntimeStateStale(
+  row: Pick<WorkerRuntimeStateRow, "last_heartbeat_at">,
+  staleAfterMs = DEFAULT_WORKER_RUNTIME_STALE_MS,
+  nowMs = Date.now(),
+) {
+  return nowMs - new Date(row.last_heartbeat_at).getTime() > staleAfterMs;
+}
+
+export function isWorkerRuntimeReadyForSealKey(
+  row: WorkerRuntimeStateRow,
+  activeSealKeyId: string,
+  staleAfterMs = DEFAULT_WORKER_RUNTIME_STALE_MS,
+  nowMs = Date.now(),
+) {
+  return (
+    row.ready &&
+    row.docker_ready &&
+    row.seal_enabled &&
+    row.seal_self_check_ok &&
+    row.seal_key_id === activeSealKeyId &&
+    !isWorkerRuntimeStateStale(row, staleAfterMs, nowMs)
+  );
+}
+
+export function summarizeWorkerRuntimeStates(
+  rows: WorkerRuntimeStateRow[],
+  input: {
+    activeSealKeyId?: string | null;
+    staleAfterMs?: number;
+    nowMs?: number;
+  } = {},
+): WorkerRuntimeSummary {
+  const staleAfterMs = input.staleAfterMs ?? DEFAULT_WORKER_RUNTIME_STALE_MS;
+  const nowMs = input.nowMs ?? Date.now();
+  const activeSealKeyId = input.activeSealKeyId ?? null;
+
+  let readyWorkers = 0;
+  let healthyWorkers = 0;
+  let staleWorkers = 0;
+  let healthyWorkersForActiveSealKey = 0;
+
+  for (const row of rows) {
+    const stale = isWorkerRuntimeStateStale(row, staleAfterMs, nowMs);
+    if (row.ready) readyWorkers += 1;
+    if (stale) {
+      staleWorkers += 1;
+    } else if (row.ready) {
+      healthyWorkers += 1;
+    }
+    if (
+      activeSealKeyId &&
+      isWorkerRuntimeReadyForSealKey(
+        row,
+        activeSealKeyId,
+        staleAfterMs,
+        nowMs,
+      )
+    ) {
+      healthyWorkersForActiveSealKey += 1;
+    }
+  }
+
+  return {
+    totalWorkers: rows.length,
+    readyWorkers,
+    healthyWorkers,
+    staleWorkers,
+    latestHeartbeatAt: rows[0]?.last_heartbeat_at ?? null,
+    activeSealKeyId,
+    healthyWorkersForActiveSealKey,
+    staleAfterMs,
+  };
+}
+
+export async function hasReadyWorkerForSealKey(
+  db: AgoraDbClient,
+  activeSealKeyId: string,
+  staleAfterMs = DEFAULT_WORKER_RUNTIME_STALE_MS,
+): Promise<boolean> {
+  const rows = await listWorkerRuntimeStates(db);
+  const summary = summarizeWorkerRuntimeStates(rows, {
+    activeSealKeyId,
+    staleAfterMs,
+  });
+  return summary.healthyWorkersForActiveSealKey > 0;
+}

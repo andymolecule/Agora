@@ -327,7 +327,7 @@ export async function getEligibleQueuedJobCount(
 
 /**
  * Get the most recent scored job's updated_at timestamp.
- * Used by worker-health to infer worker liveness.
+ * Used by worker-health as a recent-throughput signal.
  */
 export async function getLastScoredJobTime(
   db: AgoraDbClient,

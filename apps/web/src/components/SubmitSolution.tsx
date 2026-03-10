@@ -74,7 +74,8 @@ function getSubmissionSizeError(
 function getSubmissionSealingErrorMessage(error: unknown) {
   if (
     error instanceof Error &&
-    error.message.includes("Submission sealing is not configured")
+    (error.message.includes("Submission sealing is not configured") ||
+      error.message.includes("Submission sealing worker is unavailable"))
   ) {
     return PRIVATE_SUBMISSION_UNAVAILABLE_COPY;
   }

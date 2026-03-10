@@ -1,7 +1,7 @@
 /**
  * Shared oracle scoring function.
- * Extracted from the CLI `agora oracle-score` command so both the CLI and the
- * oracle-worker daemon can reuse the same logic.
+ * Extracted from the CLI `agora oracle-score` command so local tooling can
+ * reuse the same deterministic scoring logic.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
