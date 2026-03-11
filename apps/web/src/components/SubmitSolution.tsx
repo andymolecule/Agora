@@ -364,13 +364,14 @@ export function SubmitSolution({
       }
 
       setStatus("Submitting on-chain — confirm in your wallet...");
-      const tx = await writeContractAsync({
+      const { request } = await publicClient.simulateContract({
         account: address,
         address: challengeAddress as `0x${string}`,
         abi: AgoraChallengeAbi,
         functionName: "submit",
         args: [submissionIntent.resultHash],
       });
+      const tx = await writeContractAsync(request);
 
       setStatus("Waiting for confirmation...");
       await publicClient.waitForTransactionReceipt({ hash: tx });
