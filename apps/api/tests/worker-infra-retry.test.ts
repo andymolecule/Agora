@@ -13,7 +13,7 @@ import type {
 const challenge: ChallengeRow = {
   id: "challenge-1",
   contract_address: "0x0000000000000000000000000000000000000001",
-  eval_image: "ghcr.io/agora-science/repro-scorer:v1",
+  eval_image: "ghcr.io/andymolecule/repro-scorer:v1",
   eval_metric: "custom",
   eval_bundle_cid: "ipfs://bundle",
   runner_preset_id: "csv_comparison_v1",
@@ -63,7 +63,7 @@ test("infra scorer failures requeue without consuming attempts", async () => {
     handlePreviouslyPostedScoreTx: async () => false,
     scoreSubmissionAndBuildProof: async () => {
       throw new Error(
-        'Failed to pull scorer image ghcr.io/agora-science/repro-scorer:v1. Error response from daemon: Head "https://ghcr.io/v2/agora-science/repro-scorer/manifests/v1": denied',
+        'Failed to pull scorer image ghcr.io/andymolecule/repro-scorer:v1. Error response from daemon: Head "https://ghcr.io/v2/andymolecule/repro-scorer/manifests/v1": denied',
       );
     },
     requeueJobWithoutAttemptPenalty: async (
@@ -84,7 +84,7 @@ test("infra scorer failures requeue without consuming attempts", async () => {
     jobId: job.id,
     attempts: job.attempts,
     reason:
-      'scorer_infrastructure: Failed to pull scorer image ghcr.io/agora-science/repro-scorer:v1. Error response from daemon: Head "https://ghcr.io/v2/agora-science/repro-scorer/manifests/v1": denied',
+      'scorer_infrastructure: Failed to pull scorer image ghcr.io/andymolecule/repro-scorer:v1. Error response from daemon: Head "https://ghcr.io/v2/andymolecule/repro-scorer/manifests/v1": denied',
     delayMs: getWorkerInfraRetryDelayMs(),
   });
 });

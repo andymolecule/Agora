@@ -4,11 +4,11 @@ import { parseDockerImageInspection } from "../runner.js";
 
 test("parseDockerImageInspection returns repo digest and image id", () => {
   const parsed = parseDockerImageInspection(
-    "ghcr.io/agora-science/repro-scorer@sha256:abc123|sha256:def456",
+    "ghcr.io/andymolecule/repro-scorer@sha256:abc123|sha256:def456",
   );
 
   assert.deepEqual(parsed, {
-    repoDigest: "ghcr.io/agora-science/repro-scorer@sha256:abc123",
+    repoDigest: "ghcr.io/andymolecule/repro-scorer@sha256:abc123",
     imageId: "sha256:def456",
   });
 });

@@ -153,7 +153,7 @@ Architecture boundary:
 
 - Clients now pre-register `submission_intents` before the on-chain submit. API submit confirmation and the indexer both reconcile intents into `submissions` rows and only then create or revive `score_jobs`.
 - Worker polls `score_jobs` but only claims jobs after the challenge enters `Scoring` at deadline.
-- Scorer is the Docker container itself (e.g. `ghcr.io/agora-science/repro-scorer:v1`) — stateless, sandboxed, no network access.
+- Scorer is the Docker container itself (e.g. `ghcr.io/andymolecule/repro-scorer:v1`) — stateless, sandboxed, no network access.
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
 - Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, and `worker_runtime_state` carries worker heartbeat/readiness for split deployments.
@@ -558,7 +558,7 @@ This section covers non-code work for deployment across hosted systems.
 
 #### Image Registry
 
-- Publish scorer images under the Agora namespace (`ghcr.io/agora-science/*`).
+- Publish scorer images under the Agora namespace (`ghcr.io/andymolecule/*`).
 - Use the `Publish Scorers` GitHub Actions workflow to build and publish official scorer images from `containers/`.
 - The scorer publish workflow now verifies both digest resolution and unauthenticated `docker pull` after publishing. A release is not healthy until both pass.
 - If the repo owner and GHCR namespace differ, provide `GHCR_PAT` (with `write:packages`) and, if needed, `GHCR_USERNAME` to the workflow so it can push into the org package namespace.

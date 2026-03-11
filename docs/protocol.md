@@ -244,7 +244,7 @@ dataset:
   train: ipfs://Qm...
   test: ipfs://Qm...
 scoring:
-  container: ghcr.io/agora-science/repro-scorer:v1
+  container: ghcr.io/andymolecule/repro-scorer:v1
   metric: custom
 reward:
   total: 500 USDC

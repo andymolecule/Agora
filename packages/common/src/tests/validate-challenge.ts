@@ -23,7 +23,7 @@ const sample = {
     test: "ipfs://QmTest",
   },
   scoring: {
-    container: "ghcr.io/agora-science/repro-scorer:v1",
+    container: "ghcr.io/andymolecule/repro-scorer:v1",
     metric: "custom",
   },
   reward: {
@@ -79,7 +79,7 @@ const sampleWithEvalSpec = {
   id: "ch-003",
   eval_spec: {
     engine_id: "csv_comparison_v1",
-    engine_digest: "ghcr.io/agora-science/repro-scorer@sha256:abc123",
+    engine_digest: "ghcr.io/andymolecule/repro-scorer@sha256:abc123",
     evaluation_bundle: "ipfs://QmEvalBundle",
   },
 };
@@ -96,7 +96,7 @@ if (evalResult.data.eval_spec?.engine_id !== "csv_comparison_v1") {
 }
 
 const resolvedNew = resolveEvalSpec(evalResult.data);
-if (resolvedNew.image !== "ghcr.io/agora-science/repro-scorer@sha256:abc123") {
+if (resolvedNew.image !== "ghcr.io/andymolecule/repro-scorer@sha256:abc123") {
   console.error("resolveEvalSpec should use eval_spec.engine_digest as image");
   process.exit(1);
 }
@@ -114,7 +114,7 @@ if (resolvedScoringOnly.evaluationBundleCid !== "ipfs://QmTest") {
   console.error("resolveEvalSpec should fall back to dataset.test");
   process.exit(1);
 }
-if (resolvedScoringOnly.image !== "ghcr.io/agora-science/repro-scorer:v1") {
+if (resolvedScoringOnly.image !== "ghcr.io/andymolecule/repro-scorer:v1") {
   console.error("resolveEvalSpec should use scoring.container");
   process.exit(1);
 }
@@ -141,11 +141,11 @@ if (resolveScoringEnvironmentFromSpec({ evaluation: {} }) !== undefined) {
 }
 
 const resolvedRow = resolveEvalSpec({
-  eval_image: "ghcr.io/agora-science/repro-scorer@sha256:def456",
+  eval_image: "ghcr.io/andymolecule/repro-scorer@sha256:def456",
   eval_metric: "custom",
   eval_bundle_cid: "ipfs://QmResolvedBundle",
 });
-if (resolvedRow.image !== "ghcr.io/agora-science/repro-scorer@sha256:def456") {
+if (resolvedRow.image !== "ghcr.io/andymolecule/repro-scorer@sha256:def456") {
   console.error("resolveEvalSpec should use eval_image for DB rows");
   process.exit(1);
 }
@@ -169,7 +169,7 @@ const predictionHiddenLabelsOnly = challengeSpecSchema.safeParse({
     hidden_labels: "ipfs://QmHiddenLabels",
   },
   scoring: {
-    container: "ghcr.io/agora-science/regression-scorer:v1",
+    container: "ghcr.io/andymolecule/regression-scorer:v1",
     metric: "rmse",
   },
   reward: {
@@ -221,7 +221,7 @@ const predictionTestOnly = challengeSpecSchema.safeParse({
     test: "ipfs://QmPredictionTest",
   },
   scoring: {
-    container: "ghcr.io/agora-science/regression-scorer:v1",
+    container: "ghcr.io/andymolecule/regression-scorer:v1",
     metric: "rmse",
   },
   reward: {
@@ -256,7 +256,7 @@ const predictionMissingEvalBundle = challengeSpecSchema.safeParse({
   type: "prediction",
   description: "Prediction challenge without a scoreable bundle.",
   scoring: {
-    container: "ghcr.io/agora-science/regression-scorer:v1",
+    container: "ghcr.io/andymolecule/regression-scorer:v1",
     metric: "rmse",
   },
   reward: {
@@ -289,7 +289,7 @@ const predictionMatchingEvalBundle = challengeSpecSchema.safeParse({
     evaluation_bundle: "ipfs://QmSharedBundle",
   },
   scoring: {
-    container: "ghcr.io/agora-science/regression-scorer:v1",
+    container: "ghcr.io/andymolecule/regression-scorer:v1",
     metric: "rmse",
   },
   reward: {
@@ -329,7 +329,7 @@ const predictionMismatchedEvalBundle = challengeSpecSchema.safeParse({
     evaluation_bundle: "ipfs://QmDifferentBundle",
   },
   scoring: {
-    container: "ghcr.io/agora-science/regression-scorer:v1",
+    container: "ghcr.io/andymolecule/regression-scorer:v1",
     metric: "rmse",
   },
   reward: {
@@ -354,7 +354,7 @@ const reproducibilityMissingBundle = challengeSpecSchema.parse({
   type: "reproducibility",
   description: "Repro challenge without an evaluation bundle.",
   scoring: {
-    container: "ghcr.io/agora-science/repro-scorer:v1",
+    container: "ghcr.io/andymolecule/repro-scorer:v1",
     metric: "custom",
   },
   reward: {
@@ -452,7 +452,7 @@ const dockingMissingBundle = validateChallengeScoreability(
     type: "docking",
     description: "Docking challenge without evaluation bundle.",
     scoring: {
-      container: "ghcr.io/agora-science/docking-scorer:v1",
+      container: "ghcr.io/andymolecule/docking-scorer:v1",
       metric: "spearman",
     },
     reward: {
@@ -492,7 +492,7 @@ if (
       test: "ipfs://QmDockingEvalBundle",
     },
     scoring: {
-      container: "ghcr.io/agora-science/docking-scorer:v1",
+      container: "ghcr.io/andymolecule/docking-scorer:v1",
       metric: "spearman",
     },
     reward: {
@@ -627,7 +627,7 @@ for (const challengeType of CHALLENGE_TYPES) {
         hidden_labels: "ipfs://QmCanonicalHidden",
       },
       scoring: {
-        container: "ghcr.io/agora-science/regression-scorer:v1",
+        container: "ghcr.io/andymolecule/regression-scorer:v1",
         metric: "rmse",
       },
       reward: {
@@ -650,7 +650,7 @@ for (const challengeType of CHALLENGE_TYPES) {
   );
 
   const expectedDigest =
-    "ghcr.io/agora-science/regression-scorer@sha256:" + "c".repeat(64);
+    "ghcr.io/andymolecule/regression-scorer@sha256:" + "c".repeat(64);
   if (canonicalized.scoring.container !== expectedDigest) {
     console.error(
       "canonicalizeChallengeSpec should rewrite official scorer refs to immutable digests",

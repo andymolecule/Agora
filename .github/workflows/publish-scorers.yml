@@ -16,7 +16,7 @@ permissions:
   packages: write
 
 env:
-  GHCR_NAMESPACE: agora-science
+  GHCR_NAMESPACE: andymolecule
 
 jobs:
   publish:

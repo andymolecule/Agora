@@ -26,7 +26,7 @@ assert.equal(
 assert.equal(uniqueIds[0], "regression_v1");
 assert.equal(inferPresetIdByContainer(regression.container), "regression_v1");
 
-const resolvedRegressionDigest = `ghcr.io/agora-science/regression-scorer@sha256:${"e".repeat(64)}`;
+const resolvedRegressionDigest = `ghcr.io/andymolecule/regression-scorer@sha256:${"e".repeat(64)}`;
 const digestIds = findPresetIdsByContainer(resolvedRegressionDigest);
 assert.equal(
   digestIds.length,
@@ -86,7 +86,7 @@ assert.ok(
 );
 
 const officialLatestError = validateScoringContainer(
-  "ghcr.io/agora-science/repro-scorer:latest",
+  "ghcr.io/andymolecule/repro-scorer:latest",
 );
 assert.ok(
   officialLatestError?.includes("not allowed"),

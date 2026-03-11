@@ -12,9 +12,9 @@ import type { ChallengeType } from "./types/challenge.js";
 // ---------------------------------------------------------------------------
 
 export const OFFICIAL_IMAGES = {
-  repro: "ghcr.io/agora-science/repro-scorer:v1",
-  regression: "ghcr.io/agora-science/regression-scorer:v1",
-  docking: "ghcr.io/agora-science/docking-scorer:v1",
+  repro: "ghcr.io/andymolecule/repro-scorer:v1",
+  regression: "ghcr.io/andymolecule/regression-scorer:v1",
+  docking: "ghcr.io/andymolecule/docking-scorer:v1",
 } as const;
 
 // ===========================================================================

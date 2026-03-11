@@ -318,7 +318,7 @@ function containerHref(value: string | null | undefined) {
   const owner = match.groups.owner?.toLowerCase();
   const name = match.groups.name;
   if (!owner || !name) return null;
-  if (owner === "agora-science") {
+  if (owner === "andymolecule") {
     return `https://github.com/orgs/${owner}/packages/container/${name}`;
   }
   if (owner === "andymolecule") {
