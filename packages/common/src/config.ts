@@ -2,6 +2,18 @@ import { z } from "zod";
 import { DEFAULT_CHAIN_ID, DEFAULT_X402_NETWORK } from "./constants.js";
 import { parseBooleanLike } from "./env.js";
 
+const RUNTIME_VERSION_PLATFORM_ENV_KEYS = [
+  "VERCEL_GIT_COMMIT_SHA",
+  "RAILWAY_GIT_COMMIT_SHA",
+  "GITHUB_SHA",
+  "RENDER_GIT_COMMIT",
+  "CI_COMMIT_SHA",
+  "SOURCE_VERSION",
+  "COMMIT_SHA",
+  "GIT_COMMIT_SHA",
+] as const;
+const COMMIT_SHA_PATTERN = /^[a-fA-F0-9]{7,64}$/;
+
 const configSchema = z.object({
   AGORA_RPC_URL: z.string().url(),
   NODE_ENV: z.string().default("development"),
@@ -51,7 +63,7 @@ const configSchema = z.object({
     )
     .optional(),
   AGORA_WORKER_RUNTIME_ID: z.string().min(1).optional(),
-  AGORA_RUNTIME_VERSION: z.string().min(1).default("dev"),
+  AGORA_RUNTIME_VERSION: z.string().min(1).optional(),
   AGORA_CORS_ORIGINS: z.string().optional(),
   AGORA_MCP_PORT: z
     .preprocess(
@@ -329,6 +341,49 @@ function formatZodError(error: z.ZodError): string {
   return `Invalid Agora configuration. Fix the following:\n- ${lines.join("\n- ")}`;
 }
 
+function normalizeRuntimeVersion(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if (COMMIT_SHA_PATTERN.test(trimmed)) {
+    return trimmed.toLowerCase().slice(0, 12);
+  }
+  return trimmed;
+}
+
+export function resolveAgoraRuntimeVersionFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const explicitRuntimeVersion = normalizeRuntimeVersion(
+    env.AGORA_RUNTIME_VERSION,
+  );
+  const explicitPlaceholder =
+    explicitRuntimeVersion?.toLowerCase() === "dev"
+      ? explicitRuntimeVersion
+      : null;
+  if (explicitRuntimeVersion && explicitPlaceholder === null) {
+    return explicitRuntimeVersion;
+  }
+
+  for (const key of RUNTIME_VERSION_PLATFORM_ENV_KEYS) {
+    const resolved = normalizeRuntimeVersion(env[key]);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return explicitPlaceholder;
+}
+
+function withResolvedRuntimeVersion(
+  env: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  return {
+    ...env,
+    AGORA_RUNTIME_VERSION: resolveAgoraRuntimeVersionFromEnv(env) ?? "dev",
+  };
+}
+
 function parseConfigSection<Schema extends z.ZodTypeAny>(
   schema: Schema,
   env: Record<string, string | undefined>,
@@ -345,7 +400,9 @@ let cachedIpfsConfig: AgoraIpfsConfig | null = null;
 
 export function loadConfig(): AgoraConfig {
   if (cachedConfig) return cachedConfig;
-  const result = configSchema.safeParse(process.env);
+  const result = configSchema.safeParse(
+    withResolvedRuntimeVersion(process.env),
+  );
   if (!result.success) {
     throw new Error(formatZodError(result.error));
   }
@@ -501,7 +558,11 @@ export function isProductionRuntime(
 export function getAgoraRuntimeVersion(
   config?: Pick<AgoraConfig, "AGORA_RUNTIME_VERSION"> | null,
 ): string {
-  return config?.AGORA_RUNTIME_VERSION ?? "dev";
+  return (
+    config?.AGORA_RUNTIME_VERSION ??
+    resolveAgoraRuntimeVersionFromEnv() ??
+    "dev"
+  );
 }
 
 export function resetConfigCache() {

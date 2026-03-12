@@ -21,6 +21,17 @@ const FILE_BACKED_ENV_RULES = [
     fileEnvKey: "AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE",
   },
 ];
+const RUNTIME_VERSION_PLATFORM_ENV_KEYS = [
+  "VERCEL_GIT_COMMIT_SHA",
+  "RAILWAY_GIT_COMMIT_SHA",
+  "GITHUB_SHA",
+  "RENDER_GIT_COMMIT",
+  "CI_COMMIT_SHA",
+  "SOURCE_VERSION",
+  "COMMIT_SHA",
+  "GIT_COMMIT_SHA",
+];
+const COMMIT_SHA_PATTERN = /^[a-fA-F0-9]{7,64}$/;
 
 function readTextFile(filePath) {
   return fs.readFileSync(filePath, "utf8").trim();
@@ -31,6 +42,38 @@ function resolveExistingPath(candidatePath) {
     ? candidatePath
     : path.join(REPO_ROOT, candidatePath);
   return fs.existsSync(absolutePath) ? absolutePath : null;
+}
+
+function normalizeRuntimeVersion(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if (COMMIT_SHA_PATTERN.test(trimmed)) {
+    return trimmed.toLowerCase().slice(0, 12);
+  }
+  return trimmed;
+}
+
+function resolveHostedRuntimeVersion() {
+  const explicitRuntimeVersion = normalizeRuntimeVersion(
+    process.env.AGORA_RUNTIME_VERSION,
+  );
+  const explicitPlaceholder =
+    explicitRuntimeVersion?.toLowerCase() === "dev"
+      ? explicitRuntimeVersion
+      : null;
+  if (explicitRuntimeVersion && explicitPlaceholder === null) {
+    return explicitRuntimeVersion;
+  }
+
+  for (const envKey of RUNTIME_VERSION_PLATFORM_ENV_KEYS) {
+    const runtimeVersion = normalizeRuntimeVersion(process.env[envKey]);
+    if (runtimeVersion) {
+      return runtimeVersion;
+    }
+  }
+
+  return explicitPlaceholder;
 }
 
 function applyFileBackedEnvRule(rule) {
@@ -77,6 +120,10 @@ export function applyAgoraRuntimeEnv() {
   }
 
   if (!process.env.AGORA_RUNTIME_VERSION?.trim()) {
-    process.env.AGORA_RUNTIME_VERSION = resolveGitRuntimeVersion();
+    process.env.AGORA_RUNTIME_VERSION =
+      resolveHostedRuntimeVersion() ?? resolveGitRuntimeVersion();
+  } else if (process.env.AGORA_RUNTIME_VERSION.trim().toLowerCase() === "dev") {
+    process.env.AGORA_RUNTIME_VERSION =
+      resolveHostedRuntimeVersion() ?? process.env.AGORA_RUNTIME_VERSION;
   }
 }

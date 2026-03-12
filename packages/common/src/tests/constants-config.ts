@@ -15,6 +15,7 @@ import {
   readWorkerTimingConfig,
   readX402RuntimeConfig,
   resetConfigCache,
+  resolveAgoraRuntimeVersionFromEnv,
   resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeyPem,
 } from "../index.js";
@@ -90,7 +91,43 @@ try {
   const config = loadConfig();
   assert.equal(config.AGORA_CHAIN_ID, DEFAULT_CHAIN_ID);
   assert.equal(config.AGORA_X402_NETWORK, DEFAULT_X402_NETWORK);
+  assert.equal(config.AGORA_RUNTIME_VERSION, "dev");
   assert.equal(resolveRuntimePrivateKey(config), undefined);
+
+  process.env.AGORA_RUNTIME_VERSION = undefined;
+  process.env.VERCEL_GIT_COMMIT_SHA =
+    "19B3A2207D9B0A1B2C3D4E5F60718293ABCDEF12";
+  resetConfigCache();
+  const autoRuntimeConfig = loadConfig();
+  assert.equal(autoRuntimeConfig.AGORA_RUNTIME_VERSION, "19b3a2207d9b");
+  assert.equal(
+    resolveAgoraRuntimeVersionFromEnv(process.env),
+    "19b3a2207d9b",
+    "platform git sha should become the runtime version when AGORA_RUNTIME_VERSION is unset",
+  );
+
+  process.env.AGORA_RUNTIME_VERSION = "dev";
+  process.env.VERCEL_GIT_COMMIT_SHA = undefined;
+  process.env.RAILWAY_GIT_COMMIT_SHA =
+    "A61B3299F42EACD5D27A01E87B4C019FABCDEF01";
+  resetConfigCache();
+  const placeholderRuntimeConfig = loadConfig();
+  assert.equal(
+    placeholderRuntimeConfig.AGORA_RUNTIME_VERSION,
+    "a61b3299f42e",
+    "the placeholder runtime version should not block hosted commit-sha detection",
+  );
+
+  process.env.AGORA_RUNTIME_VERSION = "release-2026-03-12";
+  process.env.VERCEL_GIT_COMMIT_SHA =
+    "24B04E3AA5C13BFE73D9B0A1C2D3E4F556677889";
+  resetConfigCache();
+  const explicitRuntimeConfig = loadConfig();
+  assert.equal(
+    explicitRuntimeConfig.AGORA_RUNTIME_VERSION,
+    "release-2026-03-12",
+    "explicit runtime versions should override platform-derived SHAs",
+  );
 
   process.env.NODE_ENV = "production";
   process.env.AGORA_CORS_ORIGINS =

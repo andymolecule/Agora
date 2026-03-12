@@ -96,7 +96,7 @@ pnpm --filter @agora/web dev -- --port 3100
 6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker, CLI, and web env.
 7. If sealed submissions are enabled, set the submission sealing env vars in API and worker.
 8. Set `AGORA_CORS_ORIGINS` (comma-separated exact origins).
-9. Set the same `AGORA_RUNTIME_VERSION` value on API and worker for each deploy. Use the git SHA when possible.
+9. Ensure API, worker, indexer, and web resolve to the same runtime revision. Prefer automatic SHA detection from platform git metadata; set `AGORA_RUNTIME_VERSION` manually only when your host does not expose a commit SHA.
 10. Keep `AGORA_REQUIRE_PINNED_PRESET_DIGESTS=true`. Official GHCR scorer packages should be public; if they are not public yet, set `AGORA_GHCR_TOKEN` anywhere digest resolution runs and make sure the worker host can still `docker pull` them.
 11. Build and run preflight:
 
@@ -185,7 +185,7 @@ Required env vars:
 
 - API public config: `AGORA_SUBMISSION_SEAL_KEY_ID`, `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM`
 - Worker private config: `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` or `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON`
-- Shared deploy version: `AGORA_RUNTIME_VERSION` (set the same value on API and worker)
+- Shared deploy version: `AGORA_RUNTIME_VERSION` (optional override; otherwise the runtime resolves from platform commit metadata or local git SHA)
 - Worker heartbeat tuning: `AGORA_WORKER_HEARTBEAT_MS`, `AGORA_WORKER_HEARTBEAT_STALE_MS`
 - Optional stable worker runtime id: `AGORA_WORKER_RUNTIME_ID`
 - Optional delayed retry tuning: `AGORA_WORKER_POST_TX_RETRY_MS`, `AGORA_WORKER_INFRA_RETRY_MS`
@@ -577,7 +577,7 @@ This section covers non-code work for deployment across hosted systems.
 - `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` requeues stale `running` jobs and retries failed jobs after an infra outage.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
-- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that the deployed API `/healthz` and web `/api/version` both report the expected `AGORA_RUNTIME_VERSION` (defaults to the current git SHA when unset).
+- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that the deployed API `/healthz` and web `/api/version` both report the expected runtime revision (defaults to the current git SHA when `AGORA_RUNTIME_VERSION` is unset).
 
 #### DNS and Domains
 

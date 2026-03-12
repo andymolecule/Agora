@@ -1,20 +1,18 @@
-import fs from "node:fs";
-import path from "node:path";
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import { createRequire } from "node:module";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { applyAgoraRuntimeEnv } from "../../../scripts/runtime-env.mjs";
 
 const require = createRequire(import.meta.url);
 const nextBin = require.resolve("next/dist/bin/next");
 const args = process.argv.slice(2);
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const rootEnvPath = path.join(scriptDir, "..", "..", "..", ".env");
 const appRoot = path.join(scriptDir, "..");
 const nextOutputDir = path.join(appRoot, ".next");
 
-if (typeof process.loadEnvFile === "function" && fs.existsSync(rootEnvPath)) {
-  process.loadEnvFile(rootEnvPath);
-}
+applyAgoraRuntimeEnv();
 
 if (args[0] === "build" && fs.existsSync(nextOutputDir)) {
   fs.rmSync(nextOutputDir, { recursive: true, force: true });
