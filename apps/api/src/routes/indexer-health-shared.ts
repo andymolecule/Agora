@@ -1,5 +1,7 @@
 import { getPublicClient } from "@agora/chain";
 import {
+  buildFactoryCursorKey,
+  buildFactoryHighWaterCursorKey,
   getAgoraRuntimeIdentity,
   loadConfig,
   readIndexerHealthRuntimeConfig,
@@ -42,6 +44,12 @@ export interface IndexerHealthSnapshot {
   checkedAt: string;
 }
 
+type IndexerCursorRow = {
+  cursor_key: string;
+  block_number: number | string | null;
+  updated_at: string | null;
+};
+
 export function toLagStatus(
   lagBlocks: number,
   hasIndexedBlock: boolean,
@@ -53,60 +61,42 @@ export function toLagStatus(
   return "ok";
 }
 
-export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot> {
-  const config = loadConfig();
-  const runtimeIdentity = getAgoraRuntimeIdentity(config);
-  const healthConfig = readIndexerHealthRuntimeConfig();
-  const db = createSupabaseClient(true);
-  const publicClient = getPublicClient();
+export function resolveIndexedHead(input: {
+  replayCursorBlock: number | null;
+  highWaterCursorBlock: number | null;
+}): number | null {
+  return input.highWaterCursorBlock ?? input.replayCursorBlock;
+}
 
-  const factoryAddress = runtimeIdentity.factoryAddress.toLowerCase();
-  const chainId = runtimeIdentity.chainId;
-  const cursorKey = `factory:${chainId}:${factoryAddress}`;
-  const factoryCursorPrefix = `factory:${chainId}:`;
-
-  const [
-    { data: cursorRow, error: cursorError },
-    { data: factoryCursorRows, error: factoryCursorError },
-    chainHead,
-  ] = await Promise.all([
-    db
-      .from("indexer_cursors")
-      .select("block_number")
-      .eq("cursor_key", cursorKey)
-      .maybeSingle(),
-    db
-      .from("indexer_cursors")
-      .select("cursor_key, block_number, updated_at")
-      .like("cursor_key", `${factoryCursorPrefix}%`)
-      .order("updated_at", { ascending: false }),
-    publicClient.getBlockNumber(),
-  ]);
-
-  if (cursorError) {
-    throw new Error(`Failed to read indexer cursor: ${cursorError.message}`);
-  }
-  if (factoryCursorError) {
-    throw new Error(
-      `Failed to read factory cursors: ${factoryCursorError.message}`,
-    );
-  }
-
-  const indexedHead = cursorRow?.block_number
-    ? Number(cursorRow.block_number)
-    : null;
-  const chainHeadNumber = Number(chainHead);
+export function buildIndexerHealthSnapshot(input: {
+  runtimeIdentity: {
+    chainId: number;
+    factoryAddress: string;
+    usdcAddress: string;
+  };
+  healthConfig: {
+    confirmationDepth: number;
+    warningLagBlocks: number;
+    criticalLagBlocks: number;
+    activeCursorWindowMs: number;
+  };
+  chainHead: number;
+  indexedHead: number | null;
+  configuredCursorKey: string;
+  factoryCursorRows: IndexerCursorRow[];
+  nowMs?: number;
+}): IndexerHealthSnapshot {
   const finalizedHead = Math.max(
-    chainHeadNumber - healthConfig.confirmationDepth,
+    input.chainHead - input.healthConfig.confirmationDepth,
     0,
   );
   const lagBlocks =
-    indexedHead === null
+    input.indexedHead === null
       ? finalizedHead
-      : Math.max(finalizedHead - Number(indexedHead), 0);
-  const nowMs = Date.now();
-  const activeAlternateFactories = (factoryCursorRows ?? [])
-    .filter((row) => row.cursor_key !== cursorKey)
+      : Math.max(finalizedHead - input.indexedHead, 0);
+  const nowMs = input.nowMs ?? Date.now();
+  const activeAlternateFactories = input.factoryCursorRows
+    .filter((row) => row.cursor_key !== input.configuredCursorKey)
     .map((row) => {
       const parts = row.cursor_key.split(":");
       return {
@@ -119,14 +109,14 @@ export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot
       const updatedAtMs = Date.parse(row.updatedAt);
       return (
         Number.isFinite(updatedAtMs) &&
-        nowMs - updatedAtMs <= healthConfig.activeCursorWindowMs
+        nowMs - updatedAtMs <= input.healthConfig.activeCursorWindowMs
       );
     });
   const hasAlternateActiveFactory = activeAlternateFactories.length > 0;
   const mismatchMessage = hasAlternateActiveFactory
     ? "Configured factory cursor is not the only active factory cursor on this chain. Check deployment env alignment."
     : null;
-  let status = toLagStatus(lagBlocks, indexedHead !== null);
+  let status = toLagStatus(lagBlocks, input.indexedHead !== null);
   if (status === "ok" && hasAlternateActiveFactory) {
     status = "warning";
   }
@@ -134,15 +124,15 @@ export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot
   return {
     ok: status === "ok" || status === "warning" || status === "empty",
     status,
-    chainHead: chainHeadNumber,
+    chainHead: input.chainHead,
     finalizedHead,
-    indexedHead,
+    indexedHead: input.indexedHead,
     lagBlocks,
-    confirmationDepth: healthConfig.confirmationDepth,
+    confirmationDepth: input.healthConfig.confirmationDepth,
     configured: {
-      chainId: runtimeIdentity.chainId,
-      factoryAddress: runtimeIdentity.factoryAddress,
-      usdcAddress: runtimeIdentity.usdcAddress,
+      chainId: input.runtimeIdentity.chainId,
+      factoryAddress: input.runtimeIdentity.factoryAddress,
+      usdcAddress: input.runtimeIdentity.usdcAddress,
     },
     activeAlternateFactories,
     mismatch: {
@@ -150,9 +140,83 @@ export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot
       message: mismatchMessage,
     },
     thresholds: {
-      warning: healthConfig.warningLagBlocks,
-      critical: healthConfig.criticalLagBlocks,
+      warning: input.healthConfig.warningLagBlocks,
+      critical: input.healthConfig.criticalLagBlocks,
     },
     checkedAt: new Date().toISOString(),
   };
+}
+
+export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot> {
+  const config = loadConfig();
+  const runtimeIdentity = getAgoraRuntimeIdentity(config);
+  const healthConfig = readIndexerHealthRuntimeConfig();
+  const db = createSupabaseClient(true);
+  const publicClient = getPublicClient();
+
+  const factoryAddress = runtimeIdentity.factoryAddress;
+  const chainId = runtimeIdentity.chainId;
+  const cursorKey = buildFactoryCursorKey(chainId, factoryAddress);
+  const highWaterCursorKey = buildFactoryHighWaterCursorKey(
+    chainId,
+    factoryAddress,
+  );
+  const factoryCursorPrefix = `factory:${chainId}:`;
+
+  const [
+    { data: cursorRow, error: cursorError },
+    { data: highWaterCursorRow, error: highWaterCursorError },
+    { data: factoryCursorRows, error: factoryCursorError },
+    chainHead,
+  ] = await Promise.all([
+    db
+      .from("indexer_cursors")
+      .select("block_number")
+      .eq("cursor_key", cursorKey)
+      .maybeSingle(),
+    db
+      .from("indexer_cursors")
+      .select("block_number")
+      .eq("cursor_key", highWaterCursorKey)
+      .maybeSingle(),
+    db
+      .from("indexer_cursors")
+      .select("cursor_key, block_number, updated_at")
+      .like("cursor_key", `${factoryCursorPrefix}%`)
+      .order("updated_at", { ascending: false }),
+    publicClient.getBlockNumber(),
+  ]);
+
+  if (cursorError) {
+    throw new Error(`Failed to read indexer cursor: ${cursorError.message}`);
+  }
+  if (highWaterCursorError) {
+    throw new Error(
+      `Failed to read indexer high-water cursor: ${highWaterCursorError.message}`,
+    );
+  }
+  if (factoryCursorError) {
+    throw new Error(
+      `Failed to read factory cursors: ${factoryCursorError.message}`,
+    );
+  }
+
+  const replayCursorBlock = cursorRow?.block_number
+    ? Number(cursorRow.block_number)
+    : null;
+  const highWaterCursorBlock = highWaterCursorRow?.block_number
+    ? Number(highWaterCursorRow.block_number)
+    : null;
+
+  return buildIndexerHealthSnapshot({
+    runtimeIdentity,
+    healthConfig,
+    chainHead: Number(chainHead),
+    indexedHead: resolveIndexedHead({
+      replayCursorBlock,
+      highWaterCursorBlock,
+    }),
+    configuredCursorKey: cursorKey,
+    factoryCursorRows: (factoryCursorRows ?? []) as IndexerCursorRow[],
+  });
 }

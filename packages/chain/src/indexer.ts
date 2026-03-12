@@ -1,5 +1,10 @@
 import { pathToFileURL } from "node:url";
-import { getAgoraRuntimeIdentity, loadConfig } from "@agora/common";
+import {
+  buildFactoryCursorKey,
+  buildFactoryHighWaterCursorKey,
+  getAgoraRuntimeIdentity,
+  loadConfig,
+} from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
 };
@@ -45,7 +50,11 @@ export async function runIndexer() {
 
   const factoryAddress = config.AGORA_FACTORY_ADDRESS;
   const chainId = config.AGORA_CHAIN_ID;
-  const cursorKey = `factory:${chainId}:${factoryAddress.toLowerCase()}`;
+  const cursorKey = buildFactoryCursorKey(chainId, factoryAddress);
+  const highWaterCursorKey = buildFactoryHighWaterCursorKey(
+    chainId,
+    factoryAddress,
+  );
 
   const { data: lastBlock, error: lastBlockError } = await db
     .from("indexed_events")
@@ -211,6 +220,7 @@ export async function runIndexer() {
       fromBlock = globalPersistedBlock;
 
       await setIndexerCursor(db, cursorKey, globalPersistedBlock);
+      await setIndexerCursor(db, highWaterCursorKey, toBlock);
       await persistChallengeCursors({
         db,
         resolvedChallengeKeys,

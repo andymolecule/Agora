@@ -1,4 +1,8 @@
-import { DEFAULT_CHAIN_ID } from "@agora/common";
+import {
+  DEFAULT_CHAIN_ID,
+  buildFactoryCursorKey,
+  buildFactoryHighWaterCursorKey,
+} from "@agora/common";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { Command } from "commander";
 import { loadCliConfig, requireConfigValues } from "../lib/config-store";
@@ -64,7 +68,11 @@ export function buildReindexCommand() {
         const factoryAddress = parseFactoryAddress(
           String(cliConfig.factory_address),
         );
-        const factoryKey = `factory:${chainId}:${factoryAddress}`;
+        const factoryKey = buildFactoryCursorKey(chainId, factoryAddress);
+        const factoryHighWaterKey = buildFactoryHighWaterCursorKey(
+          chainId,
+          factoryAddress,
+        );
 
         const { data: challengeCursorRows, error: challengeCursorError } =
           await db
@@ -80,7 +88,11 @@ export function buildReindexCommand() {
         const challengeCursorKeys = (challengeCursorRows ?? [])
           .map((row) => row.cursor_key)
           .filter((value): value is string => typeof value === "string");
-        const allCursorKeys = [factoryKey, ...challengeCursorKeys];
+        const allCursorKeys = [
+          factoryKey,
+          factoryHighWaterKey,
+          ...challengeCursorKeys,
+        ];
 
         let indexedEventsToPurge = 0;
         if (opts.purgeIndexedEvents) {

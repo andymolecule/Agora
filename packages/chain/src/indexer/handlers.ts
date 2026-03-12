@@ -2,6 +2,7 @@ import {
   type AgoraConfig,
   CHALLENGE_LIMITS,
   CHALLENGE_STATUS,
+  buildChallengeCursorKey,
 } from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
@@ -985,7 +986,7 @@ export async function loadChallengeCursor(input: {
     resolvedChallengeKeys,
   } = input;
   const challengeAddress = challenge.contract_address as `0x${string}`;
-  const challengeCursorKey = `challenge:${chainId}:${challengeAddress.toLowerCase()}`;
+  const challengeCursorKey = buildChallengeCursorKey(chainId, challengeAddress);
 
   const challengeCursor = await getIndexerCursor(db, challengeCursorKey);
   let challengeFromBlock: bigint;

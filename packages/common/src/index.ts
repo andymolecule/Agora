@@ -12,6 +12,7 @@ export * from "./feature-policy.js";
 export * from "./constants.js";
 export * from "./dispute-policy.js";
 export * from "./ipfs.js";
+export * from "./indexer-cursors.js";
 export * from "./presets.js";
 export * from "./submission-limits.js";
 export * from "./submission-sealing.js";
