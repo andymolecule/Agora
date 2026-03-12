@@ -34,6 +34,7 @@ import {
 } from "../../../lib/api";
 import { getChallengeBadgeLabel } from "../../../lib/challenge-status-copy";
 import { formatUsdc } from "../../../lib/format";
+import { getScorerPackageUrl } from "../../../lib/scorer-links";
 import type { SubmissionVerification } from "../../../lib/types";
 import {
   canShowChallengeResults,
@@ -289,26 +290,6 @@ function SubmissionColumnsTable({
 function cidHref(value: string | null | undefined) {
   if (!value) return null;
   return `${DEFAULT_IPFS_GATEWAY}${value.replace("ipfs://", "")}`;
-}
-
-function containerHref(value: string | null | undefined) {
-  if (!value) return null;
-  const match =
-    /^ghcr\.io\/(?<owner>[^/]+)\/(?<name>[^:@]+)(?::[^@]+)?(?:@sha256:[a-f0-9]{64})?$/i.exec(
-      value.trim(),
-    );
-  if (!match?.groups) return null;
-
-  const owner = match.groups.owner?.toLowerCase();
-  const name = match.groups.name;
-  if (!owner || !name) return null;
-  if (owner === "andymolecule") {
-    return `https://github.com/orgs/${owner}/packages/container/${name}`;
-  }
-  if (owner === "andymolecule") {
-    return `https://github.com/users/${owner}/packages/container/${name}`;
-  }
-  return null;
 }
 
 type ScorerTransparencyInfo = {
@@ -576,6 +557,7 @@ export function DetailClient({ id }: { id: string }) {
       ? `agora verify-public ${challenge.id} --sub ${verification.submissionId}`
       : null;
   const scorerInfo = getScorerTransparencyInfo(challenge.eval_image);
+  const scorerPackageUrl = getScorerPackageUrl(challenge.eval_image);
   const metricPresentation = getMetricPresentation(
     challenge.challenge_type,
     challenge.eval_metric,
@@ -810,6 +792,20 @@ export function DetailClient({ id }: { id: string }) {
                                     />
                                   </a>
                                 ))}
+                                {scorerPackageUrl && (
+                                  <a
+                                    href={scorerPackageUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
+                                  >
+                                    <span>GHCR package</span>
+                                    <ExternalLink
+                                      className="h-3.5 w-3.5 shrink-0"
+                                      strokeWidth={1.75}
+                                    />
+                                  </a>
+                                )}
                               </div>
                             </div>
                             <div>
@@ -821,7 +817,14 @@ export function DetailClient({ id }: { id: string }) {
                                 worker for official scoring.
                               </p>
                               <div className="mt-3 break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
-                                {challenge.eval_image ?? "—"}
+                                {challenge.eval_image ? (
+                                  <LinkedValue
+                                    href={scorerPackageUrl}
+                                    value={challenge.eval_image}
+                                  />
+                                ) : (
+                                  "—"
+                                )}
                               </div>
                               {resultsVisible && (
                                 <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
@@ -845,7 +848,14 @@ export function DetailClient({ id }: { id: string }) {
                               worker for official scoring.
                             </p>
                             <div className="break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
-                              {challenge.eval_image ?? "—"}
+                              {challenge.eval_image ? (
+                                <LinkedValue
+                                  href={scorerPackageUrl}
+                                  value={challenge.eval_image}
+                                />
+                              ) : (
+                                "—"
+                              )}
                             </div>
                           </div>
                         )}
@@ -975,7 +985,7 @@ export function DetailClient({ id }: { id: string }) {
                         </div>
                         <div className="mt-2 break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
                           <LinkedValue
-                            href={containerHref(
+                            href={getScorerPackageUrl(
                               verification.containerImageDigest,
                             )}
                             value={verification.containerImageDigest ?? "—"}
