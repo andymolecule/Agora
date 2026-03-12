@@ -61,4 +61,4 @@ jobs:
           DO_WORKER_PATH="${DO_WORKER_PATH:-/opt/agora}"
           DO_WORKER_PM2_NAME="${DO_WORKER_PM2_NAME:-agora-worker}"
           ssh -p "$DO_WORKER_PORT" "$DO_WORKER_USER@$DO_WORKER_HOST" \
-            "export AGORA_DEPLOY_EXPECTED_SHA='$AGORA_DEPLOY_EXPECTED_SHA' AGORA_WORKER_PM2_NAME='$DO_WORKER_PM2_NAME'; cd '$DO_WORKER_PATH' && bash scripts/ops/deploy-worker.sh"
+            "set -euo pipefail; cd '$DO_WORKER_PATH'; if [ ! -x scripts/ops/deploy-worker.sh ]; then git fetch origin main && git checkout main && git pull --ff-only origin main; fi; export AGORA_DEPLOY_EXPECTED_SHA='$AGORA_DEPLOY_EXPECTED_SHA' AGORA_WORKER_PM2_NAME='$DO_WORKER_PM2_NAME'; bash scripts/ops/deploy-worker.sh"
