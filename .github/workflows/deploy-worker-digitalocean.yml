@@ -11,7 +11,8 @@ on:
       - "packages/chain/**"
       - "packages/ipfs/**"
       - "packages/scorer/**"
-      - "scripts/**"
+      - "scripts/run-node-with-root-env.mjs"
+      - "scripts/runtime-env.mjs"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -36,6 +37,7 @@ jobs:
       DO_WORKER_PORT: ${{ vars.DO_WORKER_PORT }}
       DO_WORKER_PATH: ${{ vars.DO_WORKER_PATH }}
       DO_WORKER_PM2_NAME: ${{ vars.DO_WORKER_PM2_NAME }}
+      AGORA_API_HEALTH_URL: ${{ vars.AGORA_API_HEALTH_URL }}
       AGORA_DEPLOY_EXPECTED_SHA: ${{ github.sha }}
     steps:
       - name: Validate deploy secrets
@@ -53,6 +55,29 @@ jobs:
           printf '%s\n' "${{ secrets.DO_WORKER_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -p "$DO_WORKER_PORT" -H "$DO_WORKER_HOST" >> ~/.ssh/known_hosts
+
+      - name: Wait for API deploy to reach this revision
+        run: |
+          set -euo pipefail
+          AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agoraapi-production-2708.up.railway.app/healthz}"
+          EXPECTED_RUNTIME_VERSION="${AGORA_DEPLOY_EXPECTED_SHA:0:12}"
+
+          for attempt in $(seq 1 40); do
+            RUNTIME_VERSION="$(
+              curl -fsS "$AGORA_API_HEALTH_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("runtimeVersion",""))'
+            )"
+            if [ "$RUNTIME_VERSION" = "$EXPECTED_RUNTIME_VERSION" ]; then
+              echo "API is on expected runtime version: $RUNTIME_VERSION"
+              exit 0
+            fi
+
+            echo "API runtime version is '$RUNTIME_VERSION'; waiting for '$EXPECTED_RUNTIME_VERSION' before deploying worker."
+            sleep 15
+          done
+
+          echo "Worker deploy aborted: API did not reach runtime version '$EXPECTED_RUNTIME_VERSION' in time."
+          echo "Next step: check Railway API deploy status, then rerun the workflow."
+          exit 1
 
       - name: Deploy worker on droplet
         run: |
