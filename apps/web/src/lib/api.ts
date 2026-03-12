@@ -1,6 +1,8 @@
 import {
   type ChallengeSpecOutput,
   DEFAULT_IPFS_GATEWAY,
+  type SubmissionContractOutput,
+  agentChallengeDetailResponseSchema,
   challengeSpecSchema,
 } from "@agora/common";
 import { API_BASE_URL } from "./config";
@@ -93,11 +95,48 @@ export async function listChallenges(filters: {
 }
 
 export async function getChallenge(id: string) {
-  return request<ChallengeDetails>(`/api/challenges/${id}`);
+  const response = await fetch(`${BASE}/api/challenges/${id}`, {
+    headers: { "content-type": "application/json" },
+  });
+  if (!response.ok) {
+    const message = await getApiErrorMessage(response);
+    throw new Error(`API request failed (${response.status}): ${message}`);
+  }
+  const json = (await response.json()) as unknown;
+  return agentChallengeDetailResponseSchema.parse(json)
+    .data as ChallengeDetails;
+}
+
+export function hydrateChallengeSpec(
+  raw: unknown,
+  fallbackSubmissionContract?: SubmissionContractOutput | null,
+): ChallengeSpecOutput {
+  const parsed = challengeSpecSchema.safeParse(raw);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  if (
+    fallbackSubmissionContract &&
+    raw &&
+    typeof raw === "object" &&
+    !("submission_contract" in raw)
+  ) {
+    const reparsed = challengeSpecSchema.safeParse({
+      ...raw,
+      submission_contract: fallbackSubmissionContract,
+    });
+    if (reparsed.success) {
+      return reparsed.data;
+    }
+  }
+
+  throw parsed.error;
 }
 
 export async function getChallengeSpec(
   specCid: string,
+  fallbackSubmissionContract?: SubmissionContractOutput | null,
 ): Promise<ChallengeSpecOutput> {
   const url = `${DEFAULT_IPFS_GATEWAY}${specCid.replace("ipfs://", "")}`;
   const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
@@ -105,7 +144,7 @@ export async function getChallengeSpec(
     throw new Error(`Failed to fetch challenge spec (${response.status}).`);
   }
   const json = (await response.json()) as unknown;
-  return challengeSpecSchema.parse(json);
+  return hydrateChallengeSpec(json, fallbackSubmissionContract);
 }
 
 export async function accelerateChallengeIndex(input: {

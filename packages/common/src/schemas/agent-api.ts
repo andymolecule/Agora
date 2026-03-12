@@ -51,6 +51,15 @@ export const challengeDatasetsSchema = z.object({
   spec_url: z.string().nullable(),
 });
 
+const emptyChallengeDatasets = {
+  train_cid: null,
+  train_url: null,
+  test_cid: null,
+  test_url: null,
+  spec_cid: null,
+  spec_url: null,
+} as const;
+
 export const challengeLeaderboardEntrySchema = z.object({
   id: submissionIdSchema.optional(),
   on_chain_sub_id: z.number().int().nonnegative(),
@@ -84,7 +93,9 @@ export const agentChallengesListResponseSchema = z.object({
 export const agentChallengeDetailResponseSchema = z.object({
   data: z.object({
     challenge: challengeDetailSchema,
-    datasets: challengeDatasetsSchema,
+    datasets: challengeDatasetsSchema
+      .optional()
+      .transform((value) => value ?? emptyChallengeDatasets),
     submissions: z.array(challengeLeaderboardEntrySchema),
     leaderboard: z.array(challengeLeaderboardEntrySchema),
   }),

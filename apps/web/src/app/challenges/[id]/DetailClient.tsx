@@ -6,6 +6,7 @@ import {
   DEFAULT_IPFS_GATEWAY,
   type SubmissionContractOutput,
   createCsvTableSubmissionContract,
+  createOpaqueFileSubmissionContract,
   deriveExpectedColumns,
   describeSubmissionArtifact,
 } from "@agora/common";
@@ -225,12 +226,29 @@ function getEligibilityThresholdPresentation(
 }
 
 function getSubmissionContractFallback(input: {
+  challengeType?: string;
   expectedColumns?: string[] | null;
 }): SubmissionContractOutput | null {
   if (
     !Array.isArray(input.expectedColumns) ||
     input.expectedColumns.length === 0
   ) {
+    if (input.challengeType === "docking") {
+      return createCsvTableSubmissionContract({
+        requiredColumns: ["ligand_id", "docking_score"],
+        idColumn: "ligand_id",
+        valueColumn: "docking_score",
+      });
+    }
+
+    if (
+      input.challengeType === "optimization" ||
+      input.challengeType === "red_team" ||
+      input.challengeType === "custom"
+    ) {
+      return createOpaqueFileSubmissionContract();
+    }
+
     return null;
   }
   try {
@@ -511,10 +529,19 @@ export function DetailClient({ id }: { id: string }) {
     queryKey: ["challenge", id],
     queryFn: () => getChallenge(id),
   });
+  const fallbackSubmissionContract = detailQuery.data
+    ? getSubmissionContractFallback({
+        challengeType: detailQuery.data.challenge.challenge_type,
+        expectedColumns: detailQuery.data.challenge.expected_columns,
+      })
+    : null;
   const specQuery = useQuery({
     queryKey: ["challenge-spec", detailQuery.data?.challenge.spec_cid],
     queryFn: () =>
-      getChallengeSpec(detailQuery.data?.challenge.spec_cid as string),
+      getChallengeSpec(
+        detailQuery.data?.challenge.spec_cid as string,
+        fallbackSubmissionContract,
+      ),
     enabled: Boolean(detailQuery.data?.challenge.spec_cid),
     staleTime: 5 * 60 * 1000,
   });
@@ -567,10 +594,7 @@ export function DetailClient({ id }: { id: string }) {
   const { challenge, submissions } = detailQuery.data;
   const spec = specQuery.data;
   const submissionContract =
-    spec?.submission_contract ??
-    getSubmissionContractFallback({
-      expectedColumns: challenge.expected_columns,
-    });
+    spec?.submission_contract ?? fallbackSubmissionContract;
   const submissionArtifact = describeSubmissionArtifact(submissionContract);
   const expectedColumns = deriveExpectedColumns(submissionContract);
   const challengeTypeLabel = formatChallengeType(challenge.challenge_type);

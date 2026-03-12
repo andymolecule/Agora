@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createSubmissionIntentWithApi,
+  getChallengeFromApi,
   getSubmissionStatusFromApi,
   listChallengesFromApi,
 } from "../api-client.js";
@@ -96,6 +97,42 @@ test("submission endpoints parse canonical API responses", async () => {
       intent.resultHash,
       "0x1111111111111111111111111111111111111111111111111111111111111111",
     );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("challenge detail parsing tolerates older API responses without datasets", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        data: {
+          challenge: {
+            id: "11111111-1111-4111-8111-111111111111",
+            title: "Legacy challenge",
+            description: "Pinned before datasets were exposed",
+            domain: "other",
+            challenge_type: "reproducibility",
+            reward_amount: 100,
+            deadline: "2026-03-20T00:00:00.000Z",
+            status: "open",
+            spec_cid: "ipfs://legacy",
+          },
+          submissions: [],
+          leaderboard: [],
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+
+  try {
+    const detail = await getChallengeFromApi(
+      "11111111-1111-4111-8111-111111111111",
+      "https://api.example",
+    );
+    assert.equal(detail.data.datasets.spec_cid, null);
+    assert.equal(detail.data.challenge.spec_cid, "ipfs://legacy");
   } finally {
     global.fetch = originalFetch;
   }

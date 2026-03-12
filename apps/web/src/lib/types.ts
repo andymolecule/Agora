@@ -36,6 +36,14 @@ export type Submission = {
 
 export type ChallengeDetails = {
   challenge: Challenge;
+  datasets?: {
+    train_cid: string | null;
+    train_url: string | null;
+    test_cid: string | null;
+    test_url: string | null;
+    spec_cid: string | null;
+    spec_url: string | null;
+  };
   submissions: Submission[];
   leaderboard: Submission[];
 };

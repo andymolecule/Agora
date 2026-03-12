@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  agentChallengeDetailResponseSchema,
   agentChallengesListResponseSchema,
   agentChallengesQuerySchema,
   submissionStatusResponseSchema,
@@ -35,6 +36,25 @@ const listResponse = agentChallengesListResponseSchema.parse({
 
 assert.equal(listResponse.data.length, 1);
 assert.equal(listResponse.meta?.next_cursor, "2026-03-12T00:00:00.000Z");
+
+const detailResponse = agentChallengeDetailResponseSchema.parse({
+  data: {
+    challenge: {
+      id: "11111111-1111-4111-8111-111111111111",
+      title: "Longevity benchmark",
+      description: "Test challenge",
+      domain: "longevity",
+      challenge_type: "prediction",
+      reward_amount: 100,
+      deadline: "2026-03-20T00:00:00.000Z",
+      status: "open",
+    },
+    submissions: [],
+    leaderboard: [],
+  },
+});
+
+assert.equal(detailResponse.data.datasets.spec_cid, null);
 
 const statusResponse = submissionStatusResponseSchema.parse({
   data: {
