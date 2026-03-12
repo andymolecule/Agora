@@ -84,7 +84,7 @@ export const agentChallengesListResponseSchema = z.object({
 export const agentChallengeDetailResponseSchema = z.object({
   data: z.object({
     challenge: challengeDetailSchema,
-    datasets: challengeDatasetsSchema,
+    datasets: challengeDatasetsSchema.optional(),
     submissions: z.array(challengeLeaderboardEntrySchema),
     leaderboard: z.array(challengeLeaderboardEntrySchema),
   }),
