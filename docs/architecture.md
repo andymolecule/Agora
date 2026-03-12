@@ -14,7 +14,7 @@ Engineers working on any part of the system. Reviewers assessing the architectur
 
 ## Source of truth
 
-This doc is authoritative for: system topology, component responsibilities, package boundaries, API route map, security model, and deployment topology. For sealed submission format and privacy boundaries, see [Submission Privacy](submission-privacy.md). For database schema and indexer details, see [Data and Indexing](data-and-indexing.md). For contract lifecycle and settlement rules, see [Protocol](protocol.md). For operational procedures, see [Operations](operations.md).
+This doc is authoritative for: system topology, component responsibilities, package boundaries, API route map, security model, and deployment topology. For sealed submission format and privacy boundaries, see [Submission Privacy](submission-privacy.md). For database schema and indexer details, see [Data and Indexing](data-and-indexing.md). For contract lifecycle and settlement rules, see [Protocol](protocol.md). For operational procedures, see [Operations](operations.md). For deployment and cutover, see [Deployment](deployment.md).
 
 ## Summary
 
@@ -29,8 +29,6 @@ This doc is authoritative for: system topology, component responsibilities, pack
 - API is the canonical remote agent surface; CLI is the canonical local execution surface
 - MCP is optional and remains a thin adapter: stdio for local agents, HTTP read-only for remote discovery/status
 - Historical malformed specs are intentionally unsupported and are not reconstructed at read time
-
-> Last updated: 8 Mar 2026
 
 ## System Overview
 
@@ -219,30 +217,9 @@ classDiagram
 
 ### Challenge Status Machine
 
-```mermaid
-stateDiagram-v2
-    [*] --> Open : createChallenge()
-    Open --> Open : submit()
-    Open --> Scoring : startScoring() after deadline
-    Open --> Cancelled : cancel() [0 submissions]
-    Scoring --> Scoring : postScore()
-    Scoring --> Disputed : dispute()
-    Scoring --> Finalized : finalize() [after dispute window + all scored, or grace elapsed]
-    Disputed --> Finalized : resolveDispute()
-    Disputed --> Cancelled : timeoutRefund() [30 days]
-    Finalized --> [*] : claim()
-    Cancelled --> [*]
-```
+> Full state machine diagram, fairness boundary, and effective-vs-persisted status rules: see [Protocol — Challenge Lifecycle](protocol.md#challenge-lifecycle-state-machine).
 
-Fairness boundary:
-- `Open`: submissions allowed, but no public leaderboard, no public verification artifacts, and no score computation.
-- `Scoring`: submissions are closed, the worker may decrypt sealed submissions, compute scores, and publish per-challenge results.
-- Public global reputation surfaces use finalized challenges only.
-
-Effective versus persisted status:
-- The contract `status()` view is the read-side truth. After the deadline, it returns `Scoring` even if the persisted storage slot is still `Open`.
-- Write-side transitions stay strict: `postScore()`, `dispute()`, and `finalize()` require a persisted `startScoring()` transaction first.
-- Off-chain consumers should use `status()` for visibility decisions. The DB projection may conservatively lag until the `StatusChanged(Open, Scoring)` event is indexed.
+Summary: `Open` → `Scoring` → `Finalized` (or `Disputed` → `Finalized`, or `Cancelled`). The contract `status()` view is the read-side truth; the DB projection may conservatively lag.
 
 ### Sealed Submission Privacy Flow
 
@@ -285,32 +262,7 @@ Current privacy boundary:
 
 ### USDC Flow
 
-```mermaid
-sequenceDiagram
-    participant Poster
-    participant USDC
-    participant Factory as AgoraFactory
-    participant Escrow as AgoraChallenge
-    participant Treasury
-    participant Winner
-
-    Poster->>USDC: approve(Factory, amount)
-    Poster->>Factory: createChallenge(...)
-    Factory->>Escrow: deploy new contract
-    Factory->>USDC: transferFrom(Poster, Escrow, amount)
-    Note over Escrow: USDC locked in escrow
-
-    Note over Escrow: Solvers submit, oracle scores...
-
-    rect rgb(40, 40, 60)
-        Note over Escrow: Finalization
-        Escrow->>USDC: transfer(Treasury, 10% fee)
-        Escrow->>Escrow: setPayout(winner, 90%)
-    end
-
-    Winner->>Escrow: claim()
-    Escrow->>USDC: transfer(Winner, payout)
-```
+> Full USDC escrow, finalization, and claim sequence diagrams: see [Protocol — USDC Flow](protocol.md#usdc-flow).
 
 ---
 

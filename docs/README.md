@@ -11,7 +11,8 @@ Documentation index and reading order for the Agora repository.
 | 3 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
 | 4 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
 | 5 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
-| 6 | [Operations](operations.md) | How do I run and deploy it? | Operators, DevOps |
+| 6 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
+| 7 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
 
 ## Start Here
 
@@ -20,11 +21,15 @@ Documentation index and reading order for the Agora repository.
 - **Working on contracts or settlement?** Read [Protocol](protocol.md).
 - **Working on submission privacy or sealing?** Read [Submission Privacy](submission-privacy.md).
 - **Debugging data issues?** Read [Data and Indexing](data-and-indexing.md).
-- **Deploying or operating?** Read [Operations](operations.md).
+- **Running or monitoring?** Read [Operations](operations.md).
+- **Deploying or cutting over?** Read [Deployment](deployment.md).
 - **Building an AI agent solver?** Read [Agent Guide](contributing/agent-guide.md).
 - **Adding a new scoring method?** Read [Scoring Engine Extension Guide](contributing/scoring-engines.md).
 - **Running human end-to-end fixture flows?** Read [challenge test-data](../challenges/test-data/README.md).
 - **Working on the frontend?** Read [Design System](design/design-system/DESIGN-SYSTEM.md).
+- **Looking up a CLI command?** Read [CLI Reference](cli-reference.md).
+- **Running or writing tests?** Read [Testing](testing.md).
+- **Looking up a term?** Read [Glossary](glossary.md).
 
 ## Source-of-Truth Map
 
@@ -35,11 +40,21 @@ Documentation index and reading order for the Agora repository.
 | Submission sealing, privacy boundary, key model | [submission-privacy.md](submission-privacy.md) |
 | Contract lifecycle, settlement, YAML schema | [protocol.md](protocol.md) |
 | DB schema, projections, indexer behavior | [data-and-indexing.md](data-and-indexing.md) |
-| Deployment, monitoring, incident response | [operations.md](operations.md) |
+| Day-to-day operations, monitoring, incident response | [operations.md](operations.md) |
+| Deployment, cutover, rollback | [deployment.md](deployment.md) |
 | New scoring methods and challenge templates | [contributing/scoring-engines.md](contributing/scoring-engines.md) |
 | Human challenge fixture kits | [../challenges/test-data/README.md](../challenges/test-data/README.md) |
 | Visual identity, CSS tokens, fonts | [design/design-system/DESIGN-SYSTEM.md](design/design-system/DESIGN-SYSTEM.md) |
 | Engineering rules, tech stack, commands | [CLAUDE.md](../CLAUDE.md) |
+| CLI commands and flags | [cli-reference.md](cli-reference.md) |
+| Test layers, verification scripts, E2E | [testing.md](testing.md) |
+| Key terms and definitions | [glossary.md](glossary.md) |
+
+## Reference Docs
+
+- **[cli-reference.md](cli-reference.md)** — Complete reference for every `agora` CLI command
+- **[testing.md](testing.md)** — Test layers, verification scripts, and E2E test configuration
+- **[glossary.md](glossary.md)** — Key terms used across Agora documentation and code
 
 ## Support Docs
 
