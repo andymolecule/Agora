@@ -230,7 +230,7 @@ export async function listChallengesWithDetails(
     query = query.eq("domain", filters.domain);
   }
   if (filters.posterAddress) {
-    query = query.eq("poster_address", filters.posterAddress);
+    query = query.eq("poster_address", filters.posterAddress.toLowerCase());
   }
   if (filters.updatedSince) {
     query = query.gte("created_at", filters.updatedSince);

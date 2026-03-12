@@ -82,6 +82,22 @@ export function toPrivateProofBundle(row: ProofBundleRow | null) {
 
 export const listChallengesQuerySchema = agentChallengesQuerySchema;
 
+function getChallengeCreatedAtMs(row: Record<string, unknown>) {
+  if (typeof row.created_at !== "string" || row.created_at.length === 0) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const parsed = Date.parse(row.created_at);
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+}
+
+export function sortChallengesByNewest(rows: Array<Record<string, unknown>>) {
+  return [...rows].sort(
+    (left, right) =>
+      getChallengeCreatedAtMs(right) - getChallengeCreatedAtMs(left),
+  );
+}
+
 export function sortByScoreDesc<T extends { score: unknown; scored?: unknown }>(
   rows: T[],
 ) {
@@ -142,12 +158,14 @@ export async function listChallengesFromQuery(
     : normalizedRows;
 
   const minReward = query.min_reward;
-  return minReward === undefined
-    ? statusFilteredRows
-    : statusFilteredRows.filter(
-        (row: Record<string, unknown>) =>
-          Number(row.reward_amount) >= minReward,
-      );
+  const rewardFilteredRows =
+    minReward === undefined
+      ? statusFilteredRows
+      : statusFilteredRows.filter(
+          (row: Record<string, unknown>) =>
+            Number(row.reward_amount) >= minReward,
+        );
+  return sortChallengesByNewest(rewardFilteredRows);
 }
 
 export function getChallengeListMeta(rows: Array<Record<string, unknown>>) {

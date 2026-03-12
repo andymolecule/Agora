@@ -16,5 +16,8 @@ test("openapi document is served from well-known path", async () => {
 
   assert.equal(body.openapi, "3.1.0");
   assert.ok("/api/challenges" in body.paths);
+  assert.ok(
+    "post" in (body.paths["/api/challenges"] as Record<string, unknown>),
+  );
   assert.ok("/api/submissions/{id}/status" in body.paths);
 });

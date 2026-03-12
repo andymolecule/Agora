@@ -3,6 +3,11 @@ import { CHALLENGE_STATUS, CHALLENGE_TYPES } from "../types/challenge.js";
 import { SUBMISSION_RESULT_FORMAT } from "../types/submission.js";
 
 const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
+const normalizedAddressSchema = z
+  .string()
+  .trim()
+  .transform((value) => value.toLowerCase())
+  .pipe(addressSchema);
 const challengeIdSchema = z.string().uuid();
 const submissionIdSchema = z.string().uuid();
 const challengeStatusSchema = z.enum([
@@ -17,11 +22,15 @@ const challengeTypeSchema = z.enum(CHALLENGE_TYPES);
 export const agentChallengesQuerySchema = z.object({
   status: challengeStatusSchema.optional(),
   domain: z.string().min(1).optional(),
-  poster_address: addressSchema.optional(),
+  poster_address: normalizedAddressSchema.optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
   min_reward: z.coerce.number().nonnegative().optional(),
   updated_since: z.string().datetime({ offset: true }).optional(),
   cursor: z.string().min(1).optional(),
+});
+
+export const challengeRegistrationRequestSchema = z.object({
+  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
 });
 
 export const challengeSummarySchema = z
@@ -92,6 +101,14 @@ export const agentChallengeDetailResponseSchema = z.object({
 
 export const agentChallengeLeaderboardResponseSchema = z.object({
   data: z.array(challengeLeaderboardEntrySchema),
+});
+
+export const challengeRegistrationResponseSchema = z.object({
+  data: z.object({
+    ok: z.boolean(),
+    challengeAddress: addressSchema,
+    challengeId: challengeIdSchema,
+  }),
 });
 
 export const submissionStatusSchema = z.object({

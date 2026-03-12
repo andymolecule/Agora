@@ -85,6 +85,33 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             },
           },
         },
+        post: {
+          operationId: "registerChallenge",
+          summary:
+            "Register a confirmed on-chain challenge with Agora metadata",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChallengeRegistrationRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Challenge registered.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ChallengeRegistrationResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       "/api/challenges/{id}": {
         get: {
@@ -521,6 +548,34 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             },
           },
           required: ["challengeId", "resultCid", "txHash"],
+        },
+        ChallengeRegistrationRequest: {
+          type: "object",
+          properties: {
+            txHash: {
+              type: "string",
+              pattern: "^0x[a-fA-F0-9]{64}$",
+            },
+          },
+          required: ["txHash"],
+        },
+        ChallengeRegistrationResponse: {
+          type: "object",
+          properties: {
+            data: {
+              type: "object",
+              properties: {
+                ok: { type: "boolean" },
+                challengeAddress: {
+                  type: "string",
+                  pattern: "^0x[a-fA-F0-9]{40}$",
+                },
+                challengeId: uuidSchema(),
+              },
+              required: ["ok", "challengeAddress", "challengeId"],
+            },
+          },
+          required: ["data"],
         },
         SubmissionRegistrationResponse: {
           type: "object",

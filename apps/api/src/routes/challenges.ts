@@ -11,6 +11,7 @@ import {
   CHALLENGE_LIMITS,
   CHALLENGE_STATUS,
   type ChallengeSpecOutput,
+  challengeRegistrationRequestSchema,
   loadConfig,
   validateScoringContainer,
 } from "@agora/common";
@@ -22,7 +23,6 @@ import {
 } from "@agora/db";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
-import { z } from "zod";
 import { jsonWithEtag } from "../lib/http-cache.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import type { ApiEnv } from "../types.js";
@@ -34,10 +34,6 @@ import {
   listChallengesFromQuery,
   listChallengesQuerySchema,
 } from "./challenges-shared.js";
-
-const createChallengeBodySchema = z.object({
-  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
-});
 
 function normalizeAddress(value: string | null | undefined) {
   return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value)
@@ -62,7 +58,7 @@ router.get("/", zValidator("query", listChallengesQuerySchema), async (c) => {
 router.post(
   "/",
   requireWriteQuota("/api/challenges"),
-  zValidator("json", createChallengeBodySchema),
+  zValidator("json", challengeRegistrationRequestSchema),
   async (c) => {
     const { txHash } = c.req.valid("json");
 
@@ -152,9 +148,15 @@ router.post(
       return c.json({ error: message }, 400);
     }
 
-    await upsertChallenge(db, challengeInsert);
+    const challengeRow = await upsertChallenge(db, challengeInsert);
 
-    return c.json({ data: { ok: true, challengeAddress } });
+    return c.json({
+      data: {
+        ok: true,
+        challengeAddress,
+        challengeId: challengeRow.id,
+      },
+    });
   },
 );
 

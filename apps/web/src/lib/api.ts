@@ -2,6 +2,7 @@ import {
   type ChallengeSpecOutput,
   DEFAULT_IPFS_GATEWAY,
   agentChallengeDetailResponseSchema,
+  challengeRegistrationResponseSchema,
   challengeSpecSchema,
 } from "@agora/common";
 import { API_BASE_URL } from "./config";
@@ -144,10 +145,17 @@ export async function getChallengeSpec(
 export async function accelerateChallengeIndex(input: {
   txHash: `0x${string}`;
 }) {
-  return request<{ ok: boolean; challengeAddress: string }>("/api/challenges", {
+  const response = await fetch(`${BASE}/api/challenges`, {
     method: "POST",
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
+  if (!response.ok) {
+    const message = await getApiErrorMessage(response);
+    throw new Error(`API request failed (${response.status}): ${message}`);
+  }
+  const json = (await response.json()) as unknown;
+  return challengeRegistrationResponseSchema.parse(json).data;
 }
 
 export async function getMyPortfolio(): Promise<SolverPortfolio> {

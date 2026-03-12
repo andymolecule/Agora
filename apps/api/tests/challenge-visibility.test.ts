@@ -7,6 +7,7 @@ import {
   getChallengeListMeta,
   getChallengeWithLeaderboard,
   listChallengesFromQuery,
+  listChallengesQuerySchema,
 } from "../src/routes/challenges-shared.js";
 
 test("open challenge detail redacts submissions and leaderboard", async () => {
@@ -163,11 +164,12 @@ test("challenge list forwards updated_since and cursor to the shared DB query", 
   let receivedFilters: Record<string, unknown> | null = null;
 
   await listChallengesFromQuery(
-    {
+    listChallengesQuerySchema.parse({
+      poster_address: "0xbC8a05842b6FEc7F8A701cE6C2f8d3Fc725Dad98",
       updated_since: "2026-03-10T00:00:00.000Z",
       cursor: "2026-03-11T00:00:00.000Z",
       limit: 5,
-    },
+    }),
     {
       createSupabaseClient: () => ({}) as never,
       getChallengeById: async () => {
@@ -187,11 +189,56 @@ test("challenge list forwards updated_since and cursor to the shared DB query", 
   assert.deepEqual(receivedFilters, {
     domain: undefined,
     status: undefined,
-    posterAddress: undefined,
+    posterAddress: "0xbc8a05842b6fec7f8a701ce6c2f8d3fc725dad98",
     limit: 5,
     updatedSince: "2026-03-10T00:00:00.000Z",
     cursor: "2026-03-11T00:00:00.000Z",
   });
+});
+
+test("challenge list is returned newest-first even if the backing query order drifts", async () => {
+  const rows = await listChallengesFromQuery(
+    {},
+    {
+      createSupabaseClient: () => ({}) as never,
+      getChallengeById: async () => {
+        throw new Error("not used");
+      },
+      getChallengeLifecycleState: async () => ({
+        status: CHALLENGE_STATUS.open,
+      }),
+      listChallengesWithDetails: async () =>
+        [
+          {
+            id: "challenge-older",
+            status: CHALLENGE_STATUS.open,
+            deadline: "2026-03-20T00:00:00.000Z",
+            created_at: "2026-03-10T00:00:00.000Z",
+            reward_amount: 10,
+          },
+          {
+            id: "challenge-newest",
+            status: CHALLENGE_STATUS.open,
+            deadline: "2026-03-21T00:00:00.000Z",
+            created_at: "2026-03-12T00:00:00.000Z",
+            reward_amount: 10,
+          },
+          {
+            id: "challenge-middle",
+            status: CHALLENGE_STATUS.open,
+            deadline: "2026-03-19T00:00:00.000Z",
+            created_at: "2026-03-11T00:00:00.000Z",
+            reward_amount: 10,
+          },
+        ] as never[],
+      listSubmissionsForChallenge: async () => [] as never[],
+    },
+  );
+
+  assert.deepEqual(
+    rows.map((row) => row.id),
+    ["challenge-newest", "challenge-middle", "challenge-older"],
+  );
 });
 
 test("challenge list meta returns next_cursor from the last row", () => {

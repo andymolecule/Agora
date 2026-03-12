@@ -18,6 +18,7 @@ import {
   SearchBar,
 } from "../components/ChallengeFilters";
 import { listChallenges } from "../lib/api";
+import { type ChallengeListSort, sortChallenges } from "../lib/challenge-list";
 import { formatUsdc } from "../lib/format";
 
 export function HomeClient() {
@@ -29,7 +30,7 @@ export function HomeClient() {
     search: "",
   });
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sort, setSort] = useState<"deadline" | "reward">("deadline");
+  const [sort, setSort] = useState<ChallengeListSort>("newest");
 
   const hasActiveFilters = !!(
     filters.domain ||
@@ -78,13 +79,7 @@ export function HomeClient() {
       );
     });
 
-    base.sort((a, b) => {
-      if (sort === "reward") {
-        return Number(b.reward_amount) - Number(a.reward_amount);
-      }
-      return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
-    });
-    return base;
+    return sortChallenges(base, sort);
   }, [challenges, filters.search, sort]);
 
   return (
@@ -163,8 +158,9 @@ export function HomeClient() {
             <select
               className="text-[10px] font-bold font-mono uppercase tracking-wider pl-3 pr-7 py-3 bg-transparent text-inherit outline-none cursor-pointer appearance-none border-none"
               value={sort}
-              onChange={(e) => setSort(e.target.value as "deadline" | "reward")}
+              onChange={(e) => setSort(e.target.value as ChallengeListSort)}
             >
+              <option value="newest">Newest</option>
               <option value="deadline">Deadline</option>
               <option value="reward">Reward</option>
             </select>

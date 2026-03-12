@@ -48,6 +48,10 @@ import {
 } from "wagmi";
 import { ScoringTrustNotice } from "../../components/ScoringTrustNotice";
 import { accelerateChallengeIndex } from "../../lib/api";
+import {
+  getChallengePostIndexingFailureStatus,
+  getChallengePostSuccessStatus,
+} from "../../lib/challenge-post";
 import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../../lib/config";
 import { computeProtocolFee, formatUsdc } from "../../lib/format";
 
@@ -1173,6 +1177,9 @@ function DataUploadField({
 export function PostClient() {
   const [state, setState] = useState<FormState>(initialState);
   const [status, setStatus] = useState<string>("");
+  const [postedChallengeId, setPostedChallengeId] = useState<string | null>(
+    null,
+  );
   const [pendingAction, setPendingAction] = useState<PendingAction>("idle");
   const [fundingState, setFundingState] = useState<PostingFundingState>(
     initialPostingFundingState,
@@ -1594,16 +1601,63 @@ export function PostClient() {
     await publicClient.waitForTransactionReceipt({ hash: createTx });
     setStatus("Challenge confirmed on-chain. Accelerating indexer sync...");
     try {
-      await accelerateChallengeIndex({ txHash: createTx });
-      setStatus(
-        `success: Challenge posted. tx=${createTx}. Indexed immediately.`,
-      );
-    } catch {
-      setStatus(
-        `success: Challenge posted on-chain (tx=${createTx}). Indexer will sync it shortly.`,
-      );
+      const registration = await accelerateChallengeIndex({ txHash: createTx });
+      setPostedChallengeId(registration.challengeId);
+      setStatus(getChallengePostSuccessStatus(createTx));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setPostedChallengeId(null);
+      setStatus(getChallengePostIndexingFailureStatus(createTx, message));
+    } finally {
+      setShowPreview(false);
     }
-    setShowPreview(false);
+  }
+
+  function clearPostStatus() {
+    setStatus("");
+    setPostedChallengeId(null);
+  }
+
+  function renderPostStatus(className: string, iconSize: number) {
+    if (!status) return null;
+    return (
+      <div className={`${className} ${isSuccess ? "success" : ""}`}>
+        {isSuccess ? (
+          <CheckCircle
+            size={iconSize}
+            style={{
+              color: "var(--color-success)",
+              flexShrink: 0,
+              marginTop: 2,
+            }}
+          />
+        ) : (
+          <AlertCircle
+            size={iconSize}
+            style={{
+              color: "var(--text-tertiary)",
+              flexShrink: 0,
+              marginTop: 2,
+            }}
+          />
+        )}
+        <div style={{ display: "grid", gap: "0.35rem" }}>
+          <p>{isSuccess ? status.replace("success: ", "") : status}</p>
+          {isSuccess && postedChallengeId ? (
+            <a
+              href={`/challenges/${postedChallengeId}`}
+              style={{
+                color: "var(--color-success)",
+                fontWeight: 700,
+                textDecoration: "underline",
+              }}
+            >
+              View challenge
+            </a>
+          ) : null}
+        </div>
+      </div>
+    );
   }
 
   async function handleApprove() {
@@ -1618,7 +1672,7 @@ export function PostClient() {
 
     try {
       setPendingAction("approving");
-      setStatus("");
+      clearPostStatus();
 
       const validationError = validateInput();
       if (validationError) throw new Error(validationError);
@@ -1671,7 +1725,7 @@ export function PostClient() {
       return;
 
     try {
-      setStatus("");
+      clearPostStatus();
 
       const validationError = validateInput();
       if (validationError) throw new Error(validationError);
@@ -1834,6 +1888,7 @@ export function PostClient() {
       } else {
         setStatus(message);
       }
+      setPostedChallengeId(null);
     } finally {
       setPendingAction("idle");
     }
@@ -3626,30 +3681,7 @@ export function PostClient() {
       </div>
 
       {/* ── Status ── */}
-      {status ? (
-        <div className={`post-status ${isSuccess ? "success" : ""}`}>
-          {isSuccess ? (
-            <CheckCircle
-              size={16}
-              style={{
-                color: "var(--color-success)",
-                flexShrink: 0,
-                marginTop: 2,
-              }}
-            />
-          ) : (
-            <AlertCircle
-              size={16}
-              style={{
-                color: "var(--text-tertiary)",
-                flexShrink: 0,
-                marginTop: 2,
-              }}
-            />
-          )}
-          <p>{isSuccess ? status.replace("success: ", "") : status}</p>
-        </div>
-      ) : null}
+      {renderPostStatus("post-status", 16)}
 
       {/* ── Preview Overlay ── */}
       {showPreview && (
@@ -3871,30 +3903,7 @@ export function PostClient() {
                 </span>
               </div>
             </div>
-            {status ? (
-              <div className={`preview-status ${isSuccess ? "success" : ""}`}>
-                {isSuccess ? (
-                  <CheckCircle
-                    size={15}
-                    style={{
-                      color: "var(--color-success)",
-                      flexShrink: 0,
-                      marginTop: 2,
-                    }}
-                  />
-                ) : (
-                  <AlertCircle
-                    size={15}
-                    style={{
-                      color: "var(--text-tertiary)",
-                      flexShrink: 0,
-                      marginTop: 2,
-                    }}
-                  />
-                )}
-                <p>{isSuccess ? status.replace("success: ", "") : status}</p>
-              </div>
-            ) : null}
+            {renderPostStatus("preview-status", 15)}
             <div className="preview-actions">
               <button
                 type="button"
