@@ -135,12 +135,12 @@ The worker now treats scorer availability as a runtime readiness problem, not a 
 1. At startup it writes a `worker_runtime_state` row with `runtime_version`, `ready=false`, and any current `last_error`.
 2. The API writes the active scoring runtime version into `worker_runtime_control` on startup.
 3. Score-job claims are fenced against `worker_runtime_control`, so older workers can keep heartbeating but cannot keep claiming new jobs after a deploy.
-2. It checks `docker info`, then preflights all official scorer images referenced by currently scoring official challenges.
-3. If Docker or image preflight fails, the process stays up, keeps heartbeating, and skips job claims until readiness recovers.
-4. Readiness is retried in the background every minute.
-5. If the worker sees the active runtime version drift for three consecutive loop checks, it exits so PM2 and the DigitalOcean deploy workflows can replace it instead of leaving it degraded forever.
-6. During scoring, the runner inspects the local Docker image first and only pulls when the image is missing.
-7. Official images without a repo digest are rejected. A locally built image is not accepted as a substitute for a published official artifact.
+4. It checks `docker info`, then preflights all official scorer images referenced by currently scoring official challenges.
+5. If Docker or image preflight fails, the process stays up, keeps heartbeating, and skips job claims until readiness recovers.
+6. Readiness is retried in the background every minute.
+7. If the worker sees the active runtime version drift for three consecutive loop checks, it exits so PM2 and the DigitalOcean deploy workflows can replace it instead of leaving it degraded forever.
+8. During scoring, the runner inspects the local Docker image first and only pulls when the image is missing.
+9. Official images without a repo digest are rejected. A locally built image is not accepted as a substitute for a published official artifact.
 
 ---
 
@@ -260,6 +260,7 @@ For the self-hosted worker, this repo ships a push-triggered deploy workflow, a 
 - Workflow: [deploy-worker-digitalocean.yml](../.github/workflows/deploy-worker-digitalocean.yml)
 - Workflow: [auto-heal-worker-digitalocean.yml](../.github/workflows/auto-heal-worker-digitalocean.yml)
 - Droplet script: [deploy-worker.sh](../scripts/ops/deploy-worker.sh)
+- Worker entrypoint: [start-worker.sh](../scripts/ops/start-worker.sh)
 
 Expected GitHub configuration:
 
@@ -275,11 +276,12 @@ Deploy flow:
 
 1. Push to `main`
 2. Railway API and indexer redeploy natively from GitHub `main`
-3. GitHub Actions (DO worker workflow) waits for the API `/healthz` runtime version to match the latest API-surface commit for that push
+3. GitHub Actions (DO worker workflow) waits for the API `/healthz` runtime version to match the pushed commit SHA (normalized to 12 chars)
 4. GitHub Actions SSHes into the worker host
 5. The droplet runs `scripts/ops/deploy-worker.sh`
 6. The script checks out the live API runtime revision, installs deps, rebuilds `@agora/api`, and restarts the PM2 worker
-7. The worker reports the new runtime SHA automatically through `/api/worker-health`
+7. PM2 launches `scripts/ops/start-worker.sh`, which restores `AGORA_RUNTIME_VERSION`, reloads seal PEMs, and then execs the worker process
+8. The worker reports the new runtime SHA automatically through `/api/worker-health`
 
 Auto-heal flow:
 
@@ -366,7 +368,7 @@ Per-challenge overrides can be set in the challenge spec:
 
 1. Check `submission_intents`: each client submission should create an unmatched intent before the wallet transaction is sent, then the intent should gain `matched_submission_id` after the on-chain submission is indexed or the submit-confirmation API call succeeds.
 2. Check `score_jobs` transitions: once the submission has both on-chain state and reconciled metadata, jobs should move from `queued` -> `running` -> `scored`. Infrastructure and tx-reconciliation retries may temporarily stay `queued` with a future `next_attempt_at`.
-3. Check `GET /api/worker-health`: it should show `status != "warning"`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and no mismatched healthy workers before you expect automatic scoring.
+3. Check `GET /api/worker-health`: it should show `status != "warning"` and `workers.healthyWorkersForActiveRuntimeVersion > 0` before you expect automatic scoring. `healthyWorkersNotOnActiveRuntimeVersion` is still useful diagnostically, but it is no longer a hard readiness requirement when an active healthy worker already exists.
 4. After a submission, a `submission_intents` row appears immediately. A `score_jobs` row appears only after that intent is reconciled into a `submissions` row. The job should remain queued until the deadline passes and the challenge enters `Scoring`, then the worker should pick it up within ~15s (worker poll).
 5. Successful scoring produces a proof bundle CID in `proof_bundles.cid`.
 6. The frontend ActivityPanel "Scorer" row shows live queued/scored/failed counts.
@@ -494,14 +496,14 @@ agora reindex --from-block <block_number>
 1. Check `GET /api/worker-health` — if `status: "warning"`, the oldest queued job has been waiting > 5 minutes.
 2. Tail logs: `pm2 logs agora-worker --lines 100`.
 3. Common causes:
-   - Docker daemon not running or unreachable -> restart Docker, then `pm2 restart agora-worker`.
+   - Docker daemon not running or unreachable -> restart Docker, then `pm2 startOrRestart scripts/ops/ecosystem.config.cjs --only agora-worker --update-env`.
    - Official scorer image not pullable -> inspect `workers.latestError`, verify the image is public/pullable from the host, and rerun `./scripts/preflight-testnet.sh`.
    - DB schema drift or stale PostgREST cache -> run `pnpm schema:verify`. If it fails, apply the missing migration and reload the PostgREST schema cache before restarting services.
    - Runtime version mismatch -> compare `/healthz.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then redeploy API + worker from the same git revision.
    - RPC errors -> check `AGORA_RPC_URL` reachability.
    - All jobs stuck in `failed` or `running` after an infra incident -> recover them with `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` after the worker is healthy again.
    - Terminal validation/configuration rows lingering in `failed` -> inspect with `agora clean-failed-jobs` and skip only the rows that are truly unrecoverable.
-4. If the worker process itself crashed: `pm2 restart agora-worker`. PM2 uses exponential backoff (3s base).
+4. If the worker process itself crashed: rerun `scripts/ops/deploy-worker.sh` or `pm2 startOrRestart scripts/ops/ecosystem.config.cjs --only agora-worker --update-env`. Avoid bare `pm2 restart agora-worker` unless the droplet checkout and PM2 env are already known-good. PM2 uses exponential backoff (3s base).
 
 ### Oracle Key Issue
 
