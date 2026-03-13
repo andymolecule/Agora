@@ -19,6 +19,7 @@ import {
   assertRuntimeDatabaseSchema,
   claimNextJob,
   createSupabaseClient,
+  getActiveWorkerRuntimeVersion,
   heartbeatScoreJobLease,
   heartbeatWorkerRuntimeState,
   pruneWorkerRuntimeStates,
@@ -211,6 +212,41 @@ function updateRuntimeState(
   return changed;
 }
 
+async function ensureWorkerRuntimeIsActive(
+  db: ReturnType<typeof createSupabaseClient>,
+  runtimeState: {
+    ready: boolean;
+    docker_ready: boolean;
+    seal_enabled: boolean;
+    seal_key_id: string | null;
+    seal_self_check_ok: boolean;
+    runtime_version: string;
+    last_error: string | null;
+  },
+  log: WorkerLogFn,
+) {
+  const activeRuntimeVersion = await getActiveWorkerRuntimeVersion(db);
+  if (
+    activeRuntimeVersion &&
+    runtimeState.runtime_version !== activeRuntimeVersion
+  ) {
+    const changed = updateRuntimeState(runtimeState, {
+      ready: false,
+      docker_ready: runtimeState.docker_ready,
+      last_error: `Worker runtime ${runtimeState.runtime_version} is inactive. Next step: stop this worker or deploy the active runtime ${activeRuntimeVersion}.`,
+    });
+    if (changed) {
+      log("warn", "Worker runtime is no longer active for scoring", {
+        runtimeVersion: runtimeState.runtime_version,
+        activeRuntimeVersion,
+      });
+    }
+    return false;
+  }
+
+  return true;
+}
+
 async function refreshWorkerRuntimeReadiness(
   db: ReturnType<typeof createSupabaseClient>,
   runtimeState: {
@@ -224,6 +260,10 @@ async function refreshWorkerRuntimeReadiness(
   },
   log: WorkerLogFn,
 ) {
+  if (!(await ensureWorkerRuntimeIsActive(db, runtimeState, log))) {
+    return 0;
+  }
+
   try {
     await ensureDockerReady();
   } catch (error) {
@@ -381,6 +421,11 @@ export async function startWorker() {
             log,
           );
           lastReadinessCheckAt = now;
+        }
+
+        if (!(await ensureWorkerRuntimeIsActive(db, runtimeState, log))) {
+          await sleep(timing.pollIntervalMs);
+          continue;
         }
 
         if (!runtimeState.ready) {

@@ -1,12 +1,26 @@
-import { getAgoraRuntimeIdentity, loadConfig } from "@agora/common";
-import { assertRuntimeDatabaseSchema, createSupabaseClient } from "@agora/db";
+import {
+  getAgoraRuntimeIdentity,
+  getAgoraRuntimeVersion,
+  loadConfig,
+} from "@agora/common";
+import {
+  WORKER_RUNTIME_TYPE,
+  assertRuntimeDatabaseSchema,
+  createSupabaseClient,
+  upsertActiveWorkerRuntimeVersion,
+} from "@agora/db";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 
 async function start() {
   const config = loadConfig();
   const port = config.AGORA_API_PORT ?? 3000;
-  await assertRuntimeDatabaseSchema(createSupabaseClient(true));
+  const db = createSupabaseClient(true);
+  await assertRuntimeDatabaseSchema(db);
+  await upsertActiveWorkerRuntimeVersion(db, {
+    worker_type: WORKER_RUNTIME_TYPE.scoring,
+    active_runtime_version: getAgoraRuntimeVersion(config),
+  });
   const app = createApp();
   const runtimeIdentity = getAgoraRuntimeIdentity(config);
 

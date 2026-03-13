@@ -119,11 +119,11 @@ flowchart LR
 Architecture boundary:
 
 - Clients now pre-register `submission_intents` before the on-chain submit. API submit confirmation and the indexer both reconcile intents into `submissions` rows and only then create or revive `score_jobs`.
-- Worker polls `score_jobs` but only claims jobs after the challenge enters `Scoring` at deadline.
+- Worker polls `score_jobs` but only claims jobs after the challenge enters `Scoring` at deadline, and only when the worker runtime matches the active scoring runtime version declared by the API.
 - Scorer is the Docker container itself (e.g. `ghcr.io/andymolecule/repro-scorer:v1`) — stateless, sandboxed, no network access.
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
-- Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, and `worker_runtime_state` carries worker heartbeat/readiness for split deployments.
+- Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` declares the active scoring runtime version for claim fencing during split deploys.
 - Official preset challenges should persist pinned image digests. The worker should only score from registry-backed official images, never from a host-local build that lacks a repo digest.
 
 ### Worker Docker Flow
@@ -131,6 +131,8 @@ Architecture boundary:
 The worker now treats scorer availability as a runtime readiness problem, not a crash condition.
 
 1. At startup it writes a `worker_runtime_state` row with `runtime_version`, `ready=false`, and any current `last_error`.
+2. The API writes the active scoring runtime version into `worker_runtime_control` on startup.
+3. Score-job claims are fenced against `worker_runtime_control`, so older workers can keep heartbeating but cannot keep claiming new jobs after a deploy.
 2. It checks `docker info`, then preflights all official scorer images referenced by currently scoring official challenges.
 3. If Docker or image preflight fails, the process stays up, keeps heartbeating, and skips job claims until readiness recovers.
 4. Readiness is retried in the background every minute.
@@ -279,7 +281,7 @@ Check every 15-30 minutes during first launch window:
 2. Indexer logs show new blocks processed.
 3. `indexed_events` block number continues advancing.
 4. `agora doctor` passes all required checks.
-5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version.
+5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version. A mismatched healthy worker may still appear in health until it is stopped or becomes stale, but claim fencing prevents it from taking new jobs.
 6. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
 
 Health commands:

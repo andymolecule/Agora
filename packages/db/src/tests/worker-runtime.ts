@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import {
+  getActiveWorkerRuntimeVersion,
   heartbeatWorkerRuntimeState,
   isWorkerRuntimeReadyForSealKey,
   pruneWorkerRuntimeStates,
   summarizeWorkerRuntimeStates,
+  upsertActiveWorkerRuntimeVersion,
   upsertWorkerRuntimeState,
 } from "../queries/worker-runtime.js";
 
@@ -95,6 +97,75 @@ async function testHeartbeatWorkerRuntimeStateRefreshesTimestamp() {
   assert.equal(capturedPayload?.runtime_version, "sha-123");
   assert.equal(capturedPayload?.ready, true);
   assert.ok(typeof capturedPayload?.last_heartbeat_at === "string");
+}
+
+async function testUpsertActiveWorkerRuntimeVersionUsesWorkerTypeConflictKey() {
+  let capturedPayload: Record<string, unknown> | undefined;
+  let capturedOptions: Record<string, unknown> | undefined;
+
+  const db = {
+    from(table: string) {
+      assert.equal(table, "worker_runtime_control");
+      return {
+        upsert(
+          payload: Record<string, unknown>,
+          options: Record<string, unknown>,
+        ) {
+          capturedPayload = payload;
+          capturedOptions = options;
+          return {
+            select(selection: string) {
+              assert.equal(selection, "*");
+              return {
+                async single() {
+                  return { data: payload, error: null };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  } as never;
+
+  const row = await upsertActiveWorkerRuntimeVersion(db, {
+    active_runtime_version: "sha-new",
+  });
+
+  assert.equal(row.worker_type, "scoring");
+  assert.equal(row.active_runtime_version, "sha-new");
+  assert.equal(capturedPayload?.worker_type, "scoring");
+  assert.equal(capturedOptions?.onConflict, "worker_type");
+}
+
+async function testGetActiveWorkerRuntimeVersionReturnsStoredValue() {
+  const db = {
+    from(table: string) {
+      assert.equal(table, "worker_runtime_control");
+      return {
+        select(selection: string) {
+          assert.equal(selection, "active_runtime_version");
+          return {
+            eq(field: string, value: unknown) {
+              assert.equal(field, "worker_type");
+              assert.equal(value, "scoring");
+              return {
+                async maybeSingle() {
+                  return {
+                    data: { active_runtime_version: "sha-current" },
+                    error: null,
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  } as never;
+
+  const value = await getActiveWorkerRuntimeVersion(db);
+  assert.equal(value, "sha-current");
 }
 
 async function testPruneWorkerRuntimeStatesDeletesStaleRows() {
@@ -261,6 +332,8 @@ function testIsWorkerRuntimeReadyForSealKeyRequiresFreshMatchingWorker() {
 
 await testUpsertWorkerRuntimeStateUsesWorkerIdConflictKey();
 await testHeartbeatWorkerRuntimeStateRefreshesTimestamp();
+await testUpsertActiveWorkerRuntimeVersionUsesWorkerTypeConflictKey();
+await testGetActiveWorkerRuntimeVersionReturnsStoredValue();
 await testPruneWorkerRuntimeStatesDeletesStaleRows();
 testSummarizeWorkerRuntimeStatesCountsHealthySealWorkers();
 testIsWorkerRuntimeReadyForSealKeyRequiresFreshMatchingWorker();

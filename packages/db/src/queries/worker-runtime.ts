@@ -65,6 +65,12 @@ export interface WorkerRuntimeSummary {
   staleAfterMs: number;
 }
 
+export interface WorkerRuntimeControlRow {
+  worker_type: WorkerRuntimeType;
+  active_runtime_version: string;
+  updated_at: string;
+}
+
 export function getDefaultWorkerRuntimeHeartbeatMs() {
   return readWorkerTimingConfig().heartbeatIntervalMs;
 }
@@ -111,6 +117,53 @@ export async function upsertWorkerRuntimeState(
   }
 
   return data as WorkerRuntimeStateRow;
+}
+
+export async function upsertActiveWorkerRuntimeVersion(
+  db: AgoraDbClient,
+  input: {
+    worker_type?: WorkerRuntimeType;
+    active_runtime_version: string;
+  },
+): Promise<WorkerRuntimeControlRow> {
+  const nowIso = new Date().toISOString();
+  const payload = {
+    worker_type: input.worker_type ?? WORKER_RUNTIME_TYPE.scoring,
+    active_runtime_version: input.active_runtime_version,
+    updated_at: nowIso,
+  };
+  const { data, error } = await db
+    .from("worker_runtime_control")
+    .upsert(payload, { onConflict: "worker_type" })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(
+      `Failed to upsert active worker runtime version: ${error.message}`,
+    );
+  }
+
+  return data as WorkerRuntimeControlRow;
+}
+
+export async function getActiveWorkerRuntimeVersion(
+  db: AgoraDbClient,
+  workerType: WorkerRuntimeType = WORKER_RUNTIME_TYPE.scoring,
+): Promise<string | null> {
+  const { data, error } = await db
+    .from("worker_runtime_control")
+    .select("active_runtime_version")
+    .eq("worker_type", workerType)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(
+      `Failed to read active worker runtime version: ${error.message}`,
+    );
+  }
+
+  return (data?.active_runtime_version as string | null | undefined) ?? null;
 }
 
 export async function heartbeatWorkerRuntimeState(

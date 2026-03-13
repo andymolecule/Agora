@@ -135,6 +135,7 @@ This section covers non-code work for deployment across hosted systems.
 - Set the API environment to `AGORA_*` names only.
 - `AGORA_CORS_ORIGINS` matches frontend origins.
 - `AGORA_RUNTIME_VERSION` is optional; hosted deploys should auto-detect the git SHA and still match the deployed worker runtime version.
+- On startup, the API writes the active scoring runtime version into `worker_runtime_control`. Scoring workers only claim jobs when their runtime version matches that active row, so deploy order matters: bring up the new API runtime before expecting new workers to claim work.
 - SIWE origin and domain checks pass against production API and web domains.
 - `agora_session` cookie is issued with correct `secure` behavior in production.
 - Reverse proxy forwards `x-forwarded-host` and `x-forwarded-proto` correctly.
