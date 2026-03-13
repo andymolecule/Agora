@@ -118,28 +118,28 @@ jobs:
 
             HEALTHY="$(
               EXPECTED_RUNTIME_VERSION="$EXPECTED_RUNTIME_VERSION" WORKER_JSON="$worker_json" python3 - <<'PY'
-import json
-import os
+              import json
+              import os
 
-worker = json.loads(os.environ["WORKER_JSON"])
-workers = worker.get("workers") or {}
-sealing = worker.get("sealing") or {}
-expected_runtime = os.environ["EXPECTED_RUNTIME_VERSION"]
+              worker = json.loads(os.environ["WORKER_JSON"])
+              workers = worker.get("workers") or {}
+              sealing = worker.get("sealing") or {}
+              expected_runtime = os.environ["EXPECTED_RUNTIME_VERSION"]
 
-active_runtime = str(workers.get("activeRuntimeVersion") or "")
-healthy_active = int(workers.get("healthyWorkersForActiveRuntimeVersion") or 0)
-healthy_stale_runtime = int(workers.get("healthyWorkersNotOnActiveRuntimeVersion") or 0)
-sealing_configured = bool(sealing.get("configured"))
-sealing_ready = bool(sealing.get("workerReady"))
+              active_runtime = str(workers.get("activeRuntimeVersion") or "")
+              healthy_active = int(workers.get("healthyWorkersForActiveRuntimeVersion") or 0)
+              healthy_stale_runtime = int(workers.get("healthyWorkersNotOnActiveRuntimeVersion") or 0)
+              sealing_configured = bool(sealing.get("configured"))
+              sealing_ready = bool(sealing.get("workerReady"))
 
-healthy = (
-    active_runtime == expected_runtime
-    and healthy_active > 0
-    and healthy_stale_runtime == 0
-    and (not sealing_configured or sealing_ready)
-)
-print("true" if healthy else "false")
-PY
+              healthy = (
+                  active_runtime == expected_runtime
+                  and healthy_active > 0
+                  and healthy_stale_runtime == 0
+                  and (not sealing_configured or sealing_ready)
+              )
+              print("true" if healthy else "false")
+              PY
             )"
 
             if [ "$HEALTHY" = "true" ]; then

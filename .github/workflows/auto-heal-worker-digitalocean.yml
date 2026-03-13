@@ -52,46 +52,46 @@ jobs:
           worker_json="$(curl -fsS "$AGORA_WORKER_HEALTH_URL")"
 
           API_JSON="$api_json" WORKER_JSON="$worker_json" python3 - <<'PY' >> "$GITHUB_OUTPUT"
-import json
-import os
-import sys
+          import json
+          import os
+          import sys
 
-api = json.loads(os.environ["API_JSON"])
-worker = json.loads(os.environ["WORKER_JSON"])
+          api = json.loads(os.environ["API_JSON"])
+          worker = json.loads(os.environ["WORKER_JSON"])
 
-api_runtime = str(api.get("runtimeVersion") or "").strip()
-if not api_runtime:
-    print("Live API health did not include runtimeVersion.", file=sys.stderr)
-    sys.exit(1)
+          api_runtime = str(api.get("runtimeVersion") or "").strip()
+          if not api_runtime:
+              print("Live API health did not include runtimeVersion.", file=sys.stderr)
+              sys.exit(1)
 
-workers = worker.get("workers") or {}
-sealing = worker.get("sealing") or {}
+          workers = worker.get("workers") or {}
+          sealing = worker.get("sealing") or {}
 
-healthy_active = int(workers.get("healthyWorkersForActiveRuntimeVersion") or 0)
-healthy_stale_runtime = int(workers.get("healthyWorkersNotOnActiveRuntimeVersion") or 0)
-sealing_configured = bool(sealing.get("configured"))
-sealing_ready = bool(sealing.get("workerReady"))
-latest_error = str(workers.get("latestError") or "").strip()
-running_over_threshold = int(worker.get("runningOverThresholdCount") or 0)
+          healthy_active = int(workers.get("healthyWorkersForActiveRuntimeVersion") or 0)
+          healthy_stale_runtime = int(workers.get("healthyWorkersNotOnActiveRuntimeVersion") or 0)
+          sealing_configured = bool(sealing.get("configured"))
+          sealing_ready = bool(sealing.get("workerReady"))
+          latest_error = str(workers.get("latestError") or "").strip()
+          running_over_threshold = int(worker.get("runningOverThresholdCount") or 0)
 
-reasons = []
-if healthy_active <= 0:
-    reasons.append("zero healthy workers on the active API runtime")
-if healthy_stale_runtime > 0:
-    reasons.append(f"{healthy_stale_runtime} healthy worker(s) still on an inactive runtime")
-if sealing_configured and not sealing_ready:
-    reasons.append("sealed-submission worker readiness is false")
+          reasons = []
+          if healthy_active <= 0:
+              reasons.append("zero healthy workers on the active API runtime")
+          if healthy_stale_runtime > 0:
+              reasons.append(f"{healthy_stale_runtime} healthy worker(s) still on an inactive runtime")
+          if sealing_configured and not sealing_ready:
+              reasons.append("sealed-submission worker readiness is false")
 
-print(f"api_runtime={api_runtime}")
-print(f"running_over_threshold={running_over_threshold}")
-if reasons:
-    print("needs_heal=true")
-    print(f"reasons={' ; '.join(reasons)}")
-    if latest_error:
-        print(f"latest_error={latest_error}")
-else:
-    print("needs_heal=false")
-PY
+          print(f"api_runtime={api_runtime}")
+          print(f"running_over_threshold={running_over_threshold}")
+          if reasons:
+              print("needs_heal=true")
+              print(f"reasons={' ; '.join(reasons)}")
+              if latest_error:
+                  print(f"latest_error={latest_error}")
+          else:
+              print("needs_heal=false")
+          PY
 
       - name: Report health status
         run: |
@@ -129,25 +129,25 @@ PY
 
             HEALTHY="$(
               WORKER_JSON="$worker_json" python3 - <<'PY'
-import json
-import os
+              import json
+              import os
 
-worker = json.loads(os.environ["WORKER_JSON"])
-workers = worker.get("workers") or {}
-sealing = worker.get("sealing") or {}
+              worker = json.loads(os.environ["WORKER_JSON"])
+              workers = worker.get("workers") or {}
+              sealing = worker.get("sealing") or {}
 
-healthy_active = int(workers.get("healthyWorkersForActiveRuntimeVersion") or 0)
-healthy_stale_runtime = int(workers.get("healthyWorkersNotOnActiveRuntimeVersion") or 0)
-sealing_configured = bool(sealing.get("configured"))
-sealing_ready = bool(sealing.get("workerReady"))
+              healthy_active = int(workers.get("healthyWorkersForActiveRuntimeVersion") or 0)
+              healthy_stale_runtime = int(workers.get("healthyWorkersNotOnActiveRuntimeVersion") or 0)
+              sealing_configured = bool(sealing.get("configured"))
+              sealing_ready = bool(sealing.get("workerReady"))
 
-healthy = (
-    healthy_active > 0
-    and healthy_stale_runtime == 0
-    and (not sealing_configured or sealing_ready)
-)
-print("true" if healthy else "false")
-PY
+              healthy = (
+                  healthy_active > 0
+                  and healthy_stale_runtime == 0
+                  and (not sealing_configured or sealing_ready)
+              )
+              print("true" if healthy else "false")
+              PY
             )"
 
             if [ "$HEALTHY" = "true" ]; then
