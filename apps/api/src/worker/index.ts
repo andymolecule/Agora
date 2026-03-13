@@ -56,12 +56,14 @@ function startJobLeaseHeartbeat(
   log: WorkerLogFn,
 ) {
   let stopped = false;
+  let lostLease = false;
 
   const tick = async () => {
     if (stopped) return;
     try {
       const refreshed = await heartbeatScoreJobLease(db, job.id, claimWorkerId);
       if (!refreshed && !stopped) {
+        lostLease = true;
         log("warn", "Job lease heartbeat lost ownership", {
           jobId: job.id,
           submissionId: job.submission_id,
@@ -84,9 +86,15 @@ function startJobLeaseHeartbeat(
   }, JOB_HEARTBEAT_INTERVAL_MS);
   timer.unref?.();
 
-  return () => {
-    stopped = true;
-    clearInterval(timer);
+  return {
+    hasLostLease() {
+      return lostLease;
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(timer);
+    },
   };
 }
 
@@ -460,16 +468,16 @@ export async function startWorker() {
             claimWorkerId: runtimeWorkerId,
           });
 
-          const stopHeartbeat = startJobLeaseHeartbeat(
+          const leaseGuard = startJobLeaseHeartbeat(
             db,
             job as ScoreJobRow,
             runtimeWorkerId,
             log,
           );
           try {
-            await processJob(db, job as ScoreJobRow, log);
+            await processJob(db, job as ScoreJobRow, log, {}, leaseGuard);
           } finally {
-            stopHeartbeat();
+            leaseGuard.stop();
           }
         }
       } catch (error) {

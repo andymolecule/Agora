@@ -17,6 +17,16 @@ export function getWorkerInfraRetryDelayMs() {
   return readWorkerTimingConfig().infraRetryDelayMs;
 }
 
+export function getWorkerGeneralRetryDelayMs(attempts: number) {
+  const timing = readWorkerTimingConfig();
+  const normalizedAttempts = Math.max(1, attempts);
+  const exponent = Math.max(0, normalizedAttempts - 1);
+  return Math.min(
+    timing.postTxRetryDelayMs * 2 ** exponent,
+    timing.infraRetryDelayMs,
+  );
+}
+
 export const sleep = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 

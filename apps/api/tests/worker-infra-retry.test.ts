@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CHALLENGE_STATUS } from "@agora/common";
 import { processJob } from "../src/worker/jobs.js";
-import { getWorkerInfraRetryDelayMs } from "../src/worker/policy.js";
+import {
+  getWorkerGeneralRetryDelayMs,
+  getWorkerInfraRetryDelayMs,
+} from "../src/worker/policy.js";
 import type {
   ChallengeRow,
   ScoreJobRow,
@@ -86,5 +89,57 @@ test("infra scorer failures requeue without consuming attempts", async () => {
     reason:
       'scorer_infrastructure: Failed to pull scorer image ghcr.io/andymolecule/repro-scorer:v1. Error response from daemon: Head "https://ghcr.io/v2/andymolecule/repro-scorer/manifests/v1": denied',
     delayMs: getWorkerInfraRetryDelayMs(),
+  });
+});
+
+test("general worker failures back off before retrying", async () => {
+  let failArgs:
+    | {
+        jobId: string;
+        errorMessage: string;
+        currentAttempts: number;
+        maxAttempts: number;
+        delayMs: number | undefined;
+      }
+    | undefined;
+
+  await processJob({} as never, job, log, {
+    getChallengeById: async () => challenge,
+    getSubmissionById: async () => submission,
+    getChallengeLifecycleState: async () => ({
+      status: CHALLENGE_STATUS.scoring,
+      deadline: 0n,
+      disputeWindowHours: 0n,
+    }),
+    getPublicClient: () => ({}) as never,
+    reconcileScoredSubmission: async () => false,
+    handlePreviouslyPostedScoreTx: async () => false,
+    scoreSubmissionAndBuildProof: async () => {
+      throw new Error("temporary scorer outage");
+    },
+    failJob: async (
+      _db,
+      jobId,
+      errorMessage,
+      currentAttempts,
+      maxAttempts,
+      delayMs,
+    ) => {
+      failArgs = {
+        jobId,
+        errorMessage,
+        currentAttempts,
+        maxAttempts,
+        delayMs,
+      };
+    },
+  });
+
+  assert.deepEqual(failArgs, {
+    jobId: job.id,
+    errorMessage: "temporary scorer outage",
+    currentAttempts: job.attempts,
+    maxAttempts: job.max_attempts,
+    delayMs: getWorkerGeneralRetryDelayMs(job.attempts),
   });
 });

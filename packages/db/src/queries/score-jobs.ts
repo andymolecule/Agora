@@ -1,4 +1,5 @@
 import {
+  readWorkerTimingConfig,
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
   SUBMISSION_RESULT_CID_MISSING_ERROR,
@@ -29,10 +30,6 @@ export interface ScoreJobRow {
   updated_at: string;
 }
 
-const DEFAULT_JOB_LEASE_MS = Number(
-  process.env.AGORA_WORKER_JOB_LEASE_MS ?? 60 * 60 * 1000,
-);
-
 /**
  * Atomically claim the next queued (or stale running) job.
  * Uses a Postgres function with FOR UPDATE SKIP LOCKED — no race window.
@@ -41,9 +38,10 @@ export async function claimNextJob(
   db: AgoraDbClient,
   workerId: string,
 ): Promise<ScoreJobRow | null> {
+  const { jobLeaseMs } = readWorkerTimingConfig();
   const { data, error } = await db.rpc("claim_next_score_job", {
     p_worker_id: workerId,
-    p_lease_ms: DEFAULT_JOB_LEASE_MS,
+    p_lease_ms: jobLeaseMs,
   });
 
   if (error) {
@@ -268,14 +266,19 @@ export async function failJob(
   errorMessage: string,
   currentAttempts: number,
   maxAttempts: number,
+  delayMs = 0,
 ) {
   const exhausted = currentAttempts >= maxAttempts;
-  const nowIso = new Date().toISOString();
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const nextAttemptAt = exhausted
+    ? null
+    : new Date(now + Math.max(0, delayMs)).toISOString();
   const { error } = await db
     .from("score_jobs")
     .update({
       status: exhausted ? SCORE_JOB_STATUS.failed : SCORE_JOB_STATUS.queued,
-      next_attempt_at: exhausted ? null : nowIso,
+      next_attempt_at: nextAttemptAt,
       last_error: errorMessage,
       locked_at: null,
       run_started_at: null,

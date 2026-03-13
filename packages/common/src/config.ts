@@ -144,6 +144,12 @@ const configSchema = z.object({
       z.number().int().positive(),
     )
     .default(5 * 60 * 1000),
+  AGORA_WORKER_JOB_LEASE_MS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .default(60 * 60 * 1000),
   AGORA_WORKER_HEARTBEAT_MS: z
     .preprocess(
       (value) => (typeof value === "string" ? Number(value) : value),
@@ -279,6 +285,7 @@ const workerTimingConfigSchema = configSchema.pick({
   AGORA_WORKER_FINALIZE_SWEEP_MS: true,
   AGORA_WORKER_POST_TX_RETRY_MS: true,
   AGORA_WORKER_INFRA_RETRY_MS: true,
+  AGORA_WORKER_JOB_LEASE_MS: true,
   AGORA_WORKER_HEARTBEAT_MS: true,
   AGORA_WORKER_HEARTBEAT_STALE_MS: true,
 });
@@ -307,6 +314,7 @@ export interface AgoraWorkerTimingConfig {
   finalizeSweepIntervalMs: number;
   postTxRetryDelayMs: number;
   infraRetryDelayMs: number;
+  jobLeaseMs: number;
   heartbeatIntervalMs: number;
   heartbeatStaleMs: number;
 }
@@ -538,6 +546,7 @@ export function readWorkerTimingConfig(
     finalizeSweepIntervalMs: parsed.AGORA_WORKER_FINALIZE_SWEEP_MS,
     postTxRetryDelayMs: parsed.AGORA_WORKER_POST_TX_RETRY_MS,
     infraRetryDelayMs: parsed.AGORA_WORKER_INFRA_RETRY_MS,
+    jobLeaseMs: parsed.AGORA_WORKER_JOB_LEASE_MS,
     heartbeatIntervalMs: parsed.AGORA_WORKER_HEARTBEAT_MS,
     heartbeatStaleMs:
       parsed.AGORA_WORKER_HEARTBEAT_STALE_MS ??

@@ -166,6 +166,7 @@ try {
   process.env.AGORA_WORKER_FINALIZE_SWEEP_MS = "222";
   process.env.AGORA_WORKER_POST_TX_RETRY_MS = "333";
   process.env.AGORA_WORKER_INFRA_RETRY_MS = "444";
+  process.env.AGORA_WORKER_JOB_LEASE_MS = "666";
   process.env.AGORA_WORKER_HEARTBEAT_MS = "555";
   process.env.AGORA_WORKER_HEARTBEAT_STALE_MS = "777";
   const apiRuntime = readApiServerRuntimeConfig();
@@ -187,6 +188,7 @@ try {
   assert.equal(workerTiming.finalizeSweepIntervalMs, 222);
   assert.equal(workerTiming.postTxRetryDelayMs, 333);
   assert.equal(workerTiming.infraRetryDelayMs, 444);
+  assert.equal(workerTiming.jobLeaseMs, 666);
   assert.equal(workerTiming.heartbeatIntervalMs, 555);
   assert.equal(workerTiming.heartbeatStaleMs, 777);
 

@@ -36,6 +36,7 @@ async function testCompleteJobClearsRunStartedAt() {
 
 async function testFailJobClearsRunStartedAt() {
   let payload: Record<string, unknown> | undefined;
+  const before = Date.now();
 
   const db = {
     from(table: string) {
@@ -55,9 +56,12 @@ async function testFailJobClearsRunStartedAt() {
     },
   } as never;
 
-  await failJob(db, "job-2", "boom", 2, 5);
+  await failJob(db, "job-2", "boom", 2, 5, 60_000);
   assert.equal(payload?.run_started_at, null);
   assert.equal(typeof payload?.next_attempt_at, "string");
+  assert.ok(
+    new Date(String(payload?.next_attempt_at)).getTime() >= before + 55_000,
+  );
 }
 
 async function testRequeueClearsRunStartedAt() {

@@ -22,6 +22,7 @@ import {
 } from "./chain.js";
 import { runWorkerPhase } from "./phases.js";
 import {
+  getWorkerGeneralRetryDelayMs,
   getWorkerInfraRetryDelayMs,
   getWorkerPostTxRetryDelayMs,
   isWorkerInfrastructureError,
@@ -35,6 +36,10 @@ import type {
 } from "./types.js";
 
 type DbClient = ReturnType<typeof createSupabaseClient>;
+
+export interface JobLeaseGuard {
+  hasLostLease: () => boolean;
+}
 
 export interface ProcessJobDeps {
   completeJob: typeof completeJob;
@@ -75,6 +80,7 @@ export async function processJob(
   job: ScoreJobRow,
   log: WorkerLogFn,
   deps: Partial<ProcessJobDeps> = {},
+  leaseGuard?: JobLeaseGuard,
 ) {
   const resolvedDeps: ProcessJobDeps = {
     ...defaultProcessJobDeps,
@@ -95,6 +101,14 @@ export async function processJob(
       jobId: job.id,
       submissionId: submission.id,
       challengeId: challenge.id,
+    };
+    const shouldAbortForLeaseLoss = (phase: string) => {
+      if (!leaseGuard?.hasLostLease()) return false;
+      log("warn", "Worker lost the score job lease; aborting remaining work", {
+        ...phaseMeta,
+        phase,
+      });
+      return true;
     };
 
     if (
@@ -185,6 +199,10 @@ export async function processJob(
       return;
     }
 
+    if (shouldAbortForLeaseLoss("before_scoring")) {
+      return;
+    }
+
     const scoringOutcome = await resolvedDeps.scoreSubmissionAndBuildProof(
       db,
       challenge,
@@ -226,6 +244,10 @@ export async function processJob(
       return;
     }
 
+    if (shouldAbortForLeaseLoss("after_scoring")) {
+      return;
+    }
+
     if (
       await runWorkerPhase(log, "pre_post_reconcile", phaseMeta, () =>
         resolvedDeps.reconcileScoredSubmission(
@@ -245,6 +267,10 @@ export async function processJob(
           submissionId: submission.id,
         },
       );
+      return;
+    }
+
+    if (shouldAbortForLeaseLoss("before_post")) {
       return;
     }
 
@@ -331,6 +357,7 @@ export async function processJob(
       message,
       job.attempts,
       job.max_attempts,
+      getWorkerGeneralRetryDelayMs(job.attempts),
     );
   }
 }
