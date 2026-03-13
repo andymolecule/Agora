@@ -4,6 +4,7 @@ import {
   getChallengeSubmissionCount,
   getOnChainSubmission,
   getPublicClient,
+  isMissingHistoricalBlockError,
   parseSubmittedReceipt,
 } from "@agora/chain";
 import {
@@ -452,6 +453,17 @@ router.post(
         receipt.blockNumber,
       );
     } catch (error) {
+      if (isMissingHistoricalBlockError(error)) {
+        return c.json(
+          {
+            error: getSubmissionReadRetryMessage({
+              submissionId: subId,
+              challengeAddress: challenge.contract_address,
+            }),
+          },
+          409,
+        );
+      }
       if (isInvalidOnChainSubmissionReadError(error)) {
         const submissionCount = await getChallengeSubmissionCount(
           challenge.contract_address as `0x${string}`,

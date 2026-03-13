@@ -30,6 +30,7 @@ else
 fi
 
 DEPLOYED_SHA="$(git rev-parse HEAD)"
+DEPLOYED_SHORT_SHA="${DEPLOYED_SHA:0:12}"
 if [[ -n "$EXPECTED_SHA" ]]; then
   case "$DEPLOYED_SHA" in
     "$EXPECTED_SHA"*) ;;
@@ -46,7 +47,7 @@ pnpm turbo build --filter=@agora/api
 
 # Keep the worker gate aligned with the live API deploy revision even when
 # PM2 restarts do not preserve shell exports reliably.
-export AGORA_RUNTIME_VERSION="$DEPLOYED_SHA"
+export AGORA_RUNTIME_VERSION="$DEPLOYED_SHORT_SHA"
 export AGORA_WORKER_PM2_NAME="$APP_NAME"
 pm2 startOrRestart scripts/ops/ecosystem.config.cjs --only "$APP_NAME" --update-env
 

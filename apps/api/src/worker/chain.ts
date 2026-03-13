@@ -23,6 +23,17 @@ import { getWorkerPostTxRetryDelayMs } from "./policy.js";
 import type { ScoreJobRow, SubmissionRow, WorkerLogFn } from "./types.js";
 
 type DbClient = ReturnType<typeof createSupabaseClient>;
+const TX_CONFIRMATION_TIMEOUT_MS = 5 * 60 * 1000;
+
+async function waitForTransactionReceiptWithTimeout(input: {
+  publicClient: ReturnType<typeof getPublicClient>;
+  hash: `0x${string}`;
+}) {
+  return input.publicClient.waitForTransactionReceipt({
+    hash: input.hash,
+    timeout: TX_CONFIRMATION_TIMEOUT_MS,
+  });
+}
 
 export function resolveReconciledProofBundleCid(input: {
   submissionProofBundleCid?: string | null;
@@ -225,7 +236,11 @@ export async function postScoreAndWaitForConfirmation(
     log,
     "wait_confirmation",
     { ...phaseMeta, txHash },
-    () => publicClient.waitForTransactionReceipt({ hash: txHash }),
+    () =>
+      waitForTransactionReceiptWithTimeout({
+        publicClient,
+        hash: txHash,
+      }),
   );
   if (receipt.status !== "success") {
     throw new Error(`Score transaction reverted: ${txHash}`);
@@ -262,7 +277,8 @@ export async function sweepChallengeLifecycle(db: DbClient, log: WorkerLogFn) {
         });
 
         const txHash = await startChallengeScoring(challengeAddress);
-        const receipt = await publicClient.waitForTransactionReceipt({
+        const receipt = await waitForTransactionReceiptWithTimeout({
+          publicClient,
           hash: txHash,
         });
         if (receipt.status !== "success") {
@@ -308,7 +324,8 @@ export async function sweepChallengeLifecycle(db: DbClient, log: WorkerLogFn) {
       });
 
       const txHash = await finalizeChallenge(challengeAddress);
-      const receipt = await publicClient.waitForTransactionReceipt({
+      const receipt = await waitForTransactionReceiptWithTimeout({
+        publicClient,
         hash: txHash,
       });
       if (receipt.status !== "success") {

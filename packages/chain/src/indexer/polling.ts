@@ -1,5 +1,6 @@
 import type { AgoraConfig } from "@agora/common";
 import { getPublicClient } from "../client.js";
+import { isMissingHistoricalBlockError } from "../rpc-errors.js";
 
 export const POLL_INTERVAL_MS = 30_000;
 const MAX_BLOCK_RANGE = BigInt(9_999);
@@ -106,6 +107,7 @@ export function getDueReplayBlock(now: number): bigint | null {
 export function isRetryableError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return (
+    isMissingHistoricalBlockError(error) ||
     /\b429\b/.test(message) ||
     /\b408\b/.test(message) ||
     /\b5\d\d\b/.test(message) ||

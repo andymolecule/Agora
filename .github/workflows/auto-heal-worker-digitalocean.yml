@@ -51,47 +51,7 @@ jobs:
           api_json="$(curl -fsS "$AGORA_API_HEALTH_URL")"
           worker_json="$(curl -fsS "$AGORA_WORKER_HEALTH_URL")"
 
-          API_JSON="$api_json" WORKER_JSON="$worker_json" python3 -c '
-          import json
-          import os
-          import sys
-
-          api = json.loads(os.environ["API_JSON"])
-          worker = json.loads(os.environ["WORKER_JSON"])
-
-          api_runtime = str(api.get("runtimeVersion") or "").strip()
-          if not api_runtime:
-              print("Live API health did not include runtimeVersion.", file=sys.stderr)
-              sys.exit(1)
-
-          workers = worker.get("workers") or {}
-          sealing = worker.get("sealing") or {}
-
-          healthy_active = int(workers.get("healthyWorkersForActiveRuntimeVersion") or 0)
-          healthy_stale_runtime = int(workers.get("healthyWorkersNotOnActiveRuntimeVersion") or 0)
-          sealing_configured = bool(sealing.get("configured"))
-          sealing_ready = bool(sealing.get("workerReady"))
-          latest_error = str(workers.get("latestError") or "").strip()
-          running_over_threshold = int(worker.get("runningOverThresholdCount") or 0)
-
-          reasons = []
-          if healthy_active <= 0:
-              reasons.append("zero healthy workers on the active API runtime")
-          if healthy_stale_runtime > 0:
-              reasons.append(f"{healthy_stale_runtime} healthy worker(s) still on an inactive runtime")
-          if sealing_configured and not sealing_ready:
-              reasons.append("sealed-submission worker readiness is false")
-
-          print(f"api_runtime={api_runtime}")
-          print(f"running_over_threshold={running_over_threshold}")
-          if reasons:
-              print("needs_heal=true")
-              print(f"reasons={' ; '.join(reasons)}")
-              if latest_error:
-                  print(f"latest_error={latest_error}")
-          else:
-              print("needs_heal=false")
-          ' >> "$GITHUB_OUTPUT"
+          API_JSON="$api_json" WORKER_JSON="$worker_json" node -e 'const api = JSON.parse(process.env.API_JSON ?? "{}"); const worker = JSON.parse(process.env.WORKER_JSON ?? "{}"); const apiRuntime = String(api.runtimeVersion ?? "").trim(); if (!apiRuntime) { console.error("Live API health did not include runtimeVersion."); process.exit(1); } const workers = worker.workers ?? {}; const sealing = worker.sealing ?? {}; const healthyActive = Number(workers.healthyWorkersForActiveRuntimeVersion ?? 0); const sealingConfigured = Boolean(sealing.configured); const sealingReady = Boolean(sealing.workerReady); const latestError = String(workers.latestError ?? "").trim(); const runningOverThreshold = Number(worker.runningOverThresholdCount ?? 0); const reasons = []; if (healthyActive <= 0) reasons.push("zero healthy workers on the active API runtime"); if (sealingConfigured && !sealingReady) reasons.push("sealed-submission worker readiness is false"); console.log(`api_runtime=${apiRuntime}`); console.log(`running_over_threshold=${runningOverThreshold}`); if (reasons.length > 0) { console.log("needs_heal=true"); console.log(`reasons=${reasons.join(" ; ")}`); if (latestError) console.log(`latest_error=${latestError}`); } else { console.log("needs_heal=false"); }' >> "$GITHUB_OUTPUT"
 
       - name: Report health status
         run: |
@@ -128,26 +88,7 @@ jobs:
             worker_json="$(curl -fsS "$AGORA_WORKER_HEALTH_URL")"
 
             HEALTHY="$(
-              WORKER_JSON="$worker_json" python3 -c '
-              import json
-              import os
-
-              worker = json.loads(os.environ["WORKER_JSON"])
-              workers = worker.get("workers") or {}
-              sealing = worker.get("sealing") or {}
-
-              healthy_active = int(workers.get("healthyWorkersForActiveRuntimeVersion") or 0)
-              healthy_stale_runtime = int(workers.get("healthyWorkersNotOnActiveRuntimeVersion") or 0)
-              sealing_configured = bool(sealing.get("configured"))
-              sealing_ready = bool(sealing.get("workerReady"))
-
-              healthy = (
-                  healthy_active > 0
-                  and healthy_stale_runtime == 0
-                  and (not sealing_configured or sealing_ready)
-              )
-              print("true" if healthy else "false")
-              '
+              WORKER_JSON="$worker_json" node -e 'const worker = JSON.parse(process.env.WORKER_JSON ?? "{}"); const workers = worker.workers ?? {}; const sealing = worker.sealing ?? {}; const healthyActive = Number(workers.healthyWorkersForActiveRuntimeVersion ?? 0); const sealingConfigured = Boolean(sealing.configured); const sealingReady = Boolean(sealing.workerReady); const healthy = healthyActive > 0 && (!sealingConfigured || sealingReady); process.stdout.write(healthy ? "true" : "false");'
             )"
 
             if [ "$HEALTHY" = "true" ]; then

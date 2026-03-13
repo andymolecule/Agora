@@ -281,8 +281,14 @@ router.get("/:id/claimable", async (c) => {
         address as `0x${string}`,
       );
       claimable = payout.toString();
-    } catch {
-      claimable = "0";
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json(
+        {
+          error: `Unable to read claimable payout from chain right now. Next step: retry in a few seconds. Details: ${message}`,
+        },
+        503,
+      );
     }
   }
 

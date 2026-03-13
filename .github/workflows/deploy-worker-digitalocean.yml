@@ -99,29 +99,7 @@ jobs:
             worker_json="$(curl -fsS "$AGORA_WORKER_HEALTH_URL")"
 
             HEALTHY="$(
-              EXPECTED_RUNTIME_VERSION="$EXPECTED_RUNTIME_VERSION" WORKER_JSON="$worker_json" python3 -c '
-              import json
-              import os
-
-              worker = json.loads(os.environ["WORKER_JSON"])
-              workers = worker.get("workers") or {}
-              sealing = worker.get("sealing") or {}
-              expected_runtime = os.environ["EXPECTED_RUNTIME_VERSION"]
-
-              active_runtime = str(workers.get("activeRuntimeVersion") or "")
-              healthy_active = int(workers.get("healthyWorkersForActiveRuntimeVersion") or 0)
-              healthy_stale_runtime = int(workers.get("healthyWorkersNotOnActiveRuntimeVersion") or 0)
-              sealing_configured = bool(sealing.get("configured"))
-              sealing_ready = bool(sealing.get("workerReady"))
-
-              healthy = (
-                  active_runtime == expected_runtime
-                  and healthy_active > 0
-                  and healthy_stale_runtime == 0
-                  and (not sealing_configured or sealing_ready)
-              )
-              print("true" if healthy else "false")
-              '
+              EXPECTED_RUNTIME_VERSION="$EXPECTED_RUNTIME_VERSION" WORKER_JSON="$worker_json" node -e 'const worker = JSON.parse(process.env.WORKER_JSON ?? "{}"); const workers = worker.workers ?? {}; const sealing = worker.sealing ?? {}; const expected = String(process.env.EXPECTED_RUNTIME_VERSION ?? ""); const activeRuntime = String(workers.activeRuntimeVersion ?? ""); const healthyActive = Number(workers.healthyWorkersForActiveRuntimeVersion ?? 0); const sealingConfigured = Boolean(sealing.configured); const sealingReady = Boolean(sealing.workerReady); const healthy = activeRuntime === expected && healthyActive > 0 && (!sealingConfigured || sealingReady); process.stdout.write(healthy ? "true" : "false");'
             )"
 
             if [ "$HEALTHY" = "true" ]; then

@@ -11,13 +11,9 @@ import { getText } from "@agora/ipfs";
 import type { Abi } from "viem";
 import yaml from "yaml";
 import { getPublicClient } from "./client.js";
+import { isMissingHistoricalBlockError } from "./rpc-errors.js";
 
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
-
-function isMissingHistoricalBlockError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /header not found|block not found|unknown block/i.test(message);
-}
 
 async function readChallengeDefinitionValue<T>(input: {
   publicClient: ReturnType<typeof getPublicClient>;
