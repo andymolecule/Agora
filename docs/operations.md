@@ -287,7 +287,7 @@ Auto-heal flow:
 2. If the worker has zero healthy processes on the active runtime, or sealing is configured but `workerReady=false`, the workflow SSHes into the droplet
 3. The droplet reruns `scripts/ops/deploy-worker.sh` pinned to the live API runtime revision
 4. The workflow polls `/api/worker-health` until the worker is aligned again or fails visibly
-5. If the unhealthy snapshot also showed stale running jobs or failed jobs, the workflow runs `pnpm recover:score-jobs -- --stale-minutes=20` on the droplet after the worker recovers
+5. If the unhealthy snapshot also showed stale running jobs, the workflow runs `pnpm recover:score-jobs -- --stale-minutes=20` on the droplet after the worker recovers
 
 ---
 
