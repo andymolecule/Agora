@@ -38,7 +38,10 @@ import type { ScoreJobRow, WorkerLogFn } from "./types.js";
 const LOG_WORKER_ID = `worker-${crypto.randomBytes(4).toString("hex")}`;
 const JOB_HEARTBEAT_INTERVAL_MS = 60_000;
 const WORKER_READINESS_RECHECK_MS = 60_000;
+export const WORKER_RUNTIME_MISMATCH_EXIT_AFTER_CHECKS = 3;
 const WORKER_HOST = os.hostname();
+
+class WorkerFatalExitError extends Error {}
 
 const log: WorkerLogFn = (level, message, meta) => {
   const ts = new Date().toISOString();
@@ -48,6 +51,13 @@ const log: WorkerLogFn = (level, message, meta) => {
 
 export { resolveRunnerPolicyForChallenge };
 export type { ResolvedRunnerPolicy };
+
+export function shouldExitForRuntimeMismatch(
+  consecutiveMismatchChecks: number,
+  threshold = WORKER_RUNTIME_MISMATCH_EXIT_AFTER_CHECKS,
+) {
+  return consecutiveMismatchChecks >= threshold;
+}
 
 function startJobLeaseHeartbeat(
   db: ReturnType<typeof createSupabaseClient>,
@@ -416,6 +426,7 @@ export async function startWorker() {
 
   try {
     let lastFinalizeSweepAt = 0;
+    let consecutiveRuntimeMismatchChecks = 0;
     while (true) {
       let claimedJob = false;
       try {
@@ -430,9 +441,23 @@ export async function startWorker() {
         }
 
         if (!(await ensureWorkerRuntimeIsActive(db, runtimeState, log))) {
+          consecutiveRuntimeMismatchChecks += 1;
+          if (shouldExitForRuntimeMismatch(consecutiveRuntimeMismatchChecks)) {
+            log("error", "Worker exiting after sustained runtime mismatch", {
+              runtimeVersion: runtimeState.runtime_version,
+              consecutiveMismatchChecks: consecutiveRuntimeMismatchChecks,
+              threshold: WORKER_RUNTIME_MISMATCH_EXIT_AFTER_CHECKS,
+              lastError: runtimeState.last_error,
+            });
+            throw new WorkerFatalExitError(
+              runtimeState.last_error ??
+                "Worker runtime mismatch persisted. Next step: deploy the active runtime and restart the worker.",
+            );
+          }
           await sleep(timing.pollIntervalMs);
           continue;
         }
+        consecutiveRuntimeMismatchChecks = 0;
 
         if (!runtimeState.ready) {
           if (now - lastFinalizeSweepAt >= timing.finalizeSweepIntervalMs) {
@@ -481,6 +506,9 @@ export async function startWorker() {
           }
         }
       } catch (error) {
+        if (error instanceof WorkerFatalExitError) {
+          throw error;
+        }
         log("error", "Worker loop error", {
           error: error instanceof Error ? error.message : String(error),
         });

@@ -66,12 +66,15 @@ if not api_runtime:
 
 workers = worker.get("workers") or {}
 sealing = worker.get("sealing") or {}
+jobs = worker.get("jobs") or {}
 
 healthy_active = int(workers.get("healthyWorkersForActiveRuntimeVersion") or 0)
 healthy_stale_runtime = int(workers.get("healthyWorkersNotOnActiveRuntimeVersion") or 0)
 sealing_configured = bool(sealing.get("configured"))
 sealing_ready = bool(sealing.get("workerReady"))
 latest_error = str(workers.get("latestError") or "").strip()
+running_over_threshold = int(worker.get("runningOverThresholdCount") or 0)
+failed_jobs = int(jobs.get("failed") or 0)
 
 reasons = []
 if healthy_active <= 0:
@@ -82,6 +85,8 @@ if sealing_configured and not sealing_ready:
     reasons.append("sealed-submission worker readiness is false")
 
 print(f"api_runtime={api_runtime}")
+print(f"running_over_threshold={running_over_threshold}")
+print(f"failed_jobs={failed_jobs}")
 if reasons:
     print("needs_heal=true")
     print(f"reasons={' ; '.join(reasons)}")
@@ -159,3 +164,12 @@ PY
 
           echo "Worker did not recover after auto-heal."
           exit 1
+
+      - name: Recover stale score jobs after heal
+        if: steps.health.outputs.needs_heal == 'true' && (steps.health.outputs.running_over_threshold != '0' || steps.health.outputs.failed_jobs != '0')
+        run: |
+          set -euo pipefail
+          DO_WORKER_PORT="${DO_WORKER_PORT:-22}"
+          DO_WORKER_PATH="${DO_WORKER_PATH:-/opt/agora}"
+          ssh -p "$DO_WORKER_PORT" "$DO_WORKER_USER@$DO_WORKER_HOST" \
+            "set -euo pipefail; cd '$DO_WORKER_PATH'; pnpm recover:score-jobs -- --stale-minutes=20"

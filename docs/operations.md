@@ -138,8 +138,9 @@ The worker now treats scorer availability as a runtime readiness problem, not a 
 2. It checks `docker info`, then preflights all official scorer images referenced by currently scoring official challenges.
 3. If Docker or image preflight fails, the process stays up, keeps heartbeating, and skips job claims until readiness recovers.
 4. Readiness is retried in the background every minute.
-5. During scoring, the runner inspects the local Docker image first and only pulls when the image is missing.
-6. Official images without a repo digest are rejected. A locally built image is not accepted as a substitute for a published official artifact.
+5. If the worker sees the active runtime version drift for three consecutive loop checks, it exits so PM2 and the DigitalOcean deploy workflows can replace it instead of leaving it degraded forever.
+6. During scoring, the runner inspects the local Docker image first and only pulls when the image is missing.
+7. Official images without a repo digest are rejected. A locally built image is not accepted as a substitute for a published official artifact.
 
 ---
 
@@ -286,6 +287,7 @@ Auto-heal flow:
 2. If the worker has zero healthy processes on the active runtime, or sealing is configured but `workerReady=false`, the workflow SSHes into the droplet
 3. The droplet reruns `scripts/ops/deploy-worker.sh` pinned to the live API runtime revision
 4. The workflow polls `/api/worker-health` until the worker is aligned again or fails visibly
+5. If the unhealthy snapshot also showed stale running jobs or failed jobs, the workflow runs `pnpm recover:score-jobs -- --stale-minutes=20` on the droplet after the worker recovers
 
 ---
 
