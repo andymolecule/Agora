@@ -1,6 +1,6 @@
 import type { AgoraConfig } from "@agora/common";
 import { getPublicClient } from "../client.js";
-import { isMissingHistoricalBlockError } from "../rpc-errors.js";
+import { isMissingHistoricalBlockError } from "../contract-read.js";
 
 export const POLL_INTERVAL_MS = 30_000;
 const MAX_BLOCK_RANGE = BigInt(9_999);
