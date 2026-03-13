@@ -224,7 +224,7 @@ Current production is intentionally split across hosts:
 - Railway: `@agora/api`, `agora-indexer`
 - Self-hosted PM2 machine: `agora-worker`
 
-This is why web/API/indexer can auto-redeploy through hosted Git integrations while the worker needs its own deploy path.
+Vercel and Railway are expected to redeploy directly from GitHub `main`. The self-hosted worker still needs its own deploy path because it does not live on a Git-integrated host.
 
 ### Railway Config as Code
 
@@ -240,7 +240,6 @@ These files define:
 - build command
 - start command
 - restart policy
-- watch paths
 
 Important Railway behavior:
 
@@ -249,18 +248,19 @@ Important Railway behavior:
 - If Railway does not auto-detect the package-local `railway.toml`, set the service config path explicitly to:
   - API: `/apps/api/railway.toml`
   - Indexer: `/packages/chain/railway.toml`
-
-If auto-deploy appears connected to `main` but new commits do not trigger deploys, check watch paths first. Railway expects watch patterns as distinct entries; a single space-separated string can silently fail to match changes.
+- Do not add `watchPatterns` unless you have a measured build-cost problem. For Agora's current size, rebuilding on every `main` push is simpler and more reliable than selective deploy filtering.
+- If auto-deploy appears connected to `main` but new commits do not trigger deploys, first verify that the service is actually reading the correct `railway.toml` path.
 
 ### DigitalOcean Worker Auto-Deploy
 
-For the self-hosted worker, this repo now ships a GitHub Actions deploy workflow plus a reusable droplet script:
+For the self-hosted worker, this repo ships a GitHub Actions deploy workflow plus a reusable droplet script:
 
 - Workflow: [deploy-worker-digitalocean.yml](/Users/changyuesin/Agora/.github/workflows/deploy-worker-digitalocean.yml)
 - Droplet script: [deploy-worker.sh](/Users/changyuesin/Agora/scripts/ops/deploy-worker.sh)
 
 Expected GitHub configuration:
 
+- Variable: `AGORA_API_HEALTH_URL`
 - Secret: `DO_WORKER_HOST`
 - Secret: `DO_WORKER_USER`
 - Secret: `DO_WORKER_SSH_KEY`
@@ -271,10 +271,12 @@ Expected GitHub configuration:
 Deploy flow:
 
 1. Push to `main`
-2. GitHub Actions SSHes into the worker host
-3. The droplet runs `scripts/ops/deploy-worker.sh`
-4. The script fast-forwards `main`, installs deps, rebuilds `@agora/api`, and restarts the PM2 worker
-5. The worker reports the new runtime SHA automatically through `/api/worker-health`
+2. Railway redeploys API + indexer from `main`
+3. GitHub Actions waits for the API `/healthz` runtime version to match the pushed commit
+4. GitHub Actions SSHes into the worker host
+5. The droplet runs `scripts/ops/deploy-worker.sh`
+6. The script fast-forwards `main`, installs deps, rebuilds `@agora/api`, and restarts the PM2 worker
+7. The worker reports the new runtime SHA automatically through `/api/worker-health`
 
 ---
 
