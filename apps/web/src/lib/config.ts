@@ -1,9 +1,7 @@
-import { DEFAULT_CHAIN_ID } from "@agora/common";
+import { DEFAULT_CHAIN_ID, normalizeOptionalAddress } from "@agora/common";
 
 function normalizeAddress(value: string | undefined) {
-  return typeof value === "string" && value.length > 0
-    ? value.toLowerCase()
-    : undefined;
+  return normalizeOptionalAddress(value) ?? undefined;
 }
 
 function assertServerEnvAlignment() {

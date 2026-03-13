@@ -1,14 +1,11 @@
+import { normalizeOptionalAddress } from "@agora/common";
 import type { QueryClient } from "@tanstack/react-query";
 import type { AuthSession } from "../types";
 
 export const AUTH_SESSION_QUERY_KEY = ["auth-session"] as const;
 export const MY_PORTFOLIO_QUERY_KEY = ["my-portfolio"] as const;
 
-export function normalizeWalletAddress(value: string | undefined | null) {
-  return typeof value === "string" && value.length > 0
-    ? value.toLowerCase()
-    : null;
-}
+export const normalizeWalletAddress = normalizeOptionalAddress;
 
 export function hasMatchingWalletSession(
   address: string | undefined,

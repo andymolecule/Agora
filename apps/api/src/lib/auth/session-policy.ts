@@ -1,8 +1,6 @@
-export function normalizeSessionAddress(value: string | null | undefined) {
-  return typeof value === "string" && value.length > 0
-    ? value.toLowerCase()
-    : null;
-}
+import { normalizeOptionalAddress } from "@agora/common";
+
+export const normalizeSessionAddress = normalizeOptionalAddress;
 
 export function getMatchingOptionalSessionAddress(
   sessionAddress: string | null | undefined,

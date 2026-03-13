@@ -7,6 +7,7 @@ export * from "./schemas/challenge-spec.js";
 export * from "./schemas/agent-api.js";
 export * from "./schemas/submission-contract.js";
 export * from "./schemas/submission.js";
+export * from "./address.js";
 export * from "./config.js";
 export * from "./env.js";
 export * from "./feature-policy.js";
