@@ -226,6 +226,32 @@ Current production is intentionally split across hosts:
 
 This is why web/API/indexer can auto-redeploy through hosted Git integrations while the worker needs its own deploy path.
 
+### Railway Config as Code
+
+Railway should treat API and indexer deploy settings as code, not hand-maintained dashboard state.
+
+Repo-owned service configs:
+
+- API: [apps/api/railway.toml](/Users/changyuesin/Agora/apps/api/railway.toml)
+- Indexer: [packages/chain/railway.toml](/Users/changyuesin/Agora/packages/chain/railway.toml)
+
+These files define:
+
+- build command
+- start command
+- restart policy
+- watch paths
+
+Important Railway behavior:
+
+- Keep `Root Directory` unset for this pnpm/turbo monorepo.
+- Railway config files do not follow `Root Directory`.
+- If Railway does not auto-detect the package-local `railway.toml`, set the service config path explicitly to:
+  - API: `/apps/api/railway.toml`
+  - Indexer: `/packages/chain/railway.toml`
+
+If auto-deploy appears connected to `main` but new commits do not trigger deploys, check watch paths first. Railway expects watch patterns as distinct entries; a single space-separated string can silently fail to match changes.
+
 ### DigitalOcean Worker Auto-Deploy
 
 For the self-hosted worker, this repo now ships a GitHub Actions deploy workflow plus a reusable droplet script:

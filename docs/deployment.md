@@ -60,6 +60,13 @@ Notes:
 - It verifies the production invariant, not just digest resolution: official scorer images must be anonymously resolvable from GHCR and anonymously pullable with Docker.
 - The shipped official preset catalog is intentionally narrow: `csv_comparison_v1`, `regression_v1`, and `docking_v1`. Placeholder presets should not be reintroduced unless a real published scorer artifact exists for them.
 
+Railway config-as-code checks before production cutover:
+
+- API service should use [apps/api/railway.toml](/Users/changyuesin/Agora/apps/api/railway.toml)
+- Indexer service should use [packages/chain/railway.toml](/Users/changyuesin/Agora/packages/chain/railway.toml)
+- Keep `Root Directory` unset
+- If a service is connected to `main` but does not redeploy on new commits, verify that Railway is reading the correct `railway.toml` path and that watch patterns are configured as distinct entries, not one space-separated string
+
 ---
 
 ## Rollback Criteria
