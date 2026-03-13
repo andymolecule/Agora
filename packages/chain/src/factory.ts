@@ -12,6 +12,7 @@ import {
   type TransactionReceipt,
 } from "viem";
 import { getPublicClient, getWalletClient } from "./client.js";
+import { readContractStrict } from "./contract-read.js";
 
 const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
 
@@ -128,11 +129,12 @@ export async function getFactoryContractVersion(
 ): Promise<number> {
   const config = loadConfig();
   const publicClient = getPublicClient();
-  const rawVersion = (await publicClient.readContract({
+  const rawVersion = await readContractStrict<bigint>({
+    publicClient,
     address: factoryAddress ?? config.AGORA_FACTORY_ADDRESS,
     abi: AgoraFactoryAbi,
     functionName: "contractVersion",
-    ...(blockNumber !== undefined ? { blockNumber } : {}),
-  })) as bigint;
+    blockNumber,
+  });
   return Number(rawVersion);
 }

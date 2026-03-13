@@ -3,6 +3,7 @@ import {
   getChallengeFinalizeState,
   getChallengePayoutByAddress,
   getPublicClient,
+  isMissingHistoricalBlockError,
   loadChallengeDefinitionFromChain,
   parseChallengeCreatedReceipt,
 } from "@agora/chain";
@@ -39,6 +40,12 @@ function normalizeAddress(value: string | null | undefined) {
   return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value)
     ? (value.toLowerCase() as `0x${string}`)
     : undefined;
+}
+
+function getChallengeRegistrationRetryMessage(
+  challengeAddress: `0x${string}`,
+) {
+  return `Challenge transaction is confirmed, but challenge metadata is not readable from contract ${challengeAddress} yet. Next step: retry in a few seconds.`;
 }
 
 const router = new Hono<ApiEnv>();
@@ -110,6 +117,14 @@ router.post(
           blockNumber: receipt.blockNumber,
         }));
     } catch (error) {
+      if (isMissingHistoricalBlockError(error)) {
+        return c.json(
+          {
+            error: getChallengeRegistrationRetryMessage(challengeAddress),
+          },
+          409,
+        );
+      }
       const message = error instanceof Error ? error.message : String(error);
       return c.json({ error: message }, 400);
     }

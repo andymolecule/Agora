@@ -1,6 +1,7 @@
 import { loadConfig } from "@agora/common";
 import { parseUnits } from "viem";
 import { getPublicClient, getWalletClient } from "./client.js";
+import { readContractStrict } from "./contract-read.js";
 
 const erc20Abi = [
   {
@@ -51,7 +52,8 @@ export async function balanceOf(owner: `0x${string}`) {
   const publicClient = getPublicClient();
   const usdc = config.AGORA_USDC_ADDRESS;
 
-  return publicClient.readContract({
+  return readContractStrict<bigint>({
+    publicClient,
     address: usdc,
     abi: erc20Abi,
     functionName: "balanceOf",
@@ -64,7 +66,8 @@ export async function allowance(owner: `0x${string}`, spender: `0x${string}`) {
   const publicClient = getPublicClient();
   const usdc = config.AGORA_USDC_ADDRESS;
 
-  return publicClient.readContract({
+  return readContractStrict<bigint>({
+    publicClient,
     address: usdc,
     abi: erc20Abi,
     functionName: "allowance",

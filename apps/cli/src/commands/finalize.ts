@@ -54,13 +54,14 @@ export function buildFinalizeCommand() {
           throw new Error("Wallet client is missing an account address.");
         }
 
-        const spinner = createSpinner("Finalizing challenge on-chain...");
+const spinner = createSpinner("Finalizing challenge on-chain...");
         const txHash = await finalizeChallenge(
           challenge.contract_address as `0x${string}`,
         );
         const publicClient = getPublicClient();
         const receipt = await publicClient.waitForTransactionReceipt({
           hash: txHash,
+          timeout: 5 * 60 * 1000,
         });
         if (receipt.status !== "success") {
           spinner.fail("Finalize transaction reverted.");

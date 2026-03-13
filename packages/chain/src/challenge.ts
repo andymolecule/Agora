@@ -18,6 +18,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { base, baseSepolia } from "viem/chains";
 import { getPublicClient, getWalletClient } from "./client.js";
+import { readContractStrict } from "./contract-read.js";
 
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
@@ -283,12 +284,13 @@ export async function getOnChainSubmission(
   blockNumber?: bigint,
 ): Promise<OnChainSubmission> {
   const publicClient = getPublicClient();
-  const raw: unknown = await publicClient.readContract({
+  const raw = await readContractStrict<unknown>({
+    publicClient,
     address: challengeAddress,
     abi: AgoraChallengeAbi,
     functionName: "getSubmission",
     args: [subId],
-    ...(blockNumber !== undefined ? { blockNumber } : {}),
+    blockNumber,
   });
   // readContract may return an object (struct) or a tuple (array) depending on ABI
   if (Array.isArray(raw)) {
@@ -317,12 +319,13 @@ export async function getChallengeSubmissionCount(
   blockNumber?: bigint,
 ): Promise<bigint> {
   const publicClient = getPublicClient();
-  return publicClient.readContract({
+  return readContractStrict<bigint>({
+    publicClient,
     address: challengeAddress,
     abi: AgoraChallengeAbi,
     functionName: "submissionCount",
-    ...(blockNumber !== undefined ? { blockNumber } : {}),
-  }) as Promise<bigint>;
+    blockNumber,
+  });
 }
 
 export async function getChallengeWinningSubmissionId(
@@ -330,12 +333,13 @@ export async function getChallengeWinningSubmissionId(
   blockNumber?: bigint,
 ): Promise<bigint> {
   const publicClient = getPublicClient();
-  return publicClient.readContract({
+  return readContractStrict<bigint>({
+    publicClient,
     address: challengeAddress,
     abi: AgoraChallengeAbi,
     functionName: "winningSubmissionId",
-    ...(blockNumber !== undefined ? { blockNumber } : {}),
-  }) as Promise<bigint>;
+    blockNumber,
+  });
 }
 
 export async function getChallengePayoutByAddress(
@@ -344,13 +348,14 @@ export async function getChallengePayoutByAddress(
   blockNumber?: bigint,
 ): Promise<bigint> {
   const publicClient = getPublicClient();
-  return publicClient.readContract({
+  return readContractStrict<bigint>({
+    publicClient,
     address: challengeAddress,
     abi: AgoraChallengeAbi,
     functionName: "payoutByAddress",
     args: [solverAddress],
-    ...(blockNumber !== undefined ? { blockNumber } : {}),
-  }) as Promise<bigint>;
+    blockNumber,
+  });
 }
 
 export async function getChallengeContractVersion(
@@ -358,12 +363,13 @@ export async function getChallengeContractVersion(
   blockNumber?: bigint,
 ): Promise<number> {
   const publicClient = getPublicClient();
-  const rawVersion = (await publicClient.readContract({
+  const rawVersion = await readContractStrict<bigint>({
+    publicClient,
     address: challengeAddress,
     abi: AgoraChallengeAbi,
     functionName: "contractVersion",
-    ...(blockNumber !== undefined ? { blockNumber } : {}),
-  })) as bigint;
+    blockNumber,
+  });
   return Number(rawVersion);
 }
 
@@ -377,24 +383,27 @@ export async function getChallengeLifecycleState(
 }> {
   const publicClient = getPublicClient();
   const [rawStatus, deadline, disputeWindowHours] = await Promise.all([
-    publicClient.readContract({
+    readContractStrict<bigint>({
+      publicClient,
       address: challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "status",
-      ...(blockNumber !== undefined ? { blockNumber } : {}),
-    }) as Promise<bigint>,
-    publicClient.readContract({
+      blockNumber,
+    }),
+    readContractStrict<bigint>({
+      publicClient,
       address: challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "deadline",
-      ...(blockNumber !== undefined ? { blockNumber } : {}),
-    }) as Promise<bigint>,
-    publicClient.readContract({
+      blockNumber,
+    }),
+    readContractStrict<bigint>({
+      publicClient,
       address: challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "disputeWindowHours",
-      ...(blockNumber !== undefined ? { blockNumber } : {}),
-    }) as Promise<bigint>,
+      blockNumber,
+    }),
   ]);
   return {
     status: decodeChallengeStatusValue(rawStatus),
@@ -426,42 +435,48 @@ export async function getChallengeFinalizeState(
     scoredCount,
   ] = await Promise.all([
     getChallengeContractVersion(challengeAddress, blockNumber),
-    publicClient.readContract({
+    readContractStrict<bigint>({
+      publicClient,
       address: challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "status",
-      ...(blockNumber !== undefined ? { blockNumber } : {}),
-    }) as Promise<bigint>,
-    publicClient.readContract({
+      blockNumber,
+    }),
+    readContractStrict<bigint>({
+      publicClient,
       address: challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "deadline",
-      ...(blockNumber !== undefined ? { blockNumber } : {}),
-    }) as Promise<bigint>,
-    publicClient.readContract({
+      blockNumber,
+    }),
+    readContractStrict<bigint>({
+      publicClient,
       address: challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "disputeWindowHours",
-      ...(blockNumber !== undefined ? { blockNumber } : {}),
-    }) as Promise<bigint>,
-    publicClient.readContract({
+      blockNumber,
+    }),
+    readContractStrict<bigint>({
+      publicClient,
       address: challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "SCORING_GRACE_PERIOD",
-      ...(blockNumber !== undefined ? { blockNumber } : {}),
-    }) as Promise<bigint>,
-    publicClient.readContract({
+      blockNumber,
+    }),
+    readContractStrict<bigint>({
+      publicClient,
       address: challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "submissionCount",
-      ...(blockNumber !== undefined ? { blockNumber } : {}),
-    }) as Promise<bigint>,
-    publicClient.readContract({
+      blockNumber,
+    }),
+    readContractStrict<bigint>({
+      publicClient,
       address: challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "scoredCount",
-      ...(blockNumber !== undefined ? { blockNumber } : {}),
-    }) as Promise<bigint>,
+      blockNumber,
+    }),
   ]);
 
   return {

@@ -11,7 +11,7 @@ import { getText } from "@agora/ipfs";
 import type { Abi } from "viem";
 import yaml from "yaml";
 import { getPublicClient } from "./client.js";
-import { isMissingHistoricalBlockError } from "./rpc-errors.js";
+import { readImmutableContractWithLatestFallback } from "./contract-read.js";
 
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
@@ -21,31 +21,15 @@ async function readChallengeDefinitionValue<T>(input: {
   functionName: "specCid" | "deadline" | "contractVersion";
   blockNumber?: bigint;
 }): Promise<T> {
-  const request = {
+  // These constructor-set fields are immutable, so the latest-state read is
+  // equivalent when the RPC has the receipt but not the historical header yet.
+  return readImmutableContractWithLatestFallback<T>({
+    publicClient: input.publicClient,
     address: input.challengeAddress,
     abi: AgoraChallengeAbi,
     functionName: input.functionName,
-  } as const;
-
-  try {
-    return (await input.publicClient.readContract({
-      ...request,
-      ...(input.blockNumber !== undefined
-        ? { blockNumber: input.blockNumber }
-        : {}),
-    })) as T;
-  } catch (error) {
-    if (
-      input.blockNumber === undefined ||
-      !isMissingHistoricalBlockError(error)
-    ) {
-      throw error;
-    }
-
-    // These constructor-set fields are immutable, so the latest-state read is equivalent
-    // when the RPC has the receipt but not the historical header yet.
-    return (await input.publicClient.readContract(request)) as T;
-  }
+    blockNumber: input.blockNumber,
+  });
 }
 
 export async function fetchValidatedChallengeSpec(

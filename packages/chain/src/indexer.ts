@@ -197,14 +197,24 @@ export async function runIndexer() {
                 challengeAddress,
               },
             );
-            const reconcileResult = await reconcileChallengeProjection({
-              db,
-              publicClient,
-              challenge,
-              challengeFromBlock,
-              blockNumber: toBlock,
-            });
-            if (reconcileResult.deleted) {
+            try {
+              const reconcileResult = await reconcileChallengeProjection({
+                db,
+                publicClient,
+                challenge,
+                challengeFromBlock,
+                blockNumber: toBlock,
+              });
+              if (reconcileResult.deleted) {
+                resolvedChallengeKeys.delete(challengeCursorKey);
+                challengePersistTargets.delete(challengeCursorKey);
+              }
+            } catch (error) {
+              console.error("[indexer] targeted challenge repair failed", {
+                challengeId: challenge.id,
+                challengeAddress,
+                error: error instanceof Error ? error.message : String(error),
+              });
               resolvedChallengeKeys.delete(challengeCursorKey);
               challengePersistTargets.delete(challengeCursorKey);
             }
