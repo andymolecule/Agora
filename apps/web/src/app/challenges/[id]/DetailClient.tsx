@@ -690,62 +690,61 @@ export function DetailClient({ id }: { id: string }) {
                   icon={Target}
                   id="how-you-are-judged"
                 >
-                  <div className="space-y-5">
-                    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
-                      <div className="mb-2 text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                        Official scoring rule
-                      </div>
+                  <div className="space-y-6">
+                    {/* ── Scoring Rule ── */}
+                    <div>
                       <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
                         {successDefinition}
                       </p>
+                      {spec?.evaluation?.criteria && (
+                        <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
+                          {spec.evaluation.criteria}
+                        </p>
+                      )}
+                      {spec?.evaluation?.tolerance && (
+                        <p className="mt-3 text-sm font-medium text-[var(--text-secondary)]">
+                          Comparison tolerance:{" "}
+                          <span className="font-mono font-bold text-[var(--color-warm-900)]">
+                            {spec.evaluation.tolerance}
+                          </span>
+                        </p>
+                      )}
                     </div>
 
-                    <div className="space-y-4">
+                    {/* ── Metric & Threshold ── */}
+                    <div className="grid gap-4 sm:grid-cols-2">
                       <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
-                        <div className="mb-2 text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                          Evaluation notes
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                          Scoring metric
                         </div>
-                        <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                          {spec?.evaluation?.criteria ??
-                            "Final scores are produced by the configured evaluation bundle and scorer container."}
+                        <div className="mt-2 text-2xl font-display font-bold text-[var(--color-warm-900)]">
+                          {metricPresentation.label}
+                        </div>
+                        <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+                          {metricPresentation.helper}
                         </p>
-                        {spec?.evaluation?.tolerance && (
-                          <p className="mt-3 text-sm font-medium text-[var(--text-secondary)]">
-                            Comparison tolerance:{" "}
-                            <span className="font-mono font-bold text-[var(--color-warm-900)]">
-                              {spec.evaluation.tolerance}
-                            </span>
-                          </p>
-                        )}
-                      </div>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
-                          <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                            Scoring metric
-                          </div>
-                          <div className="mt-2 text-2xl font-display font-bold text-[var(--color-warm-900)]">
-                            {metricPresentation.label}
-                          </div>
-                          <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
-                            {metricPresentation.helper}
-                          </p>
-                        </div>
-                        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
-                          <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                            Eligibility threshold
-                          </div>
-                          <div className="mt-2 text-2xl font-display font-bold text-[var(--color-warm-900)]">
-                            {eligibilityThreshold.value}
-                          </div>
-                          <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
-                            {eligibilityThreshold.helper}
-                          </p>
-                        </div>
                       </div>
                       <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
-                        <div className="mb-2 text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                          Official scorer
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                          Eligibility threshold
                         </div>
+                        <div className="mt-2 text-2xl font-display font-bold text-[var(--color-warm-900)]">
+                          {eligibilityThreshold.value}
+                        </div>
+                        <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+                          {eligibilityThreshold.helper}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* ── Scorer Engine ── */}
+                    <div className="rounded-lg border border-[var(--border-subtle)] overflow-hidden">
+                      <div className="px-5 py-3 bg-[var(--surface-inset)] border-b border-[var(--border-subtle)]">
+                        <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-[var(--text-tertiary)]">
+                          Scorer engine
+                        </div>
+                      </div>
+                      <div className="px-5 py-4">
                         {scorerInfo ? (
                           <div className="space-y-4">
                             <div>
@@ -756,97 +755,34 @@ export function DetailClient({ id }: { id: string }) {
                                 {scorerInfo.summary}
                               </p>
                             </div>
-                            <div>
-                              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                                What this scorer does
-                              </div>
-                              <ul className="mt-2 space-y-2 text-sm leading-relaxed text-[var(--text-secondary)]">
-                                {scorerInfo.details.map((detail) => (
-                                  <li
-                                    key={detail}
-                                    className="flex items-start gap-2"
-                                  >
-                                    <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warm-900)]" />
-                                    <span>{detail}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                            <div>
-                              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                                Source code
-                              </div>
-                              <div className="mt-2 flex flex-wrap gap-3">
-                                {scorerInfo.sourceLinks.map((link) => (
-                                  <a
-                                    key={link.href}
-                                    href={link.href}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
-                                  >
-                                    <span>{link.label}</span>
-                                    <ExternalLink
-                                      className="h-3.5 w-3.5 shrink-0"
-                                      strokeWidth={1.75}
-                                    />
-                                  </a>
-                                ))}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                                Scorer image ref
-                              </div>
-                              <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">
-                                Exact OCI container image reference used by the
-                                worker for official scoring.
-                              </p>
-                              <div className="mt-3 break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
-                                {challenge.eval_image ?? "—"}
-                              </div>
+                            <ul className="space-y-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+                              {scorerInfo.details.map((detail) => (
+                                <li
+                                  key={detail}
+                                  className="flex items-start gap-2"
+                                >
+                                  <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warm-900)]" />
+                                  <span>{detail}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-[var(--border-subtle)]">
+                              {scorerInfo.sourceLinks.map((link) => (
+                                <a
+                                  key={link.href}
+                                  href={link.href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
+                                >
+                                  <span>{link.label}</span>
+                                  <ExternalLink
+                                    className="h-3.5 w-3.5 shrink-0"
+                                    strokeWidth={1.75}
+                                  />
+                                </a>
+                              ))}
                               {scorerPackageUrl && (
-                                <div className="mt-3">
-                                  <a
-                                    href={scorerPackageUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
-                                  >
-                                    <span>GHCR package</span>
-                                    <ExternalLink
-                                      className="h-3.5 w-3.5 shrink-0"
-                                      strokeWidth={1.75}
-                                    />
-                                  </a>
-                                </div>
-                              )}
-                              {resultsVisible && (
-                                <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
-                                  After scoring begins, the{" "}
-                                  <a
-                                    href="#public-verification"
-                                    className="font-medium text-[var(--color-warm-900)] underline decoration-[var(--border-default)] underline-offset-4 transition-colors hover:text-[var(--accent-500)] hover:decoration-[var(--accent-500)]"
-                                  >
-                                    Public Verification
-                                  </a>{" "}
-                                  section exposes the replay-grade scorer image
-                                  digest used for a scored submission.
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                              Exact OCI container image reference used by the
-                              worker for official scoring.
-                            </p>
-                            <div className="break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
-                              {challenge.eval_image ?? "—"}
-                            </div>
-                            {scorerPackageUrl && (
-                              <div>
                                 <a
                                   href={scorerPackageUrl}
                                   target="_blank"
@@ -859,40 +795,59 @@ export function DetailClient({ id }: { id: string }) {
                                     strokeWidth={1.75}
                                   />
                                 </a>
-                              </div>
-                            )}
+                              )}
+                              {challenge.spec_cid && (
+                                <a
+                                  href={cidHref(challenge.spec_cid) ?? undefined}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
+                                >
+                                  <span>Challenge spec</span>
+                                  <ExternalLink
+                                    className="h-3.5 w-3.5 shrink-0"
+                                    strokeWidth={1.75}
+                                  />
+                                </a>
+                              )}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Read further — always at the bottom */}
-                    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
-                      <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                        Read further
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-3">
-                        {challenge.spec_cid && (
-                          <a
-                            href={cidHref(challenge.spec_cid) ?? undefined}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
-                          >
-                            <span>Challenge spec</span>
-                            <ExternalLink
-                              className="h-3.5 w-3.5 shrink-0"
-                              strokeWidth={1.75}
-                            />
-                          </a>
-                        )}
-                        {resultsVisible && (
-                          <a
-                            href="#public-verification"
-                            className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
-                          >
-                            <span>Public verification</span>
-                          </a>
+                        ) : (
+                          <div className="space-y-3">
+                            <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                              Scored by the configured evaluation container.
+                            </p>
+                            <div className="flex flex-wrap items-center gap-3">
+                              {scorerPackageUrl && (
+                                <a
+                                  href={scorerPackageUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
+                                >
+                                  <span>GHCR package</span>
+                                  <ExternalLink
+                                    className="h-3.5 w-3.5 shrink-0"
+                                    strokeWidth={1.75}
+                                  />
+                                </a>
+                              )}
+                              {challenge.spec_cid && (
+                                <a
+                                  href={cidHref(challenge.spec_cid) ?? undefined}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
+                                >
+                                  <span>Challenge spec</span>
+                                  <ExternalLink
+                                    className="h-3.5 w-3.5 shrink-0"
+                                    strokeWidth={1.75}
+                                  />
+                                </a>
+                              )}
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>

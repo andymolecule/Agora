@@ -119,28 +119,33 @@ function formatExpectedColumns(columns: string[]) {
 
 function SubmissionPrivacyNotice() {
   return (
-    <div className="flex items-start gap-2.5 mt-3 p-3 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)]">
-      <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[var(--text-muted)]" />
-      <div className="space-y-2">
-        <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-secondary)] leading-relaxed">
+    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border-subtle)] bg-[var(--color-warm-50,var(--surface-inset))]">
+        <Lock className="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+        <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[var(--text-tertiary)]">
+          Privacy
+        </h4>
+      </div>
+      <div className="px-4 py-3 space-y-2.5">
+        <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
           {PRIVATE_SUBMISSION_COPY}
         </p>
-        <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--color-warm-900)] leading-relaxed">
+        <p className="text-xs font-medium leading-relaxed text-[var(--color-warm-900)]">
           {PRIVATE_SUBMISSION_FLOW_COPY}
         </p>
-        <div className="rounded-md border border-[var(--border-subtle)] bg-white/70 p-3">
-          <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-secondary)]">
-            Privacy boundary
-          </p>
-          <ul className="mt-2 space-y-1.5 text-[10px] font-mono tracking-wider uppercase leading-relaxed text-[var(--text-muted)]">
+        <details className="group">
+          <summary className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)] cursor-pointer hover:text-[var(--text-secondary)] transition-colors">
+            Privacy boundary details
+          </summary>
+          <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-[var(--text-muted)] pl-3 list-disc list-outside marker:text-[var(--border-default)]">
             <li>{PRIVATE_SUBMISSION_KEY_COPY}</li>
             <li>{PRIVATE_SUBMISSION_IPFS_COPY}</li>
             <li>{PRIVATE_SUBMISSION_METADATA_COPY}</li>
             <li>{PRIVATE_SUBMISSION_DECRYPTION_COPY}</li>
             <li>{PRIVATE_SUBMISSION_BOUNDARY_COPY}</li>
           </ul>
-        </div>
-        <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] leading-relaxed">
+        </details>
+        <p className="text-[10.5px] leading-relaxed text-[var(--text-muted)]">
           {PRIVATE_SUBMISSION_DISCLOSURE_COPY}
         </p>
       </div>
@@ -591,150 +596,158 @@ export function SubmitSolution({
             </div>
           ) : (
             <>
-              {/* Input mode toggle */}
-              <div className="flex border border-[var(--border-default)] p-0.5 bg-[var(--surface-inset)] w-fit rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setInputMode("file")}
-                  className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
-                    inputMode === "file"
-                      ? "bg-[var(--color-warm-900)] text-white"
-                      : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
-                  }`}
-                >
-                  Upload File
-                </button>
+              {/* ── Upload Section ── */}
+              <div className="space-y-3">
                 {!requiresFileSubmission && (
-                  <button
-                    type="button"
-                    onClick={() => setInputMode("text")}
-                    className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
-                      inputMode === "text"
-                        ? "bg-[var(--color-warm-900)] text-white"
-                        : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
-                    }`}
-                  >
-                    Text Answer
-                  </button>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[var(--text-tertiary)]">
+                      Upload
+                    </h4>
+                    <div className="flex border border-[var(--border-default)] p-0.5 bg-[var(--surface-inset)] rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => setInputMode("file")}
+                        className={`px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
+                          inputMode === "file"
+                            ? "bg-[var(--color-warm-900)] text-white"
+                            : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
+                        }`}
+                      >
+                        File
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInputMode("text")}
+                        className={`px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
+                          inputMode === "text"
+                            ? "bg-[var(--color-warm-900)] text-white"
+                            : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
+                        }`}
+                      >
+                        Text
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {requiresCsvSubmission && (
+                  <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-4">
+                    <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                      Required CSV columns
+                    </div>
+                    <div className="mt-2 font-mono text-xs font-bold text-[var(--color-warm-900)] break-all">
+                      {formatExpectedColumns(requiredColumns)}
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+                      Agora checks these headers locally before sealing and
+                      before you confirm the wallet transaction.
+                    </p>
+                  </div>
+                )}
+
+                {/* File upload with drag-and-drop */}
+                {inputMode === "file" && (
+                  <div className="w-full">
+                    <input
+                      id="submission-file"
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      disabled={dropZoneDisabled}
+                      onChange={handleFileInputChange}
+                    />
+                    <button
+                      type="button"
+                      disabled={dropZoneDisabled}
+                      className={`w-full flex flex-col items-center justify-center gap-3 p-8 border border-dashed rounded-lg transition-all duration-300 ${
+                        dragging
+                          ? "border-[var(--color-warm-900)] bg-[var(--color-warm-900)]/10"
+                          : resultFile
+                            ? "border-[#7A9A6D] bg-gradient-to-b from-[#F0F5ED] to-[#FAFAF8]"
+                            : "border-[var(--border-default)] hover:bg-[var(--surface-inset)]"
+                      } ${dropZoneDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                      onDragEnter={handleDragEnter}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onClick={() =>
+                        !dropZoneDisabled && fileInputRef.current?.click()
+                      }
+                    >
+                      {resultFile ? (
+                        <>
+                          <div className="flex items-center justify-center w-12 h-12 rounded-full bg-[#E8F0E4] mb-1">
+                            <ShieldCheck
+                              className="w-6 h-6 text-[#5A7D4F]"
+                              strokeWidth={1.75}
+                            />
+                          </div>
+                          <span className="text-sm font-bold text-[var(--color-warm-900)] font-mono">
+                            {resultFile.name}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[#5A7D4F] bg-[#E8F0E4] border border-[#C4D9BC] px-2 py-0.5 rounded-sm flex items-center gap-1">
+                              <Lock className="w-3 h-3" />
+                              {READY_TO_SEAL_BADGE_COPY}
+                            </span>
+                            <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] bg-white border border-[var(--border-subtle)] px-2 py-0.5 rounded-sm">
+                              {(resultFile.size / 1024).toFixed(1)} KB — click
+                              to change
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <FileUp
+                            className="w-8 h-8 text-[var(--text-muted)]"
+                            strokeWidth={1.5}
+                          />
+                          <span className="text-sm font-medium text-[var(--text-secondary)]">
+                            Drop your result file here or{" "}
+                            <span className="text-[var(--color-warm-900)] font-bold underline underline-offset-2">
+                              browse
+                            </span>
+                          </span>
+                          <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-[var(--text-muted)]">
+                            {requiresCsvSubmission
+                              ? "CSV file with the required columns"
+                              : "CSV, JSON, or any file format"}
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {/* Text input */}
+                {inputMode === "text" && (
+                  <div className="flex flex-col w-full">
+                    <label
+                      htmlFor="submission-text"
+                      className="block text-[10px] font-bold font-mono tracking-wider uppercase text-[var(--text-muted)] mb-2"
+                    >
+                      Your answer
+                    </label>
+                    <textarea
+                      id="submission-text"
+                      className="w-full px-4 py-3 text-sm border font-mono border-[var(--border-default)] bg-white text-[var(--color-warm-900)] placeholder:text-[var(--text-muted)] resize-none input-focus rounded-lg"
+                      rows={4}
+                      placeholder="Type your answer here (e.g., a number, JSON object, prediction result...)"
+                      value={resultText}
+                      onChange={(e) => {
+                        setResultText(e.target.value);
+                        setStatus("");
+                      }}
+                      disabled={isSubmitting}
+                    />
+                  </div>
                 )}
               </div>
 
-              {requiresCsvSubmission && (
-                <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-4">
-                  <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                    Required CSV columns
-                  </div>
-                  <div className="mt-2 font-mono text-xs font-bold text-[var(--color-warm-900)] break-all">
-                    {formatExpectedColumns(requiredColumns)}
-                  </div>
-                  <p className="mt-2 text-xs leading-relaxed text-[var(--text-secondary)]">
-                    Agora checks these headers locally before sealing and before
-                    you confirm the wallet transaction.
-                  </p>
-                </div>
-              )}
+              {/* ── Privacy Section ── */}
+              <SubmissionPrivacyNotice />
 
-              {/* File upload with drag-and-drop */}
-              {inputMode === "file" && (
-                <div className="w-full">
-                  <input
-                    id="submission-file"
-                    ref={fileInputRef}
-                    type="file"
-                    className="hidden"
-                    disabled={dropZoneDisabled}
-                    onChange={handleFileInputChange}
-                  />
-                  <button
-                    type="button"
-                    disabled={dropZoneDisabled}
-                    className={`w-full flex flex-col items-center justify-center gap-3 p-8 border border-dashed rounded-lg transition-all duration-300 ${
-                      dragging
-                        ? "border-[var(--color-warm-900)] bg-[var(--color-warm-900)]/10"
-                        : resultFile
-                          ? "border-[#7A9A6D] bg-gradient-to-b from-[#F0F5ED] to-[#FAFAF8]"
-                          : "border-[var(--border-default)] hover:bg-[var(--surface-inset)]"
-                    } ${dropZoneDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
-                    onDragEnter={handleDragEnter}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onClick={() =>
-                      !dropZoneDisabled && fileInputRef.current?.click()
-                    }
-                  >
-                    {resultFile ? (
-                      <>
-                        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-[#E8F0E4] mb-1">
-                          <ShieldCheck
-                            className="w-6 h-6 text-[#5A7D4F]"
-                            strokeWidth={1.75}
-                          />
-                        </div>
-                        <span className="text-sm font-bold text-[var(--color-warm-900)] font-mono">
-                          {resultFile.name}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[#5A7D4F] bg-[#E8F0E4] border border-[#C4D9BC] px-2 py-0.5 rounded-sm flex items-center gap-1">
-                            <Lock className="w-3 h-3" />
-                            {READY_TO_SEAL_BADGE_COPY}
-                          </span>
-                          <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] bg-white border border-[var(--border-subtle)] px-2 py-0.5 rounded-sm">
-                            {(resultFile.size / 1024).toFixed(1)} KB — click to
-                            change
-                          </span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <FileUp
-                          className="w-8 h-8 text-[var(--text-muted)]"
-                          strokeWidth={1.5}
-                        />
-                        <span className="text-sm font-medium text-[var(--text-secondary)]">
-                          Drop your result file here or{" "}
-                          <span className="text-[var(--color-warm-900)] font-bold underline underline-offset-2">
-                            browse
-                          </span>
-                        </span>
-                        <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-[var(--text-muted)]">
-                          {requiresCsvSubmission
-                            ? "CSV file with the required columns"
-                            : "CSV, JSON, or any file format"}
-                        </span>
-                      </>
-                    )}
-                  </button>
-                  <SubmissionPrivacyNotice />
-                </div>
-              )}
-
-              {/* Text input */}
-              {inputMode === "text" && (
-                <div className="flex flex-col w-full">
-                  <label
-                    htmlFor="submission-text"
-                    className="block text-[10px] font-bold font-mono tracking-wider uppercase text-[var(--text-muted)] mb-2"
-                  >
-                    Your answer
-                  </label>
-                  <textarea
-                    id="submission-text"
-                    className="w-full px-4 py-3 text-sm border font-mono border-[var(--border-default)] bg-white text-[var(--color-warm-900)] placeholder:text-[var(--text-muted)] resize-none input-focus rounded-lg"
-                    rows={4}
-                    placeholder="Type your answer here (e.g., a number, JSON object, prediction result...)"
-                    value={resultText}
-                    onChange={(e) => {
-                      setResultText(e.target.value);
-                      setStatus("");
-                    }}
-                    disabled={isSubmitting}
-                  />
-                  <SubmissionPrivacyNotice />
-                </div>
-              )}
-
-              {/* Submit button */}
+              {/* ── Submit ── */}
               <button
                 type="button"
                 onClick={handleSubmit}

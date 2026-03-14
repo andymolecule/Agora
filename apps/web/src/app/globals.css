@@ -1005,11 +1005,17 @@ a:hover {
   transform: translateY(0);
 }
 
-.dash-btn-primary:disabled,
-.dash-btn-secondary:disabled {
+.dash-btn-primary:disabled {
   background-color: var(--color-warm-100);
   border-color: var(--color-warm-200);
   color: var(--color-warm-500);
+  box-shadow: none;
+}
+
+.dash-btn-secondary:disabled {
+  background-color: var(--color-warm-50);
+  border-color: var(--color-warm-300);
+  color: var(--color-warm-600);
   box-shadow: none;
 }
 
@@ -2646,46 +2652,70 @@ a:hover {
 .preview-summary {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-5) var(--space-6);
+  padding: var(--space-4) var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: var(--space-4);
+}
+
+.preview-section {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.preview-section-title {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  background: var(--surface-inset, var(--color-warm-50));
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.preview-section-body {
+  padding: var(--space-1) var(--space-4);
 }
 
 .preview-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: var(--space-6);
+  gap: var(--space-4);
   padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.preview-row:last-child {
+  border-bottom: none;
 }
 
 .preview-row.span-full {
   flex-direction: column;
   gap: var(--space-1);
-  padding: var(--space-2) 0;
 }
 
 .preview-label {
-  font: var(--text-label);
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-secondary);
   flex-shrink: 0;
-  min-width: 140px;
 }
 
 .preview-value {
-  font: var(--text-body-sm);
+  font-size: 0.8rem;
   color: var(--text-primary);
   text-align: right;
 }
 
 .preview-row.span-full .preview-value {
   text-align: left;
-  font: var(--text-body-sm);
+  font-size: 0.8rem;
   line-height: 1.6;
   color: var(--text-secondary);
 }

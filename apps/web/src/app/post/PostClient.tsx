@@ -346,13 +346,13 @@ const SUBMISSION_WINDOW_OPTIONS: Array<{
   label: string;
   testnetOnly?: true;
 }> = [
-  { value: "15m", label: "15 min", testnetOnly: true },
-  { value: "0", label: "30 min", testnetOnly: true },
-  { value: "7", label: "7 days" },
+  { value: "15m", label: "15 min — Testing", testnetOnly: true },
+  { value: "0", label: "30 min — Testing", testnetOnly: true },
+  { value: "7", label: "7 days — Standard" },
   { value: "14", label: "14 days" },
   { value: "30", label: "30 days" },
   { value: "60", label: "60 days" },
-  { value: "90", label: "90 days" },
+  { value: "90", label: "90 days — Maximum" },
 ];
 
 // ─── Pipeline diagrams per type ──────────────────────
@@ -3079,36 +3079,21 @@ export function PostClient() {
               label="Submission window"
               hint="How long solvers have to submit before scoring begins"
             >
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "0.5rem",
-                }}
+              <select
+                className="form-select"
+                value={state.deadlineDays}
+                onChange={(e) =>
+                  setState((s) => ({ ...s, deadlineDays: e.target.value }))
+                }
               >
                 {SUBMISSION_WINDOW_OPTIONS.filter(
                   (option) => !option.testnetOnly || isTestnetChain(CHAIN_ID),
-                ).map((option) => {
-                  const active = option.value === state.deadlineDays;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      aria-pressed={active}
-                      className={`choice-card compact ${active ? "active" : ""}`}
-                      style={{ minWidth: "5.75rem", width: "auto" }}
-                      onClick={() =>
-                        setState((s) => ({
-                          ...s,
-                          deadlineDays: option.value,
-                        }))
-                      }
-                    >
-                      <span className="choice-card-title">{option.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+                ).map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </FormField>
             <FormField
               label="Review window before settlement"
@@ -3620,190 +3605,215 @@ export function PostClient() {
               </button>
             </div>
             <div className="preview-summary">
-              <div className="preview-row">
-                <span className="preview-label">Bounty title</span>
-                <span className="preview-value">{state.title || "—"}</span>
-              </div>
-              <div className="preview-row">
-                <span className="preview-label">Marketplace category</span>
-                <span className="preview-value">{state.domain}</span>
-              </div>
-              <div className="preview-row">
-                <span className="preview-label">Type</span>
-                <span className="preview-value">
-                  {TYPE_CONFIG[state.type].label}
-                </span>
-              </div>
-              {state.description && (
-                <div className="preview-row span-full">
-                  <span className="preview-label">Challenge brief</span>
-                  <span className="preview-value">{state.description}</span>
-                </div>
-              )}
-              {state.referenceLink && (
-                <div className="preview-row span-full">
-                  <span className="preview-label">Reference link</span>
-                  <span className="preview-value">{state.referenceLink}</span>
-                </div>
-              )}
-              {state.tags.length > 0 && (
-                <div className="preview-row">
-                  <span className="preview-label">Keywords</span>
-                  <span className="preview-value">{state.tags.join(", ")}</span>
-                </div>
-              )}
-              <div className="preview-divider" />
-              {!AVAILABLE_TYPE_OPTIONS.includes(state.type) && (
-                <div className="preview-row">
-                  <span className="preview-label">Container</span>
-                  <span
-                    className="preview-value"
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "0.75rem",
-                    }}
-                  >
-                    {state.container || "—"}
-                  </span>
-                </div>
-              )}
-              {state.type === "reproducibility" && (
-                <div className="preview-row">
-                  <span className="preview-label">Official scoring rule</span>
-                  <span className="preview-value">
-                    {scoringRuleLabel(state)}
-                  </span>
-                </div>
-              )}
-              {state.type === "reproducibility" && state.tolerance && (
-                <div className="preview-row">
-                  <span className="preview-label">Allowed drift</span>
-                  <span
-                    className="preview-value"
-                    style={{ fontFamily: "var(--font-mono)" }}
-                  >
-                    {state.tolerance}
-                  </span>
-                </div>
-              )}
-              {state.type === "prediction" && state.metric && (
-                <div className="preview-row">
-                  <span className="preview-label">Primary metric</span>
-                  <span className="preview-value">
-                    {getMetricDisplaySummary(state.metric)}
-                  </span>
-                </div>
-              )}
-              {state.type === "prediction" && state.idColumn && (
-                <div className="preview-row">
-                  <span className="preview-label">ID column</span>
-                  <span
-                    className="preview-value"
-                    style={{ fontFamily: "var(--font-mono)" }}
-                  >
-                    {state.idColumn}
-                  </span>
-                </div>
-              )}
-              {state.type === "prediction" && state.labelColumn && (
-                <div className="preview-row">
-                  <span className="preview-label">Prediction column</span>
-                  <span
-                    className="preview-value"
-                    style={{ fontFamily: "var(--font-mono)" }}
-                  >
-                    {state.labelColumn}
-                  </span>
-                </div>
-              )}
-              {state.type === "prediction" && state.hiddenLabels && (
-                <div className="preview-row">
-                  <span className="preview-label">
-                    Benchmark scoring targets
-                  </span>
-                  <span
-                    className="preview-value"
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "0.72rem",
-                    }}
-                  >
-                    {state.hiddenLabels.length > 40
-                      ? `${state.hiddenLabels.slice(0, 40)}…`
-                      : state.hiddenLabels}
-                  </span>
-                </div>
-              )}
-              {state.successDefinition && (
-                <div className="preview-row">
-                  <span className="preview-label">Success criteria</span>
-                  <span className="preview-value">
-                    {state.successDefinition}
-                  </span>
-                </div>
-              )}
-              {state.evaluationCriteria && (
-                <div className="preview-row span-full">
-                  <span className="preview-label">Evaluation</span>
-                  <span className="preview-value">
-                    {state.evaluationCriteria}
-                  </span>
-                </div>
-              )}
-              <div className="preview-divider" />
-              <div className="preview-row">
-                <span className="preview-label">Reward pool</span>
-                <span className="preview-value">{state.reward} USDC</span>
-              </div>
-              <div className="preview-row">
-                <span className="preview-label">Payout rule</span>
-                <span className="preview-value">
-                  {state.distribution.replace(/_/g, " ")}
-                </span>
-              </div>
-              <div className="preview-row">
-                <span className="preview-label">Submission window</span>
-                <span className="preview-value">
-                  {formatSubmissionWindowLabel(state.deadlineDays)}
-                </span>
-              </div>
-              <div className="preview-row">
-                <span className="preview-label">Review window</span>
-                <span className="preview-value">
-                  {state.disputeWindow === "0"
-                    ? "none"
-                    : `${state.disputeWindow}h`}
-                </span>
-              </div>
-              <div className="preview-row">
-                <span className="preview-label">
-                  Earliest finalization check
-                </span>
-                <span className="preview-value">
-                  {formatFinalizationCheckDate(
-                    state.deadlineDays,
-                    state.disputeWindow,
+              {/* ── Challenge Overview ── */}
+              <div className="preview-section">
+                <h4 className="preview-section-title">Challenge</h4>
+                <div className="preview-section-body">
+                  <div className="preview-row">
+                    <span className="preview-label">Title</span>
+                    <span className="preview-value">{state.title || "—"}</span>
+                  </div>
+                  <div className="preview-row">
+                    <span className="preview-label">Category</span>
+                    <span className="preview-value">{state.domain}</span>
+                  </div>
+                  <div className="preview-row">
+                    <span className="preview-label">Type</span>
+                    <span className="preview-value">
+                      {TYPE_CONFIG[state.type].label}
+                    </span>
+                  </div>
+                  {state.tags.length > 0 && (
+                    <div className="preview-row">
+                      <span className="preview-label">Keywords</span>
+                      <span className="preview-value">
+                        {state.tags.join(", ")}
+                      </span>
+                    </div>
                   )}
-                </span>
+                  {state.description && (
+                    <div className="preview-row span-full">
+                      <span className="preview-label">Brief</span>
+                      <span className="preview-value">
+                        {state.description}
+                      </span>
+                    </div>
+                  )}
+                  {state.referenceLink && (
+                    <div className="preview-row span-full">
+                      <span className="preview-label">Reference</span>
+                      <span className="preview-value">
+                        {state.referenceLink}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="preview-divider" />
-              <div className="preview-row span-full">
-                <span className="preview-label">Funding path</span>
-                <span className="preview-value">
-                  {fundingState.status === "checking"
-                    ? "Checking token support and allowance..."
-                    : fundingState.status === "error"
-                      ? (fundingState.message ??
-                        "Unable to determine posting flow.")
-                      : !balanceReady
-                        ? (fundingState.message ??
-                          "Wallet balance is too low for this reward.")
-                        : fundingState.method === "permit" && !allowanceReady
-                          ? `${fundingState.tokenName} supports permit. Sign once, then submit the challenge in one transaction.`
-                          : allowanceReady
-                            ? "Allowance already covers this reward. You can create the challenge now."
-                            : "This token requires approval before challenge creation."}
-                </span>
+
+              {/* ── Scoring Configuration ── */}
+              <div className="preview-section">
+                <h4 className="preview-section-title">Scoring</h4>
+                <div className="preview-section-body">
+                  {!AVAILABLE_TYPE_OPTIONS.includes(state.type) && (
+                    <div className="preview-row">
+                      <span className="preview-label">Container</span>
+                      <span
+                        className="preview-value"
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: "0.75rem",
+                        }}
+                      >
+                        {state.container || "—"}
+                      </span>
+                    </div>
+                  )}
+                  {state.type === "reproducibility" && (
+                    <div className="preview-row">
+                      <span className="preview-label">Scoring rule</span>
+                      <span className="preview-value">
+                        {scoringRuleLabel(state)}
+                      </span>
+                    </div>
+                  )}
+                  {state.type === "reproducibility" && state.tolerance && (
+                    <div className="preview-row">
+                      <span className="preview-label">Allowed drift</span>
+                      <span
+                        className="preview-value"
+                        style={{ fontFamily: "var(--font-mono)" }}
+                      >
+                        {state.tolerance}
+                      </span>
+                    </div>
+                  )}
+                  {state.type === "prediction" && state.metric && (
+                    <div className="preview-row">
+                      <span className="preview-label">Metric</span>
+                      <span className="preview-value">
+                        {getMetricDisplaySummary(state.metric)}
+                      </span>
+                    </div>
+                  )}
+                  {state.type === "prediction" && state.idColumn && (
+                    <div className="preview-row">
+                      <span className="preview-label">ID column</span>
+                      <span
+                        className="preview-value"
+                        style={{ fontFamily: "var(--font-mono)" }}
+                      >
+                        {state.idColumn}
+                      </span>
+                    </div>
+                  )}
+                  {state.type === "prediction" && state.labelColumn && (
+                    <div className="preview-row">
+                      <span className="preview-label">Prediction column</span>
+                      <span
+                        className="preview-value"
+                        style={{ fontFamily: "var(--font-mono)" }}
+                      >
+                        {state.labelColumn}
+                      </span>
+                    </div>
+                  )}
+                  {state.type === "prediction" && state.hiddenLabels && (
+                    <div className="preview-row">
+                      <span className="preview-label">Scoring targets</span>
+                      <span
+                        className="preview-value"
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: "0.72rem",
+                        }}
+                      >
+                        {state.hiddenLabels.length > 40
+                          ? `${state.hiddenLabels.slice(0, 40)}…`
+                          : state.hiddenLabels}
+                      </span>
+                    </div>
+                  )}
+                  {state.successDefinition && (
+                    <div className="preview-row span-full">
+                      <span className="preview-label">Success criteria</span>
+                      <span className="preview-value">
+                        {state.successDefinition}
+                      </span>
+                    </div>
+                  )}
+                  {state.evaluationCriteria && (
+                    <div className="preview-row span-full">
+                      <span className="preview-label">Evaluation</span>
+                      <span className="preview-value">
+                        {state.evaluationCriteria}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Reward & Timeline ── */}
+              <div className="preview-section">
+                <h4 className="preview-section-title">Reward & Timeline</h4>
+                <div className="preview-section-body">
+                  <div className="preview-row">
+                    <span className="preview-label">Reward pool</span>
+                    <span className="preview-value">{state.reward} USDC</span>
+                  </div>
+                  <div className="preview-row">
+                    <span className="preview-label">Payout rule</span>
+                    <span className="preview-value">
+                      {state.distribution.replace(/_/g, " ")}
+                    </span>
+                  </div>
+                  <div className="preview-row">
+                    <span className="preview-label">Submission window</span>
+                    <span className="preview-value">
+                      {formatSubmissionWindowLabel(state.deadlineDays)}
+                    </span>
+                  </div>
+                  <div className="preview-row">
+                    <span className="preview-label">Review window</span>
+                    <span className="preview-value">
+                      {state.disputeWindow === "0"
+                        ? "none"
+                        : `${state.disputeWindow}h`}
+                    </span>
+                  </div>
+                  <div className="preview-row">
+                    <span className="preview-label">Earliest finalization</span>
+                    <span className="preview-value">
+                      {formatFinalizationCheckDate(
+                        state.deadlineDays,
+                        state.disputeWindow,
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Funding ── */}
+              <div className="preview-section">
+                <h4 className="preview-section-title">Funding</h4>
+                <div className="preview-section-body">
+                  <div className="preview-row span-full">
+                    <span className="preview-value">
+                      {fundingState.status === "checking"
+                        ? "Checking token support and allowance..."
+                        : fundingState.status === "error"
+                          ? (fundingState.message ??
+                            "Unable to determine posting flow.")
+                          : !balanceReady
+                            ? (fundingState.message ??
+                              "Wallet balance is too low for this reward.")
+                            : fundingState.method === "permit" && !allowanceReady
+                              ? `${fundingState.tokenName} supports permit. Sign once, then submit the challenge in one transaction.`
+                              : allowanceReady
+                                ? "Allowance already covers this reward. You can create the challenge now."
+                                : "This token requires approval before challenge creation."}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
             {renderPostStatus("preview-status", 15)}
@@ -3858,45 +3868,35 @@ export function PostClient() {
                         <span className="preview-action-step">Step 1 of 2</span>
                       </button>
                     )}
-                  <div className="preview-action-stack">
-                    <button
-                      type="button"
-                      disabled={
-                        isBusy ||
-                        fundingState.status !== "ready" ||
-                        !balanceReady ||
-                        (fundingState.method === "approve" && !allowanceReady)
-                      }
-                      onClick={() => {
-                        void handleCreate();
-                      }}
-                      className={`dash-btn ${(fundingState.method === "permit" || allowanceReady) && balanceReady ? "dash-btn-primary" : "dash-btn-secondary"}`}
-                      style={{ fontSize: "0.8rem" }}
-                    >
-                      {isBusy ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <ArrowRight size={14} />
-                      )}
-                      {fundingState.method === "permit" && !allowanceReady
-                        ? "Sign Permit & Create"
-                        : "Create Challenge"}
-                      {fundingState.status === "ready" &&
-                        fundingState.method === "approve" && (
-                          <span className="preview-action-step">
-                            Step 2 of 2
-                          </span>
-                        )}
-                    </button>
+                  <button
+                    type="button"
+                    disabled={
+                      isBusy ||
+                      fundingState.status !== "ready" ||
+                      !balanceReady ||
+                      (fundingState.method === "approve" && !allowanceReady)
+                    }
+                    onClick={() => {
+                      void handleCreate();
+                    }}
+                    className={`dash-btn ${(fundingState.method === "permit" || allowanceReady) && balanceReady ? "dash-btn-primary" : "dash-btn-secondary"}`}
+                    style={{ fontSize: "0.8rem" }}
+                  >
+                    {isBusy ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <ArrowRight size={14} />
+                    )}
+                    {fundingState.method === "permit" && !allowanceReady
+                      ? "Sign Permit & Create"
+                      : "Create Challenge"}
                     {fundingState.status === "ready" &&
-                    fundingState.method === "approve" &&
-                    !allowanceReady &&
-                    balanceReady ? (
-                      <p className="preview-action-helper">
-                        Available after approval
-                      </p>
-                    ) : null}
-                  </div>
+                      fundingState.method === "approve" && (
+                        <span className="preview-action-step">
+                          Step 2 of 2
+                        </span>
+                      )}
+                  </button>
                 </div>
               )}
             </div>
