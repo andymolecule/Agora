@@ -12,8 +12,10 @@ import {
   loadConfig,
   loadIpfsConfig,
   readApiServerRuntimeConfig,
+  readExecutorServerRuntimeConfig,
   readFeaturePolicy,
   readIndexerHealthRuntimeConfig,
+  readScorerExecutorRuntimeConfig,
   readWorkerTimingConfig,
   readX402RuntimeConfig,
   resetConfigCache,
@@ -200,6 +202,22 @@ try {
   assert.equal(workerTiming.heartbeatIntervalMs, 555);
   assert.equal(workerTiming.heartbeatStaleMs, 777);
 
+  process.env.AGORA_SCORER_EXECUTOR_BACKEND = "remote_http";
+  process.env.AGORA_SCORER_EXECUTOR_URL = "https://executor.example";
+  process.env.AGORA_SCORER_EXECUTOR_TOKEN = "executor-token";
+  process.env.AGORA_EXECUTOR_PORT = "3200";
+  process.env.AGORA_EXECUTOR_AUTH_TOKEN = "executor-auth";
+  const scorerExecutorRuntime = readScorerExecutorRuntimeConfig();
+  assert.equal(scorerExecutorRuntime.backend, "remote_http");
+  assert.equal(
+    scorerExecutorRuntime.url,
+    "https://executor.example",
+  );
+  assert.equal(scorerExecutorRuntime.token, "executor-token");
+  const executorServerRuntime = readExecutorServerRuntimeConfig();
+  assert.equal(executorServerRuntime.port, 3200);
+  assert.equal(executorServerRuntime.authToken, "executor-auth");
+
   process.env.AGORA_RPC_URL = undefined;
   process.env.AGORA_FACTORY_ADDRESS = undefined;
   process.env.AGORA_USDC_ADDRESS = undefined;
@@ -246,6 +264,18 @@ try {
     "private sealing key should require the public sealing config",
   );
   process.env.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM = undefined;
+  resetConfigCache();
+
+  process.env.AGORA_SCORER_EXECUTOR_BACKEND = "remote_http";
+  process.env.AGORA_SCORER_EXECUTOR_URL = undefined;
+  resetConfigCache();
+  assert.throws(
+    () => loadConfig(),
+    /AGORA_SCORER_EXECUTOR_URL/,
+    "remote executor mode should require a configured base URL",
+  );
+  process.env.AGORA_SCORER_EXECUTOR_BACKEND = undefined;
+  process.env.AGORA_SCORER_EXECUTOR_URL = undefined;
   resetConfigCache();
 
   process.env.AGORA_SUBMISSION_SEAL_KEY_ID = "active-kid";

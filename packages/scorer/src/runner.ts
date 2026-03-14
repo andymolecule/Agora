@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { ScoreResult } from "@agora/common";
 
-const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
+export const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_RUNNER_LIMITS = {
   memory: "256m",
   cpus: "0.5",

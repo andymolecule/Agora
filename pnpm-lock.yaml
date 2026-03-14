@@ -118,6 +118,28 @@ importers:
         specifier: ^4.19.2
         version: 4.21.0
 
+  apps/executor:
+    dependencies:
+      '@agora/common':
+        specifier: workspace:*
+        version: link:../../packages/common
+      '@agora/scorer':
+        specifier: workspace:*
+        version: link:../../packages/scorer
+      '@hono/node-server':
+        specifier: ^1.19.9
+        version: 1.19.9(hono@4.12.2)
+      hono:
+        specifier: ^4.12.2
+        version: 4.12.2
+    devDependencies:
+      '@types/node':
+        specifier: ^25.3.0
+        version: 25.3.0
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
+
   apps/mcp-server:
     dependencies:
       '@agora/agent-runtime':

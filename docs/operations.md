@@ -21,13 +21,13 @@ This doc is authoritative for: service startup, monitoring, incident response, s
 
 ## Summary
 
-- Four processes: API, Indexer, Worker, MCP
-- Typical hosted split today: web on Vercel, API + indexer on Railway, worker on a self-hosted PM2 machine (for example, a DigitalOcean droplet)
+- Five processes in production: API, Indexer, Worker Orchestrator, Executor, MCP
+- Typical hosted split: web on Vercel, API + indexer + worker orchestrator on Railway, executor on a Docker-capable host or service
 - The API is the canonical remote agent surface
 - MCP HTTP is read-only by default; stdio remains the full local tool surface
 - Browser auth/session traffic goes through the web origin's same-origin `/api` proxy; the browser should not call the backend API origin directly for SIWE/session flows
 - Indexer polls factory logs every 30s and only continuously polls active challenges; Worker polls score_jobs after challenges enter Scoring
-- Worker publishes readiness via `worker_runtime_state`, only claims jobs while `ready=true`, and self-aligns to the live API runtime on PM2 restart
+- Worker publishes readiness via `worker_runtime_state`, only claims jobs while `ready=true`, and uses a scorer execution backend (`local_docker` in dev, `remote_http` in production)
 - Health monitoring via /healthz, /api/indexer-health, /api/worker-health, agora doctor
 
 ---
@@ -41,7 +41,8 @@ flowchart TB
         API["Hono API<br/>pnpm --filter @agora/api start<br/>:3000 (backend)"]
         MCP["MCP Server<br/>pnpm --filter @agora/mcp-server start<br/>:3001"]
         Indexer["Chain Indexer<br/>pnpm --filter @agora/chain indexer"]
-        Worker["Scoring Worker<br/>pnpm --filter @agora/api worker"]
+        Worker["Worker Orchestrator<br/>pnpm --filter @agora/api worker"]
+        Executor["Executor Service<br/>pnpm --filter @agora/executor dev<br/>:3200 (optional when remote_http)"]
     end
 
     subgraph External["External Services"]
@@ -60,6 +61,7 @@ flowchart TB
     Worker --> Supa
     Worker --> Pin
     Worker --> RPC
+    Worker --> Executor
     Web --> API
 ```
 
@@ -73,9 +75,17 @@ Run services:
 
 ```bash
 pnpm --filter @agora/api start        # API on :3000
-pnpm --filter @agora/api worker       # Worker
+pnpm --filter @agora/api worker       # Worker orchestrator
 pnpm --filter @agora/mcp-server start # MCP on :3001
 pnpm --filter @agora/chain indexer    # Chain indexer
+```
+
+Optional remote executor for local parity with production:
+
+```bash
+AGORA_SCORER_EXECUTOR_BACKEND=remote_http \
+AGORA_SCORER_EXECUTOR_URL=http://localhost:3200 \
+pnpm --filter @agora/executor dev
 ```
 
 Web frontend:
@@ -90,10 +100,11 @@ pnpm --filter @agora/web dev -- --port 3100
 
 ```mermaid
 flowchart LR
-    subgraph Processes["4 Always-On Processes"]
+    subgraph Processes["5 Production Processes"]
         API["agora-api<br/>REST API + web backend<br/>:3000"]
         Idx["agora-indexer<br/>Chain → Supabase<br/>poll every 30s"]
-        Worker["agora-worker<br/>Polls score_jobs<br/>Runs Docker scorer"]
+        Worker["agora-worker-orchestrator<br/>Polls score_jobs<br/>Posts scores on-chain"]
+        Executor["agora-executor<br/>Runs scorer containers"]
         MCP["agora-mcp<br/>MCP server<br/>:3001"]
     end
 
@@ -106,6 +117,7 @@ flowchart LR
     Worker -->|"claims + updates"| DB
     MCP -->|"reads"| DB
 
+    Worker -->|"execute scorer"| Executor
     Worker -->|"postScore()"| Chain["Base"]
     Idx -->|"getLogs()"| Chain
 ```
@@ -114,33 +126,35 @@ flowchart LR
 |---------|-----------|------|
 | `agora-api` | `apps/api/dist/index.js` | REST API + web backend |
 | `agora-indexer` | `packages/chain/dist/indexer.js` | Chain event poller -> Supabase |
-| `agora-worker` | `apps/api/dist/worker.js` | Polls score_jobs, runs Docker scorer, posts scores on-chain |
+| `agora-worker` | `apps/api/dist/worker.js` | Orchestrates score jobs, persists proof data, posts scores on-chain |
+| `agora-executor` | `apps/executor/dist/index.js` | Docker-only scorer execution service |
 | `agora-mcp` | `apps/mcp-server/dist/index.js` | MCP server for AI agents |
 
 Architecture boundary:
 
 - Clients now pre-register `submission_intents` before the on-chain submit. API submit confirmation and the indexer both reconcile intents into `submissions` rows and only then create or revive `score_jobs`.
 - Worker polls `score_jobs` but only claims jobs after the challenge enters `Scoring` at deadline, and only when the worker runtime matches the active scoring runtime version declared by the API.
-- Scorer is the Docker container itself (e.g. `ghcr.io/andymolecule/repro-scorer:v1`) — stateless, sandboxed, no network access.
+- Scorer is the Docker container itself (for example `ghcr.io/andymolecule/repro-scorer:v1`) — stateless, sandboxed, no network access. The orchestrator stages inputs; the executor service runs the container.
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
-- Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` declares the active scoring runtime version for claim fencing while the worker self-aligns to the live API runtime.
+- Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` remains the active scoring runtime fence while API and worker-orchestrator roll forward together on Railway.
 - Official preset challenges should persist pinned image digests. The worker should only score from registry-backed official images, never from a host-local build that lacks a repo digest.
 - Wallet/session consistency is enforced in the web app by a global wallet session bridge. If the connected wallet disconnects or changes to a different address, stale SIWE state is cleared instead of being reused accidentally.
 
-### Worker Docker Flow
+### Worker / Executor Flow
 
-The worker now treats scorer availability as a runtime readiness problem, not a crash condition.
+The worker treats scorer availability as a runtime readiness problem, not a crash condition.
 
 1. At startup it writes a `worker_runtime_state` row with `runtime_version`, `ready=false`, and any current `last_error`.
 2. The API writes the active scoring runtime version into `worker_runtime_control` on startup.
 3. Score-job claims are fenced against `worker_runtime_control`, so older workers can keep heartbeating but cannot keep claiming new jobs after a deploy.
-4. It checks `docker info`, then preflights all official scorer images referenced by currently scoring official challenges.
-5. If Docker or image preflight fails, the process stays up, keeps heartbeating, and skips job claims until readiness recovers.
+4. It checks the configured scorer execution backend:
+   - `local_docker`: verify local Docker health and preflight official images directly
+   - `remote_http`: verify the executor service is reachable and ask it to preflight official images
+5. If executor health or image preflight fails, the process stays up, keeps heartbeating, and skips job claims until readiness recovers.
 6. Readiness is retried in the background every minute.
-7. If the worker sees the active runtime version drift for three consecutive loop checks, it exits so PM2 can restart it through `start-worker.sh` and realign it instead of leaving it degraded forever.
-8. During scoring, the runner inspects the local Docker image first and only pulls when the image is missing.
-9. Official images without a repo digest are rejected. A locally built image is not accepted as a substitute for a published official artifact.
+7. During scoring, the runner uses the configured executor backend. In production this should be the remote executor so Railway only runs orchestration code, not Docker itself.
+8. Official images without a repo digest are rejected. A locally built image is not accepted as a substitute for a published official artifact.
 
 ---
 
@@ -163,7 +177,7 @@ Key handling rules:
 
 - The API advertises exactly one active public key via `GET /api/submissions/public-key`.
 - The active `kid` must exist in the worker private key set.
-- Services launched through `scripts/run-node-with-root-env.mjs` can load seal keys from disk via `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE`, `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE`, and `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE`. The DigitalOcean worker start script still supports repo-root PEM fallbacks for backward compatibility.
+- Services launched through `scripts/run-node-with-root-env.mjs` can load seal keys from disk via `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE`, `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE`, and `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE`.
 - `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON` is the rotation path. Keep the active key plus any previous keys whose still-pending sealed submissions need to be scored.
 - `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` is the simple single-key path. If both sources are set for the active `kid`, they must match.
 - `GET /api/submissions/public-key` returns the active public key whenever sealing is configured. Worker readiness is enforced at scoring time, not submission time.
@@ -209,9 +223,10 @@ Operational privacy boundary:
 pnpm --filter @agora/api start
 pnpm --filter @agora/chain indexer
 pnpm --filter @agora/api worker
+pnpm --filter @agora/executor start  # only when AGORA_SCORER_EXECUTOR_BACKEND=remote_http
 ```
 
-### PM2 (recommended)
+### PM2 (legacy local ops only)
 
 ```bash
 pm2 start scripts/ops/ecosystem.config.cjs
@@ -224,10 +239,10 @@ pm2 status   # should show 4 processes: agora-api, agora-indexer, agora-worker, 
 Current production is intentionally split across hosts:
 
 - Vercel: `agora-web`
-- Railway: `@agora/api`, `agora-indexer`
-- Self-hosted PM2 machine: `agora-worker`
+- Railway: `@agora/api`, `agora-indexer`, `agora-worker-orchestrator`
+- Docker-capable host or service: `agora-executor`
 
-Vercel redeploys directly from GitHub `main` via its native integration. Railway API and indexer should also redeploy natively from GitHub `main`. The self-hosted worker has its own deploy workflow because it does not live on a Git-integrated host.
+Vercel redeploys directly from GitHub `main` via its native integration. Railway API, indexer, and worker orchestrator should also redeploy natively from GitHub `main`. The executor should be treated as infrastructure: update it when the executor service itself changes, not on every app commit.
 
 ### Railway Dashboard Settings
 
@@ -244,6 +259,8 @@ Recommended steady-state settings:
   - API start: `pnpm --filter @agora/api start`
   - Indexer build: `pnpm turbo build --filter=@agora/chain`
   - Indexer start: `pnpm --filter @agora/chain indexer`
+  - Worker orchestrator build: `pnpm turbo build --filter=@agora/api`
+  - Worker orchestrator start: `pnpm --filter @agora/api worker`
 
 Operational rule:
 
@@ -253,43 +270,28 @@ Operational rule:
   - `Branch connected to production`
   then redeploy latest once and verify the next push advances production.
 
-### DigitalOcean Worker Runtime Alignment
+### Remote Executor Service
 
-For the self-hosted worker, this repo now uses one steady-state runtime path:
+Production scoring should run with:
 
-- Manual/bootstrap script: [deploy-worker.sh](../scripts/ops/deploy-worker.sh)
-- Worker entrypoint: [start-worker.sh](../scripts/ops/start-worker.sh)
-- Recovery watchdog: [watchdog-worker.sh](../scripts/ops/watchdog-worker.sh)
-- Monitor-only workflow: [auto-heal-worker-digitalocean.yml](../.github/workflows/auto-heal-worker-digitalocean.yml)
+- `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`
+- `AGORA_SCORER_EXECUTOR_URL=<executor base url>`
+- `AGORA_SCORER_EXECUTOR_TOKEN=<shared bearer token>`
 
-Expected worker host configuration:
+Expected executor host configuration:
 
-- `AGORA_API_HEALTH_URL` points at the live API `/healthz`
-- PM2 runs the worker through `scripts/ops/start-worker.sh`
-- A local cron runs `scripts/ops/watchdog-worker.sh` every 5 minutes
+- Docker daemon available locally
+- `apps/executor` deployed and reachable by the Railway worker orchestrator
+- `AGORA_EXECUTOR_AUTH_TOKEN` matches the orchestrator token
 
 Steady-state flow:
 
-1. Railway deploys API and indexer from `main`
-2. API writes the active scoring runtime version into `worker_runtime_control`
-3. If the worker is on an older runtime, it exits after sustained mismatch detection
-4. PM2 restarts the worker through `scripts/ops/start-worker.sh`
-5. `start-worker.sh` reads `AGORA_API_HEALTH_URL`, aligns the droplet checkout to the live API runtime, rebuilds `@agora/api` when needed, reloads seal PEMs, and execs the worker
-6. The worker reports the aligned runtime through `/api/worker-health`
-
-Bootstrap / break-glass flow:
-
-1. Clone the repo onto the worker host
-2. Install `.env` and PEM files
-3. Run `scripts/ops/deploy-worker.sh`
-4. Install the watchdog cron
-5. Run `pm2 save`
-
-Suggested watchdog cron:
-
-```bash
-*/5 * * * * cd /opt/agora && AGORA_WORKER_PM2_NAME=agora-worker bash scripts/ops/watchdog-worker.sh >> /var/log/agora-worker-watchdog.log 2>&1
-```
+1. Railway deploys API, indexer, and worker orchestrator from `main`
+2. The worker orchestrator writes its runtime heartbeat into `worker_runtime_state`
+3. The orchestrator checks executor health and preflights official images
+4. When a job is claimed, the orchestrator stages inputs and sends them to the executor
+5. The executor runs the scorer container locally and returns `score.json`
+6. The orchestrator persists proof data and posts scores on-chain
 
 ---
 
@@ -322,7 +324,7 @@ Check every 15-30 minutes during first launch window:
 2. Indexer logs show new blocks processed.
 3. `indexed_events` block number continues advancing.
 4. `agora doctor` passes all required checks.
-5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version. A mismatched healthy worker may still appear in health until it is stopped or becomes stale, but claim fencing prevents it from taking new jobs.
+5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version. If `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`, this also implies the executor passed the worker readiness checks.
 6. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
 
 Health commands:
@@ -341,6 +343,7 @@ Expected results:
 - `agora doctor` passes RPC/Supabase/factory checks.
 - If sealing is enabled, `/api/submissions/public-key` returns `sealed_submission_v2` whenever the public sealing key is configured.
 - If active scoring challenges use official Agora scorer images and those GHCR images are not pullable, the worker should stay alive but report `ready=false`, a `latestError`, and zero healthy workers for the active runtime version.
+- When `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`, `GET <executor-url>/healthz` should return `{"ok":true,"service":"executor","backend":"local_docker"}`.
 
 ---
 
@@ -494,16 +497,17 @@ agora reindex --from-block <block_number>
 ### Worker Stalled
 
 1. Check `GET /api/worker-health` — if `status: "warning"`, the oldest queued job has been waiting > 5 minutes.
-2. Tail logs: `pm2 logs agora-worker --lines 100`.
+2. Tail worker logs from Railway and executor logs from the executor host/service.
 3. Common causes:
-   - Docker daemon not running or unreachable -> restart Docker, then `pm2 startOrRestart scripts/ops/ecosystem.config.cjs --only agora-worker --update-env`.
-   - Official scorer image not pullable -> inspect `workers.latestError`, verify the image is public/pullable from the host, and rerun `./scripts/preflight-testnet.sh`.
+   - Executor unavailable -> inspect the worker `latestError`, check `GET <executor-url>/healthz`, then verify network reachability and the shared bearer token.
+   - Docker daemon not running or unreachable on the executor host -> restart Docker there, then retry readiness checks.
+   - Official scorer image not pullable -> inspect `workers.latestError`, verify the image is public/pullable from the executor host, and rerun `./scripts/preflight-testnet.sh`.
    - DB schema drift or stale PostgREST cache -> run `pnpm schema:verify`. If it fails, apply the missing migration and reload the PostgREST schema cache before restarting services.
-   - Runtime version mismatch -> compare `/healthz.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then restart the worker and let `start-worker.sh` align it to the live API runtime.
+   - Runtime version mismatch -> compare `/healthz.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then restart the Railway worker orchestrator so it redeploys on the active API revision.
    - RPC errors -> check `AGORA_RPC_URL` reachability.
    - All jobs stuck in `failed` or `running` after an infra incident -> recover them with `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` after the worker is healthy again.
    - Terminal validation/configuration rows lingering in `failed` -> inspect with `agora clean-failed-jobs` and skip only the rows that are truly unrecoverable.
-4. If the worker process itself crashed: rerun `scripts/ops/deploy-worker.sh`, `pm2 startOrRestart scripts/ops/ecosystem.config.cjs --only agora-worker --update-env`, or `scripts/ops/watchdog-worker.sh`. Avoid bare `pm2 restart agora-worker` unless the droplet checkout and PM2 env are already known-good. PM2 uses exponential backoff (3s base).
+4. If the worker orchestrator process itself crashed: redeploy or restart the Railway worker service. If the executor crashed, restart the executor service on its host and re-check `/healthz`.
 
 ### Oracle Key Issue
 

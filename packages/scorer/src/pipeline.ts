@@ -18,8 +18,8 @@ import { getJSON } from "@agora/ipfs";
 import {
   type RunScorerInput,
   type RunnerScoreResult,
-  runScorer,
 } from "./runner.js";
+import { executeScorer } from "./execution.js";
 import { cleanupWorkspace, createScoringWorkspace } from "./staging.js";
 
 export interface ScoringInputSource {
@@ -318,7 +318,7 @@ export async function executeScoringPipeline(
       input.phaseObserver,
       "run_scorer",
       async () =>
-        runScorer({
+        executeScorer({
           image: input.image,
           inputDir: workspace.inputDir,
           env: input.env,

@@ -1,4 +1,4 @@
-name: Monitor Worker (DigitalOcean)
+name: Monitor Scoring Runtime
 
 on:
   schedule:
@@ -18,7 +18,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Check runtime alignment and sealing readiness
+      - name: Check orchestrator runtime alignment and sealing readiness
         id: health
         run: |
           set -euo pipefail
@@ -35,16 +35,16 @@ jobs:
           set -euo pipefail
           echo "API runtime: ${{ steps.health.outputs.api_runtime }}"
           if [ "${{ steps.health.outputs.healthy }}" = "true" ]; then
-            echo "Worker runtime is healthy; no action required."
+            echo "Scoring runtime is healthy; no action required."
           elif [ "${{ steps.health.outputs.starting_within_grace }}" = "true" ]; then
-            echo "Worker startup is still within grace: ${{ steps.health.outputs.summary }}"
+            echo "Scoring runtime startup is still within grace: ${{ steps.health.outputs.summary }}"
           elif [ "${{ steps.health.outputs.needs_heal }}" = "true" ]; then
-            echo "Worker requires operator attention: ${{ steps.health.outputs.summary }}"
+            echo "Scoring runtime requires operator attention: ${{ steps.health.outputs.summary }}"
             if [ -n "${{ steps.health.outputs.latest_error }}" ]; then
               echo "Latest worker error: ${{ steps.health.outputs.latest_error }}"
             fi
           else
-            echo "Worker runtime check completed: ${{ steps.health.outputs.summary }}"
+            echo "Scoring runtime check completed: ${{ steps.health.outputs.summary }}"
           fi
 
       - name: Dump latest health payloads
@@ -60,9 +60,9 @@ jobs:
             --worker-health-url "$AGORA_WORKER_HEALTH_URL" \
             --expected-runtime-version "$EXPECTED_RUNTIME_VERSION" || true
 
-      - name: Fail when worker is unhealthy
+      - name: Fail when scoring runtime is unhealthy
         if: steps.health.outputs.needs_heal == 'true'
         run: |
           set -euo pipefail
-          echo "Worker monitor detected an unhealthy runtime. Next step: inspect the worker host and restart or redeploy it manually."
+          echo "Scoring runtime monitor detected an unhealthy state. Next step: inspect the Railway worker-orchestrator and executor service."
           exit 1

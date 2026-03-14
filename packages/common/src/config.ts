@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DEFAULT_CHAIN_ID, DEFAULT_X402_NETWORK } from "./constants.js";
 import { parseBooleanLike } from "./env.js";
+import { scorerExecutorBackendSchema } from "./schemas/scorer-executor.js";
 
 const RUNTIME_VERSION_PLATFORM_ENV_KEYS = [
   "VERCEL_GIT_COMMIT_SHA",
@@ -64,6 +65,18 @@ const configSchema = z.object({
     .optional(),
   AGORA_WORKER_RUNTIME_ID: z.string().min(1).optional(),
   AGORA_RUNTIME_VERSION: z.string().min(1).optional(),
+  AGORA_SCORER_EXECUTOR_BACKEND: scorerExecutorBackendSchema.default(
+    "local_docker",
+  ),
+  AGORA_SCORER_EXECUTOR_URL: z.string().url().optional(),
+  AGORA_SCORER_EXECUTOR_TOKEN: z.string().min(1).optional(),
+  AGORA_EXECUTOR_PORT: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int(),
+    )
+    .optional(),
+  AGORA_EXECUTOR_AUTH_TOKEN: z.string().min(1).optional(),
   AGORA_CORS_ORIGINS: z.string().optional(),
   AGORA_MCP_PORT: z
     .preprocess(
@@ -290,6 +303,18 @@ const workerTimingConfigSchema = configSchema.pick({
   AGORA_WORKER_HEARTBEAT_STALE_MS: true,
 });
 
+const scorerExecutorRuntimeConfigSchema = configSchema.pick({
+  AGORA_SCORER_EXECUTOR_BACKEND: true,
+  AGORA_SCORER_EXECUTOR_URL: true,
+  AGORA_SCORER_EXECUTOR_TOKEN: true,
+});
+
+const executorServerRuntimeConfigSchema = configSchema.pick({
+  NODE_ENV: true,
+  AGORA_EXECUTOR_PORT: true,
+  AGORA_EXECUTOR_AUTH_TOKEN: true,
+});
+
 export interface AgoraApiServerRuntimeConfig {
   nodeEnv: string;
   apiUrl?: string;
@@ -324,6 +349,18 @@ export interface AgoraRuntimeIdentity {
   factoryAddress: `0x${string}`;
   usdcAddress: `0x${string}`;
   rpcUrl: string;
+}
+
+export interface AgoraScorerExecutorRuntimeConfig {
+  backend: "local_docker" | "remote_http";
+  url?: string;
+  token?: string;
+}
+
+export interface AgoraExecutorServerRuntimeConfig {
+  nodeEnv: string;
+  port: number;
+  authToken?: string;
 }
 
 export function hasSubmissionSealPublicConfig(config: AgoraConfig): boolean {
@@ -468,6 +505,15 @@ export function loadConfig(): AgoraConfig {
     );
   }
 
+  if (
+    config.AGORA_SCORER_EXECUTOR_BACKEND === "remote_http" &&
+    !config.AGORA_SCORER_EXECUTOR_URL
+  ) {
+    throw new Error(
+      "Remote scorer execution requires AGORA_SCORER_EXECUTOR_URL. Next step: set the executor base URL or switch AGORA_SCORER_EXECUTOR_BACKEND back to local_docker.",
+    );
+  }
+
   cachedConfig = config;
   return cachedConfig;
 }
@@ -551,6 +597,28 @@ export function readWorkerTimingConfig(
     heartbeatStaleMs:
       parsed.AGORA_WORKER_HEARTBEAT_STALE_MS ??
       parsed.AGORA_WORKER_HEARTBEAT_MS * 3,
+  };
+}
+
+export function readScorerExecutorRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraScorerExecutorRuntimeConfig {
+  const parsed = parseConfigSection(scorerExecutorRuntimeConfigSchema, env);
+  return {
+    backend: parsed.AGORA_SCORER_EXECUTOR_BACKEND,
+    url: parsed.AGORA_SCORER_EXECUTOR_URL,
+    token: parsed.AGORA_SCORER_EXECUTOR_TOKEN,
+  };
+}
+
+export function readExecutorServerRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraExecutorServerRuntimeConfig {
+  const parsed = parseConfigSection(executorServerRuntimeConfigSchema, env);
+  return {
+    nodeEnv: parsed.NODE_ENV,
+    port: parsed.AGORA_EXECUTOR_PORT ?? 3200,
+    authToken: parsed.AGORA_EXECUTOR_AUTH_TOKEN,
   };
 }
 

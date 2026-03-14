@@ -18,7 +18,7 @@ This doc is authoritative for: system topology, component responsibilities, pack
 
 ## Summary
 
-- Monorepo with 4 apps (CLI, API, MCP, Web) and 6 packages (common, contracts, chain, db, ipfs, scorer)
+- Monorepo with 5 apps (CLI, API, Executor, MCP, Web) and 6 packages (common, contracts, chain, db, ipfs, scorer)
 - On-chain: USDC escrow, status machine, submission hashes, scores, proof hashes, payouts
 - Off-chain: specs, datasets, submissions, scoring compute, search indexes
 - `submission_contract` in the challenge spec is the single source of truth for solver artifact shape; `expected_columns` in Supabase is only a derived cache for CSV-table challenges
@@ -78,6 +78,8 @@ flowchart TB
     end
 
     subgraph Compute["Compute Layer"]
+        Orchestrator["Worker Orchestrator<br/>(Railway)"]
+        Executor["Executor Service<br/>(Docker-capable host)"]
         Scorer["Docker Scorer<br/>(sandboxed)"]
         Indexer["Chain Indexer<br/>(event poller)"]
     end
@@ -97,7 +99,10 @@ flowchart TB
     MCP --> API
     API --> DB
     API --> IPFS
-    API --> Scorer
+    Orchestrator --> DB
+    Orchestrator --> IPFS
+    Orchestrator --> Executor
+    Executor --> Scorer
     Indexer --> Factory
     Indexer --> DB
     Factory --> Challenge

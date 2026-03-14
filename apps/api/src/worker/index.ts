@@ -25,7 +25,11 @@ import {
   pruneWorkerRuntimeStates,
   upsertWorkerRuntimeState,
 } from "@agora/db";
-import { ensureDockerReady, ensureScorerImagePullable } from "@agora/scorer";
+import {
+  ensureScoringBackendReady,
+  isRemoteExecutorConfigured,
+  preflightOfficialScorerImages,
+} from "@agora/scorer";
 import { sweepChallengeLifecycle } from "./chain.js";
 import { processJob } from "./jobs.js";
 import { sleep } from "./policy.js";
@@ -167,7 +171,7 @@ function resolveWorkerRuntimeId(config: ReturnType<typeof loadConfig>) {
   return `scoring-${WORKER_HOST}-${config.AGORA_CHAIN_ID}-${config.AGORA_FACTORY_ADDRESS.slice(2, 10)}`;
 }
 
-async function preflightOfficialScoringImages(
+async function preflightOfficialScoringImagesForWorker(
   db: ReturnType<typeof createSupabaseClient>,
 ) {
   const { data, error } = await db
@@ -195,11 +199,7 @@ async function preflightOfficialScoringImages(
     ),
   );
 
-  for (const image of images) {
-    await ensureScorerImagePullable(image, 60_000);
-  }
-
-  return images.length;
+  return preflightOfficialScorerImages(images);
 }
 
 function updateRuntimeState(
@@ -338,10 +338,12 @@ async function refreshWorkerRuntimeReadiness(
   }
 
   try {
-    await ensureDockerReady();
+    await ensureScoringBackendReady();
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Docker health check failed";
+      error instanceof Error
+        ? error.message
+        : "Scorer execution backend health check failed";
     const changed = await updateRuntimeStateAndPersist(
       db,
       runtimeWorkerId,
@@ -354,7 +356,7 @@ async function refreshWorkerRuntimeReadiness(
     );
     if (changed) {
       log("warn", "Worker runtime degraded", {
-        reason: "docker_unavailable",
+        reason: "scorer_backend_unavailable",
         error: message,
       });
     }
@@ -362,7 +364,8 @@ async function refreshWorkerRuntimeReadiness(
   }
 
   try {
-    const preflightedOfficialImages = await preflightOfficialScoringImages(db);
+    const preflightedOfficialImages =
+      await preflightOfficialScoringImagesForWorker(db);
     const changed = await updateRuntimeStateAndPersist(
       db,
       runtimeWorkerId,
@@ -396,7 +399,7 @@ async function refreshWorkerRuntimeReadiness(
     );
     if (changed) {
       log("warn", "Worker runtime degraded", {
-        reason: "image_preflight_failed",
+        reason: "executor_image_preflight_failed",
         error: message,
       });
     }
@@ -494,6 +497,9 @@ export async function startWorker() {
     host: WORKER_HOST,
     prunedRuntimeRows,
     preflightedOfficialImages,
+    scorerExecutionBackend: isRemoteExecutorConfigured()
+      ? "remote_http"
+      : "local_docker",
     runtimeVersion: runtimeState.runtime_version,
     runtimeIdentity: getAgoraRuntimeIdentity(config),
   });

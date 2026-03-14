@@ -23,7 +23,7 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 - Pre-launch requires aligned (chain id, factory address, USDC address) tuple across all services
 - Cutover requires coordinated env updates, DB reset, factory deploy, and reindex
 - Rollback if API health, indexer lag, DB consistency, or scoring verification fails
-- External cutover covers GitHub, Vercel, API runtime, chain addresses, image registry, DNS, and operator machines
+- External cutover covers GitHub, Vercel, API/runtime services, executor runtime, chain addresses, image registry, DNS, and operator machines
 
 ---
 
@@ -34,11 +34,11 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 3. For a clean contract generation: reset the testnet Supabase schema and apply all current Supabase migrations.
 4. Deploy a fresh `v2` factory. `scripts/deploy.sh` requires explicit `AGORA_ORACLE_ADDRESS` and `AGORA_TREASURY_ADDRESS`.
 5. Set `AGORA_INDEXER_START_BLOCK` to the factory deployment block before restarting the indexer.
-6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker, CLI, and web env.
-7. If sealed submissions are enabled, set the submission sealing env vars in API and worker.
+6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker orchestrator, CLI, and web env.
+7. If sealed submissions are enabled, set the submission sealing env vars in API and worker orchestrator.
 8. Set `AGORA_CORS_ORIGINS` (comma-separated exact origins).
-9. Ensure each deployed service reports the commit SHA it is actually running. API and worker must match exactly for scoring; web may differ temporarily during rollout. Prefer automatic SHA detection from platform git metadata; set `AGORA_RUNTIME_VERSION` manually only when your host does not expose a commit SHA.
-10. Keep `AGORA_REQUIRE_PINNED_PRESET_DIGESTS=true`. Official GHCR scorer packages should be public; if they are not public yet, set `AGORA_GHCR_TOKEN` anywhere digest resolution runs and make sure the worker host can still `docker pull` them.
+9. Ensure each deployed service reports the commit SHA it is actually running. API and worker orchestrator should match for scoring; web may differ temporarily during rollout. Prefer automatic SHA detection from platform git metadata; set `AGORA_RUNTIME_VERSION` manually only when your host does not expose a commit SHA.
+10. Keep `AGORA_REQUIRE_PINNED_PRESET_DIGESTS=true`. Official GHCR scorer packages should be public; if they are not public yet, set `AGORA_GHCR_TOKEN` anywhere digest resolution runs and make sure the executor host can still `docker pull` them.
 11. Build and run preflight:
 
 ```bash
@@ -62,9 +62,9 @@ Notes:
 
 Railway deployment checks before production cutover:
 
-- Railway API and indexer are dashboard-managed, not config-as-code.
+- Railway API, indexer, and worker orchestrator are dashboard-managed, not config-as-code.
 - Keep each service connected to repo `andymolecule/Agora`, branch `main`.
-- Keep native Railway auto-deploy enabled for both services.
+- Keep native Railway auto-deploy enabled for all three services.
 - Do not use repo-local `railway.toml` files for these services.
 - Do not use dashboard watch-path filtering unless you have a measured need for it. For Agora's current size, rebuilding on every `main` push is simpler and more reliable than selective deploy filtering.
 - Keep the dashboard build/start commands stable:
@@ -72,6 +72,8 @@ Railway deployment checks before production cutover:
   - API start: `pnpm --filter @agora/api start`
   - Indexer build: `pnpm turbo build --filter=@agora/chain`
   - Indexer start: `pnpm --filter @agora/chain indexer`
+  - Worker build: `pnpm turbo build --filter=@agora/api`
+  - Worker start: `pnpm --filter @agora/api worker`
 - If Railway stops auto-deploying after a config change, the first recovery step is to disconnect and reconnect:
   - `Source Repo`
   - `Branch connected to production`
@@ -99,7 +101,7 @@ flowchart TB
     C --> D["4. Deploy fresh v2 factory<br/>(scripts/deploy.sh)"]
     D --> E["5. Update canonical tuple everywhere<br/>(chain_id, factory, USDC)"]
     E --> F["6. Set AGORA_INDEXER_START_BLOCK<br/>to factory deploy block"]
-    F --> G["7. Restart all services<br/>(API, Indexer, Worker, MCP)"]
+    F --> G["7. Restart all services<br/>(API, Indexer, Worker Orchestrator, Executor, MCP)"]
     G --> H["8. Run preflight<br/>(scripts/preflight-testnet.sh)"]
     H --> I["9. Smoke test<br/>(scripts/e2e-test.sh)"]
     I --> J{"All checks pass?"}
@@ -151,8 +153,8 @@ This section covers non-code work for deployment across hosted systems.
 
 - Set the API environment to `AGORA_*` names only.
 - `AGORA_CORS_ORIGINS` matches frontend origins.
-- `AGORA_RUNTIME_VERSION` is optional. API, worker, and indexer processes launched through `scripts/run-node-with-root-env.mjs` use platform commit metadata when available and otherwise fall back to the local git SHA.
-- On startup, the API writes the active scoring runtime version into `worker_runtime_control`. Scoring workers only claim jobs when their runtime version matches that active row, so deploy order matters: bring up the new API runtime before expecting new workers to claim work.
+- `AGORA_RUNTIME_VERSION` is optional. API, worker orchestrator, and indexer processes launched through `scripts/run-node-with-root-env.mjs` use platform commit metadata when available and otherwise fall back to the local git SHA.
+- On startup, the API writes the active scoring runtime version into `worker_runtime_control`. Scoring workers only claim jobs when their runtime version matches that active row, which keeps claim fencing explicit even though API and worker orchestrator now roll forward together on Railway.
 - SIWE origin and domain checks pass against production API and web domains.
 - `agora_session` cookie is issued with correct `secure` behavior in production.
 - Reverse proxy forwards `x-forwarded-host` and `x-forwarded-proto` correctly.
@@ -183,6 +185,13 @@ This section covers non-code work for deployment across hosted systems.
 - Do not bake hidden labels, hidden test sets, or other evaluation-only data into the image. Put that material in the evaluation bundle or mounted dataset CIDs instead.
 - After the first publish, confirm package visibility in the GitHub Packages UI. The workflow pushes images, but package visibility is still an org-level/package-level setting.
 
+### Executor Runtime
+
+- Deploy the executor from `apps/executor` onto a Docker-capable host or service.
+- Set `AGORA_EXECUTOR_AUTH_TOKEN` on the executor and the matching `AGORA_SCORER_EXECUTOR_TOKEN` on the worker orchestrator.
+- Set the worker orchestrator to `AGORA_SCORER_EXECUTOR_BACKEND=remote_http` and `AGORA_SCORER_EXECUTOR_URL=<executor base url>`.
+- The executor is infrastructure, not an every-commit app deploy target. Update it when the executor service changes or when scorer execution semantics require it.
+
 ### Worker Recovery Scripts
 
 - `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` requeues stale `running` jobs and retries failed jobs after an infra outage.
@@ -190,7 +199,7 @@ This section covers non-code work for deployment across hosted systems.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
 - `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that API and web match the expected deployed revision and that the worker is healthy on the active API runtime. Use `--expected-api` and `--expected-web` only when you intentionally want to verify different revisions.
-- `Monitor Worker (DigitalOcean)` GitHub Actions runs on a schedule and fails visibly when `/api/worker-health` reports zero healthy workers on the active runtime or sealing readiness is unavailable. It does not redeploy the droplet automatically.
+- `Monitor Scoring Runtime` GitHub Actions runs on a schedule and fails visibly when `/api/worker-health` reports zero healthy workers on the active runtime or sealing readiness is unavailable.
 
 ### DNS and Domains
 
