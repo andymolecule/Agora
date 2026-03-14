@@ -4,11 +4,15 @@ import { CHALLENGE_STATUS } from "@agora/common";
 import {
   type TransactionReceipt,
   encodeAbiParameters,
+  encodeFunctionData,
   encodeEventTopics,
   parseAbiItem,
 } from "viem";
 import { parseSubmittedReceipt } from "../challenge.js";
-import { parseChallengeCreatedReceipt } from "../factory.js";
+import {
+  parseChallengeCreatedReceipt,
+  parseChallengeCreationCall,
+} from "../factory.js";
 import {
   persistChallengeCursors,
   processChallengeLog,
@@ -337,6 +341,78 @@ test("parseChallengeCreatedReceipt decodes the canonical factory event", () => {
     challengeAddress,
     posterAddress,
     reward,
+  });
+});
+
+test("parseChallengeCreationCall decodes createChallenge calldata", () => {
+  const data = encodeFunctionData({
+    abi: [
+      parseAbiItem(
+        "function createChallenge(string specCid,uint256 rewardAmount,uint64 deadline,uint64 disputeWindowHours,uint256 minimumScore,uint8 distributionType,address labTBA,uint256 maxSubmissions_,uint256 maxSubmissionsPerSolver_)",
+      ),
+    ],
+    functionName: "createChallenge",
+    args: [
+      "ipfs://bafkreitest",
+      10_000_000n,
+      1_742_000_000n,
+      24n,
+      0n,
+      0,
+      "0x0000000000000000000000000000000000000004",
+      100n,
+      3n,
+    ],
+  });
+
+  assert.deepEqual(parseChallengeCreationCall(data), {
+    specCid: "ipfs://bafkreitest",
+    rewardAmount: 10_000_000n,
+    deadline: 1_742_000_000n,
+    disputeWindowHours: 24n,
+    minimumScore: 0n,
+    distributionType: 0,
+    labTba: "0x0000000000000000000000000000000000000004",
+    maxSubmissions: 100n,
+    maxSubmissionsPerSolver: 3n,
+  });
+});
+
+test("parseChallengeCreationCall decodes createChallengeWithPermit calldata", () => {
+  const data = encodeFunctionData({
+    abi: [
+      parseAbiItem(
+        "function createChallengeWithPermit(string specCid,uint256 rewardAmount,uint64 deadline,uint64 disputeWindowHours,uint256 minimumScore,uint8 distributionType,address labTBA,uint256 maxSubmissions_,uint256 maxSubmissionsPerSolver_,uint256 permitDeadline,uint8 v,bytes32 r,bytes32 s)",
+      ),
+    ],
+    functionName: "createChallengeWithPermit",
+    args: [
+      "ipfs://bafkreitestpermit",
+      25_000_000n,
+      1_742_100_000n,
+      0n,
+      100_000_000_000_000_000n,
+      2,
+      "0x0000000000000000000000000000000000000005",
+      50n,
+      2n,
+      1_742_100_100n,
+      28,
+      `0x${"1".repeat(64)}`,
+      `0x${"2".repeat(64)}`,
+    ],
+  });
+
+  assert.deepEqual(parseChallengeCreationCall(data), {
+    specCid: "ipfs://bafkreitestpermit",
+    rewardAmount: 25_000_000n,
+    deadline: 1_742_100_000n,
+    disputeWindowHours: 0n,
+    minimumScore: 100_000_000_000_000_000n,
+    distributionType: 2,
+    labTba: "0x0000000000000000000000000000000000000005",
+    maxSubmissions: 50n,
+    maxSubmissionsPerSolver: 2n,
   });
 });
 

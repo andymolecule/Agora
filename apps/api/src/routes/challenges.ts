@@ -1,16 +1,18 @@
 import {
+  fetchValidatedChallengeSpec,
+  getFactoryContractVersion,
   getChallengeContractVersion,
   getChallengeFinalizeState,
   getChallengePayoutByAddress,
   getPublicClient,
-  isTransientPinnedContractReadError,
-  loadChallengeDefinitionFromChain,
+  parseChallengeCreationCall,
   parseChallengeCreatedReceipt,
 } from "@agora/chain";
 import {
   ACTIVE_CONTRACT_VERSION,
   CHALLENGE_LIMITS,
   CHALLENGE_STATUS,
+  SUBMISSION_LIMITS,
   type ChallengeSpecOutput,
   challengeRegistrationRequestSchema,
   loadConfig,
@@ -24,6 +26,7 @@ import {
 } from "@agora/db";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import { parseUnits } from "viem";
 import { jsonWithEtag } from "../lib/http-cache.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import type { ApiEnv } from "../types.js";
@@ -42,10 +45,98 @@ function normalizeAddress(value: string | null | undefined) {
     : undefined;
 }
 
-function getChallengeRegistrationRetryMessage(
-  challengeAddress: `0x${string}`,
-) {
-  return `Challenge transaction is confirmed, but challenge metadata is not readable from contract ${challengeAddress} yet. Next step: retry in a few seconds.`;
+const DISTRIBUTION_TYPE_TO_SPEC = {
+  0: "winner_take_all",
+  1: "top_3",
+  2: "proportional",
+} as const;
+
+function toIsoFromUnixSeconds(value: bigint) {
+  return new Date(Number(value) * 1000).toISOString();
+}
+
+function toUnixSeconds(iso: string) {
+  const timestamp = new Date(iso).getTime();
+  if (!Number.isFinite(timestamp)) {
+    throw new Error(
+      "Pinned challenge spec contains an invalid deadline. Next step: re-pin the spec and retry.",
+    );
+  }
+  return BigInt(Math.floor(timestamp / 1000));
+}
+
+function assertSpecMatchesFactoryCreation(input: {
+  spec: ChallengeSpecOutput;
+  reward: bigint;
+  deadline: bigint;
+  disputeWindowHours: bigint;
+  minimumScore: bigint;
+  distributionType: number;
+  maxSubmissions: bigint;
+  maxSubmissionsPerSolver: bigint;
+}) {
+  const expectedDistribution = DISTRIBUTION_TYPE_TO_SPEC[
+    input.distributionType as keyof typeof DISTRIBUTION_TYPE_TO_SPEC
+  ];
+  if (!expectedDistribution) {
+    throw new Error(
+      `Unsupported challenge distribution type ${input.distributionType}. Next step: point the runtime at the active v2 factory and retry.`,
+    );
+  }
+
+  const specReward = parseUnits(String(input.spec.reward.total), 6);
+  if (specReward !== input.reward) {
+    throw new Error(
+      "Pinned challenge spec reward total does not match the on-chain createChallenge call. Next step: re-pin the spec and retry challenge creation.",
+    );
+  }
+
+  if (toUnixSeconds(input.spec.deadline) !== input.deadline) {
+    throw new Error(
+      "Pinned challenge spec deadline does not match the on-chain createChallenge call. Next step: re-pin the spec and retry challenge creation.",
+    );
+  }
+
+  const specDisputeWindow =
+    input.spec.dispute_window_hours ??
+    CHALLENGE_LIMITS.defaultDisputeWindowHours;
+  if (BigInt(specDisputeWindow) !== input.disputeWindowHours) {
+    throw new Error(
+      "Pinned challenge spec dispute window does not match the on-chain createChallenge call. Next step: re-pin the spec and retry challenge creation.",
+    );
+  }
+
+  const specMinimumScore = parseUnits(
+    String(input.spec.minimum_score ?? 0),
+    18,
+  );
+  if (specMinimumScore !== input.minimumScore) {
+    throw new Error(
+      "Pinned challenge spec minimum score does not match the on-chain createChallenge call. Next step: re-pin the spec and retry challenge creation.",
+    );
+  }
+
+  if (input.spec.reward.distribution !== expectedDistribution) {
+    throw new Error(
+      "Pinned challenge spec reward distribution does not match the on-chain createChallenge call. Next step: re-pin the spec and retry challenge creation.",
+    );
+  }
+
+  const specMaxSubmissions =
+    input.spec.max_submissions_total ?? SUBMISSION_LIMITS.maxPerChallenge;
+  if (BigInt(specMaxSubmissions) !== input.maxSubmissions) {
+    throw new Error(
+      "Pinned challenge spec max_submissions_total does not match the on-chain createChallenge call. Next step: re-pin the spec and retry challenge creation.",
+    );
+  }
+
+  const specMaxSubmissionsPerSolver =
+    input.spec.max_submissions_per_solver ?? SUBMISSION_LIMITS.maxPerSolverPerChallenge;
+  if (BigInt(specMaxSubmissionsPerSolver) !== input.maxSubmissionsPerSolver) {
+    throw new Error(
+      "Pinned challenge spec max_submissions_per_solver does not match the on-chain createChallenge call. Next step: re-pin the spec and retry challenge creation.",
+    );
+  }
 }
 
 const router = new Hono<ApiEnv>();
@@ -103,28 +194,46 @@ router.post(
       return c.json({ error: message }, 400);
     }
 
-    // Source of truth: read specCid from challenge contract, not client payload.
     let specCid: string;
     let spec: ChallengeSpecOutput;
     let contractVersion: number;
     let onChainDeadlineIso: string;
     try {
-      ({ specCid, spec, contractVersion, onChainDeadlineIso } =
-        await loadChallengeDefinitionFromChain({
-          publicClient,
-          challengeAddress: challengeAddress as `0x${string}`,
-          chainId: config.AGORA_CHAIN_ID,
-          blockNumber: receipt.blockNumber,
-        }));
-    } catch (error) {
-      if (isTransientPinnedContractReadError(error)) {
-        return c.json(
-          {
-            error: getChallengeRegistrationRetryMessage(challengeAddress),
-          },
-          409,
+      const transaction = await publicClient.getTransaction({
+        hash: txHash as `0x${string}`,
+      });
+      const transactionInput =
+        (transaction as { input?: `0x${string}`; data?: `0x${string}` }).input ??
+        (transaction as { data?: `0x${string}` }).data;
+      if (!transactionInput) {
+        throw new Error(
+          "Challenge transaction calldata is unavailable. Next step: retry in a few seconds.",
         );
       }
+      const creation = parseChallengeCreationCall(transactionInput);
+      if (creation.rewardAmount !== reward) {
+        throw new Error(
+          "ChallengeCreated event reward does not match the createChallenge calldata. Next step: retry against the active v2 factory transaction.",
+        );
+      }
+      specCid = creation.specCid;
+      spec = await fetchValidatedChallengeSpec(specCid, config.AGORA_CHAIN_ID);
+      assertSpecMatchesFactoryCreation({
+        spec,
+        reward,
+        deadline: creation.deadline,
+        disputeWindowHours: creation.disputeWindowHours,
+        minimumScore: creation.minimumScore,
+        distributionType: creation.distributionType,
+        maxSubmissions: creation.maxSubmissions,
+        maxSubmissionsPerSolver: creation.maxSubmissionsPerSolver,
+      });
+      contractVersion = await getFactoryContractVersion(
+        receiptFactoryAddress ?? config.AGORA_FACTORY_ADDRESS,
+        receipt.blockNumber,
+      );
+      onChainDeadlineIso = toIsoFromUnixSeconds(creation.deadline);
+    } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return c.json({ error: message }, 400);
     }

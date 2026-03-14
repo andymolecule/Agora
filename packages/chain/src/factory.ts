@@ -7,6 +7,7 @@ import type { DecodedChainLog } from "./challenge.js";
 import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with { type: "json" };
 import {
   type Abi,
+  decodeFunctionData,
   parseEventLogs,
   parseUnits,
   type TransactionReceipt,
@@ -39,6 +40,18 @@ export interface CreateChallengeParams {
   labTba: `0x${string}`;
   maxSubmissions?: number;
   maxSubmissionsPerSolver?: number;
+}
+
+export interface ParsedChallengeCreationCall {
+  specCid: string;
+  rewardAmount: bigint;
+  deadline: bigint;
+  disputeWindowHours: bigint;
+  minimumScore: bigint;
+  distributionType: number;
+  labTba: `0x${string}`;
+  maxSubmissions: bigint;
+  maxSubmissionsPerSolver: bigint;
 }
 
 export async function createChallenge(params: CreateChallengeParams) {
@@ -112,6 +125,66 @@ export function parseChallengeCreatedReceipt(
     challengeAddress: challengeAddress as `0x${string}`,
     posterAddress: posterAddress as `0x${string}`,
     reward,
+  };
+}
+
+export function parseChallengeCreationCall(
+  data: `0x${string}`,
+): ParsedChallengeCreationCall {
+  const decoded = decodeFunctionData({
+    abi: AgoraFactoryAbi,
+    data,
+  });
+  if (
+    decoded.functionName !== "createChallenge" &&
+    decoded.functionName !== "createChallengeWithPermit"
+  ) {
+    throw new Error(
+      `Unsupported factory function ${String(decoded.functionName)} for challenge registration.`,
+    );
+  }
+
+  const args = decoded.args;
+  if (!args || args.length < 9) {
+    throw new Error("Challenge creation calldata is missing required args.");
+  }
+
+  const [
+    specCid,
+    rewardAmount,
+    deadline,
+    disputeWindowHours,
+    minimumScore,
+    distributionType,
+    labTba,
+    maxSubmissions,
+    maxSubmissionsPerSolver,
+  ] = args;
+
+  if (
+    typeof specCid !== "string" ||
+    typeof rewardAmount !== "bigint" ||
+    typeof deadline !== "bigint" ||
+    typeof disputeWindowHours !== "bigint" ||
+    typeof minimumScore !== "bigint" ||
+    typeof distributionType !== "number" ||
+    typeof labTba !== "string" ||
+    typeof maxSubmissions !== "bigint" ||
+    typeof maxSubmissionsPerSolver !== "bigint"
+  ) {
+    throw new Error("Challenge creation calldata payload is invalid.");
+  }
+
+  return {
+    specCid,
+    rewardAmount,
+    deadline,
+    disputeWindowHours,
+    minimumScore,
+    distributionType,
+    labTba: labTba as `0x${string}`,
+    maxSubmissions,
+    maxSubmissionsPerSolver,
   };
 }
 
