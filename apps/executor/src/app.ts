@@ -17,7 +17,7 @@ import {
   runScorer,
   type RunScorerInput,
   type RunnerScoreResult,
-} from "@agora/scorer";
+} from "@agora/scorer-runtime";
 import { Hono } from "hono";
 
 type ExecutorEnv = Record<string, never>;

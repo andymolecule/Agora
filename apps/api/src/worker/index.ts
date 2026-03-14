@@ -120,7 +120,7 @@ function startWorkerRuntimeHeartbeat(
   heartbeatIntervalMs: number,
   runtimeState: {
     ready: boolean;
-    docker_ready: boolean;
+    executor_ready: boolean;
     seal_enabled: boolean;
     seal_key_id: string | null;
     seal_self_check_ok: boolean;
@@ -205,7 +205,7 @@ async function preflightOfficialScoringImagesForWorker(
 function updateRuntimeState(
   runtimeState: {
     ready: boolean;
-    docker_ready: boolean;
+    executor_ready: boolean;
     seal_enabled: boolean;
     seal_key_id: string | null;
     seal_self_check_ok: boolean;
@@ -214,17 +214,17 @@ function updateRuntimeState(
   },
   nextState: {
     ready: boolean;
-    docker_ready: boolean;
+    executor_ready: boolean;
     last_error: string | null;
   },
 ) {
   const changed =
     runtimeState.ready !== nextState.ready ||
-    runtimeState.docker_ready !== nextState.docker_ready ||
+    runtimeState.executor_ready !== nextState.executor_ready ||
     runtimeState.last_error !== nextState.last_error;
 
   runtimeState.ready = nextState.ready;
-  runtimeState.docker_ready = nextState.docker_ready;
+  runtimeState.executor_ready = nextState.executor_ready;
   runtimeState.last_error = nextState.last_error;
   return changed;
 }
@@ -234,7 +234,7 @@ async function persistRuntimeState(
   runtimeWorkerId: string,
   runtimeState: {
     ready: boolean;
-    docker_ready: boolean;
+    executor_ready: boolean;
     seal_enabled: boolean;
     seal_key_id: string | null;
     seal_self_check_ok: boolean;
@@ -245,7 +245,7 @@ async function persistRuntimeState(
   await heartbeatWorkerRuntimeState(db, runtimeWorkerId, {
     runtime_version: runtimeState.runtime_version,
     ready: runtimeState.ready,
-    docker_ready: runtimeState.docker_ready,
+    executor_ready: runtimeState.executor_ready,
     seal_enabled: runtimeState.seal_enabled,
     seal_key_id: runtimeState.seal_key_id,
     seal_self_check_ok: runtimeState.seal_self_check_ok,
@@ -258,7 +258,7 @@ async function updateRuntimeStateAndPersist(
   runtimeWorkerId: string,
   runtimeState: {
     ready: boolean;
-    docker_ready: boolean;
+    executor_ready: boolean;
     seal_enabled: boolean;
     seal_key_id: string | null;
     seal_self_check_ok: boolean;
@@ -267,7 +267,7 @@ async function updateRuntimeStateAndPersist(
   },
   nextState: {
     ready: boolean;
-    docker_ready: boolean;
+    executor_ready: boolean;
     last_error: string | null;
   },
 ) {
@@ -283,7 +283,7 @@ async function ensureWorkerRuntimeIsActive(
   runtimeWorkerId: string,
   runtimeState: {
     ready: boolean;
-    docker_ready: boolean;
+    executor_ready: boolean;
     seal_enabled: boolean;
     seal_key_id: string | null;
     seal_self_check_ok: boolean;
@@ -302,9 +302,9 @@ async function ensureWorkerRuntimeIsActive(
       runtimeWorkerId,
       runtimeState,
       {
-      ready: false,
-      docker_ready: runtimeState.docker_ready,
-      last_error: `Worker runtime ${runtimeState.runtime_version} is inactive. Next step: stop this worker or deploy the active runtime ${activeRuntimeVersion}.`,
+        ready: false,
+        executor_ready: runtimeState.executor_ready,
+        last_error: `Worker runtime ${runtimeState.runtime_version} is inactive. Next step: stop this worker or deploy the active runtime ${activeRuntimeVersion}.`,
       },
     );
     if (changed) {
@@ -324,7 +324,7 @@ async function refreshWorkerRuntimeReadiness(
   runtimeWorkerId: string,
   runtimeState: {
     ready: boolean;
-    docker_ready: boolean;
+    executor_ready: boolean;
     seal_enabled: boolean;
     seal_key_id: string | null;
     seal_self_check_ok: boolean;
@@ -349,9 +349,9 @@ async function refreshWorkerRuntimeReadiness(
       runtimeWorkerId,
       runtimeState,
       {
-      ready: false,
-      docker_ready: false,
-      last_error: message,
+        ready: false,
+        executor_ready: false,
+        last_error: message,
       },
     );
     if (changed) {
@@ -371,9 +371,9 @@ async function refreshWorkerRuntimeReadiness(
       runtimeWorkerId,
       runtimeState,
       {
-      ready: true,
-      docker_ready: true,
-      last_error: null,
+        ready: true,
+        executor_ready: true,
+        last_error: null,
       },
     );
     if (changed) {
@@ -392,9 +392,9 @@ async function refreshWorkerRuntimeReadiness(
       runtimeWorkerId,
       runtimeState,
       {
-      ready: false,
-      docker_ready: true,
-      last_error: message,
+        ready: false,
+        executor_ready: true,
+        last_error: message,
       },
     );
     if (changed) {
@@ -457,7 +457,7 @@ export async function startWorker() {
   });
   const runtimeState = {
     ready: false,
-    docker_ready: false,
+    executor_ready: false,
     seal_enabled: sealEnabled,
     seal_key_id: sealKeyId,
     seal_self_check_ok: sealEnabled,

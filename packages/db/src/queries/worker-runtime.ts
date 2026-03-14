@@ -14,7 +14,7 @@ export interface WorkerRuntimeStateRow {
   host: string | null;
   runtime_version: string;
   ready: boolean;
-  docker_ready: boolean;
+  executor_ready: boolean;
   seal_enabled: boolean;
   seal_key_id: string | null;
   seal_self_check_ok: boolean;
@@ -31,7 +31,7 @@ export interface UpsertWorkerRuntimeStateInput {
   host?: string | null;
   runtime_version: string;
   ready: boolean;
-  docker_ready: boolean;
+  executor_ready: boolean;
   seal_enabled: boolean;
   seal_key_id?: string | null;
   seal_self_check_ok: boolean;
@@ -43,7 +43,7 @@ export interface UpsertWorkerRuntimeStateInput {
 export interface HeartbeatWorkerRuntimeStateInput {
   runtime_version?: string;
   ready?: boolean;
-  docker_ready?: boolean;
+  executor_ready?: boolean;
   seal_enabled?: boolean;
   seal_key_id?: string | null;
   seal_self_check_ok?: boolean;
@@ -89,7 +89,7 @@ function normalizeWorkerRuntimeInput(
     host: input.host ?? null,
     runtime_version: input.runtime_version,
     ready: input.ready,
-    docker_ready: input.docker_ready,
+    executor_ready: input.executor_ready,
     seal_enabled: input.seal_enabled,
     seal_key_id: input.seal_key_id ?? null,
     seal_self_check_ok: input.seal_self_check_ok,
@@ -264,7 +264,7 @@ export function isWorkerRuntimeReadyForSealKey(
 ) {
   return (
     row.ready &&
-    row.docker_ready &&
+    row.executor_ready &&
     row.seal_enabled &&
     row.seal_self_check_ok &&
     row.seal_key_id === activeSealKeyId &&

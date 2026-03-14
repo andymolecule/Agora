@@ -23,6 +23,7 @@
     "@agora/common": "workspace:*",
     "@agora/db": "workspace:*",
     "@agora/ipfs": "workspace:^",
+    "@agora/scorer-runtime": "workspace:*",
     "viem": "^2.21.15"
   }
 }

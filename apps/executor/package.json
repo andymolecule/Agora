@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@agora/common": "workspace:*",
-    "@agora/scorer": "workspace:*",
+    "@agora/scorer-runtime": "workspace:*",
     "@hono/node-server": "^1.19.9",
     "hono": "^4.12.2"
   },

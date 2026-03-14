@@ -38,6 +38,13 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
       "Apply migration 006_add_worker_runtime_version.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
+    id: "worker_executor_ready_column",
+    table: "worker_runtime_state",
+    select: "executor_ready",
+    nextStep:
+      "Apply migration 011_rename_worker_runtime_executor_ready.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
     id: "challenge_scoring_config_columns",
     table: "challenges",
     select: "submission_contract_json,scoring_env_json",

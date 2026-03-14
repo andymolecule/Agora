@@ -123,9 +123,9 @@ importers:
       '@agora/common':
         specifier: workspace:*
         version: link:../../packages/common
-      '@agora/scorer':
+      '@agora/scorer-runtime':
         specifier: workspace:*
-        version: link:../../packages/scorer
+        version: link:../../packages/scorer-runtime
       '@hono/node-server':
         specifier: ^1.19.9
         version: 1.19.9(hono@4.12.2)
@@ -346,9 +346,22 @@ importers:
       '@agora/ipfs':
         specifier: workspace:^
         version: link:../ipfs
+      '@agora/scorer-runtime':
+        specifier: workspace:*
+        version: link:../scorer-runtime
       viem:
         specifier: ^2.21.15
         version: 2.46.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)
+    devDependencies:
+      '@types/node':
+        specifier: ^25.3.0
+        version: 25.3.0
+
+  packages/scorer-runtime:
+    dependencies:
+      '@agora/common':
+        specifier: workspace:*
+        version: link:../common
     devDependencies:
       '@types/node':
         specifier: ^25.3.0

@@ -40,10 +40,10 @@ async function testUpsertWorkerRuntimeStateUsesWorkerIdConflictKey() {
 
   const row = await upsertWorkerRuntimeState(db, {
     worker_id: "worker-1",
-    host: "droplet-1",
+    host: "executor-host-1",
     runtime_version: "sha-123",
     ready: true,
-    docker_ready: true,
+    executor_ready: true,
     seal_enabled: true,
     seal_key_id: "kid-1",
     seal_self_check_ok: true,
@@ -219,7 +219,7 @@ async function testPruneWorkerRuntimeStatesDeletesStaleRows() {
   } as never;
 
   const pruned = await pruneWorkerRuntimeStates(db, {
-    host: "droplet-1",
+    host: "executor-host-1",
     excludeWorkerId: "worker-current",
     staleAfterMs: 30_000,
     nowMs: Date.parse("2026-03-10T00:01:00.000Z"),
@@ -228,7 +228,7 @@ async function testPruneWorkerRuntimeStatesDeletesStaleRows() {
   assert.equal(pruned, 1);
   assert.equal(capturedTable, "worker_runtime_state");
   assert.equal(capturedWorkerType, "scoring");
-  assert.equal(capturedHost, "droplet-1");
+  assert.equal(capturedHost, "executor-host-1");
   assert.equal(capturedExcludeWorkerId, "worker-current");
   assert.equal(capturedCutoff, "2026-03-10T00:00:30.000Z");
 }
@@ -239,10 +239,10 @@ function testSummarizeWorkerRuntimeStatesCountsHealthySealWorkers() {
       {
         worker_id: "worker-healthy",
         worker_type: "scoring",
-        host: "droplet-a",
+        host: "executor-host-a",
         runtime_version: "sha-a",
         ready: true,
-        docker_ready: true,
+        executor_ready: true,
         seal_enabled: true,
         seal_key_id: "kid-1",
         seal_self_check_ok: true,
@@ -255,10 +255,10 @@ function testSummarizeWorkerRuntimeStatesCountsHealthySealWorkers() {
       {
         worker_id: "worker-stale",
         worker_type: "scoring",
-        host: "droplet-b",
+        host: "executor-host-b",
         runtime_version: "sha-a",
         ready: true,
-        docker_ready: true,
+        executor_ready: true,
         seal_enabled: true,
         seal_key_id: "kid-1",
         seal_self_check_ok: true,
@@ -271,10 +271,10 @@ function testSummarizeWorkerRuntimeStatesCountsHealthySealWorkers() {
       {
         worker_id: "worker-wrong-kid",
         worker_type: "scoring",
-        host: "droplet-c",
+        host: "executor-host-c",
         runtime_version: "sha-b",
         ready: true,
-        docker_ready: true,
+        executor_ready: true,
         seal_enabled: true,
         seal_key_id: "kid-2",
         seal_self_check_ok: true,
@@ -309,10 +309,10 @@ function testIsWorkerRuntimeReadyForSealKeyRequiresFreshMatchingWorker() {
     {
       worker_id: "worker-1",
       worker_type: "scoring",
-      host: "droplet-a",
+      host: "executor-host-a",
       runtime_version: "sha-a",
       ready: true,
-      docker_ready: true,
+      executor_ready: true,
       seal_enabled: true,
       seal_key_id: "kid-1",
       seal_self_check_ok: true,

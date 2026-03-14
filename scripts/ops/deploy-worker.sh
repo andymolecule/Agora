@@ -15,7 +15,7 @@ fi
 
 if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "Worker deploy aborted: repository has uncommitted changes."
-  echo "Next step: clean the droplet checkout, then rerun the deploy."
+  echo "Next step: clean the legacy worker-host checkout, then rerun the deploy."
   exit 1
 fi
 
@@ -41,7 +41,7 @@ if [[ -n "$EXPECTED_SHA" ]]; then
   case "$DEPLOYED_SHA" in
     "$EXPECTED_SHA"*) ;;
     *)
-      echo "Worker deploy aborted: expected $EXPECTED_SHA but droplet resolved $DEPLOYED_SHA."
+      echo "Worker deploy aborted: expected $EXPECTED_SHA but the legacy worker host resolved $DEPLOYED_SHA."
       echo "Next step: retry from the live API runtime revision after checking GitHub Actions concurrency."
       exit 1
       ;;

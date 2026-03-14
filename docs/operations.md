@@ -206,6 +206,7 @@ Existing testnet DBs:
 - Existing environments should also apply `004_add_score_job_backoff.sql` so delayed no-penalty worker retries and queue eligibility work correctly.
 - Existing environments should also apply `005_add_submission_intents.sql` so pre-registered submission metadata can reconcile safely after on-chain submit confirmation.
 - Existing environments should also apply `006_add_worker_runtime_version.sql` so worker/runtime alignment is visible in health checks.
+- Existing environments should also apply `011_rename_worker_runtime_executor_ready.sql` so worker readiness reflects the new orchestrator/executor naming in runtime checks.
 
 Operational privacy boundary:
 
@@ -243,6 +244,10 @@ Current production is intentionally split across hosts:
 - Docker-capable host or service: `agora-executor`
 
 Vercel redeploys directly from GitHub `main` via its native integration. Railway API, indexer, and worker orchestrator should also redeploy natively from GitHub `main`. The executor should be treated as infrastructure: update it when the executor service itself changes, not on every app commit.
+
+Vercel-specific proxy rule:
+
+- Set server-side `AGORA_API_URL` to the backend API origin, not the web origin. The same-origin web `/api/*` proxy depends on this and will fail closed if it is pointed back at the web host.
 
 ### Railway Dashboard Settings
 
@@ -326,6 +331,7 @@ Check every 15-30 minutes during first launch window:
 3. `indexed_events` block number continues advancing.
 4. `agora doctor` passes all required checks.
 5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version. If `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`, this also implies the executor passed the worker readiness checks.
+6. Web proxy health: `curl <WEB_URL>/api/healthz` and `curl <WEB_URL>/api/worker-health` succeed without the `AGORA_API_URL` proxy-misconfiguration error.
 6. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
 
 Health commands:

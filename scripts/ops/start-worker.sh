@@ -30,7 +30,7 @@ else
   log "Live API runtime is $api_runtime_version."
   if [[ "$current_runtime_version" != "$api_runtime_version" ]]; then
     if ! git diff --quiet || ! git diff --cached --quiet; then
-      log "Repository has uncommitted changes. Next step: clean the droplet checkout before restarting the worker."
+      log "Repository has uncommitted changes. Next step: clean the legacy worker-host checkout before restarting the worker."
       exit 1
     fi
 

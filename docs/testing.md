@@ -77,7 +77,8 @@ pnpm --filter <package> test
 | `@agora/db` | Event projections, schema compatibility, score job lifecycle, submission intents, analytics |
 | `@agora/chain` | Indexer status projection, confirmation depth, chain integration |
 | `@agora/ipfs` | Fetch resilience, pin/fetch roundtrip |
-| `@agora/scorer` | CSV validation before Docker, runtime config resolution, Docker execution |
+| `@agora/scorer-runtime` | Docker execution, image preflight, workspace staging |
+| `@agora/scorer` | Runtime config resolution, scoring pipeline orchestration, proof/replay handling |
 
 ### 3. App Tests
 

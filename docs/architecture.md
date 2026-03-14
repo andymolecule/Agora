@@ -335,6 +335,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant Worker as agora-worker
+    participant Executor as Executor Service
     participant IPFS as Pinata
     participant Docker as Scorer Container
     participant Chain as Base
@@ -343,8 +344,10 @@ sequenceDiagram
     Note over Worker: Deadline passes → challenge enters Scoring
 
     Worker->>IPFS: Fetch evaluation bundle + submission
-    Worker->>Docker: Run scorer (sandboxed)
-    Docker-->>Worker: score.json {score: 0.923}
+    Worker->>Executor: Execute scorer request
+    Executor->>Docker: Run scorer (sandboxed)
+    Docker-->>Executor: score.json {score: 0.923}
+    Executor-->>Worker: score.json {score: 0.923}
     Worker->>Worker: Build proof bundle
     Worker->>IPFS: Pin proof bundle → proofCid
     Worker->>Chain: postScore(subId, 923e15, hash(proofCid))

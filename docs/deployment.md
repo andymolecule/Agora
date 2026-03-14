@@ -145,6 +145,7 @@ This section covers non-code work for deployment across hosted systems.
 ### Vercel
 
 - Set production and preview env vars (`NEXT_PUBLIC_AGORA_*` and server-side `AGORA_*`).
+- On Vercel, `AGORA_API_URL` must point to the backend API origin, not the web origin. The web app's `/api/*` proxy uses this server-side value and will return `500` if it loops back to the web host.
 - Update the production domain and any preview aliases.
 - Validate that Open Graph metadata, title, and favicon render as Agora.
 - Verify explorer links in the UI point to current deployments.

@@ -234,7 +234,7 @@ create table worker_runtime_state (
   worker_type text not null,
   host text,
   ready boolean not null default false,
-  docker_ready boolean not null default false,
+  executor_ready boolean not null default false,
   seal_enabled boolean not null default false,
   seal_key_id text,
   seal_self_check_ok boolean not null default false,

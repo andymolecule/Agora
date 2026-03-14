@@ -32,6 +32,12 @@ const checks: RuntimeSchemaCheck[] = [
     nextStep: "apply migration",
   },
   {
+    id: "worker_executor_ready_column",
+    table: "worker_runtime_state",
+    select: "executor_ready",
+    nextStep: "apply migration",
+  },
+  {
     id: "submission_intents_columns",
     table: "submission_intents",
     select: "result_format,matched_submission_id",
@@ -47,17 +53,17 @@ const passingFailures = await verifyRuntimeDatabaseSchema(
 assert.deepEqual(passingFailures, []);
 
 const failingDb = createMockDb({
-  "worker_runtime_state:runtime_version": {
+  "worker_runtime_state:executor_ready": {
     error: {
       message:
-        "Could not find the 'runtime_version' column in the schema cache",
+        "Could not find the 'executor_ready' column in the schema cache",
     },
   },
 });
 
 const failures = await verifyRuntimeDatabaseSchema(failingDb as never, checks);
 assert.equal(failures.length, 1);
-assert.equal(failures[0]?.checkId, "worker_runtime_version_column");
+assert.equal(failures[0]?.checkId, "worker_executor_ready_column");
 
 await assert.rejects(
   () => assertRuntimeDatabaseSchema(failingDb as never, checks),
