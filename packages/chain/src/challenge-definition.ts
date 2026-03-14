@@ -22,7 +22,8 @@ async function readChallengeDefinitionValue<T>(input: {
   blockNumber?: bigint;
 }): Promise<T> {
   // These constructor-set fields are immutable, so the latest-state read is
-  // equivalent when the RPC has the receipt but not the historical header yet.
+  // equivalent when the RPC has the receipt but not the historical header/code
+  // available yet at the pinned block.
   return readImmutableContractWithLatestFallback<T>({
     publicClient: input.publicClient,
     address: input.challengeAddress,

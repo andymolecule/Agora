@@ -3,9 +3,12 @@ import type { getPublicClient } from "./client.js";
 
 const SLOW_CONTRACT_READ_THRESHOLD_MS = 2_000;
 
-export function isMissingHistoricalBlockError(error: unknown) {
+export function isTransientPinnedContractReadError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  return /header not found|block not found|unknown block/i.test(message);
+  return (
+    /header not found|block not found|unknown block/i.test(message) ||
+    /returned no data \("0x"\)|address is not a contract/i.test(message)
+  );
 }
 
 type ContractReadInput = {
@@ -56,7 +59,7 @@ function logContractReadError(
   console.error(
     "[chain-read] Contract read failed",
     buildChainReadMeta(input, durationMs, {
-      historicalBlockMissing: isMissingHistoricalBlockError(error),
+      transientPinnedReadError: isTransientPinnedContractReadError(error),
       error: error instanceof Error ? error.message : String(error),
       ...extra,
     }),
@@ -97,7 +100,10 @@ export async function readImmutableContractWithLatestFallback<T>(
     return result;
   } catch (error) {
     const durationMs = Date.now() - startedAt;
-    if (input.blockNumber === undefined || !isMissingHistoricalBlockError(error)) {
+    if (
+      input.blockNumber === undefined ||
+      !isTransientPinnedContractReadError(error)
+    ) {
       logContractReadError(input, durationMs, error);
       throw error;
     }

@@ -3,7 +3,7 @@ import {
   getChallengeFinalizeState,
   getChallengePayoutByAddress,
   getPublicClient,
-  isMissingHistoricalBlockError,
+  isTransientPinnedContractReadError,
   loadChallengeDefinitionFromChain,
   parseChallengeCreatedReceipt,
 } from "@agora/chain";
@@ -117,7 +117,7 @@ router.post(
           blockNumber: receipt.blockNumber,
         }));
     } catch (error) {
-      if (isMissingHistoricalBlockError(error)) {
+      if (isTransientPinnedContractReadError(error)) {
         return c.json(
           {
             error: getChallengeRegistrationRetryMessage(challengeAddress),

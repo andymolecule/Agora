@@ -5,6 +5,7 @@ import type { getPublicClient } from "../client.js";
 import {
   readContractStrict,
   readImmutableContractWithLatestFallback,
+  isTransientPinnedContractReadError,
 } from "../contract-read.js";
 
 test("challenge definition metadata falls back to latest when the pinned block header is unavailable", async () => {
@@ -63,6 +64,64 @@ test("challenge definition metadata falls back to latest when the pinned block h
   }
 });
 
+test("challenge definition metadata falls back to latest when the pinned block returns no data", async () => {
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
+
+  try {
+    const calls: Array<{ functionName: string; blockNumber?: bigint }> = [];
+    const publicClient = {
+      async readContract(input: { functionName: string; blockNumber?: bigint }) {
+        calls.push(input);
+
+        if (input.blockNumber !== undefined) {
+          throw new Error(
+            'The contract function "specCid" returned no data ("0x"). The address may not be a contract yet.',
+          );
+        }
+
+        if (input.functionName === "specCid")
+          return "bafybeigdyrzt5p3l7w4x6xqk2f4m7c5j2w2g7r3f2n3l5s6v7y8z9abcd";
+        if (input.functionName === "deadline") return 1_700_000_000n;
+        if (input.functionName === "contractVersion") return 2n;
+        throw new Error(`Unexpected function ${input.functionName}`);
+      },
+    } as unknown as ReturnType<typeof getPublicClient>;
+
+    const result = await readChallengeDefinitionMetadataFromChain({
+      publicClient,
+      challengeAddress: "0x217b97e7d1a8b878e1322fd191d88479a1f38c70",
+      blockNumber: 38_812_516n,
+    });
+
+    assert.deepEqual(result, {
+      specCid: "bafybeigdyrzt5p3l7w4x6xqk2f4m7c5j2w2g7r3f2n3l5s6v7y8z9abcd",
+      onChainDeadline: 1_700_000_000n,
+      contractVersion: 2,
+    });
+    assert.equal(warnings.length, 3);
+    assert.deepEqual(
+      calls.map((call) => ({
+        functionName: call.functionName,
+        blockNumber: call.blockNumber,
+      })),
+      [
+        { functionName: "specCid", blockNumber: 38_812_516n },
+        { functionName: "deadline", blockNumber: 38_812_516n },
+        { functionName: "contractVersion", blockNumber: 38_812_516n },
+        { functionName: "specCid", blockNumber: undefined },
+        { functionName: "deadline", blockNumber: undefined },
+        { functionName: "contractVersion", blockNumber: undefined },
+      ],
+    );
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test("challenge definition metadata does not swallow non-block RPC errors", async () => {
   const errors: unknown[][] = [];
   const originalError = console.error;
@@ -90,6 +149,25 @@ test("challenge definition metadata does not swallow non-block RPC errors", asyn
   } finally {
     console.error = originalError;
   }
+});
+
+test("transient pinned contract read classifier matches code-availability lag errors", () => {
+  assert.equal(
+    isTransientPinnedContractReadError(
+      new Error('The contract function "specCid" returned no data ("0x").'),
+    ),
+    true,
+  );
+  assert.equal(
+    isTransientPinnedContractReadError(
+      new Error("The address is not a contract."),
+    ),
+    true,
+  );
+  assert.equal(
+    isTransientPinnedContractReadError(new Error("Missing or invalid parameters")),
+    false,
+  );
 });
 
 test("immutable fallback contract reads emit a warning when the pinned block header is unavailable", async () => {
