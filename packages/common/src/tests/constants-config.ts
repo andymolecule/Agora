@@ -218,6 +218,16 @@ try {
   assert.equal(executorServerRuntime.port, 3200);
   assert.equal(executorServerRuntime.authToken, "executor-auth");
 
+  process.env.NODE_ENV = "production";
+  process.env.AGORA_EXECUTOR_AUTH_TOKEN = undefined;
+  assert.throws(
+    () => readExecutorServerRuntimeConfig(),
+    /AGORA_EXECUTOR_AUTH_TOKEN/,
+    "production executor runtime should require AGORA_EXECUTOR_AUTH_TOKEN",
+  );
+  process.env.NODE_ENV = "production";
+  process.env.AGORA_EXECUTOR_AUTH_TOKEN = "executor-auth";
+
   process.env.AGORA_RPC_URL = undefined;
   process.env.AGORA_FACTORY_ADDRESS = undefined;
   process.env.AGORA_USDC_ADDRESS = undefined;

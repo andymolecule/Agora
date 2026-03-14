@@ -189,6 +189,7 @@ This section covers non-code work for deployment across hosted systems.
 
 - Deploy the executor from `apps/executor` onto a Docker-capable host or service.
 - Set `AGORA_EXECUTOR_AUTH_TOKEN` on the executor and the matching `AGORA_SCORER_EXECUTOR_TOKEN` on the worker orchestrator.
+- In production, the executor now fails to start without `AGORA_EXECUTOR_AUTH_TOKEN`.
 - Set the worker orchestrator to `AGORA_SCORER_EXECUTOR_BACKEND=remote_http` and `AGORA_SCORER_EXECUTOR_URL=<executor base url>`.
 - The executor is infrastructure, not an every-commit app deploy target. Update it when the executor service changes or when scorer execution semantics require it.
 

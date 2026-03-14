@@ -283,6 +283,7 @@ Expected executor host configuration:
 - Docker daemon available locally
 - `apps/executor` deployed and reachable by the Railway worker orchestrator
 - `AGORA_EXECUTOR_AUTH_TOKEN` matches the orchestrator token
+- `NODE_ENV=production` requires `AGORA_EXECUTOR_AUTH_TOKEN`; the executor will fail fast without it
 
 Steady-state flow:
 
