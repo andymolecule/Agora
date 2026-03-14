@@ -245,7 +245,7 @@ erDiagram
 
 - **score_jobs** — Worker coordination table. States: `queued` → `running` → `scored` | `failed` | `skipped`. Includes lease management via `locked_at`, `locked_by`, and stale-lease recovery. `max_attempts` defaults to 5. `next_attempt_at` gates delayed retries. Jobs are only created or revived after a `submissions` row has both the on-chain fields and reconciled metadata (`result_cid`, `result_format`). `skipped` means the submission exceeded per-challenge or per-solver scoring limits.
 
-- **worker_runtime_state** — Worker heartbeat and readiness table. Each scoring worker publishes `worker_id`, `host`, `runtime_version`, Docker readiness, sealing readiness, and `last_error`. The API reads this table for `/api/worker-health`, sealed-submission key gating, and deploy-mismatch detection.
+- **worker_runtime_state** — Worker heartbeat and readiness table. Each scoring worker publishes `worker_id`, `host`, `runtime_version`, Docker readiness, sealing readiness, and `last_error`. The API reads this table for `/api/worker-health` and deploy/runtime-mismatch detection.
 - **worker_runtime_control** — Active scoring-runtime control row. The API upserts the active runtime version on startup, and score-job claims are fenced against it so older workers cannot keep claiming jobs after a deploy.
 
 - **verifications** — Records independent re-runs of the scorer. Links a proof_bundle to a verifier address, the computed score, whether it matches the original, and an optional log CID. Created by `agora verify`. `agora verify-public` is read-only and does not insert verification rows.

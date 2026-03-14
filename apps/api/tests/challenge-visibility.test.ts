@@ -37,8 +37,30 @@ test("open challenge detail redacts submissions and leaderboard", async () => {
     "open challenges should not query submissions",
   );
   assert.equal(data.challenge.status, CHALLENGE_STATUS.open);
+  assert.equal(data.challenge.submissions_count, 0);
   assert.deepEqual(data.submissions, []);
   assert.deepEqual(data.leaderboard, []);
+});
+
+test("challenge detail floors submissions_count when settlement state is ahead of projections", async () => {
+  const data = await getChallengeWithLeaderboard("challenge-1", {
+    createSupabaseClient: () => ({}) as never,
+    getChallengeById: async () =>
+      ({
+        id: "challenge-1",
+        contract_address: "0x0000000000000000000000000000000000000001",
+        status: CHALLENGE_STATUS.finalized,
+        winning_on_chain_sub_id: 0,
+      }) as never,
+    getChallengeLifecycleState: async () => ({
+      status: CHALLENGE_STATUS.finalized,
+    }),
+    listChallengesWithDetails: async () => [] as never[],
+    listSubmissionsForChallenge: async () => [] as never[],
+  });
+
+  assert.equal(data.challenge.status, CHALLENGE_STATUS.finalized);
+  assert.equal(data.challenge.submissions_count, 1);
 });
 
 test("challenge results remain hidden while open and unlock during scoring", () => {

@@ -27,7 +27,7 @@ This doc is authoritative for: service startup, monitoring, incident response, s
 - MCP HTTP is read-only by default; stdio remains the full local tool surface
 - Browser auth/session traffic goes through the web origin's same-origin `/api` proxy; the browser should not call the backend API origin directly for SIWE/session flows
 - Indexer polls factory logs every 30s and only continuously polls active challenges; Worker polls score_jobs after challenges enter Scoring
-- Worker stays alive in degraded mode, publishes readiness via `worker_runtime_state`, and only claims jobs while `ready=true`
+- Worker publishes readiness via `worker_runtime_state`, only claims jobs while `ready=true`, and self-aligns to the live API runtime on PM2 restart
 - Health monitoring via /healthz, /api/indexer-health, /api/worker-health, agora doctor
 
 ---
@@ -124,7 +124,7 @@ Architecture boundary:
 - Scorer is the Docker container itself (e.g. `ghcr.io/andymolecule/repro-scorer:v1`) — stateless, sandboxed, no network access.
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
-- Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` declares the active scoring runtime version for claim fencing during split deploys.
+- Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` declares the active scoring runtime version for claim fencing while the worker self-aligns to the live API runtime.
 - Official preset challenges should persist pinned image digests. The worker should only score from registry-backed official images, never from a host-local build that lacks a repo digest.
 - Wallet/session consistency is enforced in the web app by a global wallet session bridge. If the connected wallet disconnects or changes to a different address, stale SIWE state is cleared instead of being reused accidentally.
 
@@ -138,7 +138,7 @@ The worker now treats scorer availability as a runtime readiness problem, not a 
 4. It checks `docker info`, then preflights all official scorer images referenced by currently scoring official challenges.
 5. If Docker or image preflight fails, the process stays up, keeps heartbeating, and skips job claims until readiness recovers.
 6. Readiness is retried in the background every minute.
-7. If the worker sees the active runtime version drift for three consecutive loop checks, it exits so PM2 and the DigitalOcean deploy workflows can replace it instead of leaving it degraded forever.
+7. If the worker sees the active runtime version drift for three consecutive loop checks, it exits so PM2 can restart it through `start-worker.sh` and realign it instead of leaving it degraded forever.
 8. During scoring, the runner inspects the local Docker image first and only pulls when the image is missing.
 9. Official images without a repo digest are rejected. A locally built image is not accepted as a substitute for a published official artifact.
 
@@ -166,7 +166,7 @@ Key handling rules:
 - Services launched through `scripts/run-node-with-root-env.mjs` can load seal keys from disk via `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE`, `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE`, and `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE`. The DigitalOcean worker start script still supports repo-root PEM fallbacks for backward compatibility.
 - `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON` is the rotation path. Keep the active key plus any previous keys whose still-pending sealed submissions need to be scored.
 - `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` is the simple single-key path. If both sources are set for the active `kid`, they must match.
-- `GET /api/submissions/public-key` now fails closed unless a live worker heartbeat exists for the active `kid` and that worker has passed sealing self-check + Docker startup checks.
+- `GET /api/submissions/public-key` returns the active public key whenever sealing is configured. Worker readiness is enforced at scoring time, not submission time.
 - Set `AGORA_WORKER_RUNTIME_ID` when you intentionally run multiple scoring workers on the same host. Otherwise the worker derives a stable host-based runtime id automatically.
 
 Verification checklist:
@@ -183,7 +183,7 @@ Expected results:
 
 - `/healthz` returns `{"ok":true,"service":"api","runtimeVersion":"..."}` for API liveness plus deployed version.
 - `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and `sealing.workerReady=true` for the active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
-- `/api/submissions/public-key` returns `version:"sealed_submission_v2"` only when the active worker heartbeat for that `kid` is healthy.
+- `/api/submissions/public-key` returns `version:"sealed_submission_v2"` whenever sealing is configured successfully.
 
 Existing testnet DBs:
 
@@ -253,43 +253,43 @@ Operational rule:
   - `Branch connected to production`
   then redeploy latest once and verify the next push advances production.
 
-### DigitalOcean Worker Auto-Deploy
+### DigitalOcean Worker Runtime Alignment
 
-For the self-hosted worker, this repo ships a push-triggered deploy workflow, a scheduled auto-heal workflow, and a reusable droplet script:
+For the self-hosted worker, this repo now uses one steady-state runtime path:
 
-- Workflow: [deploy-worker-digitalocean.yml](../.github/workflows/deploy-worker-digitalocean.yml)
-- Workflow: [auto-heal-worker-digitalocean.yml](../.github/workflows/auto-heal-worker-digitalocean.yml)
-- Droplet script: [deploy-worker.sh](../scripts/ops/deploy-worker.sh)
+- Manual/bootstrap script: [deploy-worker.sh](../scripts/ops/deploy-worker.sh)
 - Worker entrypoint: [start-worker.sh](../scripts/ops/start-worker.sh)
+- Recovery watchdog: [watchdog-worker.sh](../scripts/ops/watchdog-worker.sh)
+- Monitor-only workflow: [auto-heal-worker-digitalocean.yml](../.github/workflows/auto-heal-worker-digitalocean.yml)
 
-Expected GitHub configuration:
+Expected worker host configuration:
 
-- Variable: `AGORA_API_HEALTH_URL`
-- Secret: `DO_WORKER_HOST`
-- Secret: `DO_WORKER_USER`
-- Secret: `DO_WORKER_SSH_KEY`
-- Variable: `DO_WORKER_PORT` (optional, defaults to `22`)
-- Variable: `DO_WORKER_PATH` (optional, defaults to `/opt/agora`)
-- Variable: `DO_WORKER_PM2_NAME` (optional, defaults to `agora-worker`)
+- `AGORA_API_HEALTH_URL` points at the live API `/healthz`
+- PM2 runs the worker through `scripts/ops/start-worker.sh`
+- A local cron runs `scripts/ops/watchdog-worker.sh` every 5 minutes
 
-Deploy flow:
+Steady-state flow:
 
-1. Push to `main`
-2. Railway API and indexer redeploy natively from GitHub `main`
-3. GitHub Actions (DO worker workflow) waits for the API `/healthz` runtime version to match the pushed commit SHA (normalized to 12 chars)
-4. GitHub Actions SSHes into the worker host
-5. The droplet runs `scripts/ops/deploy-worker.sh`
-6. The script checks out the live API runtime revision, installs deps, rebuilds `@agora/api`, and restarts the PM2 worker
-7. PM2 launches `scripts/ops/start-worker.sh`, which restores `AGORA_RUNTIME_VERSION`, reloads seal PEMs, and then execs the worker process
-8. The worker reports the new runtime SHA automatically through `/api/worker-health`
+1. Railway deploys API and indexer from `main`
+2. API writes the active scoring runtime version into `worker_runtime_control`
+3. If the worker is on an older runtime, it exits after sustained mismatch detection
+4. PM2 restarts the worker through `scripts/ops/start-worker.sh`
+5. `start-worker.sh` reads `AGORA_API_HEALTH_URL`, aligns the droplet checkout to the live API runtime, rebuilds `@agora/api` when needed, reloads seal PEMs, and execs the worker
+6. The worker reports the aligned runtime through `/api/worker-health`
 
-Auto-heal flow:
+Bootstrap / break-glass flow:
 
-1. Every 10 minutes, GitHub Actions checks API `/healthz` and `/api/worker-health`
-2. If the worker has zero healthy processes on the active runtime, or sealing is configured but `workerReady=false`, the workflow SSHes into the droplet
-3. The droplet reruns `scripts/ops/deploy-worker.sh` pinned to the live API runtime revision
-4. The workflow polls `/api/worker-health` until the worker is aligned again or fails visibly
-5. If the unhealthy snapshot also showed stale running jobs, the workflow runs `pnpm recover:score-jobs -- --stale-minutes=20` on the droplet after the worker recovers
+1. Clone the repo onto the worker host
+2. Install `.env` and PEM files
+3. Run `scripts/ops/deploy-worker.sh`
+4. Install the watchdog cron
+5. Run `pm2 save`
+
+Suggested watchdog cron:
+
+```bash
+*/5 * * * * cd /opt/agora && AGORA_WORKER_PM2_NAME=agora-worker bash scripts/ops/watchdog-worker.sh >> /var/log/agora-worker-watchdog.log 2>&1
+```
 
 ---
 
@@ -339,7 +339,7 @@ Expected results:
 - API health returns `{"ok":true,"runtimeVersion":"..."}`.
 - Indexer health is `ok` or `warning`, not `critical`.
 - `agora doctor` passes RPC/Supabase/factory checks.
-- If sealing is enabled, `/api/submissions/public-key` returns `sealed_submission_v2` only while `/api/worker-health` reports a healthy worker for the same active `kid`.
+- If sealing is enabled, `/api/submissions/public-key` returns `sealed_submission_v2` whenever the public sealing key is configured.
 - If active scoring challenges use official Agora scorer images and those GHCR images are not pullable, the worker should stay alive but report `ready=false`, a `latestError`, and zero healthy workers for the active runtime version.
 
 ---
@@ -499,11 +499,11 @@ agora reindex --from-block <block_number>
    - Docker daemon not running or unreachable -> restart Docker, then `pm2 startOrRestart scripts/ops/ecosystem.config.cjs --only agora-worker --update-env`.
    - Official scorer image not pullable -> inspect `workers.latestError`, verify the image is public/pullable from the host, and rerun `./scripts/preflight-testnet.sh`.
    - DB schema drift or stale PostgREST cache -> run `pnpm schema:verify`. If it fails, apply the missing migration and reload the PostgREST schema cache before restarting services.
-   - Runtime version mismatch -> compare `/healthz.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then redeploy API + worker from the same git revision.
+   - Runtime version mismatch -> compare `/healthz.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then restart the worker and let `start-worker.sh` align it to the live API runtime.
    - RPC errors -> check `AGORA_RPC_URL` reachability.
    - All jobs stuck in `failed` or `running` after an infra incident -> recover them with `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` after the worker is healthy again.
    - Terminal validation/configuration rows lingering in `failed` -> inspect with `agora clean-failed-jobs` and skip only the rows that are truly unrecoverable.
-4. If the worker process itself crashed: rerun `scripts/ops/deploy-worker.sh` or `pm2 startOrRestart scripts/ops/ecosystem.config.cjs --only agora-worker --update-env`. Avoid bare `pm2 restart agora-worker` unless the droplet checkout and PM2 env are already known-good. PM2 uses exponential backoff (3s base).
+4. If the worker process itself crashed: rerun `scripts/ops/deploy-worker.sh`, `pm2 startOrRestart scripts/ops/ecosystem.config.cjs --only agora-worker --update-env`, or `scripts/ops/watchdog-worker.sh`. Avoid bare `pm2 restart agora-worker` unless the droplet checkout and PM2 env are already known-good. PM2 uses exponential backoff (3s base).
 
 ### Oracle Key Issue
 

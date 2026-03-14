@@ -7,6 +7,12 @@ EXPECTED_SHA="${AGORA_DEPLOY_EXPECTED_SHA:-${1:-}}"
 
 cd "$ROOT_DIR"
 
+if [[ -z "${AGORA_API_HEALTH_URL:-}" ]]; then
+  echo "Worker deploy aborted: AGORA_API_HEALTH_URL is not set."
+  echo "Next step: export the live API /healthz URL in the worker environment, then rerun the deploy."
+  exit 1
+fi
+
 if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "Worker deploy aborted: repository has uncommitted changes."
   echo "Next step: clean the droplet checkout, then rerun the deploy."

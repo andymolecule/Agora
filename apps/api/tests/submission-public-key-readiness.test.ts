@@ -1,30 +1,97 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canServeSubmissionSealPublicKey } from "../src/routes/submissions.js";
+import { resetConfigCache } from "@agora/common";
+import router, {
+  canServeSubmissionSealPublicKey,
+} from "../src/routes/submissions.js";
 
-test("submission public key stays disabled without a ready worker", () => {
+function setRequiredConfigEnv() {
+  const originalRpcUrl = process.env.AGORA_RPC_URL;
+  const originalFactoryAddress = process.env.AGORA_FACTORY_ADDRESS;
+  const originalUsdcAddress = process.env.AGORA_USDC_ADDRESS;
+
+  process.env.AGORA_RPC_URL = "http://127.0.0.1:8545";
+  process.env.AGORA_FACTORY_ADDRESS =
+    "0x0000000000000000000000000000000000000001";
+  process.env.AGORA_USDC_ADDRESS =
+    "0x0000000000000000000000000000000000000002";
+
+  return () => {
+    process.env.AGORA_RPC_URL = originalRpcUrl;
+    process.env.AGORA_FACTORY_ADDRESS = originalFactoryAddress;
+    process.env.AGORA_USDC_ADDRESS = originalUsdcAddress;
+  };
+}
+
+test("submission public key is served whenever public config exists", () => {
   assert.equal(
     canServeSubmissionSealPublicKey({
       hasPublicSealConfig: true,
-      hasReadyWorkerForActiveKey: false,
+    }),
+    true,
+  );
+});
+
+test("submission public key remains disabled when config is missing", () => {
+  assert.equal(
+    canServeSubmissionSealPublicKey({
+      hasPublicSealConfig: false,
     }),
     false,
   );
 });
 
-test("submission public key requires both API config and a ready worker", () => {
-  assert.equal(
-    canServeSubmissionSealPublicKey({
-      hasPublicSealConfig: false,
-      hasReadyWorkerForActiveKey: true,
-    }),
-    false,
-  );
-  assert.equal(
-    canServeSubmissionSealPublicKey({
-      hasPublicSealConfig: true,
-      hasReadyWorkerForActiveKey: true,
-    }),
-    true,
-  );
+test("public key route returns 200 without checking worker readiness", async () => {
+  const restoreRequiredConfig = setRequiredConfigEnv();
+  const originalKeyId = process.env.AGORA_SUBMISSION_SEAL_KEY_ID;
+  const originalPublicKey = process.env.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM;
+
+  process.env.AGORA_SUBMISSION_SEAL_KEY_ID = "submission-seal-test";
+  process.env.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM =
+    "-----BEGIN PUBLIC KEY-----\nTEST\n-----END PUBLIC KEY-----";
+  resetConfigCache();
+
+  try {
+    const response = await router.request(
+      new Request("http://localhost/public-key"),
+    );
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.data?.kid, "submission-seal-test");
+    assert.equal(
+      body.data?.publicKeyPem,
+      "-----BEGIN PUBLIC KEY-----\nTEST\n-----END PUBLIC KEY-----",
+    );
+  } finally {
+    process.env.AGORA_SUBMISSION_SEAL_KEY_ID = originalKeyId;
+    process.env.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM = originalPublicKey;
+    restoreRequiredConfig();
+    resetConfigCache();
+  }
+});
+
+test("public key route returns 503 when sealing config is missing", async () => {
+  const restoreRequiredConfig = setRequiredConfigEnv();
+  const originalKeyId = process.env.AGORA_SUBMISSION_SEAL_KEY_ID;
+  const originalPublicKey = process.env.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM;
+
+  delete process.env.AGORA_SUBMISSION_SEAL_KEY_ID;
+  delete process.env.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM;
+  resetConfigCache();
+
+  try {
+    const response = await router.request(
+      new Request("http://localhost/public-key"),
+    );
+
+    assert.equal(response.status, 503);
+    const body = await response.json();
+    assert.match(String(body.error ?? ""), /not configured/i);
+  } finally {
+    process.env.AGORA_SUBMISSION_SEAL_KEY_ID = originalKeyId;
+    process.env.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM = originalPublicKey;
+    restoreRequiredConfig();
+    resetConfigCache();
+  }
 });

@@ -60,3 +60,31 @@ test("listChallengesFromQuery normalizes numeric reward fields for API consumers
   assert.equal(rows[0]?.reward_amount, 500);
   assert.equal(typeof rows[0]?.reward_amount, "number");
 });
+
+test("listChallengesFromQuery floors submissions_count from winning_on_chain_sub_id", async () => {
+  const rows = await listChallengesFromQuery(
+    {},
+    {
+      createSupabaseClient: (() => ({}) as never) as never,
+      getChallengeById: (async () => ({}) as never) as never,
+      getChallengeLifecycleState: (async () => ({}) as never) as never,
+      listChallengesWithDetails: (async () => [
+        {
+          id: "finalized-challenge",
+          title: "Finalized challenge",
+          description: "desc",
+          domain: "other",
+          reward_amount: "25.000000",
+          deadline: "2026-03-20T00:00:00.000Z",
+          status: "finalized",
+          winning_on_chain_sub_id: 0,
+          submissions_count: 0,
+          created_at: "2026-03-10T00:00:00.000Z",
+        },
+      ]) as never,
+      listSubmissionsForChallenge: (async () => []) as never,
+    },
+  );
+
+  assert.equal(rows[0]?.submissions_count, 1);
+});

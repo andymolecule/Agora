@@ -1,44 +1,22 @@
-name: Auto-heal Worker (DigitalOcean)
+name: Monitor Worker (DigitalOcean)
 
 on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
 
-concurrency:
-  group: deploy-digitalocean-worker
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
 jobs:
-  heal:
+  monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     env:
-      DO_WORKER_HOST: ${{ secrets.DO_WORKER_HOST }}
-      DO_WORKER_USER: ${{ secrets.DO_WORKER_USER }}
-      DO_WORKER_PORT: ${{ vars.DO_WORKER_PORT }}
-      DO_WORKER_PATH: ${{ vars.DO_WORKER_PATH }}
-      DO_WORKER_PM2_NAME: ${{ vars.DO_WORKER_PM2_NAME }}
       AGORA_API_HEALTH_URL: ${{ vars.AGORA_API_HEALTH_URL }}
     steps:
-      - name: Validate deploy secrets
-        run: |
-          set -euo pipefail
-          test -n "$DO_WORKER_HOST"
-          test -n "$DO_WORKER_USER"
-          test -n "${{ secrets.DO_WORKER_SSH_KEY }}"
-
-      - name: Configure SSH
-        run: |
-          set -euo pipefail
-          DO_WORKER_PORT="${DO_WORKER_PORT:-22}"
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "${{ secrets.DO_WORKER_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -p "$DO_WORKER_PORT" -H "$DO_WORKER_HOST" >> ~/.ssh/known_hosts
+      - name: Check out repository
+        uses: actions/checkout@v4
 
       - name: Check runtime alignment and sealing readiness
         id: health
@@ -52,7 +30,7 @@ jobs:
             --worker-health-url "$AGORA_WORKER_HEALTH_URL" \
             --starting-grace-ms 300000
 
-      - name: Report health status
+      - name: Report monitor status
         run: |
           set -euo pipefail
           echo "API runtime: ${{ steps.health.outputs.api_runtime }}"
@@ -61,7 +39,7 @@ jobs:
           elif [ "${{ steps.health.outputs.starting_within_grace }}" = "true" ]; then
             echo "Worker startup is still within grace: ${{ steps.health.outputs.summary }}"
           elif [ "${{ steps.health.outputs.needs_heal }}" = "true" ]; then
-            echo "Auto-heal required: ${{ steps.health.outputs.summary }}"
+            echo "Worker requires operator attention: ${{ steps.health.outputs.summary }}"
             if [ -n "${{ steps.health.outputs.latest_error }}" ]; then
               echo "Latest worker error: ${{ steps.health.outputs.latest_error }}"
             fi
@@ -69,17 +47,7 @@ jobs:
             echo "Worker runtime check completed: ${{ steps.health.outputs.summary }}"
           fi
 
-      - name: Redeploy worker on droplet
-        if: steps.health.outputs.needs_heal == 'true'
-        run: |
-          set -euo pipefail
-          DO_WORKER_PORT="${DO_WORKER_PORT:-22}"
-          DO_WORKER_PATH="${DO_WORKER_PATH:-/opt/agora}"
-          DO_WORKER_PM2_NAME="${DO_WORKER_PM2_NAME:-agora-worker}"
-          ssh -p "$DO_WORKER_PORT" "$DO_WORKER_USER@$DO_WORKER_HOST" \
-            "set -euo pipefail; cd '$DO_WORKER_PATH'; if [ ! -x scripts/ops/deploy-worker.sh ]; then git fetch origin main && git checkout main && git pull --ff-only origin main; fi; export AGORA_DEPLOY_EXPECTED_SHA='${{ steps.health.outputs.api_runtime }}' AGORA_WORKER_PM2_NAME='$DO_WORKER_PM2_NAME'; bash scripts/ops/deploy-worker.sh"
-
-      - name: Wait for worker recovery
+      - name: Dump latest health payloads
         if: steps.health.outputs.needs_heal == 'true'
         run: |
           set -euo pipefail
@@ -87,49 +55,14 @@ jobs:
           AGORA_API_BASE_URL="${AGORA_API_HEALTH_URL%/healthz}"
           AGORA_WORKER_HEALTH_URL="$AGORA_API_BASE_URL/api/worker-health"
           EXPECTED_RUNTIME_VERSION="${{ steps.health.outputs.api_runtime }}"
-
-          for attempt in $(seq 1 30); do
-            set +e
-            node scripts/ops/check-worker-health.mjs wait \
-              --api-health-url "$AGORA_API_HEALTH_URL" \
-              --worker-health-url "$AGORA_WORKER_HEALTH_URL" \
-              --expected-runtime-version "$EXPECTED_RUNTIME_VERSION" \
-              --starting-grace-ms 300000
-            status=$?
-            set -e
-
-            if [ "$status" -eq 0 ]; then
-              echo "Worker recovered and is aligned with the live API runtime."
-              exit 0
-            fi
-
-            if [ "$status" -eq 10 ]; then
-              echo "Worker is still starting after auto-heal ($attempt/30). Waiting 20s..."
-            else
-              echo "Worker still unhealthy after auto-heal attempt ($attempt/30). Waiting 20s..."
-            fi
-            sleep 20
-          done
-
-          echo "Worker did not recover after auto-heal."
           node scripts/ops/check-worker-health.mjs dump \
             --api-health-url "$AGORA_API_HEALTH_URL" \
             --worker-health-url "$AGORA_WORKER_HEALTH_URL" \
             --expected-runtime-version "$EXPECTED_RUNTIME_VERSION" || true
-          echo
-          echo "Remote PM2 status and recent worker logs:"
-          DO_WORKER_PORT="${DO_WORKER_PORT:-22}"
-          DO_WORKER_PATH="${DO_WORKER_PATH:-/opt/agora}"
-          DO_WORKER_PM2_NAME="${DO_WORKER_PM2_NAME:-agora-worker}"
-          ssh -p "$DO_WORKER_PORT" "$DO_WORKER_USER@$DO_WORKER_HOST" \
-            "set -euo pipefail; cd '$DO_WORKER_PATH'; pm2 status '$DO_WORKER_PM2_NAME' || true; pm2 logs '$DO_WORKER_PM2_NAME' --lines 100 --nostream || true"
-          exit 1
 
-      - name: Recover stale score jobs after heal
-        if: steps.health.outputs.needs_heal == 'true' && steps.health.outputs.running_over_threshold != '0'
+      - name: Fail when worker is unhealthy
+        if: steps.health.outputs.needs_heal == 'true'
         run: |
           set -euo pipefail
-          DO_WORKER_PORT="${DO_WORKER_PORT:-22}"
-          DO_WORKER_PATH="${DO_WORKER_PATH:-/opt/agora}"
-          ssh -p "$DO_WORKER_PORT" "$DO_WORKER_USER@$DO_WORKER_HOST" \
-            "set -euo pipefail; cd '$DO_WORKER_PATH'; pnpm recover:score-jobs -- --stale-minutes=20"
+          echo "Worker monitor detected an unhealthy runtime. Next step: inspect the worker host and restart or redeploy it manually."
+          exit 1

@@ -190,7 +190,7 @@ This section covers non-code work for deployment across hosted systems.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
 - `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that API and web match the expected deployed revision and that the worker is healthy on the active API runtime. Use `--expected-api` and `--expected-web` only when you intentionally want to verify different revisions.
-- `Auto-heal Worker (DigitalOcean)` GitHub Actions runs on a schedule and redeploys the worker droplet automatically when `/api/worker-health` reports zero healthy workers on the active runtime or the active submission-seal key is unavailable.
+- `Monitor Worker (DigitalOcean)` GitHub Actions runs on a schedule and fails visibly when `/api/worker-health` reports zero healthy workers on the active runtime or sealing readiness is unavailable. It does not redeploy the droplet automatically.
 
 ### DNS and Domains
 

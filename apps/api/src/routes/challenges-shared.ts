@@ -43,6 +43,26 @@ const defaultDeps: ChallengeSharedDeps = {
   listSubmissionsForChallenge,
 };
 
+function getWinnerSubmissionCountFloor(value: unknown) {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
+    return value + 1;
+  }
+  if (typeof value === "string" && /^[0-9]+$/.test(value)) {
+    return Number(value) + 1;
+  }
+  return 0;
+}
+
+function floorSubmissionCount(baseCount: unknown, winningOnChainSubId: unknown) {
+  const parsedBaseCount =
+    typeof baseCount === "number" && Number.isFinite(baseCount) && baseCount >= 0
+      ? Math.trunc(baseCount)
+      : typeof baseCount === "string" && /^[0-9]+$/.test(baseCount)
+        ? Number(baseCount)
+        : 0;
+  return Math.max(parsedBaseCount, getWinnerSubmissionCountFloor(winningOnChainSubId));
+}
+
 export function normalizeSubmissionScore(
   value: string | number | bigint | null | undefined,
 ) {
@@ -155,6 +175,10 @@ export async function listChallengesFromQuery(
   const normalizedRows = rows.map((row) => ({
     ...row,
     reward_amount: Number(row.reward_amount),
+    submissions_count: floorSubmissionCount(
+      row.submissions_count,
+      row.winning_on_chain_sub_id,
+    ),
     status: getEffectiveChallengeStatus(
       normalizeChallengeStatus(row.status),
       typeof row.deadline === "string" ? row.deadline : null,
@@ -204,6 +228,10 @@ export async function getChallengeWithLeaderboard(
   const normalizedChallenge = {
     ...challenge,
     status: lifecycle.status,
+    submissions_count: floorSubmissionCount(
+      0,
+      (challenge as { winning_on_chain_sub_id?: unknown }).winning_on_chain_sub_id,
+    ),
   };
   const datasets = {
     train_cid: challenge.dataset_train_cid ?? null,
@@ -228,13 +256,20 @@ export async function getChallengeWithLeaderboard(
     challengeId,
   );
   const submissions = rawSubmissions.map((row) => toPublicSubmission(row));
+  const challengeWithCounts = {
+    ...normalizedChallenge,
+    submissions_count: floorSubmissionCount(
+      rawSubmissions.length,
+      (challenge as { winning_on_chain_sub_id?: unknown }).winning_on_chain_sub_id,
+    ),
+  };
   const leaderboard =
     getChallengeLeaderboardData({
-      challenge: normalizedChallenge,
+      challenge: challengeWithCounts,
       submissions,
     }) ?? [];
   return {
-    challenge: normalizedChallenge,
+    challenge: challengeWithCounts,
     datasets,
     submissions,
     leaderboard,

@@ -21,7 +21,7 @@ This doc is authoritative for: sealed submission format, privacy boundary, trust
 ## Summary
 
 - The canonical sealed submission format is `sealed_submission_v2`.
-- The browser fetches Agora's active submission sealing public key only when the API sees a live worker heartbeat for that same active `kid`, then seals locally and uploads only the sealed envelope to IPFS.
+- The browser fetches Agora's active submission sealing public key whenever sealing is configured, then seals locally and uploads only the sealed envelope to IPFS.
 - The on-chain contract stores only `keccak256(result CID)`, not the plaintext answer.
 - The worker resolves the matching private key by `kid`, decrypts after the challenge enters `Scoring`, and runs the Docker scorer.
 - Public verification stays locked while the challenge is `Open`.
@@ -81,7 +81,6 @@ sequenceDiagram
     participant Worker as Scoring Worker
 
     Solver->>API: GET /api/submissions/public-key
-    API->>DB: confirm healthy worker heartbeat for active kid
     API-->>Solver: version + alg + kid + RSA public key
     Solver->>Solver: validate input locally
     Solver->>Solver: seal bytes as sealed_submission_v2
@@ -207,8 +206,8 @@ This is why the system should be described as public-hidden answer privacy durin
 ## Browser Submission Flow
 
 1. The challenge page checks `GET /api/submissions/public-key`.
-2. The API returns that public key only if it has public sealing config and at least one healthy worker heartbeat for the same active `kid`.
-3. If sealing is unavailable, the UI blocks submission instead of pretending privacy exists.
+2. The API returns that public key whenever public sealing config is present.
+3. If sealing is unavailable because config is missing, the UI blocks submission instead of pretending privacy exists.
 4. The browser validates the selected file or text answer locally.
 5. The browser imports the API-provided RSA public key.
 6. The browser seals the submission locally as `sealed_submission_v2`.
@@ -309,7 +308,7 @@ curl -sS http://localhost:3000/api/submissions/public-key
 
 Expected signals:
 
-- `/api/submissions/public-key` returns `version:"sealed_submission_v2"` and the active `kid` only while the worker heartbeat for that `kid` is healthy.
+- `/api/submissions/public-key` returns `version:"sealed_submission_v2"` and the active `kid` whenever sealing is configured successfully.
 - `/healthz` reports API liveness plus `runtimeVersion`. It does not imply a scoring worker is ready.
 - `/api/worker-health` reports `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, `sealing.workerReady=true`, and the same active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
 - File-backed key loading is supported through `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE`, `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE`, and `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE` when services are launched through the shared runtime loader. The DigitalOcean worker start script still supports repo-root PEM fallbacks for backward compatibility.

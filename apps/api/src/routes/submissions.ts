@@ -14,6 +14,7 @@ import {
   SUBMISSION_SEAL_ALG,
   SUBMISSION_SEAL_VERSION,
   computeSubmissionResultHash,
+  hasSubmissionSealPublicConfig,
   isValidPinnedSpecCid,
   loadConfig,
   resolveEvalSpec,
@@ -24,7 +25,6 @@ import {
   getChallengeById,
   getProofBundleBySubmissionId,
   getSubmissionById,
-  hasReadyWorkerForSealKey,
   reconcileSubmissionIntentMatch,
   upsertSubmissionOnChain,
 } from "@agora/db";
@@ -107,9 +107,8 @@ export function canReadPublicSubmissionVerification(status: ChallengeStatus) {
 
 export function canServeSubmissionSealPublicKey(input: {
   hasPublicSealConfig: boolean;
-  hasReadyWorkerForActiveKey: boolean;
 }) {
-  return input.hasPublicSealConfig && input.hasReadyWorkerForActiveKey;
+  return input.hasPublicSealConfig;
 }
 
 export function isInvalidOnChainSubmissionReadError(error: unknown) {
@@ -187,42 +186,8 @@ const router = new Hono<ApiEnv>();
 
 router.get("/public-key", async (c) => {
   const config = loadConfig();
-  if (
-    !config.AGORA_SUBMISSION_SEAL_KEY_ID ||
-    !config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM
-  ) {
+  if (!hasSubmissionSealPublicConfig(config)) {
     return c.json({ error: "Submission sealing is not configured." }, 503);
-  }
-
-  let hasReadyWorker = false;
-  try {
-    const db = createSupabaseClient(true);
-    hasReadyWorker = await hasReadyWorkerForSealKey(
-      db,
-      config.AGORA_SUBMISSION_SEAL_KEY_ID as string,
-    );
-  } catch {
-    return c.json(
-      {
-        error:
-          "Submission sealing worker readiness check failed. Retry later after worker readiness is restored.",
-      },
-      503,
-    );
-  }
-  if (
-    !canServeSubmissionSealPublicKey({
-      hasPublicSealConfig: true,
-      hasReadyWorkerForActiveKey: hasReadyWorker,
-    })
-  ) {
-    return c.json(
-      {
-        error:
-          "Submission sealing worker is unavailable. Retry later after worker readiness is restored.",
-      },
-      503,
-    );
   }
 
   return c.json({
