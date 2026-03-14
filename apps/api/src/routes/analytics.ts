@@ -6,8 +6,6 @@ import { readIndexerHealthSnapshot } from "./indexer-health-shared.js";
 
 const CACHE_TTL_MS = 30_000;
 
-let cached: { data: PlatformAnalytics; ts: number } | null = null;
-
 export interface AnalyticsResponseData extends PlatformAnalytics {
   freshness: {
     source: "indexed_db_projection";
@@ -21,6 +19,20 @@ export interface AnalyticsResponseData extends PlatformAnalytics {
     warning: string | null;
   };
 }
+
+type AnalyticsRouteDeps = {
+  createSupabaseClient: typeof createSupabaseClient;
+  getPlatformAnalytics: typeof getPlatformAnalytics;
+  readIndexerHealthSnapshot: typeof readIndexerHealthSnapshot;
+  now: () => number;
+};
+
+const defaultDeps: AnalyticsRouteDeps = {
+  createSupabaseClient,
+  getPlatformAnalytics,
+  readIndexerHealthSnapshot,
+  now: () => Date.now(),
+};
 
 export function buildFreshnessPayload(input: {
   generatedAt: string;
@@ -66,48 +78,55 @@ export function buildFreshnessPayload(input: {
   };
 }
 
-const router = new Hono<ApiEnv>();
+export function createAnalyticsRouter(
+  deps: AnalyticsRouteDeps = defaultDeps,
+) {
+  const router = new Hono<ApiEnv>();
+  let cached: { data: PlatformAnalytics; ts: number } | null = null;
 
-router.get("/", async (c) => {
-  const now = Date.now();
-  if (cached && now - cached.ts < CACHE_TTL_MS) {
+  router.get("/", async (c) => {
+    const now = deps.now();
+    if (cached && now - cached.ts < CACHE_TTL_MS) {
+      let indexer = null;
+      try {
+        indexer = await deps.readIndexerHealthSnapshot();
+      } catch {
+        indexer = null;
+      }
+
+      return c.json({
+        data: {
+          ...cached.data,
+          freshness: buildFreshnessPayload({
+            generatedAt: new Date(cached.ts).toISOString(),
+            indexer,
+          }),
+        },
+      });
+    }
+
+    const db = deps.createSupabaseClient(true);
+    const data = await deps.getPlatformAnalytics(db);
+    cached = { data, ts: now };
     let indexer = null;
     try {
-      indexer = await readIndexerHealthSnapshot();
+      indexer = await deps.readIndexerHealthSnapshot();
     } catch {
       indexer = null;
     }
 
     return c.json({
       data: {
-        ...cached.data,
+        ...data,
         freshness: buildFreshnessPayload({
-          generatedAt: new Date(cached.ts).toISOString(),
+          generatedAt: new Date(now).toISOString(),
           indexer,
         }),
       },
     });
-  }
-
-  const db = createSupabaseClient(false);
-  const data = await getPlatformAnalytics(db);
-  cached = { data, ts: now };
-  let indexer = null;
-  try {
-    indexer = await readIndexerHealthSnapshot();
-  } catch {
-    indexer = null;
-  }
-
-  return c.json({
-    data: {
-      ...data,
-      freshness: buildFreshnessPayload({
-        generatedAt: new Date(now).toISOString(),
-        indexer,
-      }),
-    },
   });
-});
 
-export default router;
+  return router;
+}
+
+export default createAnalyticsRouter();
