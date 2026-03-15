@@ -541,7 +541,7 @@ export function SubmitSolution({
       {/* Wallet connection */}
       {!isConnected ? (
         <div className="space-y-4">
-          <p className="text-sm font-medium text-black/70">
+          <p className="text-sm font-medium text-warm-900/70">
             Connect your wallet to submit a solution. Rewards are paid to the
             wallet you submit from.
           </p>

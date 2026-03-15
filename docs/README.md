@@ -7,16 +7,18 @@ Documentation index and reading order for the Agora repository.
 | # | Document | Question it answers | Audience |
 |---|----------|-------------------|----------|
 | 1 | [Product Guide](product.md) | What is Agora and why does it exist? | Everyone |
-| 2 | [Architecture](architecture.md) | How does the system fit together? | Engineers, reviewers |
-| 3 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
-| 4 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
-| 5 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
-| 6 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
-| 7 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
+| 2 | [Principles](principles.md) | What properties must Agora preserve? | Founders, engineers, reviewers |
+| 3 | [Architecture](architecture.md) | How does the system fit together? | Engineers, reviewers |
+| 4 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
+| 5 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
+| 6 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
+| 7 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
+| 8 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
 
 ## Start Here
 
 - **New to Agora?** Start with [Product Guide](product.md).
+- **Need the high-level north star?** Read [Principles](principles.md).
 - **Building features?** Read [Architecture](architecture.md), then the relevant layer doc.
 - **Working on contracts or settlement?** Read [Protocol](protocol.md).
 - **Working on submission privacy or sealing?** Read [Submission Privacy](submission-privacy.md).
@@ -36,6 +38,7 @@ Documentation index and reading order for the Agora repository.
 | Concept | Authoritative source |
 |---------|---------------------|
 | Product concepts, user flows | [product.md](product.md) |
+| Product principles, trust-model language, positioning guardrails | [principles.md](principles.md) |
 | System topology, component boundaries | [architecture.md](architecture.md) |
 | Submission sealing, privacy boundary, key model | [submission-privacy.md](submission-privacy.md) |
 | Contract lifecycle, settlement, YAML schema | [protocol.md](protocol.md) |

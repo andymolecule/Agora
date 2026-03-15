@@ -135,7 +135,7 @@ function WarningCallout({
           <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
             {title}
           </div>
-          <p className="text-sm leading-relaxed text-black/75">{message}</p>
+          <p className="text-sm leading-relaxed text-warm-900/75">{message}</p>
         </div>
       </div>
     </div>
@@ -249,14 +249,14 @@ function SubmissionColumnsTable({
   if (expectedColumns.length === 0) return null;
 
   return (
-    <div className="overflow-hidden rounded-[2px] border border-black/15">
+    <div className="overflow-hidden rounded-[2px] border border-warm-900/15">
       <table className="w-full border-collapse text-sm">
         <thead className="bg-[#f4f4f0]">
           <tr>
-            <th className="border-b border-black/10 px-4 py-2 text-left text-[10px] font-mono font-bold uppercase tracking-wider text-black/50">
+            <th className="border-b border-warm-900/10 px-4 py-2 text-left text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/50">
               Column
             </th>
-            <th className="border-b border-black/10 px-4 py-2 text-left text-[10px] font-mono font-bold uppercase tracking-wider text-black/50">
+            <th className="border-b border-warm-900/10 px-4 py-2 text-left text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/50">
               Role
             </th>
           </tr>
@@ -270,12 +270,12 @@ function SubmissionColumnsTable({
             return (
               <tr
                 key={column}
-                className="border-b last:border-b-0 border-black/10"
+                className="border-b last:border-b-0 border-warm-900/10"
               >
-                <td className="px-4 py-3 font-mono text-xs font-bold text-black">
+                <td className="px-4 py-3 font-mono text-xs font-bold text-warm-900">
                   {column}
                 </td>
-                <td className="px-4 py-3 text-sm font-medium text-black/70">
+                <td className="px-4 py-3 text-sm font-medium text-warm-900/70">
                   {role}
                 </td>
               </tr>
@@ -511,15 +511,15 @@ export function DetailClient({ id }: { id: string }) {
     return (
       <div className="space-y-4 max-w-5xl mx-auto">
         <div className="skeleton h-8 w-48" />
-        <div className="skeleton h-64 border border-black" />
-        <div className="skeleton h-48 border border-black" />
+        <div className="skeleton h-64" />
+        <div className="skeleton h-48" />
       </div>
     );
   }
 
   if (detailQuery.error || !detailQuery.data) {
     return (
-      <div className="border border-black p-12 text-center max-w-5xl mx-auto font-mono text-black/60">
+      <div className="border border-warm-900 p-12 text-center max-w-5xl mx-auto font-mono text-warm-900/60">
         <p className="font-medium text-secondary">Challenge not found.</p>
       </div>
     );
@@ -887,7 +887,7 @@ export function DetailClient({ id }: { id: string }) {
                   />
                 ) : verification && hasPublicVerificationArtifacts ? (
                   <div className="space-y-5">
-                    <p className="text-sm leading-relaxed text-black/75">
+                    <p className="text-sm leading-relaxed text-warm-900/75">
                       Agora currently operates scoring, but this submission
                       exposes the public artifacts needed to replay the scorer
                       and check the published result independently.
@@ -982,7 +982,7 @@ export function DetailClient({ id }: { id: string }) {
                     )}
                   </div>
                 ) : (
-                  <p className="text-sm leading-relaxed text-black/60">
+                  <p className="text-sm leading-relaxed text-warm-900/60">
                     Public replay artifacts have not been published for any
                     scored submission yet.
                   </p>

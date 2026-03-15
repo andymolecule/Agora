@@ -24,7 +24,7 @@ export function ChallengeCard({
   return (
     <Link
       href={`/challenges/${challenge.id}`}
-      className="group flex flex-col rounded-[2px] border border-black no-underline bg-white card-hover overflow-hidden h-full"
+      className="group flex flex-col rounded-[2px] border border-warm-900 no-underline bg-white card-hover overflow-hidden h-full"
     >
       {/* Top row: status + reward */}
       <div className="flex items-center justify-between px-5 pt-4 pb-2">
@@ -42,9 +42,9 @@ export function ChallengeCard({
           />
           {badgeLabel}
         </span>
-        <span className="inline-flex items-baseline text-xl font-display font-bold text-black tabular-nums tracking-tight">
+        <span className="inline-flex items-baseline text-xl font-display font-bold text-warm-900 tabular-nums tracking-tight">
           ${formatUsdc(challenge.reward_amount)}
-          <span className="text-[10px] font-mono font-bold text-black/40 ml-1">
+          <span className="text-[10px] font-mono font-bold text-warm-900/40 ml-1">
             USDC
           </span>
         </span>
@@ -52,20 +52,20 @@ export function ChallengeCard({
 
       {/* Title */}
       <div className="px-5 py-3 flex-1">
-        <h3 className="text-lg font-display font-bold leading-snug line-clamp-2 text-black group-hover:underline decoration-2 underline-offset-4">
+        <h3 className="text-lg font-display font-bold leading-snug line-clamp-2 text-warm-900 group-hover:underline decoration-2 underline-offset-4">
           {challenge.title}
         </h3>
-        <p className="text-xs line-clamp-2 mt-2 text-black/50 font-mono">
+        <p className="text-xs line-clamp-2 mt-2 text-warm-900/50 font-mono">
           {challenge.description?.slice(0, 120) ?? "No description."}
         </p>
       </div>
 
       {/* Footer: domain + phase summary */}
-      <div className="flex items-center justify-between px-5 py-3 border-t border-black/10">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-[0.5px] px-2 py-1 border border-black text-black">
+      <div className="flex items-center justify-between px-5 py-3 border-t border-warm-900/10">
+        <span className="text-[10px] font-mono font-bold uppercase tracking-[0.5px] px-2 py-1 border border-warm-900 text-warm-900">
           {challenge.domain}
         </span>
-        <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.5px] text-black/50">
+        <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.5px] text-warm-900/50">
           <Clock className="w-3 h-3" />
           {footerLabel}
         </span>

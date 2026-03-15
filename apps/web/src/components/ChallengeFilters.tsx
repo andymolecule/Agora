@@ -26,11 +26,12 @@ function Pill({
     <button
       type="button"
       onClick={onClick}
-      className="px-3 py-1.5 text-[10px] font-bold font-mono uppercase tracking-wider cursor-pointer border transition-all duration-150"
+      aria-pressed={active}
+      className="px-3 py-1.5 text-[10px] font-bold font-mono uppercase tracking-wider cursor-pointer border transition-all duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent-500)]"
       style={{
-        backgroundColor: active ? "#000" : "transparent",
-        color: active ? "#fff" : "#000",
-        borderColor: "#000",
+        backgroundColor: active ? "var(--color-warm-900)" : "transparent",
+        color: active ? "#fff" : "var(--color-warm-900)",
+        borderColor: "var(--color-warm-900)",
       }}
     >
       {label}
@@ -48,13 +49,13 @@ export function SearchBar({
 }) {
   return (
     <div className="relative flex-1">
-      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black/40 font-mono text-xs font-bold select-none">&gt;</span>
+      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-warm-900/40 font-mono text-xs font-bold select-none">&gt;</span>
       <input
         type="text"
         placeholder="Search challenges..."
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full py-2.5 pl-8 pr-4 text-xs font-mono font-medium bg-white text-black outline-none input-focus placeholder:text-black/30 tracking-wide"
+        className="w-full py-2.5 pl-8 pr-4 text-xs font-mono font-medium bg-white text-warm-900 outline-none input-focus placeholder:text-warm-900/30 tracking-wide"
       />
     </div>
   );
@@ -74,7 +75,8 @@ export function FilterToggle({
     <button
       type="button"
       onClick={onToggle}
-      className={`inline-flex items-center gap-2 px-4 py-2.5 text-[10px] font-bold font-mono uppercase tracking-wider border border-black transition-all duration-150 ${isOpen ? "bg-black text-white" : "bg-white text-black hover:bg-black hover:text-white"
+      aria-expanded={isOpen}
+      className={`inline-flex items-center gap-2 px-4 py-2.5 text-[10px] font-bold font-mono uppercase tracking-wider border border-warm-900 transition-all duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent-500)] ${isOpen ? "bg-warm-900 text-white" : "bg-white text-warm-900 hover:bg-warm-900 hover:text-white"
         }`}
     >
       {isOpen ? <X className="w-3.5 h-3.5" /> : <SlidersHorizontal className="w-3.5 h-3.5" />}
@@ -99,10 +101,10 @@ export function FilterPanel({
   if (!isOpen) return null;
 
   return (
-    <div className="border border-black border-t-0 bg-white p-5 space-y-5 animate-[content-in_200ms_ease-out]">
+    <div className="border border-warm-900 border-t-0 bg-white p-5 space-y-5 animate-[content-in_200ms_ease-out]">
       {/* Domain */}
       <div className="flex items-start gap-4">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/60 pt-2 w-16 shrink-0">
+        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/60 pt-2 w-16 shrink-0">
           Domain
         </span>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -120,7 +122,7 @@ export function FilterPanel({
 
       {/* Status */}
       <div className="flex items-start gap-4">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/60 pt-2 w-16 shrink-0">
+        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/60 pt-2 w-16 shrink-0">
           Status
         </span>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -138,7 +140,7 @@ export function FilterPanel({
 
       {/* Min USDC */}
       <div className="flex items-center gap-4">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/60 w-16 shrink-0">
+        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/60 w-16 shrink-0">
           Min USDC
         </span>
         <input
@@ -147,7 +149,7 @@ export function FilterPanel({
           placeholder="0"
           value={state.minReward}
           onChange={(e) => onUpdate({ minReward: e.target.value })}
-          className="w-32 px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider border border-black bg-white text-black outline-none input-focus placeholder:text-black/40"
+          className="w-32 px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider border border-warm-900 bg-white text-warm-900 outline-none input-focus placeholder:text-warm-900/40"
         />
       </div>
     </div>

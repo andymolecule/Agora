@@ -9,7 +9,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChallengeCard } from "../components/ChallengeCard";
 import {
   type ChallengeFilterState,
@@ -20,6 +20,30 @@ import {
 import { listChallenges } from "../lib/api";
 import { type ChallengeListSort, sortChallenges } from "../lib/challenge-list";
 import { formatUsdc } from "../lib/format";
+
+function CountUp({ target, prefix = "", duration = 800 }: { target: number; prefix?: string; duration?: number }) {
+  const [value, setValue] = useState(0);
+  const ref = useRef<HTMLSpanElement>(null);
+  const hasAnimated = useRef(false);
+
+  useEffect(() => {
+    if (hasAnimated.current || target === 0) {
+      setValue(target);
+      return;
+    }
+    hasAnimated.current = true;
+    const start = performance.now();
+    const step = (now: number) => {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - (1 - progress) ** 3; // ease-out cubic
+      setValue(Math.round(eased * target));
+      if (progress < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }, [target, duration]);
+
+  return <span ref={ref}>{prefix}{formatUsdc(value)}</span>;
+}
 
 export function HomeClient() {
   /* ── Filter + search state ── */
@@ -86,10 +110,10 @@ export function HomeClient() {
     <div className="space-y-6">
       {/* ═══════ HERO ═══════ */}
       <section className="py-10 text-center">
-        <h1 className="text-[3.5rem] sm:text-[4.5rem] leading-[0.9] font-display font-bold text-black tracking-[-0.06em]">
+        <h1 className="text-[3.5rem] sm:text-[4.5rem] leading-[0.9] font-display font-bold text-warm-900 tracking-[-0.06em]">
           Science Bounty
         </h1>
-        <p className="text-sm text-black/50 font-mono font-medium mt-3 mb-6 uppercase tracking-wider">
+        <p className="text-sm text-warm-900/50 font-mono font-medium mt-3 mb-6 uppercase tracking-wider">
           Deterministic scoring · On-chain USDC settlement
         </p>
 
@@ -104,45 +128,28 @@ export function HomeClient() {
           </Link>
         </div>
 
-        {/* Stats ticker — modular grid */}
-        <div className="grid grid-cols-4 border border-black max-w-2xl mx-auto">
-          <div className="bg-white px-5 py-5 border-r border-black">
-            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">
-              TVL
+        {/* Stats ticker — neo-brutalist KPI strip */}
+        <div className="kpi-strip max-w-2xl mx-auto">
+          {[
+            { label: "TVL", value: totalPool, prefix: "$" },
+            { label: "Open", value: openChallenges.length },
+            { label: "Submissions", value: totalSubs },
+            { label: "Challenges", value: challenges.length },
+          ].map((stat) => (
+            <div key={stat.label} className="kpi-cell">
+              <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-warm-500">
+                {stat.label}
+              </div>
+              <div className="text-3xl sm:text-4xl font-display font-bold text-warm-900 tabular-nums mt-2">
+                <CountUp target={stat.value} prefix={stat.prefix} />
+              </div>
             </div>
-            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">
-              ${formatUsdc(totalPool)}
-            </div>
-          </div>
-          <div className="bg-white px-5 py-5 border-r border-black">
-            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">
-              Open
-            </div>
-            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">
-              {openChallenges.length}
-            </div>
-          </div>
-          <div className="bg-white px-5 py-5 border-r border-black">
-            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">
-              Total Submissions
-            </div>
-            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">
-              {totalSubs}
-            </div>
-          </div>
-          <div className="bg-white px-5 py-5">
-            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">
-              Challenges
-            </div>
-            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">
-              {challenges.length}
-            </div>
-          </div>
+          ))}
         </div>
       </section>
 
       {/* ═══════ SEARCH + FILTER ROW ═══════ */}
-      <div className="flex items-stretch border border-black rounded-[2px] overflow-hidden">
+      <div className="flex items-stretch border border-warm-900 rounded-[2px] overflow-hidden">
         <SearchBar
           value={filters.search}
           onChange={(v) => updateFilters({ search: v })}
@@ -152,8 +159,8 @@ export function HomeClient() {
           onToggle={() => setFiltersOpen(!filtersOpen)}
           hasActiveFilters={hasActiveFilters}
         />
-        <div className="flex items-center border-l border-black hover:bg-black hover:text-white transition-colors duration-150 group/sort">
-          <ArrowUpDown className="w-3.5 h-3.5 text-black/50 group-hover/sort:text-white/60 ml-3" />
+        <div className="flex items-center border-l border-warm-900 hover:bg-warm-900 hover:text-white transition-colors duration-150 group/sort">
+          <ArrowUpDown className="w-3.5 h-3.5 text-warm-900/50 group-hover/sort:text-white/60 ml-3" />
           <div className="relative">
             <select
               className="text-[10px] font-bold font-mono uppercase tracking-wider pl-3 pr-7 py-3 bg-transparent text-inherit outline-none cursor-pointer appearance-none border-none"
@@ -195,21 +202,28 @@ export function HomeClient() {
       ) : null}
 
       {query.error ? (
-        <div className="border border-black p-8 text-center">
-          <div className="font-mono font-bold text-sm uppercase tracking-wider text-black/60">
+        <div className="border border-warm-900 p-8 text-center">
+          <div className="font-mono font-bold text-sm uppercase tracking-wider text-warm-900/60">
             Unable to connect to API.
           </div>
           {query.error instanceof Error ? (
-            <div className="mt-3 text-xs font-mono text-black/50 normal-case tracking-normal">
+            <div className="mt-3 text-xs font-mono text-warm-900/50 normal-case tracking-normal">
               {query.error.message}
             </div>
           ) : null}
+          <button
+            type="button"
+            onClick={() => query.refetch()}
+            className="mt-4 px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider border border-warm-900 bg-white text-warm-900 hover:bg-warm-900 hover:text-white transition-colors"
+          >
+            Retry
+          </button>
         </div>
       ) : null}
 
       {!query.isLoading && !query.error && rows.length === 0 ? (
-        <div className="border border-black p-8 max-w-lg mx-auto bg-white">
-          <div className="font-mono text-sm space-y-1 text-black/70">
+        <div className="border border-warm-900 p-8 max-w-lg mx-auto bg-white">
+          <div className="font-mono text-sm space-y-1 text-warm-900/70">
             <div className="flex items-center gap-2 mb-3">
               <SearchIcon className="w-4 h-4" />
               <span className="text-[10px] uppercase tracking-wider font-bold">
@@ -230,11 +244,11 @@ export function HomeClient() {
       {!query.isLoading && rows.length > 0 ? (
         <>
           <div className="flex items-center justify-between">
-            <span className="text-sm font-mono font-bold text-black/60 tabular-nums">
+            <span className="text-sm font-mono font-bold text-warm-900/60 tabular-nums">
               {rows.length} {rows.length === 1 ? "challenge" : "challenges"}
             </span>
           </div>
-          <div className="bg-plus-pattern border border-black p-4 sm:p-8 rounded-[2px]">
+          <div className="bg-plus-pattern border border-warm-900 p-4 sm:p-8 rounded-[2px]">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {rows.map((row) => (
                 <ChallengeCard key={row.id} challenge={row} />

@@ -331,8 +331,8 @@ const PAYOUT_RULE_OPTIONS: Array<{
   },
   {
     value: "top_3",
-    label: "Top 3",
-    hint: "Rewards multiple strong submissions and encourages broader participation.",
+    label: "Top 3 (60 / 25 / 15%)",
+    hint: "1st gets 60%, 2nd gets 25%, 3rd gets 15%. Encourages broader participation.",
   },
   {
     value: "proportional",
@@ -1950,14 +1950,14 @@ export function PostClient() {
                   Discovery metadata (optional)
                 </span>
                 <span className="poster-secondary-copy">
-                  Helps people find the challenge on Agora. Does not affect
-                  scoring, ranking, or payout.
+                  Helps people find the challenge on Agora.
+                  <br />
+                  Does not affect scoring, ranking, or payout.
                 </span>
               </div>
               <div className="poster-secondary-panel-body">
                 <ChoiceField
                   label="Marketplace category"
-                  hint="Used for discovery and browsing only."
                   value={state.domain}
                   options={MARKETPLACE_CATEGORY_OPTIONS}
                   onChange={(next) => setState((s) => ({ ...s, domain: next }))}
@@ -1966,15 +1966,17 @@ export function PostClient() {
                 />
                 <FormField
                   label="Keywords (optional)"
-                  hint="Optional search keywords — press Enter or comma to add"
                   className="span-full"
                 >
                   <div
+                    className="form-input"
                     style={{
                       display: "flex",
                       flexWrap: "wrap",
                       gap: "0.35rem",
                       alignItems: "center",
+                      minHeight: "2.5rem",
+                      padding: "0.4rem 0.65rem",
                     }}
                   >
                     {state.tags.map((tag) => (
@@ -2012,7 +2014,6 @@ export function PostClient() {
                       </span>
                     ))}
                     <input
-                      className="form-input"
                       style={{
                         flex: 1,
                         minWidth: "120px",
@@ -2020,11 +2021,13 @@ export function PostClient() {
                         padding: "0.25rem 0",
                         fontSize: "0.8rem",
                         background: "transparent",
+                        outline: "none",
+                        color: "var(--text-primary)",
                       }}
                       placeholder={
                         state.tags.length === 0
-                          ? scientistCopy.tagPlaceholder
-                          : "Add keyword…"
+                          ? "e.g. reproducibility, assay, csv — press Enter to add"
+                          : "Add keyword… press Enter to add"
                       }
                       value={tagInput}
                       onChange={(e) => setTagInput(e.target.value)}
@@ -2388,7 +2391,7 @@ export function PostClient() {
                       borderRadius: "6px",
                     }}
                   >
-                    <Check size={14} style={{ color: "#000" }} />
+                    <Check size={14} style={{ color: "var(--color-warm-900)" }} />
                     <span
                       style={{
                         fontSize: "0.8rem",
@@ -2559,7 +2562,7 @@ export function PostClient() {
                       borderRadius: "6px",
                     }}
                   >
-                    <Check size={14} style={{ color: "#000" }} />
+                    <Check size={14} style={{ color: "var(--color-warm-900)" }} />
                     <span
                       style={{
                         fontSize: "0.8rem",
@@ -3065,8 +3068,31 @@ export function PostClient() {
               </span>
             </div>
 
+            {/* ── Sub-section: Payout Rule ── */}
+            <div
+              className="span-full"
+              style={{
+                borderTop: "1px solid var(--border-default)",
+                paddingTop: "1.5rem",
+                marginTop: "0.5rem",
+              }}
+            >
+              <h4
+                style={{
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: "var(--text-secondary)",
+                  fontFamily: "var(--font-mono)",
+                  marginBottom: "1rem",
+                }}
+              >
+                Payout Rule
+              </h4>
+            </div>
             <ChoiceField
-              label="Payout rule"
+              label=""
               hint="Choose how the reward pool is distributed after protocol fees."
               value={state.distribution}
               options={PAYOUT_RULE_OPTIONS}
@@ -3075,6 +3101,40 @@ export function PostClient() {
               }
               className="span-full"
             />
+
+            {/* ── Sub-section: Operating Windows ── */}
+            <div
+              className="span-full"
+              style={{
+                borderTop: "1px solid var(--border-default)",
+                paddingTop: "1.5rem",
+                marginTop: "0.5rem",
+              }}
+            >
+              <h4
+                style={{
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: "var(--text-secondary)",
+                  fontFamily: "var(--font-mono)",
+                  marginBottom: "0.25rem",
+                }}
+              >
+                Operating Windows
+              </h4>
+              <p
+                style={{
+                  fontSize: "0.75rem",
+                  color: "var(--text-tertiary)",
+                  marginBottom: "0.5rem",
+                }}
+              >
+                Define how long solvers can submit and how long the review period
+                lasts before settlement.
+              </p>
+            </div>
             <FormField
               label="Submission window"
               hint="How long solvers have to submit before scoring begins"
@@ -3189,7 +3249,7 @@ export function PostClient() {
                     borderRadius: "8px",
                   }}
                 >
-                  <Check size={14} style={{ color: "#000", flexShrink: 0 }} />
+                  <Check size={14} style={{ color: "var(--color-warm-900)", flexShrink: 0 }} />
                   <span
                     style={{
                       fontSize: "0.8rem",
@@ -3256,7 +3316,7 @@ export function PostClient() {
                       borderRadius: "8px",
                     }}
                   >
-                    <Check size={14} style={{ color: "#000", flexShrink: 0 }} />
+                    <Check size={14} style={{ color: "var(--color-warm-900)", flexShrink: 0 }} />
                     <span
                       style={{
                         fontSize: "0.8rem",

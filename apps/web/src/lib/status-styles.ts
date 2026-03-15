@@ -3,9 +3,9 @@ import { CHALLENGE_STATUS, type ChallengeStatus } from "@agora/common";
 export type StatusStyle = { bg: string; text: string; borderColor: string };
 
 export const DEFAULT_STATUS_STYLE: StatusStyle = {
-  bg: "#e8efe8",
-  text: "#2d6a2e",
-  borderColor: "#b5cdb6",
+  bg: "var(--color-success-bg)",
+  text: "var(--color-success)",
+  borderColor: "var(--color-success-border)",
 };
 
 export const STATUS_STYLES: Record<ChallengeStatus | "judging", StatusStyle> = {
@@ -13,12 +13,12 @@ export const STATUS_STYLES: Record<ChallengeStatus | "judging", StatusStyle> = {
   [CHALLENGE_STATUS.scoring]: {
     bg: "var(--color-warning-bg)",
     text: "var(--color-warning)",
-    borderColor: "#FDE68A",
+    borderColor: "var(--color-warning-border)",
   },
   judging: {
     bg: "var(--color-warning-bg)",
     text: "var(--color-warning)",
-    borderColor: "#FDE68A",
+    borderColor: "var(--color-warning-border)",
   },
   [CHALLENGE_STATUS.finalized]: {
     bg: "var(--color-cobalt-100)",
@@ -28,7 +28,7 @@ export const STATUS_STYLES: Record<ChallengeStatus | "judging", StatusStyle> = {
   [CHALLENGE_STATUS.disputed]: {
     bg: "var(--color-error-bg)",
     text: "var(--color-error)",
-    borderColor: "#FECACA",
+    borderColor: "var(--color-error-border)",
   },
   [CHALLENGE_STATUS.cancelled]: {
     bg: "var(--surface-inset)",

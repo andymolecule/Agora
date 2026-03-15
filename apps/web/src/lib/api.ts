@@ -61,6 +61,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return json.data as T;
 }
 
+async function requestRaw<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(resolveApiRequestUrl(path), {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  if (!response.ok) {
+    const message = await getApiErrorMessage(response);
+    throw new Error(`API request failed (${response.status}): ${message}`);
+  }
+
+  return (await response.json()) as T;
+}
+
 async function requestWithCredentials<T>(
   path: string,
   init?: RequestInit,
@@ -80,13 +97,13 @@ export async function getAnalytics(): Promise<AnalyticsData> {
 }
 
 export async function getWorkerHealth(): Promise<WorkerHealth> {
-  return request<WorkerHealth>("/api/worker-health", {
+  return requestRaw<WorkerHealth>("/api/worker-health", {
     signal: AbortSignal.timeout(5000),
   });
 }
 
 export async function getApiHealth() {
-  return request<ApiHealth>("/api/healthz");
+  return requestRaw<ApiHealth>("/healthz");
 }
 
 export async function listChallenges(filters: {

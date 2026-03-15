@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { listChallenges, resolveApiRequestUrl } from "../src/lib/api";
+import {
+  getApiHealth,
+  getWorkerHealth,
+  listChallenges,
+  resolveApiRequestUrl,
+} from "../src/lib/api";
 
 test("browser requests keep /api routes same-origin", () => {
   const originalWindow = globalThis.window;
@@ -96,6 +101,64 @@ test("listChallenges rejects malformed API response shapes", async () => {
 
   try {
     await assert.rejects(() => listChallenges({}));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("getWorkerHealth reads raw worker-health responses", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        ok: true,
+        status: "idle",
+        jobs: {
+          queued: 0,
+          eligibleQueued: 0,
+          running: 0,
+          scored: 3,
+          failed: 0,
+          skipped: 0,
+        },
+        checkedAt: "2026-03-15T12:00:00.000Z",
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    )) as typeof fetch;
+
+  try {
+    const health = await getWorkerHealth();
+    assert.equal(health.status, "idle");
+    assert.equal(health.jobs?.scored, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("getApiHealth reads raw healthz responses", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        ok: true,
+        service: "api",
+        runtimeVersion: "sha-test",
+        checkedAt: "2026-03-15T12:00:00.000Z",
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    )) as typeof fetch;
+
+  try {
+    const health = await getApiHealth();
+    assert.equal(health.ok, true);
+    assert.equal(health.service, "api");
+    assert.equal(health.runtimeVersion, "sha-test");
   } finally {
     globalThis.fetch = originalFetch;
   }

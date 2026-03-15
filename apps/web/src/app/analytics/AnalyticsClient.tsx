@@ -57,14 +57,14 @@ function HeroMetric({
 }) {
   return (
     <div className="text-center">
-      <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/40 mb-1">
+      <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/40 mb-1">
         {label}
       </p>
-      <p className="text-3xl sm:text-4xl font-display font-bold tabular-nums tracking-tight text-black">
+      <p className="text-3xl sm:text-4xl font-display font-bold tabular-nums tracking-tight text-warm-900">
         {value}
       </p>
       {sub && (
-        <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/30 mt-1">
+        <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/30 mt-1">
           {sub}
         </p>
       )}
@@ -89,19 +89,19 @@ function GaugeCard({
 }) {
   return (
     <div className="p-4 flex items-center gap-4">
-      <div className="flex items-center justify-center w-10 h-10 border border-black text-black flex-shrink-0">
+      <div className="flex items-center justify-center w-10 h-10 border border-warm-900 text-warm-900 flex-shrink-0">
         <Icon className="w-5 h-5" strokeWidth={1.5} />
       </div>
       <div className="min-w-0">
-        <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/40">
+        <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/40">
           {label}
         </p>
-        <p className="text-xl font-mono font-bold tabular-nums text-black">
+        <p className="text-xl font-mono font-bold tabular-nums text-warm-900">
           {value}
-          {unit && <span className="text-sm text-black/50 ml-1">{unit}</span>}
+          {unit && <span className="text-sm text-warm-900/50 ml-1">{unit}</span>}
         </p>
         {detail && (
-          <p className="text-[10px] font-mono text-black/40 mt-0.5">{detail}</p>
+          <p className="text-[10px] font-mono text-warm-900/40 mt-0.5">{detail}</p>
         )}
       </div>
     </div>
@@ -120,7 +120,7 @@ function ProgressMetric({
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
 }) {
   return (
-    <div className="border border-black p-4">
+    <div className="border border-warm-900 p-4">
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2">
           <Icon className="w-4 h-4" strokeWidth={1.5} />
@@ -130,7 +130,7 @@ function ProgressMetric({
           {value}%
         </span>
       </div>
-      <div className="w-full border border-black h-[14px] p-[2px]">
+      <div className="w-full border border-warm-900 h-[14px] p-[2px]">
         <div
           className="h-full transition-all duration-700"
           style={{
@@ -160,11 +160,11 @@ function StatCell({
   return (
     <div className="text-center py-3">
       <p
-        className={`text-lg font-mono font-bold tabular-nums ${muted ? "text-black/40" : "text-black"}`}
+        className={`text-lg font-mono font-bold tabular-nums ${muted ? "text-warm-900/40" : "text-warm-900"}`}
       >
         {value}
       </p>
-      <p className="text-[10px] font-mono uppercase tracking-wider text-black/40 font-bold mt-0.5">
+      <p className="text-[10px] font-mono uppercase tracking-wider text-warm-900/40 font-bold mt-0.5">
         {label}
       </p>
     </div>
@@ -179,27 +179,27 @@ function RecentChallengesTable({
   challenges: AnalyticsData["recentChallenges"];
 }) {
   return (
-    <div className="border border-black rounded-[2px] overflow-hidden">
-      <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3 bg-[#f4f4f0] border-b border-black">
+    <div className="border border-warm-900 rounded-[2px] overflow-hidden">
+      <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3 bg-warm-100 border-b border-warm-900">
         <FlaskConical className="w-4 h-4" strokeWidth={2} />
         Recent Challenges
       </h3>
       <table className="w-full text-sm border-collapse">
         <thead>
-          <tr className="bg-[#f4f4f0]">
-            <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
+          <tr className="bg-warm-100">
+            <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
               Title
             </th>
-            <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
+            <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
               Domain
             </th>
-            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
+            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
               Status
             </th>
-            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
+            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
               Reward
             </th>
-            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
+            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
               Created
             </th>
           </tr>
@@ -210,19 +210,19 @@ function RecentChallengesTable({
             return (
               <tr
                 key={c.id}
-                className="border-b last:border-b-0 border-black/20 hover:bg-black/[0.02] transition-colors"
+                className="border-b last:border-b-0 border-warm-900/20 hover:bg-warm-900/[0.02] transition-colors"
               >
                 <td className="py-2 px-4">
                   <Link
                     href={`/challenges/${c.id}`}
-                    className="font-semibold text-black text-sm hover:underline no-underline flex items-center gap-1.5"
+                    className="font-semibold text-warm-900 text-sm hover:underline no-underline flex items-center gap-1.5"
                   >
                     <span>{c.title}</span>
                     <ExternalLink className="w-3 h-3 opacity-40 flex-shrink-0" />
                   </Link>
                 </td>
                 <td className="py-2 px-4">
-                  <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider border border-black text-black">
+                  <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider border border-warm-900 text-warm-900">
                     {c.domain}
                   </span>
                 </td>
@@ -244,7 +244,7 @@ function RecentChallengesTable({
                   </span>
                 </td>
                 <td className="py-2 px-4 text-right">
-                  <span className="font-mono text-xs text-black/60 tabular-nums">
+                  <span className="font-mono text-xs text-warm-900/60 tabular-nums">
                     {formatDate(c.created_at)}
                   </span>
                 </td>
@@ -255,7 +255,7 @@ function RecentChallengesTable({
             <tr>
               <td
                 colSpan={5}
-                className="py-6 text-center font-mono text-sm text-black/40"
+                className="py-6 text-center font-mono text-sm text-warm-900/40"
               >
                 No challenges yet
               </td>
@@ -273,24 +273,24 @@ function RecentSubmissionsTable({
   submissions: AnalyticsData["recentSubmissions"];
 }) {
   return (
-    <div className="border border-black rounded-[2px] overflow-hidden">
-      <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3 bg-[#f4f4f0] border-b border-black">
+    <div className="border border-warm-900 rounded-[2px] overflow-hidden">
+      <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3 bg-warm-100 border-b border-warm-900">
         <FileText className="w-4 h-4" strokeWidth={2} />
         Recent Submissions
       </h3>
       <table className="w-full text-sm border-collapse">
         <thead>
-          <tr className="bg-[#f4f4f0]">
-            <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
+          <tr className="bg-warm-100">
+            <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
               Solver
             </th>
-            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
+            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
               Score
             </th>
-            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
+            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
               Scored
             </th>
-            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
+            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
               Submitted
             </th>
           </tr>
@@ -299,7 +299,7 @@ function RecentSubmissionsTable({
           {submissions.map((s) => (
             <tr
               key={s.id}
-              className="border-b last:border-b-0 border-black/20 hover:bg-black/[0.02] transition-colors"
+              className="border-b last:border-b-0 border-warm-900/20 hover:bg-warm-900/[0.02] transition-colors"
             >
               <td className="py-2 px-4">
                 <a
@@ -322,14 +322,14 @@ function RecentSubmissionsTable({
                   className={`px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-[2px] border ${
                     s.scored
                       ? "bg-[#e8efe8] text-[#2d6a2e] border-[#b5cdb6]"
-                      : "bg-black/5 text-black/40 border-black/10"
+                      : "bg-warm-900/5 text-warm-900/40 border-warm-900/10"
                   }`}
                 >
                   {s.scored ? "Yes" : "Pending"}
                 </span>
               </td>
               <td className="py-2 px-4 text-right">
-                <span className="font-mono text-xs text-black/60 tabular-nums">
+                <span className="font-mono text-xs text-warm-900/60 tabular-nums">
                   {formatDate(s.submitted_at)}
                 </span>
               </td>
@@ -339,7 +339,7 @@ function RecentSubmissionsTable({
             <tr>
               <td
                 colSpan={4}
-                className="py-6 text-center font-mono text-sm text-black/40"
+                className="py-6 text-center font-mono text-sm text-warm-900/40"
               >
                 No submissions yet
               </td>
@@ -355,16 +355,16 @@ function RecentSubmissionsTable({
 
 function AnalyticsSkeleton() {
   return (
-    <div className="space-y-6 animate-pulse">
-      <div className="border border-black/20 p-8 h-32" />
+    <div className="space-y-6">
+      <div className="skeleton h-32" />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="border border-black/20 p-4 h-20" />
+          <div key={i} className="skeleton h-20" />
         ))}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="border border-black/20 p-4 h-40" />
+          <div key={i} className="skeleton h-40" />
         ))}
       </div>
     </div>
@@ -452,7 +452,7 @@ function WorkerStatus() {
   const statusMap = {
     ok: { color: "bg-green-500", label: "Operational" },
     warning: { color: "bg-yellow-500", label: "Delayed" },
-    idle: { color: "bg-black/30", label: "Idle" },
+    idle: { color: "bg-warm-900/30", label: "Idle" },
     error: { color: "bg-red-500", label: "Error" },
   } as const;
   const s = health
@@ -465,9 +465,9 @@ function WorkerStatus() {
   const sealingConfigured = health?.sealing?.configured;
 
   return (
-    <div className="border border-black overflow-hidden">
+    <div className="border border-warm-900 overflow-hidden">
       {/* Header bar */}
-      <div className="flex items-center justify-between px-5 py-3 bg-[#f4f4f0] border-b border-black">
+      <div className="flex items-center justify-between px-5 py-3 bg-warm-100 border-b border-warm-900">
         <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2">
           <Activity className="w-4 h-4" strokeWidth={2} />
           Scoring Worker
@@ -496,10 +496,10 @@ function WorkerStatus() {
         <div className="bg-white">
           {/* Job Pipeline — consistent 4-column grid */}
           <div className="px-5 pt-4 pb-3">
-            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/30 mb-3">
+            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/30 mb-3">
               Job Pipeline
             </p>
-            <div className="grid grid-cols-4 divide-x divide-black/10">
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-warm-900/10">
               <StatCell label="Eligible" value={health.jobs.eligibleQueued} />
               <StatCell label="Queued" value={health.jobs.queued} />
               <StatCell label="Running" value={health.jobs.running} />
@@ -507,14 +507,14 @@ function WorkerStatus() {
             </div>
           </div>
 
-          <div className="border-t border-black/10 mx-5" />
+          <div className="border-t border-warm-900/10 mx-5" />
 
           {/* Health Indicators — consistent 4-column grid */}
           <div className="px-5 pt-3 pb-4">
-            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/30 mb-3">
+            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/30 mb-3">
               Health Indicators
             </p>
-            <div className="grid grid-cols-4 divide-x divide-black/10">
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-warm-900/10">
               <StatCell
                 label="Oldest Eligible"
                 value={formatRelativeAge(health.metrics?.oldestQueuedAgeMs)}
@@ -534,10 +534,10 @@ function WorkerStatus() {
                       strokeWidth={2}
                     />
                   ) : (
-                    <Lock className="w-4 h-4 text-black/30" strokeWidth={2} />
+                    <Lock className="w-4 h-4 text-warm-900/30" strokeWidth={2} />
                   )}
                   <p
-                    className={`text-lg font-mono font-bold ${sealingReady ? "text-[#5A7D4F]" : "text-black/40"}`}
+                    className={`text-lg font-mono font-bold ${sealingReady ? "text-[#5A7D4F]" : "text-warm-900/40"}`}
                   >
                     {sealingReady
                       ? "Ready"
@@ -546,7 +546,7 @@ function WorkerStatus() {
                         : "Off"}
                   </p>
                 </div>
-                <p className="text-[10px] font-mono uppercase tracking-wider text-black/40 font-bold mt-0.5">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-warm-900/40 font-bold mt-0.5">
                   Sealed Submissions
                 </p>
               </div>
@@ -555,8 +555,8 @@ function WorkerStatus() {
 
           {/* Active Key footer */}
           {health.sealing?.keyId && (
-            <div className="border-t border-black/10 px-5 py-2.5 bg-[#fafaf8]">
-              <p className="text-[10px] font-mono text-black/40 flex items-center gap-1.5">
+            <div className="border-t border-warm-900/10 px-5 py-2.5 bg-[#fafaf8]">
+              <p className="text-[10px] font-mono text-warm-900/40 flex items-center gap-1.5">
                 <Lock className="w-3 h-3" strokeWidth={2} />
                 Active key: {health.sealing.keyId}
               </p>
@@ -565,7 +565,7 @@ function WorkerStatus() {
         </div>
       ) : (
         <div className="px-5 py-6 bg-white">
-          <p className="text-sm text-black/40 font-mono">
+          <p className="text-sm text-warm-900/40 font-mono">
             {query.isLoading ? "Loading..." : "Worker health unavailable"}
           </p>
         </div>
@@ -589,11 +589,11 @@ export function AnalyticsClient() {
     <div className="space-y-8">
       {/* Hero */}
       <section className="py-6 text-center">
-        <h1 className="text-[2.5rem] sm:text-[3rem] leading-none font-display font-bold text-black tracking-[-0.04em] flex items-center justify-center gap-3 uppercase">
+        <h1 className="text-[2.5rem] sm:text-[3rem] leading-none font-display font-bold text-warm-900 tracking-[-0.04em] flex items-center justify-center gap-3 uppercase">
           <BarChart3 className="w-8 h-8" strokeWidth={2} />
           Platform Analytics
         </h1>
-        <p className="text-xs font-mono font-bold uppercase tracking-wider text-black/60 mt-3">
+        <p className="text-xs font-mono font-bold uppercase tracking-wider text-warm-900/60 mt-3">
           On-chain fundamentals &amp; scoring pipeline
         </p>
       </section>
@@ -601,7 +601,7 @@ export function AnalyticsClient() {
       {query.isLoading ? (
         <AnalyticsSkeleton />
       ) : query.error ? (
-        <div className="border border-black p-8 text-center font-mono font-bold text-sm uppercase tracking-wider text-black/60">
+        <div className="border border-warm-900 p-8 text-center font-mono font-bold text-sm uppercase tracking-wider text-warm-900/60">
           Unable to load analytics data. Try refreshing.
         </div>
       ) : d ? (
@@ -610,11 +610,11 @@ export function AnalyticsClient() {
 
           {/* ── Section 1: Financial Overview ── */}
           <div>
-            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/40 mb-2 flex items-center gap-1.5">
+            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/40 mb-2 flex items-center gap-1.5">
               <DollarSign className="w-3 h-3" strokeWidth={1.5} />
               Financial Overview
             </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 border border-black divide-x divide-black bg-white">
+            <div className="grid grid-cols-2 md:grid-cols-4 border border-warm-900 divide-x divide-warm-900 bg-white">
               <div className="p-5 text-center">
                 <HeroMetric
                   label="Total Value Locked"
@@ -647,7 +647,7 @@ export function AnalyticsClient() {
           </div>
 
           {/* ── Section 2: Activity Metrics ── */}
-          <div className="grid grid-cols-2 md:grid-cols-4 border border-black divide-x divide-black bg-white">
+          <div className="grid grid-cols-2 md:grid-cols-4 border border-warm-900 divide-x divide-warm-900 bg-white">
             <GaugeCard
               icon={FlaskConical}
               label="Challenges"
