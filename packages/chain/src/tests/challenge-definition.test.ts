@@ -3,9 +3,9 @@ import test from "node:test";
 import { readChallengeDefinitionMetadataFromChain } from "../challenge-definition.js";
 import type { getPublicClient } from "../client.js";
 import {
+  isTransientPinnedContractReadError,
   readContractStrict,
   readImmutableContractWithLatestFallback,
-  isTransientPinnedContractReadError,
 } from "../contract-read.js";
 
 test("challenge definition metadata falls back to latest when the pinned block header is unavailable", async () => {
@@ -18,7 +18,10 @@ test("challenge definition metadata falls back to latest when the pinned block h
   try {
     const calls: Array<{ functionName: string; blockNumber?: bigint }> = [];
     const publicClient = {
-      async readContract(input: { functionName: string; blockNumber?: bigint }) {
+      async readContract(input: {
+        functionName: string;
+        blockNumber?: bigint;
+      }) {
         calls.push(input);
 
         if (input.blockNumber !== undefined) {
@@ -74,7 +77,10 @@ test("challenge definition metadata falls back to latest when the pinned block r
   try {
     const calls: Array<{ functionName: string; blockNumber?: bigint }> = [];
     const publicClient = {
-      async readContract(input: { functionName: string; blockNumber?: bigint }) {
+      async readContract(input: {
+        functionName: string;
+        blockNumber?: bigint;
+      }) {
         calls.push(input);
 
         if (input.blockNumber !== undefined) {
@@ -165,7 +171,9 @@ test("transient pinned contract read classifier matches code-availability lag er
     true,
   );
   assert.equal(
-    isTransientPinnedContractReadError(new Error("Missing or invalid parameters")),
+    isTransientPinnedContractReadError(
+      new Error("Missing or invalid parameters"),
+    ),
     false,
   );
 });
@@ -239,4 +247,29 @@ test("strict contract reads emit an error log when they fail", async () => {
   } finally {
     console.error = originalError;
   }
+});
+
+test("strict contract reads retry retryable RPC errors before succeeding", async () => {
+  let callCount = 0;
+  const publicClient = {
+    async readContract() {
+      callCount += 1;
+      if (callCount < 3) {
+        throw new Error(
+          "HTTP request failed.\n\nStatus: 429\nURL: https://sepolia.base.org/",
+        );
+      }
+      return 1n;
+    },
+  } as unknown as ReturnType<typeof getPublicClient>;
+
+  const result = await readContractStrict<bigint>({
+    publicClient,
+    address: "0x217b97e7d1a8b878e1322fd191d88479a1f38c70",
+    abi: [] as never,
+    functionName: "status",
+  });
+
+  assert.equal(result, 1n);
+  assert.equal(callCount, 3);
 });

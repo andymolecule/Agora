@@ -411,29 +411,27 @@ export async function getChallengeLifecycleState(
   disputeWindowHours: bigint;
 }> {
   const publicClient = getPublicClient();
-  const [rawStatus, deadline, disputeWindowHours] = await Promise.all([
-    readContractStrict<bigint>({
-      publicClient,
-      address: challengeAddress,
-      abi: AgoraChallengeAbi,
-      functionName: "status",
-      blockNumber,
-    }),
-    readContractStrict<bigint>({
-      publicClient,
-      address: challengeAddress,
-      abi: AgoraChallengeAbi,
-      functionName: "deadline",
-      blockNumber,
-    }),
-    readContractStrict<bigint>({
-      publicClient,
-      address: challengeAddress,
-      abi: AgoraChallengeAbi,
-      functionName: "disputeWindowHours",
-      blockNumber,
-    }),
-  ]);
+  const rawStatus = await readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "status",
+    blockNumber,
+  });
+  const deadline = await readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "deadline",
+    blockNumber,
+  });
+  const disputeWindowHours = await readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "disputeWindowHours",
+    blockNumber,
+  });
   return {
     status: decodeChallengeStatusValue(rawStatus),
     deadline,
@@ -454,59 +452,52 @@ export async function getChallengeFinalizeState(
   scoredCount: bigint;
 }> {
   const publicClient = getPublicClient();
-  const [
-    contractVersion,
-    rawStatus,
-    deadline,
-    disputeWindowHours,
-    scoringGracePeriod,
-    submissionCount,
-    scoredCount,
-  ] = await Promise.all([
-    getChallengeContractVersion(challengeAddress, blockNumber),
-    readContractStrict<bigint>({
-      publicClient,
-      address: challengeAddress,
-      abi: AgoraChallengeAbi,
-      functionName: "status",
-      blockNumber,
-    }),
-    readContractStrict<bigint>({
-      publicClient,
-      address: challengeAddress,
-      abi: AgoraChallengeAbi,
-      functionName: "deadline",
-      blockNumber,
-    }),
-    readContractStrict<bigint>({
-      publicClient,
-      address: challengeAddress,
-      abi: AgoraChallengeAbi,
-      functionName: "disputeWindowHours",
-      blockNumber,
-    }),
-    readContractStrict<bigint>({
-      publicClient,
-      address: challengeAddress,
-      abi: AgoraChallengeAbi,
-      functionName: "SCORING_GRACE_PERIOD",
-      blockNumber,
-    }),
-    readContractStrict<bigint>({
-      publicClient,
-      address: challengeAddress,
-      abi: AgoraChallengeAbi,
-      functionName: "submissionCount",
-      blockNumber,
-    }),
-    readContractStrict<bigint>({
-      publicClient,
-      address: challengeAddress,
-      abi: AgoraChallengeAbi,
-      functionName: "scoredCount",
-      blockNumber,
-    }),
-  ]);
+  const contractVersion = await getChallengeContractVersion(
+    challengeAddress,
+    blockNumber,
+  );
+  const rawStatus = await readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "status",
+    blockNumber,
+  });
+  const deadline = await readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "deadline",
+    blockNumber,
+  });
+  const disputeWindowHours = await readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "disputeWindowHours",
+    blockNumber,
+  });
+  const scoringGracePeriod = await readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "SCORING_GRACE_PERIOD",
+    blockNumber,
+  });
+  const submissionCount = await readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "submissionCount",
+    blockNumber,
+  });
+  const scoredCount = await readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "scoredCount",
+    blockNumber,
+  });
 
   return {
     contractVersion,

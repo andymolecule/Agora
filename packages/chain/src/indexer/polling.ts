@@ -1,6 +1,9 @@
 import type { AgoraConfig } from "@agora/common";
-import { getPublicClient } from "../client.js";
-import { isTransientPinnedContractReadError } from "../contract-read.js";
+import type { getPublicClient } from "../client.js";
+import {
+  isRetryableChainRpcError,
+  withChainRpcRetry,
+} from "../contract-read.js";
 
 export const POLL_INTERVAL_MS = 30_000;
 const MAX_BLOCK_RANGE = BigInt(9_999);
@@ -105,16 +108,7 @@ export function getDueReplayBlock(now: number): bigint | null {
 }
 
 export function isRetryableError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    isTransientPinnedContractReadError(error) ||
-    /\b429\b/.test(message) ||
-    /\b408\b/.test(message) ||
-    /\b5\d\d\b/.test(message) ||
-    /timeout/i.test(message) ||
-    /network/i.test(message) ||
-    /ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(message)
-  );
+  return isRetryableChainRpcError(error);
 }
 
 export async function chunkedGetLogs(
@@ -127,10 +121,13 @@ export async function chunkedGetLogs(
   let cursor = from;
   while (cursor <= to) {
     const end = cursor + MAX_BLOCK_RANGE < to ? cursor + MAX_BLOCK_RANGE : to;
-    const logs = await publicClient.getLogs({
-      address,
-      fromBlock: cursor,
-      toBlock: end,
+    const logs = await withChainRpcRetry({
+      action: () =>
+        publicClient.getLogs({
+          address,
+          fromBlock: cursor,
+          toBlock: end,
+        }),
     });
     allLogs = allLogs.concat(Array.from(logs));
     cursor = end + BigInt(1);
