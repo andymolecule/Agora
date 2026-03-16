@@ -75,6 +75,60 @@ const defaultProcessJobDeps: ProcessJobDeps = {
   upsertProofBundle,
 };
 
+async function ensureChallengeIsScoreable(input: {
+  db: DbClient;
+  job: ScoreJobRow;
+  challenge: ChallengeRow;
+  submission: SubmissionRow;
+  challengeAddress: `0x${string}`;
+  log: WorkerLogFn;
+  deps: ProcessJobDeps;
+}) {
+  const lifecycle = await input.deps.getChallengeLifecycleState(
+    input.challengeAddress,
+  );
+  if (lifecycle.status === CHALLENGE_STATUS.scoring) {
+    return true;
+  }
+
+  const phaseMeta = {
+    jobId: input.job.id,
+    submissionId: input.submission.id,
+    challengeId: input.challenge.id,
+  };
+
+  if (lifecycle.status === CHALLENGE_STATUS.open) {
+    const reason = "challenge_not_in_scoring";
+    input.log("info", "Challenge is not in scoring yet; requeueing job", {
+      ...phaseMeta,
+      reason,
+    });
+    await input.deps.requeueJobWithoutAttemptPenalty(
+      input.db,
+      input.job.id,
+      input.job.attempts,
+      reason,
+      getWorkerPostTxRetryDelayMs(),
+    );
+    return false;
+  }
+
+  const reason = `challenge_${lifecycle.status}`;
+  input.log("warn", "Challenge is no longer scoreable; skipping job", {
+    ...phaseMeta,
+    reason,
+  });
+  await input.deps.markScoreJobSkipped(
+    input.db,
+    {
+      submission_id: input.submission.id,
+      challenge_id: input.challenge.id,
+    },
+    reason,
+  );
+  return false;
+}
+
 export async function processJob(
   db: DbClient,
   job: ScoreJobRow,
@@ -144,38 +198,17 @@ export async function processJob(
       return;
     }
 
-    const lifecycle =
-      await resolvedDeps.getChallengeLifecycleState(challengeAddress);
-    if (lifecycle.status !== CHALLENGE_STATUS.scoring) {
-      if (lifecycle.status === CHALLENGE_STATUS.open) {
-        const reason = "challenge_not_in_scoring";
-        log("info", "Challenge is not in scoring yet; requeueing job", {
-          ...phaseMeta,
-          reason,
-        });
-        await resolvedDeps.requeueJobWithoutAttemptPenalty(
-          db,
-          job.id,
-          job.attempts,
-          reason,
-          getWorkerPostTxRetryDelayMs(),
-        );
-        return;
-      }
-
-      const reason = `challenge_${lifecycle.status}`;
-      log("warn", "Challenge is no longer scoreable; skipping job", {
-        ...phaseMeta,
-        reason,
-      });
-      await resolvedDeps.markScoreJobSkipped(
+    if (
+      !(await ensureChallengeIsScoreable({
         db,
-        {
-          submission_id: submission.id,
-          challenge_id: challenge.id,
-        },
-        reason,
-      );
+        job,
+        challenge,
+        submission,
+        challengeAddress,
+        log,
+        deps: resolvedDeps,
+      }))
+    ) {
       return;
     }
 
@@ -271,6 +304,20 @@ export async function processJob(
     }
 
     if (shouldAbortForLeaseLoss("before_post")) {
+      return;
+    }
+
+    if (
+      !(await ensureChallengeIsScoreable({
+        db,
+        job,
+        challenge,
+        submission,
+        challengeAddress,
+        log,
+        deps: resolvedDeps,
+      }))
+    ) {
       return;
     }
 

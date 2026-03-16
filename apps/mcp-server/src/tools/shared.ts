@@ -2,6 +2,7 @@ import {
   claimChallengePayout as claimChallengePayoutWorkflow,
   getChallengeFromApi,
   getChallengeLeaderboardFromApi,
+  getSubmissionStatusByOnChainFromApi,
   getSubmissionStatusFromApi,
   listChallengesFromApi,
   scoreLocal as scoreLocalWorkflow,
@@ -63,6 +64,17 @@ export async function getSubmissionStatus(submissionId: string) {
   return response.data;
 }
 
+export async function getSubmissionStatusByProtocolRefs(input: {
+  challengeAddress: string;
+  onChainSubmissionId: number;
+}) {
+  const response = await getSubmissionStatusByOnChainFromApi(
+    input,
+    apiUrlOrUndefined(),
+  );
+  return response.data;
+}
+
 export async function submitSolution(input: {
   challengeId: string;
   filePath: string;
@@ -87,6 +99,7 @@ export async function claimChallengePayout(input: {
     challengeId: input.challengeId,
     privateKey: input.privateKey,
     allowRawPrivateKey: input.allowRemotePrivateKey ?? false,
+    apiUrl: apiUrlOrUndefined(),
   });
 }
 

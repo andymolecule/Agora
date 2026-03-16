@@ -12,7 +12,6 @@ import {
   clearJobPostedTx,
   completeJob,
   type createSupabaseClient,
-  getChallengeScoreJobCounts,
   getProofBundleBySubmissionId,
   markJobPosted,
   requeueJobWithoutAttemptPenalty,
@@ -24,9 +23,10 @@ import type { ScoreJobRow, SubmissionRow, WorkerLogFn } from "./types.js";
 
 type DbClient = ReturnType<typeof createSupabaseClient>;
 const TX_CONFIRMATION_TIMEOUT_MS = 5 * 60 * 1000;
+type PublicClient = ReturnType<typeof getPublicClient>;
 
 async function waitForTransactionReceiptWithTimeout(input: {
-  publicClient: ReturnType<typeof getPublicClient>;
+  publicClient: PublicClient;
   hash: `0x${string}`;
 }) {
   return input.publicClient.waitForTransactionReceipt({
@@ -81,13 +81,6 @@ export function shouldAttemptChallengeFinalize(
 
   const scoringGraceEndsAt = lifecycle.deadline + lifecycle.scoringGracePeriod;
   return nowSeconds > scoringGraceEndsAt;
-}
-
-export function shouldDeferChallengeFinalize(input: {
-  queuedJobs: number;
-  runningJobs: number;
-}) {
-  return input.queuedJobs > 0 || input.runningJobs > 0;
 }
 
 export async function reconcileScoredSubmission(
@@ -249,7 +242,35 @@ export async function postScoreAndWaitForConfirmation(
   return txHash;
 }
 
-export async function sweepChallengeLifecycle(db: DbClient, log: WorkerLogFn) {
+type LifecycleSweepDeps = {
+  finalizeChallenge: typeof finalizeChallenge;
+  getChallengeFinalizeState: typeof getChallengeFinalizeState;
+  getChallengeLifecycleState: typeof getChallengeLifecycleState;
+  getPublicClient: typeof getPublicClient;
+  nowSeconds: () => bigint;
+  startChallengeScoring: typeof startChallengeScoring;
+  waitForTransactionReceiptWithTimeout: typeof waitForTransactionReceiptWithTimeout;
+};
+
+const defaultLifecycleSweepDeps: LifecycleSweepDeps = {
+  finalizeChallenge,
+  getChallengeFinalizeState,
+  getChallengeLifecycleState,
+  getPublicClient,
+  nowSeconds: () => BigInt(Math.floor(Date.now() / 1000)),
+  startChallengeScoring,
+  waitForTransactionReceiptWithTimeout,
+};
+
+export async function sweepChallengeLifecycle(
+  db: DbClient,
+  log: WorkerLogFn,
+  deps: Partial<LifecycleSweepDeps> = {},
+) {
+  const resolvedDeps: LifecycleSweepDeps = {
+    ...defaultLifecycleSweepDeps,
+    ...deps,
+  };
   const { data: challenges, error } = await db
     .from("challenges")
     .select("id, contract_address, status")
@@ -258,14 +279,15 @@ export async function sweepChallengeLifecycle(db: DbClient, log: WorkerLogFn) {
 
   if (error || !challenges || challenges.length === 0) return;
 
-  const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
-  const publicClient = getPublicClient();
+  const nowSeconds = resolvedDeps.nowSeconds();
+  const publicClient = resolvedDeps.getPublicClient();
 
   for (const challenge of challenges) {
     const challengeAddress = challenge.contract_address as `0x${string}`;
 
     try {
-      const lifecycle = await getChallengeLifecycleState(challengeAddress);
+      const lifecycle =
+        await resolvedDeps.getChallengeLifecycleState(challengeAddress);
 
       if (
         challenge.status === CHALLENGE_STATUS.open &&
@@ -276,11 +298,14 @@ export async function sweepChallengeLifecycle(db: DbClient, log: WorkerLogFn) {
           contract: challengeAddress,
         });
 
-        const txHash = await startChallengeScoring(challengeAddress);
-        const receipt = await waitForTransactionReceiptWithTimeout({
-          publicClient,
-          hash: txHash,
-        });
+        const txHash =
+          await resolvedDeps.startChallengeScoring(challengeAddress);
+        const receipt = await resolvedDeps.waitForTransactionReceiptWithTimeout(
+          {
+            publicClient,
+            hash: txHash,
+          },
+        );
         if (receipt.status !== "success") {
           throw new Error(`startScoring transaction reverted: ${txHash}`);
         }
@@ -295,24 +320,9 @@ export async function sweepChallengeLifecycle(db: DbClient, log: WorkerLogFn) {
         continue;
       }
 
-      const finalizeState = await getChallengeFinalizeState(challengeAddress);
+      const finalizeState =
+        await resolvedDeps.getChallengeFinalizeState(challengeAddress);
       if (!shouldAttemptChallengeFinalize(finalizeState, nowSeconds)) {
-        continue;
-      }
-
-      const scoreJobCounts = await getChallengeScoreJobCounts(db, challenge.id);
-      if (
-        shouldDeferChallengeFinalize({
-          queuedJobs: scoreJobCounts.queued,
-          runningJobs: scoreJobCounts.running,
-        })
-      ) {
-        log("info", "Deferring finalize while scoring work is still active", {
-          challengeId: challenge.id,
-          contract: challengeAddress,
-          queuedJobs: scoreJobCounts.queued,
-          runningJobs: scoreJobCounts.running,
-        });
         continue;
       }
 
@@ -323,8 +333,8 @@ export async function sweepChallengeLifecycle(db: DbClient, log: WorkerLogFn) {
         scoredCount: finalizeState.scoredCount.toString(),
       });
 
-      const txHash = await finalizeChallenge(challengeAddress);
-      const receipt = await waitForTransactionReceiptWithTimeout({
+      const txHash = await resolvedDeps.finalizeChallenge(challengeAddress);
+      const receipt = await resolvedDeps.waitForTransactionReceiptWithTimeout({
         publicClient,
         hash: txHash,
       });

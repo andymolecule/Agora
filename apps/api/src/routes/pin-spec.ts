@@ -8,6 +8,7 @@ import {
 } from "@agora/common";
 import { pinJSON } from "@agora/ipfs";
 import { Hono } from "hono";
+import { jsonError } from "../lib/api-error.js";
 import { consumeNonce, createNonce } from "../lib/auth-store.js";
 import type { ApiEnv } from "../types.js";
 
@@ -59,7 +60,12 @@ function isAuthRateLimited(address: string) {
 
 router.get("/", async (c) => {
   if (isRateLimited(getRateLimitKey(c.req.raw))) {
-    return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
+    return jsonError(c, {
+      status: 429,
+      code: "RATE_LIMITED",
+      message: "Rate limit exceeded. Try again later.",
+      retriable: true,
+    });
   }
 
   return c.json({ nonce: await createNonce("pin_spec") });
@@ -69,10 +75,19 @@ router.post("/", async (c) => {
   try {
     const contentLength = Number(c.req.header("content-length") ?? "0");
     if (!Number.isFinite(contentLength) || contentLength > MAX_BODY_BYTES) {
-      return c.json({ error: "Request body too large." }, 413);
+      return jsonError(c, {
+        status: 413,
+        code: "REQUEST_TOO_LARGE",
+        message: "Request body too large.",
+      });
     }
     if (isRateLimited(getRateLimitKey(c.req.raw))) {
-      return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
+      return jsonError(c, {
+        status: 429,
+        code: "RATE_LIMITED",
+        message: "Rate limit exceeded. Try again later.",
+        retriable: true,
+      });
     }
 
     const body = (await c.req.json()) as { spec?: unknown };
@@ -92,40 +107,61 @@ router.post("/", async (c) => {
       typeof auth.signature !== "string" ||
       typeof auth.specHash !== "string"
     ) {
-      return c.json({ error: "Missing pin authorization signature." }, 401);
+      return jsonError(c, {
+        status: 401,
+        code: "PIN_AUTH_MISSING",
+        message: "Missing pin authorization signature.",
+      });
     }
 
     if (!/^0x[a-fA-F0-9]{40}$/.test(auth.address)) {
-      return c.json({ error: "Invalid signer address." }, 401);
+      return jsonError(c, {
+        status: 401,
+        code: "PIN_SIGNER_INVALID",
+        message: "Invalid signer address.",
+      });
     }
     if (!/^0x(?:[0-9a-fA-F]{2})+$/.test(auth.signature)) {
-      return c.json({ error: "Invalid signature format." }, 401);
+      return jsonError(c, {
+        status: 401,
+        code: "PIN_SIGNATURE_FORMAT_INVALID",
+        message: "Invalid signature format.",
+      });
     }
     if (auth.nonce.length < 8 || auth.nonce.length > 128) {
-      return c.json({ error: "Invalid authorization nonce." }, 401);
+      return jsonError(c, {
+        status: 401,
+        code: "PIN_NONCE_INVALID",
+        message: "Invalid authorization nonce.",
+      });
     }
     if (isAuthRateLimited(auth.address)) {
-      return c.json(
-        { error: "Signer rate limit exceeded. Try again later." },
-        429,
-      );
+      return jsonError(c, {
+        status: 429,
+        code: "RATE_LIMITED",
+        message: "Signer rate limit exceeded. Try again later.",
+        retriable: true,
+      });
     }
 
     const expectedSpecHash = computeSpecHash(body.spec);
     if (auth.specHash !== expectedSpecHash) {
-      return c.json({ error: "Spec hash mismatch." }, 401);
+      return jsonError(c, {
+        status: 401,
+        code: "SPEC_HASH_MISMATCH",
+        message: "Spec hash mismatch.",
+      });
     }
 
     const { chainId } = readApiServerRuntimeConfig();
     const parsed = validateChallengeSpec(body.spec, chainId);
     if (!parsed.success) {
-      return c.json(
-        {
-          error: "Invalid challenge spec",
-          issues: parsed.error.issues,
-        },
-        400,
-      );
+      return jsonError(c, {
+        status: 400,
+        code: "SPEC_INVALID",
+        message: "Invalid challenge spec",
+        extras: { issues: parsed.error.issues },
+      });
     }
 
     const publicClient = getPublicClient();
@@ -141,7 +177,11 @@ router.post("/", async (c) => {
       signature: auth.signature as `0x${string}`,
     });
     if (!isValidSignature) {
-      return c.json({ error: "Invalid signature." }, 401);
+      return jsonError(c, {
+        status: 401,
+        code: "PIN_SIGNATURE_INVALID",
+        message: "Invalid signature.",
+      });
     }
 
     const nonceAccepted = await consumeNonce(
@@ -150,20 +190,23 @@ router.post("/", async (c) => {
       auth.address.toLowerCase() as `0x${string}`,
     );
     if (!nonceAccepted) {
-      return c.json(
-        { error: "Authorization expired or already used. Please sign again." },
-        409,
-      );
+      return jsonError(c, {
+        status: 409,
+        code: "PIN_AUTH_EXPIRED",
+        message: "Authorization expired or already used. Please sign again.",
+        retriable: true,
+      });
     }
 
     const canonicalSpec = await canonicalizeChallengeSpec(parsed.data);
     const specCid = await pinJSON(`challenge-${Date.now()}`, canonicalSpec);
     return c.json({ specCid });
   } catch (error) {
-    return c.json(
-      { error: error instanceof Error ? error.message : "Failed to pin spec" },
-      500,
-    );
+    return jsonError(c, {
+      status: 500,
+      code: "SPEC_PIN_FAILED",
+      message: error instanceof Error ? error.message : "Failed to pin spec",
+    });
   }
 });
 

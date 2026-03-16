@@ -5,6 +5,7 @@ import {
 } from "@agora/common";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { jsonError, toApiErrorResponse } from "./lib/api-error.js";
 import { buildOpenApiDocument } from "./lib/openapi.js";
 import { buildX402Metadata, createX402Middleware } from "./middleware/x402.js";
 import agentChallengeRoutes from "./routes/agent-challenges.js";
@@ -53,7 +54,11 @@ export function createApp() {
     if (["POST", "PUT", "PATCH"].includes(c.req.method)) {
       const contentLength = c.req.header("content-length");
       if (contentLength && Number(contentLength) > MAX_JSON_BODY_BYTES) {
-        return c.json({ error: "JSON body too large." }, 413);
+        return jsonError(c, {
+          status: 413,
+          code: "REQUEST_TOO_LARGE",
+          message: "JSON body too large.",
+        });
       }
     }
     await next();
@@ -87,15 +92,17 @@ export function createApp() {
   app.route("/api/me/portfolio", portfolioRoutes);
   app.route("/api/stats", statsRoutes);
 
-  app.notFound((c) => c.json({ error: "Not found" }, 404));
+  app.notFound((c) =>
+    jsonError(c, {
+      status: 404,
+      code: "NOT_FOUND",
+      message: "Not found",
+    }),
+  );
 
   app.onError((error, c) => {
-    return c.json(
-      {
-        error: error instanceof Error ? error.message : "Internal server error",
-      },
-      500,
-    );
+    const response = toApiErrorResponse(error);
+    return c.json(response.body, response.status);
   });
 
   return app;

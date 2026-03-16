@@ -23,6 +23,7 @@ function collectSourceFiles(rootDir: string): string[] {
         if (
           entry.name === "node_modules" ||
           entry.name === "dist" ||
+          entry.name === ".next" ||
           entry.name === ".git" ||
           relativePath.startsWith(`packages${path.sep}contracts`)
         ) {

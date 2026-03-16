@@ -64,6 +64,8 @@ test("verify route blocks writes while the challenge is open", async () => {
   assert.deepEqual(await response.json(), {
     error:
       "Verification is unavailable while the challenge is open. Check back when scoring begins.",
+    code: "VERIFICATION_UNAVAILABLE",
+    retriable: false,
   });
 });
 

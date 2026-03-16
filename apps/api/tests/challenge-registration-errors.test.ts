@@ -12,7 +12,9 @@ test("challenge registration transient pinned reads return a retryable 409", () 
 
   assert.deepEqual(response, {
     status: 409,
+    code: "CHAIN_READ_NOT_READY",
     error: getChallengeRegistrationRetryMessage(),
+    retriable: true,
   });
 });
 
@@ -23,6 +25,8 @@ test("challenge registration surfaces non-transient errors as 400", () => {
 
   assert.deepEqual(response, {
     status: 400,
+    code: "CHALLENGE_REGISTRATION_INVALID",
     error: "Missing or invalid parameters",
+    retriable: false,
   });
 });

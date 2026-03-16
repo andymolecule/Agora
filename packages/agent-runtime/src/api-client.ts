@@ -1,8 +1,12 @@
 import {
   type AgentChallengesQuery,
+  AgoraError,
   agentChallengeDetailResponseSchema,
   agentChallengeLeaderboardResponseSchema,
   agentChallengesListResponseSchema,
+  apiErrorResponseSchema,
+  challengeRegistrationRequestSchema,
+  challengeRegistrationResponseSchema,
   loadConfig,
   submissionIntentRequestSchema,
   submissionIntentResponseSchema,
@@ -11,6 +15,10 @@ import {
   submissionRegistrationResponseSchema,
   submissionStatusResponseSchema,
 } from "@agora/common";
+
+function isAddressRef(value: string) {
+  return /^0x[a-fA-F0-9]{40}$/.test(value);
+}
 
 function resolveApiUrl(explicitApiUrl?: string) {
   const apiUrl = explicitApiUrl ?? loadConfig().AGORA_API_URL;
@@ -52,8 +60,22 @@ async function requestJson<T>(input: {
     },
   );
   if (!response.ok) {
-    throw new Error(
-      `API request failed (${response.status}): ${await response.text()}`,
+    const payload = await response.json().catch(() => null);
+    const parsedError = apiErrorResponseSchema.safeParse(payload);
+    if (parsedError.success) {
+      throw new AgoraError(parsedError.data.error, {
+        code: parsedError.data.code,
+        retriable: parsedError.data.retriable,
+        status: response.status,
+      });
+    }
+    throw new AgoraError(
+      `API request failed (${response.status}). Next step: retry or inspect the API response body.`,
+      {
+        code: "API_REQUEST_FAILED",
+        retriable: response.status >= 500,
+        status: response.status,
+      },
     );
   }
   return input.parse(await response.json());
@@ -79,23 +101,48 @@ export async function listChallengesFromApi(
 }
 
 export async function getChallengeFromApi(
-  challengeId: string,
+  challengeIdOrAddress: string,
   apiUrl?: string,
 ) {
+  const pathname = isAddressRef(challengeIdOrAddress)
+    ? `/api/challenges/by-address/${challengeIdOrAddress}`
+    : `/api/challenges/${challengeIdOrAddress}`;
   return requestJson({
     apiUrl,
-    pathname: `/api/challenges/${challengeId}`,
+    pathname,
     parse: (json) => agentChallengeDetailResponseSchema.parse(json),
   });
 }
 
-export async function getChallengeLeaderboardFromApi(
-  challengeId: string,
+export async function registerChallengeWithApi(
+  input: {
+    txHash: `0x${string}`;
+  },
   apiUrl?: string,
 ) {
+  const payload = challengeRegistrationRequestSchema.parse(input);
+  const response = await requestJson({
+    apiUrl,
+    pathname: "/api/challenges",
+    init: {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    parse: (json) => challengeRegistrationResponseSchema.parse(json),
+  });
+  return response.data;
+}
+
+export async function getChallengeLeaderboardFromApi(
+  challengeIdOrAddress: string,
+  apiUrl?: string,
+) {
+  const pathname = isAddressRef(challengeIdOrAddress)
+    ? `/api/challenges/by-address/${challengeIdOrAddress}/leaderboard`
+    : `/api/challenges/${challengeIdOrAddress}/leaderboard`;
   return requestJson({
     apiUrl,
-    pathname: `/api/challenges/${challengeId}/leaderboard`,
+    pathname,
     parse: (json) => agentChallengeLeaderboardResponseSchema.parse(json),
   });
 }
@@ -111,6 +158,20 @@ export async function getSubmissionStatusFromApi(
   });
 }
 
+export async function getSubmissionStatusByOnChainFromApi(
+  input: {
+    challengeAddress: string;
+    onChainSubmissionId: number;
+  },
+  apiUrl?: string,
+) {
+  return requestJson({
+    apiUrl,
+    pathname: `/api/submissions/by-onchain/${input.challengeAddress}/${input.onChainSubmissionId}/status`,
+    parse: (json) => submissionStatusResponseSchema.parse(json),
+  });
+}
+
 export async function getSubmissionPublicKeyFromApi(apiUrl?: string) {
   return requestJson({
     apiUrl,
@@ -121,7 +182,8 @@ export async function getSubmissionPublicKeyFromApi(apiUrl?: string) {
 
 export async function createSubmissionIntentWithApi(
   input: {
-    challengeId: string;
+    challengeId?: string;
+    challengeAddress?: `0x${string}`;
     solverAddress: `0x${string}`;
     resultCid: string;
     resultFormat?: "plain_v0" | "sealed_submission_v2";
@@ -143,7 +205,8 @@ export async function createSubmissionIntentWithApi(
 
 export async function registerSubmissionWithApi(
   input: {
-    challengeId: string;
+    challengeId?: string;
+    challengeAddress?: `0x${string}`;
     resultCid: string;
     txHash: `0x${string}`;
     resultFormat: "sealed_submission_v2";

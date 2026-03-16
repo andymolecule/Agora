@@ -4,6 +4,9 @@ import { loadIpfsConfig } from "@agora/common";
 
 const PINATA_UPLOAD_URL = "https://uploads.pinata.cloud/v3/files";
 const PINATA_PUBLIC_FILES_URL = "https://api.pinata.cloud/v3/files/public";
+const DEFAULT_PIN_TIMEOUT_MS = 30_000;
+const DEFAULT_PIN_MAX_ATTEMPTS = 3;
+const DEFAULT_PIN_RETRY_BASE_MS = 500;
 
 interface PinataUploadResponse {
   data?: {
@@ -23,6 +26,32 @@ interface PinataListFilesResponse {
   };
   error?: unknown;
 }
+
+function isRetryableStatus(status: number) {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function isRetryablePinError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "AbortError") return true;
+  return (
+    error instanceof TypeError ||
+    /network|timed out|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|socket/i.test(
+      error.message,
+    )
+  );
+}
+
+function normalizePinUploadError(error: unknown) {
+  if (error instanceof Error && error.name === "AbortError") {
+    return new Error(
+      `Pinata upload timeout after ${DEFAULT_PIN_TIMEOUT_MS}ms.`,
+    );
+  }
+  return normalizeIpfsError(error);
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function normalizeIpfsError(error: unknown): Error {
   if (error instanceof Error) {
@@ -84,13 +113,13 @@ async function parseJsonSafely(response: Response) {
   }
 }
 
-async function throwPinataHttpError(response: Response): Promise<never> {
+async function buildPinataHttpError(response: Response) {
   const payload = await parseJsonSafely(response);
   const message =
     (payload && typeof payload.error === "string" && payload.error) ||
     (payload && typeof payload.message === "string" && payload.message) ||
     `Pinata request failed: ${response.status}`;
-  throw new Error(message);
+  return new Error(message);
 }
 
 async function uploadPublicFile(file: File, name: string): Promise<string> {
@@ -99,22 +128,64 @@ async function uploadPublicFile(file: File, name: string): Promise<string> {
   form.set("name", name);
   form.set("file", file, name);
 
-  const response = await fetch(PINATA_UPLOAD_URL, {
-    method: "POST",
-    headers: authHeaders(),
-    body: form,
-  });
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= DEFAULT_PIN_MAX_ATTEMPTS; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      DEFAULT_PIN_TIMEOUT_MS,
+    );
 
-  if (!response.ok) {
-    await throwPinataHttpError(response);
+    try {
+      const response = await fetch(PINATA_UPLOAD_URL, {
+        method: "POST",
+        headers: authHeaders(),
+        body: form,
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const error = await buildPinataHttpError(response);
+        if (
+          isRetryableStatus(response.status) &&
+          attempt < DEFAULT_PIN_MAX_ATTEMPTS
+        ) {
+          await response.arrayBuffer().catch(() => undefined);
+          lastError = error;
+        } else {
+          throw error;
+        }
+      } else {
+        const payload = (await response.json()) as PinataUploadResponse;
+        const cid = payload.data?.cid;
+        if (!cid) {
+          throw new Error("Pinata upload response did not include a CID.");
+        }
+        return `ipfs://${cid}`;
+      }
+    } catch (error) {
+      const normalized = normalizePinUploadError(error);
+      if (attempt < DEFAULT_PIN_MAX_ATTEMPTS && isRetryablePinError(error)) {
+        lastError = normalized;
+      } else {
+        throw normalized;
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const backoffMs = DEFAULT_PIN_RETRY_BASE_MS * 2 ** (attempt - 1);
+    if (backoffMs > 0) {
+      await sleep(backoffMs);
+    }
   }
 
-  const payload = (await response.json()) as PinataUploadResponse;
-  const cid = payload.data?.cid;
-  if (!cid) {
-    throw new Error("Pinata upload response did not include a CID.");
-  }
-  return `ipfs://${cid}`;
+  throw (
+    lastError ??
+    new Error(
+      `Pinata upload failed after ${DEFAULT_PIN_MAX_ATTEMPTS} attempts.`,
+    )
+  );
 }
 
 async function listPublicFilesByCid(cid: string): Promise<PinataPublicFile[]> {
@@ -127,7 +198,7 @@ async function listPublicFilesByCid(cid: string): Promise<PinataPublicFile[]> {
   });
 
   if (!response.ok) {
-    await throwPinataHttpError(response);
+    throw await buildPinataHttpError(response);
   }
 
   const payload = (await response.json()) as PinataListFilesResponse;
@@ -141,7 +212,7 @@ async function deletePublicFileById(id: string): Promise<void> {
   });
 
   if (!response.ok) {
-    await throwPinataHttpError(response);
+    throw await buildPinataHttpError(response);
   }
 }
 

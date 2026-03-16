@@ -609,6 +609,7 @@ export async function processFactoryLog(input: {
       const challengeInsert = await buildChallengeInsert({
         chainId: config.AGORA_CHAIN_ID,
         contractVersion,
+        factoryChallengeId: Number(id),
         contractAddress: challengeAddr,
         factoryAddress: config.AGORA_FACTORY_ADDRESS,
         posterAddress: poster,

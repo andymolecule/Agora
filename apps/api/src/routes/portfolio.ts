@@ -1,4 +1,4 @@
-import { getChallengePayoutByAddress } from "@agora/chain";
+import { getChallengePayoutsByAddress } from "@agora/chain";
 import {
   createSupabaseClient,
   listChallengePayoutsBySolver,
@@ -12,7 +12,7 @@ import { normalizeSubmissionScore } from "./challenges-shared.js";
 
 type PortfolioRouteDeps = {
   createSupabaseClient: typeof createSupabaseClient;
-  getChallengePayoutByAddress: typeof getChallengePayoutByAddress;
+  getChallengePayoutsByAddress: typeof getChallengePayoutsByAddress;
   listChallengePayoutsBySolver: typeof listChallengePayoutsBySolver;
   listSubmissionsBySolver: typeof listSubmissionsBySolver;
   requireSiweSession: MiddlewareHandler<ApiEnv>;
@@ -71,7 +71,7 @@ function aggregatePayoutRowsByChallenge(payoutRows: SolverPayoutRow[]) {
 
 const defaultDeps: PortfolioRouteDeps = {
   createSupabaseClient,
-  getChallengePayoutByAddress,
+  getChallengePayoutsByAddress,
   listChallengePayoutsBySolver,
   listSubmissionsBySolver,
   requireSiweSession,
@@ -127,22 +127,24 @@ export function createPortfolioRouter(deps: PortfolioRouteDeps = defaultDeps) {
     ]);
     const claimableAmounts: Record<string, string> = {};
 
-    for (const challengeId of new Set(submissions.map((s) => s.challenge_id))) {
-      const submission = submissions.find(
-        (s) => s.challenge_id === challengeId,
-      );
-      const contractAddress = submission
-        ? challengeContractAddress(submission)
-        : undefined;
-      if (!contractAddress) {
-        claimableAmounts[challengeId] = "0";
-        continue;
+    const challengeContracts = new Map<string, `0x${string}`>();
+    for (const submission of submissions) {
+      const contractAddress = challengeContractAddress(submission);
+      if (contractAddress) {
+        challengeContracts.set(submission.challenge_id, contractAddress);
       }
-      const amount = await deps.getChallengePayoutByAddress(
-        contractAddress,
-        address as `0x${string}`,
-      );
-      claimableAmounts[challengeId] = amount.toString();
+    }
+
+    const payoutByAddress = await deps.getChallengePayoutsByAddress(
+      Array.from(new Set(challengeContracts.values())),
+      address as `0x${string}`,
+    );
+
+    for (const challengeId of new Set(submissions.map((s) => s.challenge_id))) {
+      const contractAddress = challengeContracts.get(challengeId);
+      claimableAmounts[challengeId] = contractAddress
+        ? (payoutByAddress[contractAddress.toLowerCase()] ?? 0n).toString()
+        : "0";
     }
 
     return c.json(

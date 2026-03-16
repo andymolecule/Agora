@@ -168,6 +168,12 @@ export interface SubmissionContractValidationResult {
   presentColumns?: string[];
 }
 
+export interface SubmissionUploadValidationInput {
+  bytes: Uint8Array;
+  fileName?: string | null;
+  submissionContract?: SubmissionContractOutput | null;
+}
+
 export function validateSubmissionTextAgainstContract(
   content: string,
   submissionContract?: SubmissionContractOutput | null,
@@ -239,4 +245,34 @@ export function validateSubmissionBytesAgainstContract(
   }
 
   return validateSubmissionTextAgainstContract(text, submissionContract);
+}
+
+export function validateSubmissionUploadAgainstContract(
+  input: SubmissionUploadValidationInput,
+): SubmissionContractValidationResult {
+  const submissionContract = input.submissionContract;
+  if (!submissionContract) {
+    return { valid: true };
+  }
+
+  if (input.bytes.byteLength > submissionContract.file.max_bytes) {
+    return {
+      valid: false,
+      message: `Submission exceeds the ${submissionContract.file.max_bytes}-byte limit. Next step: shrink the file and retry.`,
+    };
+  }
+
+  const expectedExtension = submissionContract.file.extension?.toLowerCase();
+  const fileName = input.fileName?.trim().toLowerCase();
+  if (expectedExtension && fileName && !fileName.endsWith(expectedExtension)) {
+    return {
+      valid: false,
+      message: `Submission file must end with ${expectedExtension}. Next step: rename or export the file with the expected extension and retry.`,
+    };
+  }
+
+  return validateSubmissionBytesAgainstContract(
+    input.bytes,
+    submissionContract,
+  );
 }

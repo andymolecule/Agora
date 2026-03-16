@@ -1,25 +1,68 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { resetConfigCache } from "@agora/common";
-import { z } from "zod";
-const cliConfigSchema = z.object({
-  rpc_url: z.string().url().optional(),
-  api_url: z.string().url().optional(),
-  pinata_jwt: z.string().optional(),
-  private_key: z.string().optional(),
-  factory_address: z.string().optional(),
-  usdc_address: z.string().optional(),
-  chain_id: z.number().int().optional(),
-  supabase_url: z.string().url().optional(),
-  supabase_anon_key: z.string().optional(),
-  supabase_service_key: z.string().optional(),
-});
+import { readCliRuntimeConfig, resetConfigCache } from "@agora/common";
 
-export type CliConfig = z.infer<typeof cliConfigSchema>;
+export interface CliConfig {
+  rpc_url?: string;
+  api_url?: string;
+  pinata_jwt?: string;
+  private_key?: string;
+  factory_address?: string;
+  usdc_address?: string;
+  chain_id?: number;
+  supabase_url?: string;
+  supabase_anon_key?: string;
+  supabase_service_key?: string;
+}
 
 const configDir = path.join(os.homedir(), ".agora");
 const configPath = path.join(configDir, "config.json");
+
+function filterDefined<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      ([, entry]) => entry !== undefined && entry !== "",
+    ),
+  ) as T;
+}
+
+function toEnvConfig(config: CliConfig): Record<string, string | undefined> {
+  return filterDefined({
+    AGORA_RPC_URL: config.rpc_url,
+    AGORA_API_URL: config.api_url,
+    AGORA_PINATA_JWT: config.pinata_jwt,
+    AGORA_PRIVATE_KEY: config.private_key,
+    AGORA_FACTORY_ADDRESS: config.factory_address,
+    AGORA_USDC_ADDRESS: config.usdc_address,
+    AGORA_CHAIN_ID:
+      typeof config.chain_id === "number" ? String(config.chain_id) : undefined,
+    AGORA_SUPABASE_URL: config.supabase_url,
+    AGORA_SUPABASE_ANON_KEY: config.supabase_anon_key,
+    AGORA_SUPABASE_SERVICE_KEY: config.supabase_service_key,
+  });
+}
+
+function fromRuntimeConfig(
+  config: ReturnType<typeof readCliRuntimeConfig>,
+): CliConfig {
+  return filterDefined({
+    rpc_url: config.AGORA_RPC_URL,
+    api_url: config.AGORA_API_URL,
+    pinata_jwt: config.AGORA_PINATA_JWT,
+    private_key: config.AGORA_PRIVATE_KEY,
+    factory_address: config.AGORA_FACTORY_ADDRESS,
+    usdc_address: config.AGORA_USDC_ADDRESS,
+    chain_id: config.AGORA_CHAIN_ID,
+    supabase_url: config.AGORA_SUPABASE_URL,
+    supabase_anon_key: config.AGORA_SUPABASE_ANON_KEY,
+    supabase_service_key: config.AGORA_SUPABASE_SERVICE_KEY,
+  });
+}
+
+function validateCliConfig(config: CliConfig): CliConfig {
+  return fromRuntimeConfig(readCliRuntimeConfig(toEnvConfig(config)));
+}
 
 export function getConfigPath() {
   return configPath;
@@ -28,42 +71,28 @@ export function getConfigPath() {
 export function readConfigFile(): CliConfig {
   if (!fs.existsSync(configPath)) return {};
   const raw = fs.readFileSync(configPath, "utf8");
-  const parsed = JSON.parse(raw) as unknown;
-  return cliConfigSchema.parse(parsed);
+  const parsed = JSON.parse(raw) as CliConfig;
+  return validateCliConfig(parsed);
 }
 
 export function writeConfigFile(config: CliConfig) {
   fs.mkdirSync(configDir, { recursive: true });
-  const validated = cliConfigSchema.parse(config);
+  const validated = validateCliConfig(config);
   fs.writeFileSync(configPath, JSON.stringify(validated, null, 2));
 }
 
 export function loadCliConfig(): CliConfig {
   const fileConfig = readConfigFile();
-  const envConfig: CliConfig = {
-    rpc_url: process.env.AGORA_RPC_URL,
-    api_url: process.env.AGORA_API_URL,
-    pinata_jwt: process.env.AGORA_PINATA_JWT,
-    private_key: process.env.AGORA_PRIVATE_KEY,
-    factory_address: process.env.AGORA_FACTORY_ADDRESS,
-    usdc_address: process.env.AGORA_USDC_ADDRESS,
-    chain_id: process.env.AGORA_CHAIN_ID
-      ? Number(process.env.AGORA_CHAIN_ID)
-      : undefined,
-    supabase_url: process.env.AGORA_SUPABASE_URL,
-    supabase_anon_key: process.env.AGORA_SUPABASE_ANON_KEY,
-    supabase_service_key: process.env.AGORA_SUPABASE_SERVICE_KEY,
-  };
+  const envConfig = fromRuntimeConfig(readCliRuntimeConfig());
 
   return {
     ...fileConfig,
-    ...Object.fromEntries(
-      Object.entries(envConfig).filter(([, v]) => v !== undefined && v !== ""),
-    ),
+    ...envConfig,
   };
 }
 
 export function applyConfigToEnv(config: CliConfig) {
+  const validated = validateCliConfig(config);
   const setIfMissing = (key: string, value: string | number | undefined) => {
     if (value === undefined) return;
     if (!process.env[key]) {
@@ -71,16 +100,16 @@ export function applyConfigToEnv(config: CliConfig) {
     }
   };
 
-  setIfMissing("AGORA_RPC_URL", config.rpc_url);
-  setIfMissing("AGORA_API_URL", config.api_url);
-  setIfMissing("AGORA_PINATA_JWT", config.pinata_jwt);
-  setIfMissing("AGORA_PRIVATE_KEY", config.private_key);
-  setIfMissing("AGORA_FACTORY_ADDRESS", config.factory_address);
-  setIfMissing("AGORA_USDC_ADDRESS", config.usdc_address);
-  setIfMissing("AGORA_CHAIN_ID", config.chain_id);
-  setIfMissing("AGORA_SUPABASE_URL", config.supabase_url);
-  setIfMissing("AGORA_SUPABASE_ANON_KEY", config.supabase_anon_key);
-  setIfMissing("AGORA_SUPABASE_SERVICE_KEY", config.supabase_service_key);
+  setIfMissing("AGORA_RPC_URL", validated.rpc_url);
+  setIfMissing("AGORA_API_URL", validated.api_url);
+  setIfMissing("AGORA_PINATA_JWT", validated.pinata_jwt);
+  setIfMissing("AGORA_PRIVATE_KEY", validated.private_key);
+  setIfMissing("AGORA_FACTORY_ADDRESS", validated.factory_address);
+  setIfMissing("AGORA_USDC_ADDRESS", validated.usdc_address);
+  setIfMissing("AGORA_CHAIN_ID", validated.chain_id);
+  setIfMissing("AGORA_SUPABASE_URL", validated.supabase_url);
+  setIfMissing("AGORA_SUPABASE_ANON_KEY", validated.supabase_anon_key);
+  setIfMissing("AGORA_SUPABASE_SERVICE_KEY", validated.supabase_service_key);
 
   // Ensure loadConfig() re-parses after env mutation in this process.
   resetConfigCache();

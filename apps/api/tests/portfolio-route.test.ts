@@ -10,7 +10,7 @@ test("portfolio route requires a session", async () => {
 
   const router = createPortfolioRouter({
     createSupabaseClient: () => ({}) as never,
-    getChallengePayoutByAddress: async () => 0n,
+    getChallengePayoutsByAddress: async () => ({}),
     listChallengePayoutsBySolver: async () => [],
     listSubmissionsBySolver: async () => [],
     requireSiweSession: rejectSession,
@@ -33,7 +33,9 @@ test("portfolio route returns only the session wallet portfolio", async () => {
 
   const router = createPortfolioRouter({
     createSupabaseClient: () => ({}) as never,
-    getChallengePayoutByAddress: async () => 5_000_000n,
+    getChallengePayoutsByAddress: async () => ({
+      "0x0000000000000000000000000000000000000001": 5_000_000n,
+    }),
     listChallengePayoutsBySolver: async () => [
       {
         challenge_id: "challenge-1",

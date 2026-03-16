@@ -1,6 +1,9 @@
 import { z } from "zod";
+import { SUBMISSION_SEAL_VERSION } from "../submission-sealing.js";
 import { CHALLENGE_STATUS, CHALLENGE_TYPES } from "../types/challenge.js";
+import { SCORE_JOB_STATUSES } from "../types/score-job.js";
 import { SUBMISSION_RESULT_FORMAT } from "../types/submission.js";
+import { submissionContractSchema } from "./submission-contract.js";
 
 const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
 const normalizedAddressSchema = z
@@ -18,6 +21,56 @@ const challengeStatusSchema = z.enum([
   CHALLENGE_STATUS.cancelled,
 ]);
 const challengeTypeSchema = z.enum(CHALLENGE_TYPES);
+const rewardDistributionSchema = z.enum([
+  "winner_take_all",
+  "top_3",
+  "proportional",
+]);
+const scoreJobStatusSchema = z.enum([...SCORE_JOB_STATUSES] as [
+  string,
+  ...string[],
+]);
+const nonNegativeIntegerSchema = z.number().int().nonnegative();
+const positiveIntegerSchema = z.number().int().positive();
+const challengeTargetFields = {
+  challengeId: challengeIdSchema.optional(),
+  challengeAddress: normalizedAddressSchema.optional(),
+};
+
+function validateChallengeTarget(
+  value: {
+    challengeId?: string;
+    challengeAddress?: string;
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (
+    typeof value.challengeId === "string" ||
+    typeof value.challengeAddress === "string"
+  ) {
+    return;
+  }
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ["challengeId"],
+    message:
+      "Provide challengeId or challengeAddress. Next step: pass a challenge UUID or contract address.",
+  });
+}
+
+export const challengeRefsSchema = z.object({
+  challengeId: challengeIdSchema,
+  challengeAddress: addressSchema,
+  factoryAddress: addressSchema.nullable(),
+  factoryChallengeId: nonNegativeIntegerSchema.nullable(),
+});
+
+export const submissionRefsSchema = z.object({
+  submissionId: submissionIdSchema,
+  challengeId: challengeIdSchema,
+  challengeAddress: addressSchema,
+  onChainSubmissionId: nonNegativeIntegerSchema,
+});
 
 export const agentChallengesQuerySchema = z.object({
   status: challengeStatusSchema.optional(),
@@ -46,10 +99,14 @@ export const challengeSummarySchema = z
     spec_cid: z.string().nullable().optional(),
     dataset_train_cid: z.string().nullable().optional(),
     dataset_test_cid: z.string().nullable().optional(),
+    contract_address: addressSchema,
+    factory_address: addressSchema.nullable(),
+    factory_challenge_id: nonNegativeIntegerSchema.nullable(),
     submissions_count: z.number().int().nonnegative().optional(),
     created_at: z.string().datetime({ offset: true }).nullable().optional(),
+    refs: challengeRefsSchema,
   })
-  .passthrough();
+  .strict();
 
 export const challengeDatasetsSchema = z.object({
   train_cid: z.string().nullable(),
@@ -72,13 +129,20 @@ export const challengeLeaderboardEntrySchema = z.object({
 
 export const challengeDetailSchema = challengeSummarySchema
   .extend({
-    contract_address: addressSchema.optional(),
-    factory_address: addressSchema.optional(),
     poster_address: addressSchema.optional(),
     description: z.string(),
     challenge_type: challengeTypeSchema,
+    eval_metric: z.string().nullable().optional(),
+    eval_image: z.string().nullable().optional(),
+    distribution_type: rewardDistributionSchema.nullable().optional(),
+    dispute_window_hours: nonNegativeIntegerSchema.nullable().optional(),
+    minimum_score: z.number().nullable().optional(),
+    max_submissions_total: positiveIntegerSchema.nullable().optional(),
+    max_submissions_per_solver: positiveIntegerSchema.nullable().optional(),
+    expected_columns: z.array(z.string()).nullable().optional(),
+    submission_contract: submissionContractSchema.nullable().optional(),
   })
-  .passthrough();
+  .strict();
 
 export const agentChallengesListResponseSchema = z.object({
   data: z.array(challengeSummarySchema),
@@ -108,23 +172,43 @@ export const challengeRegistrationResponseSchema = z.object({
     ok: z.boolean(),
     challengeAddress: addressSchema,
     challengeId: challengeIdSchema,
+    factoryChallengeId: nonNegativeIntegerSchema.nullable(),
+    refs: challengeRefsSchema,
   }),
 });
 
+const submissionStatusSubmissionSchema = z.object({
+  id: submissionIdSchema,
+  challenge_id: challengeIdSchema,
+  challenge_address: addressSchema,
+  on_chain_sub_id: nonNegativeIntegerSchema,
+  solver_address: addressSchema,
+  score: z.string().nullable(),
+  scored: z.boolean(),
+  submitted_at: z.string().datetime({ offset: true }).or(z.string()),
+  scored_at: z.string().datetime({ offset: true }).or(z.string()).nullable(),
+  refs: submissionRefsSchema,
+});
+
 export const submissionStatusSchema = z.object({
-  submission: z.object({
-    id: submissionIdSchema,
-    challenge_id: challengeIdSchema.optional(),
-    on_chain_sub_id: z.number().int().nonnegative(),
-    solver_address: addressSchema,
-    score: z.string().nullable(),
-    scored: z.boolean(),
-    submitted_at: z.string().datetime({ offset: true }).or(z.string()),
-    scored_at: z.string().datetime({ offset: true }).or(z.string()).nullable(),
-  }),
+  submission: submissionStatusSubmissionSchema,
   proofBundle: z
     .object({
       reproducible: z.boolean(),
+    })
+    .nullable(),
+  job: z
+    .object({
+      status: scoreJobStatusSchema,
+      attempts: nonNegativeIntegerSchema,
+      maxAttempts: nonNegativeIntegerSchema,
+      lastError: z.string().nullable(),
+      nextAttemptAt: z
+        .string()
+        .datetime({ offset: true })
+        .or(z.string())
+        .nullable(),
+      lockedAt: z.string().datetime({ offset: true }).or(z.string()).nullable(),
     })
     .nullable(),
   scoringStatus: z.enum(["pending", "complete", "scored_awaiting_proof"]),
@@ -134,9 +218,28 @@ export const submissionStatusResponseSchema = z.object({
   data: submissionStatusSchema,
 });
 
+export const submissionValidationResponseSchema = z.object({
+  data: z.object({
+    valid: z.boolean(),
+    contractKind: z.string().nullable(),
+    maxBytes: positiveIntegerSchema.nullable(),
+    expectedExtension: z.string().nullable(),
+    message: z.string().nullable(),
+    missingColumns: z.array(z.string()),
+    extraColumns: z.array(z.string()),
+    presentColumns: z.array(z.string()),
+  }),
+});
+
+export const apiErrorResponseSchema = z.object({
+  error: z.string(),
+  code: z.string(),
+  retriable: z.boolean(),
+});
+
 export const submissionPublicKeyResponseSchema = z.object({
   data: z.object({
-    version: z.number().int().optional(),
+    version: z.literal(SUBMISSION_SEAL_VERSION).optional(),
     alg: z.string().optional(),
     kid: z.string(),
     publicKeyPem: z.string(),
@@ -154,35 +257,44 @@ export const submissionIntentResponseSchema = z.object({
 
 export const submissionRegistrationResponseSchema = z.object({
   ok: z.boolean(),
-  submission: z.object({
-    id: submissionIdSchema,
+  submission: submissionStatusSubmissionSchema.pick({
+    id: true,
+    challenge_id: true,
+    challenge_address: true,
+    on_chain_sub_id: true,
+    solver_address: true,
+    refs: true,
   }),
   warning: z.string().nullable().optional(),
 });
 
-export const submissionIntentRequestSchema = z.object({
-  challengeId: challengeIdSchema,
-  solverAddress: addressSchema,
-  resultCid: z.string().min(1),
-  resultFormat: z
-    .enum([
-      SUBMISSION_RESULT_FORMAT.plainV0,
-      SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
-    ])
-    .optional(),
-});
+export const submissionIntentRequestSchema = z
+  .object({
+    ...challengeTargetFields,
+    solverAddress: addressSchema,
+    resultCid: z.string().min(1),
+    resultFormat: z
+      .enum([
+        SUBMISSION_RESULT_FORMAT.plainV0,
+        SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+      ])
+      .optional(),
+  })
+  .superRefine(validateChallengeTarget);
 
-export const submissionRegistrationRequestSchema = z.object({
-  challengeId: challengeIdSchema,
-  resultCid: z.string().min(1),
-  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
-  resultFormat: z
-    .enum([
-      SUBMISSION_RESULT_FORMAT.plainV0,
-      SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
-    ])
-    .optional(),
-});
+export const submissionRegistrationRequestSchema = z
+  .object({
+    ...challengeTargetFields,
+    resultCid: z.string().min(1),
+    txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+    resultFormat: z
+      .enum([
+        SUBMISSION_RESULT_FORMAT.plainV0,
+        SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+      ])
+      .optional(),
+  })
+  .superRefine(validateChallengeTarget);
 
 export type AgentChallengesQuery = z.output<typeof agentChallengesQuerySchema>;
 export type AgentChallengeSummary = z.infer<typeof challengeSummarySchema>;
@@ -191,3 +303,5 @@ export type AgentChallengeLeaderboardEntry = z.infer<
   typeof challengeLeaderboardEntrySchema
 >;
 export type SubmissionStatusOutput = z.infer<typeof submissionStatusSchema>;
+export type ChallengeRefsOutput = z.infer<typeof challengeRefsSchema>;
+export type SubmissionRefsOutput = z.infer<typeof submissionRefsSchema>;

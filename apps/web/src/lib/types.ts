@@ -12,6 +12,7 @@ export type Challenge = {
   challenge_type: string;
   contract_address: string;
   factory_address?: string | null;
+  factory_challenge_id?: number | null;
   submissions_count?: number;
   dataset_train_cid?: string | null;
   dataset_test_cid?: string | null;
@@ -20,8 +21,17 @@ export type Challenge = {
   distribution_type?: string | null;
   dispute_window_hours?: number | null;
   minimum_score?: number | string | null;
+  max_submissions_total?: number | null;
+  max_submissions_per_solver?: number | null;
   expected_columns?: string[] | null;
+  submission_contract?: unknown | null;
   created_at?: string;
+  refs?: {
+    challengeId: string;
+    challengeAddress: string;
+    factoryAddress: string | null;
+    factoryChallengeId: number | null;
+  };
 };
 
 export type Submission = {

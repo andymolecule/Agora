@@ -9,11 +9,11 @@ import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
 };
 import {
-  type Abi,
   http,
+  type Abi,
+  type TransactionReceipt,
   createWalletClient,
   parseEventLogs,
-  type TransactionReceipt,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base, baseSepolia } from "viem/chains";
@@ -356,6 +356,35 @@ export async function getChallengePayoutByAddress(
     args: [solverAddress],
     blockNumber,
   });
+}
+
+export async function getChallengePayoutsByAddress(
+  challengeAddresses: readonly `0x${string}`[],
+  solverAddress: `0x${string}`,
+  blockNumber?: bigint,
+): Promise<Record<string, bigint>> {
+  if (challengeAddresses.length === 0) {
+    return {};
+  }
+
+  const publicClient = getPublicClient();
+  const payouts = await publicClient.multicall({
+    allowFailure: false,
+    contracts: challengeAddresses.map((challengeAddress) => ({
+      address: challengeAddress,
+      abi: AgoraChallengeAbi,
+      functionName: "payoutByAddress",
+      args: [solverAddress],
+    })),
+    ...(blockNumber ? { blockNumber } : {}),
+  });
+
+  return Object.fromEntries(
+    challengeAddresses.map((challengeAddress, index) => [
+      challengeAddress.toLowerCase(),
+      payouts[index] as bigint,
+    ]),
+  );
 }
 
 export async function getChallengeContractVersion(

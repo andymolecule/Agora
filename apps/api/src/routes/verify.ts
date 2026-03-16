@@ -10,6 +10,7 @@ import { zValidator } from "@hono/zod-validator";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
+import { jsonError } from "../lib/api-error.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import { requireSiweSession } from "../middleware/siwe.js";
 import type { ApiEnv } from "../types.js";
@@ -53,7 +54,17 @@ export function createVerifyRouter(deps: VerifyRouteDeps = defaultDeps) {
     "/",
     deps.requireSiweSession,
     deps.requireWriteQuota("/api/verify"),
-    zValidator("json", createVerificationBodySchema),
+    zValidator("json", createVerificationBodySchema, (result, c) => {
+      if (!result.success) {
+        return jsonError(c, {
+          status: 400,
+          code: "VALIDATION_ERROR",
+          message:
+            "Invalid verification payload. Next step: fix the request body and retry.",
+          extras: { issues: result.error.issues },
+        });
+      }
+    }),
     async (c) => {
       const { submissionId, computedScore, matchesOriginal, logCid } =
         c.req.valid("json");
@@ -68,13 +79,12 @@ export function createVerifyRouter(deps: VerifyRouteDeps = defaultDeps) {
         challenge.contract_address as `0x${string}`,
       );
       if (!canReadPublicSubmissionVerification(lifecycle.status)) {
-        return c.json(
-          {
-            error:
-              "Verification is unavailable while the challenge is open. Check back when scoring begins.",
-          },
-          403,
-        );
+        return jsonError(c, {
+          status: 403,
+          code: "VERIFICATION_UNAVAILABLE",
+          message:
+            "Verification is unavailable while the challenge is open. Check back when scoring begins.",
+        });
       }
 
       const proofBundle = await deps.getProofBundleBySubmissionId(
@@ -82,7 +92,11 @@ export function createVerifyRouter(deps: VerifyRouteDeps = defaultDeps) {
         submissionId,
       );
       if (!proofBundle) {
-        return c.json({ error: "Proof bundle not found for submission." }, 404);
+        return jsonError(c, {
+          status: 404,
+          code: "PROOF_BUNDLE_NOT_FOUND",
+          message: "Proof bundle not found for submission.",
+        });
       }
 
       const verification = await deps.createVerification(db, {

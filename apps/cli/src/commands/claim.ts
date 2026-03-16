@@ -13,7 +13,7 @@ import { ensurePrivateKey } from "../lib/wallet";
 export function buildClaimCommand() {
   const cmd = new Command("claim")
     .description("Claim payout for caller wallet on a finalized challenge")
-    .argument("<id>", "Challenge id")
+    .argument("<id>", "Challenge UUID or contract address")
     .option("--key <ref>", "Private key reference, e.g. env:AGORA_PRIVATE_KEY")
     .option("--format <format>", "table or json", "table")
     .action(
@@ -30,8 +30,6 @@ export function buildClaimCommand() {
           "rpc_url",
           "factory_address",
           "usdc_address",
-          "supabase_url",
-          "supabase_anon_key",
         ]);
         ensurePrivateKey(opts.key);
 
@@ -44,11 +42,15 @@ export function buildClaimCommand() {
         }
 
         const beforeBalance = await balanceOf(caller);
-        const result = await claimChallengePayout({ challengeId: id });
+        const result = await claimChallengePayout({
+          challengeId: id,
+          apiUrl: config.api_url,
+        });
         const afterBalance = await balanceOf(caller);
         const delta = afterBalance - beforeBalance;
         const output = {
           challengeId: result.challengeId,
+          challengeAddress: result.challengeAddress,
           caller,
           txHash: result.txHash,
           balanceBefore: formatUnits(beforeBalance, 6),
@@ -60,7 +62,9 @@ export function buildClaimCommand() {
           printJson(output);
           return;
         }
-        printSuccess(`Payout claimed for ${result.challengeId}`);
+        printSuccess(
+          `Payout claimed for ${result.challengeId ?? result.challengeAddress}`,
+        );
         printWarning(`USDC delta: ${output.claimedDelta}`);
       },
     );

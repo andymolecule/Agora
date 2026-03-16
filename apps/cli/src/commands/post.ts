@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { registerChallengeWithApi } from "@agora/agent-runtime";
 import {
   allowance,
   approve,
@@ -123,12 +124,18 @@ export function buildPostCommand() {
       ) => {
         const config = loadCliConfig();
         applyConfigToEnv(config);
-        requireConfigValues(config, [
-          "rpc_url",
-          "factory_address",
-          "usdc_address",
-          "pinata_jwt",
-        ]);
+        requireConfigValues(
+          config,
+          opts.dryRun
+            ? ["rpc_url", "factory_address", "usdc_address", "pinata_jwt"]
+            : [
+                "rpc_url",
+                "factory_address",
+                "usdc_address",
+                "pinata_jwt",
+                "api_url",
+              ],
+        );
         ensurePrivateKey(opts.key);
 
         const spinner = createSpinner("Reading challenge file...");
@@ -273,23 +280,48 @@ export function buildPostCommand() {
         });
         const { challengeId, challengeAddress } =
           parseChallengeCreatedReceipt(receipt);
+        let registeredChallengeId: string | null = null;
+        let registrationWarning: string | null = null;
+        try {
+          const registration = await registerChallengeWithApi(
+            { txHash },
+            config.api_url,
+          );
+          registeredChallengeId = registration.challengeId;
+        } catch (error) {
+          registrationWarning =
+            error instanceof Error
+              ? error.message
+              : "Challenge registration may take a minute.";
+        }
 
         const output = {
-          id: Number(challengeId),
-          address: challengeAddress,
+          challengeId: registeredChallengeId,
+          factoryChallengeId: Number(challengeId),
+          challengeAddress,
           specCid,
           rewardAmount,
           deadline: spec.deadline,
           txHash,
+          registrationStatus: registeredChallengeId
+            ? "confirmed"
+            : "pending_reconciliation",
+          warning: registrationWarning,
         };
 
         if (opts.format === "json") {
           printJson(output);
         } else {
           printSuccess("Challenge created successfully.");
-          printWarning(`Challenge ID: ${output.id}`);
-          printWarning(`Address: ${output.address}`);
+          if (output.challengeId) {
+            printWarning(`Challenge UUID: ${output.challengeId}`);
+          }
+          printWarning(`Factory challenge id: ${output.factoryChallengeId}`);
+          printWarning(`Address: ${output.challengeAddress}`);
           printWarning(`Spec CID: ${output.specCid}`);
+          if (output.warning) {
+            printWarning(output.warning);
+          }
         }
       },
     );

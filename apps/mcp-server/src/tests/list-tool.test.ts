@@ -9,12 +9,23 @@ test("list tool preserves pagination metadata for agent callers", async () => {
       JSON.stringify({
         data: [
           {
-            id: "11111111-1111-1111-1111-111111111111",
+            id: "11111111-1111-4111-8111-111111111111",
             title: "Challenge",
+            description: "Challenge detail",
             domain: "omics",
+            challenge_type: "prediction",
             reward_amount: 100,
             deadline: "2026-03-12T00:00:00.000Z",
             status: "open",
+            contract_address: "0x0000000000000000000000000000000000000001",
+            factory_address: "0x0000000000000000000000000000000000000002",
+            factory_challenge_id: 7,
+            refs: {
+              challengeId: "11111111-1111-4111-8111-111111111111",
+              challengeAddress: "0x0000000000000000000000000000000000000001",
+              factoryAddress: "0x0000000000000000000000000000000000000002",
+              factoryChallengeId: 7,
+            },
           },
         ],
         meta: {

@@ -48,7 +48,7 @@ Discovery-only config:
 agora config set api_url "$AGORA_API_URL"
 ```
 
-Local execution config:
+Solver submit config:
 
 ```bash
 agora config set rpc_url "$AGORA_RPC_URL"
@@ -56,16 +56,21 @@ agora config set factory_address "$AGORA_FACTORY_ADDRESS"
 agora config set usdc_address "$AGORA_USDC_ADDRESS"
 agora config set pinata_jwt "$AGORA_PINATA_JWT"
 agora config set private_key env:AGORA_PRIVATE_KEY
-agora config set supabase_url "$AGORA_SUPABASE_URL"
-agora config set supabase_anon_key "$AGORA_SUPABASE_ANON_KEY"
-agora config set supabase_service_key "$AGORA_SUPABASE_SERVICE_KEY"
 agora config set api_url "$AGORA_API_URL"
 agora config set chain_id "${AGORA_CHAIN_ID:-84532}"
+```
+
+Local scoring and verification config:
+
+```bash
+agora config set supabase_url "$AGORA_SUPABASE_URL"
+agora config set supabase_anon_key "$AGORA_SUPABASE_ANON_KEY"
 ```
 
 Operator-only note:
 
 ```bash
+agora config set supabase_service_key "$AGORA_SUPABASE_SERVICE_KEY"
 agora oracle-score <submission_uuid> --key env:AGORA_ORACLE_KEY --format json
 ```
 
@@ -80,12 +85,12 @@ Core:
 - `AGORA_PINATA_JWT` — Pinata JWT
 - `AGORA_SUPABASE_URL` — Supabase project URL
 - `AGORA_SUPABASE_ANON_KEY` — Supabase anon key
-- `AGORA_SUPABASE_SERVICE_KEY` — Supabase service key
 - `AGORA_API_URL` — API base URL
 - `AGORA_CHAIN_ID` — chain id (default `84532`)
 
 Official scoring only:
 
+- `AGORA_SUPABASE_SERVICE_KEY` — Supabase service key for worker/operator flows
 - `AGORA_ORACLE_KEY` — oracle signer key for the worker or manual `agora oracle-score`
 
 ## Core Workflows
@@ -122,6 +127,11 @@ This is preview-only:
 agora submit ./submission.csv --challenge <challenge_uuid> --format json
 agora status <challenge_uuid> --format json
 ```
+
+`agora submit` returns:
+- `submissionId` — Agora submission UUID when API registration is confirmed
+- `onChainSubmissionId` — numeric submission id from the challenge contract
+- `registrationStatus` — `confirmed` or `pending_reconciliation`
 
 ### 4. Official scoring
 

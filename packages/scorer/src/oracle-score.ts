@@ -37,9 +37,11 @@ export interface OracleScoreInput {
 }
 
 export interface OracleScoreResult {
+  submissionId: string;
   score: number;
   scoreWad: bigint;
   proofCid: string;
+  proofHash: string;
   txHash: string;
 }
 
@@ -111,6 +113,14 @@ export async function oracleScore(
   });
 
   try {
+    if (!run.result.ok) {
+      const reason =
+        run.result.error ?? "Scorer rejected submission as invalid.";
+      throw new Error(
+        `${reason} Next step: fix the submission artifact and rerun official scoring.`,
+      );
+    }
+
     // 3. Build proof bundle
     const replaySubmissionCid =
       submission.result_format === SUBMISSION_RESULT_FORMAT.sealedSubmissionV2
@@ -176,9 +186,11 @@ export async function oracleScore(
     });
 
     return {
+      submissionId: submission.id,
       score: run.result.score,
       scoreWad,
       proofCid,
+      proofHash,
       txHash,
     };
   } finally {

@@ -26,6 +26,7 @@ const TERMINAL_SCORE_JOB_ERROR_PATTERNS = [
   /^Invalid scoring preset configuration:/i,
   /^Unknown runner_preset_id on challenge:/i,
   /submission missing required columns/i,
+  /ChallengeFinalized|ChallengeCancelled|InvalidStatus/i,
 ] as const;
 
 export function isScoreJobStatus(value: unknown): value is ScoreJobStatus {

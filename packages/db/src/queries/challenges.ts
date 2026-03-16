@@ -19,6 +19,7 @@ export interface ChallengeInsert {
   chain_id: number;
   contract_version: number;
   spec_schema_version: number;
+  factory_challenge_id?: number | null;
   contract_address: string;
   factory_address: string;
   poster_address: string;
@@ -50,6 +51,7 @@ export interface ChallengeInsert {
 export interface BuildChallengeInsertInput {
   chainId: number;
   contractVersion: number;
+  factoryChallengeId?: number | null;
   contractAddress: string;
   factoryAddress: string;
   posterAddress: string;
@@ -135,6 +137,7 @@ export async function buildChallengeInsert(
     chain_id: input.chainId,
     contract_version: input.contractVersion,
     spec_schema_version: canonicalSpec.schema_version,
+    factory_challenge_id: input.factoryChallengeId ?? null,
     contract_address: input.contractAddress.toLowerCase(),
     factory_address: input.factoryAddress.toLowerCase(),
     poster_address: input.posterAddress.toLowerCase(),

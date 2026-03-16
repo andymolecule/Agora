@@ -1,4 +1,5 @@
 import type { Context, Next } from "hono";
+import { jsonError } from "../lib/api-error.js";
 import { consumeWriteQuota } from "../lib/rate-limit.js";
 import type { ApiEnv } from "../types.js";
 
@@ -28,7 +29,12 @@ export function requireWriteQuota(routeKey: string) {
       if ("retryAfterSec" in quota) {
         c.header("Retry-After", String(quota.retryAfterSec));
       }
-      return c.json({ error: quota.message }, 429);
+      return jsonError(c, {
+        status: 429,
+        code: "RATE_LIMITED",
+        message: quota.message,
+        retriable: true,
+      });
     }
 
     await next();

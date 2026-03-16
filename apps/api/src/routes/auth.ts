@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { SiweError, SiweErrorType, SiweMessage } from "siwe";
 import { z } from "zod";
+import { jsonError } from "../lib/api-error.js";
 import {
   consumeNonce,
   createNonce,
@@ -26,109 +27,156 @@ router.get("/nonce", requireWriteQuota("/api/auth/nonce"), async (c) =>
   c.json({ nonce: await createNonce("siwe") }),
 );
 
-router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
-  const { message, signature } = c.req.valid("json");
-  const publicClient = getPublicClient();
+router.post(
+  "/verify",
+  zValidator("json", verifyBodySchema, (result, c) => {
+    if (!result.success) {
+      return jsonError(c, {
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message:
+          "Invalid SIWE verification payload. Next step: fix the request body and retry.",
+        extras: { issues: result.error.issues },
+      });
+    }
+  }),
+  async (c) => {
+    const { message, signature } = c.req.valid("json");
+    const publicClient = getPublicClient();
 
-  let siweMessage: SiweMessage;
-  try {
-    siweMessage = new SiweMessage(message);
-  } catch {
-    return c.json({ error: "Invalid SIWE message." }, 401);
-  }
-
-  const runtimeConfig = readApiServerRuntimeConfig();
-  const apiUrl = runtimeConfig.apiUrl;
-  const forwardedProto = c.req.header("x-forwarded-proto");
-  const requestProtocol =
-    forwardedProto ?? new URL(c.req.url).protocol.replace(":", "");
-  const requestHost = c.req.header("x-forwarded-host") ?? c.req.header("host");
-  const expectedOrigin = requestHost
-    ? `${requestProtocol}://${requestHost}`
-    : apiUrl
-      ? new URL(apiUrl).origin
-      : undefined;
-  const expectedDomain =
-    requestHost ?? (apiUrl ? new URL(apiUrl).host : undefined);
-  const expectedChainId = runtimeConfig.chainId;
-
-  if (expectedDomain && siweMessage.domain !== expectedDomain) {
-    return c.json({ error: "SIWE domain mismatch." }, 401);
-  }
-  if (siweMessage.chainId !== expectedChainId) {
-    return c.json({ error: "SIWE chainId mismatch." }, 401);
-  }
-  if (expectedOrigin) {
-    let messageOrigin = "";
+    let siweMessage: SiweMessage;
     try {
-      messageOrigin = new URL(siweMessage.uri).origin;
+      siweMessage = new SiweMessage(message);
     } catch {
-      return c.json({ error: "Invalid SIWE URI." }, 401);
+      return jsonError(c, {
+        status: 401,
+        code: "INVALID_SIWE_MESSAGE",
+        message: "Invalid SIWE message.",
+      });
     }
-    if (messageOrigin !== expectedOrigin) {
-      return c.json({ error: "SIWE URI mismatch." }, 401);
-    }
-  }
 
-  const verified = await siweMessage.verify(
-    {
-      signature,
-      nonce: siweMessage.nonce,
-      domain: expectedDomain,
-    },
-    {
-      suppressExceptions: true,
-      verificationFallback: async (
-        _params,
-        _opts,
-        parsedMessage,
-        _eip1271Promise,
-      ) => {
-        const isValid = await publicClient.verifyMessage({
-          address: parsedMessage.address.toLowerCase() as `0x${string}`,
-          message: parsedMessage.prepareMessage(),
-          signature: signature as `0x${string}`,
+    const runtimeConfig = readApiServerRuntimeConfig();
+    const apiUrl = runtimeConfig.apiUrl;
+    const forwardedProto = c.req.header("x-forwarded-proto");
+    const requestProtocol =
+      forwardedProto ?? new URL(c.req.url).protocol.replace(":", "");
+    const requestHost =
+      c.req.header("x-forwarded-host") ?? c.req.header("host");
+    const expectedOrigin = requestHost
+      ? `${requestProtocol}://${requestHost}`
+      : apiUrl
+        ? new URL(apiUrl).origin
+        : undefined;
+    const expectedDomain =
+      requestHost ?? (apiUrl ? new URL(apiUrl).host : undefined);
+    const expectedChainId = runtimeConfig.chainId;
+
+    if (expectedDomain && siweMessage.domain !== expectedDomain) {
+      return jsonError(c, {
+        status: 401,
+        code: "SIWE_DOMAIN_MISMATCH",
+        message: "SIWE domain mismatch.",
+      });
+    }
+    if (siweMessage.chainId !== expectedChainId) {
+      return jsonError(c, {
+        status: 401,
+        code: "SIWE_CHAIN_ID_MISMATCH",
+        message: "SIWE chainId mismatch.",
+      });
+    }
+    if (expectedOrigin) {
+      let messageOrigin = "";
+      try {
+        messageOrigin = new URL(siweMessage.uri).origin;
+      } catch {
+        return jsonError(c, {
+          status: 401,
+          code: "INVALID_SIWE_URI",
+          message: "Invalid SIWE URI.",
         });
+      }
+      if (messageOrigin !== expectedOrigin) {
+        return jsonError(c, {
+          status: 401,
+          code: "SIWE_URI_MISMATCH",
+          message: "SIWE URI mismatch.",
+        });
+      }
+    }
 
-        return isValid
-          ? { success: true, data: parsedMessage }
-          : {
-              success: false,
-              data: parsedMessage,
-              error: new SiweError(SiweErrorType.INVALID_SIGNATURE),
-            };
+    const verified = await siweMessage.verify(
+      {
+        signature,
+        nonce: siweMessage.nonce,
+        domain: expectedDomain,
       },
-    },
-  );
+      {
+        suppressExceptions: true,
+        verificationFallback: async (
+          _params,
+          _opts,
+          parsedMessage,
+          _eip1271Promise,
+        ) => {
+          const isValid = await publicClient.verifyMessage({
+            address: parsedMessage.address.toLowerCase() as `0x${string}`,
+            message: parsedMessage.prepareMessage(),
+            signature: signature as `0x${string}`,
+          });
 
-  if (!verified.success) {
-    return c.json({ error: "SIWE signature verification failed." }, 401);
-  }
+          return isValid
+            ? { success: true, data: parsedMessage }
+            : {
+                success: false,
+                data: parsedMessage,
+                error: new SiweError(SiweErrorType.INVALID_SIGNATURE),
+              };
+        },
+      },
+    );
 
-  const address = verified.data.address.toLowerCase() as `0x${string}`;
-  const nonceAccepted = await consumeNonce("siwe", siweMessage.nonce, address);
-  if (!nonceAccepted) {
-    return c.json({ error: "SIWE nonce is invalid or expired." }, 401);
-  }
+    if (!verified.success) {
+      return jsonError(c, {
+        status: 401,
+        code: "SIWE_SIGNATURE_INVALID",
+        message: "SIWE signature verification failed.",
+      });
+    }
 
-  const { token, expiresAt } = await createSession(address);
-  const cookieSecure =
-    isProductionRuntime(runtimeConfig) || requestProtocol === "https";
+    const address = verified.data.address.toLowerCase() as `0x${string}`;
+    const nonceAccepted = await consumeNonce(
+      "siwe",
+      siweMessage.nonce,
+      address,
+    );
+    if (!nonceAccepted) {
+      return jsonError(c, {
+        status: 401,
+        code: "SIWE_NONCE_INVALID",
+        message: "SIWE nonce is invalid or expired.",
+      });
+    }
 
-  setCookie(c, "agora_session", token, {
-    httpOnly: true,
-    sameSite: "Lax",
-    secure: cookieSecure,
-    path: "/",
-    maxAge: Math.floor((expiresAt - Date.now()) / 1000),
-  });
+    const { token, expiresAt } = await createSession(address);
+    const cookieSecure =
+      isProductionRuntime(runtimeConfig) || requestProtocol === "https";
 
-  return c.json({
-    ok: true,
-    address,
-    expiresAt: new Date(expiresAt).toISOString(),
-  });
-});
+    setCookie(c, "agora_session", token, {
+      httpOnly: true,
+      sameSite: "Lax",
+      secure: cookieSecure,
+      path: "/",
+      maxAge: Math.floor((expiresAt - Date.now()) / 1000),
+    });
+
+    return c.json({
+      ok: true,
+      address,
+      expiresAt: new Date(expiresAt).toISOString(),
+    });
+  },
+);
 
 router.post("/logout", async (c) => {
   const token = getCookie(c, "agora_session");

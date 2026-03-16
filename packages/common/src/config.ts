@@ -65,9 +65,8 @@ const configSchema = z.object({
     .optional(),
   AGORA_WORKER_RUNTIME_ID: z.string().min(1).optional(),
   AGORA_RUNTIME_VERSION: z.string().min(1).optional(),
-  AGORA_SCORER_EXECUTOR_BACKEND: scorerExecutorBackendSchema.default(
-    "local_docker",
-  ),
+  AGORA_SCORER_EXECUTOR_BACKEND:
+    scorerExecutorBackendSchema.default("local_docker"),
   AGORA_SCORER_EXECUTOR_URL: z.string().url().optional(),
   AGORA_SCORER_EXECUTOR_TOKEN: z.string().min(1).optional(),
   AGORA_EXECUTOR_PORT: z
@@ -285,6 +284,20 @@ const apiServerRuntimeConfigSchema = configSchema.pick({
 const apiClientRuntimeConfigSchema = configSchema.pick({
   AGORA_API_URL: true,
 });
+const cliRuntimeConfigSchema = configSchema
+  .pick({
+    AGORA_RPC_URL: true,
+    AGORA_API_URL: true,
+    AGORA_PINATA_JWT: true,
+    AGORA_PRIVATE_KEY: true,
+    AGORA_FACTORY_ADDRESS: true,
+    AGORA_USDC_ADDRESS: true,
+    AGORA_CHAIN_ID: true,
+    AGORA_SUPABASE_URL: true,
+    AGORA_SUPABASE_ANON_KEY: true,
+    AGORA_SUPABASE_SERVICE_KEY: true,
+  })
+  .partial();
 
 const indexerHealthRuntimeConfigSchema = configSchema.pick({
   AGORA_INDEXER_CONFIRMATION_DEPTH: true,
@@ -326,6 +339,8 @@ export interface AgoraApiServerRuntimeConfig {
 export interface AgoraApiClientRuntimeConfig {
   apiUrl?: string;
 }
+
+export type AgoraCliRuntimeConfig = z.infer<typeof cliRuntimeConfigSchema>;
 
 export interface AgoraIndexerHealthRuntimeConfig {
   confirmationDepth: number;
@@ -569,6 +584,12 @@ export function readApiClientRuntimeConfig(
   return {
     apiUrl: parsed.AGORA_API_URL,
   };
+}
+
+export function readCliRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraCliRuntimeConfig {
+  return parseConfigSection(cliRuntimeConfigSchema, env);
 }
 
 export function readIndexerHealthRuntimeConfig(

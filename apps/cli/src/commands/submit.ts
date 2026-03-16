@@ -12,7 +12,7 @@ export function buildSubmitCommand() {
   const cmd = new Command("submit")
     .description("Submit a result file to a challenge")
     .argument("<file>", "Result file path")
-    .requiredOption("--challenge <id>", "Challenge id")
+    .requiredOption("--challenge <id>", "Challenge UUID or contract address")
     .option("--dry-run", "Pin only, skip on-chain submission", false)
     .option("--key <ref>", "Private key reference, e.g. env:AGORA_PRIVATE_KEY")
     .option("--format <format>", "table or json", "table")
@@ -28,12 +28,7 @@ export function buildSubmitCommand() {
       ) => {
         const config = loadCliConfig();
         applyConfigToEnv(config);
-        requireConfigValues(config, [
-          "api_url",
-          "pinata_jwt",
-          "supabase_url",
-          "supabase_anon_key",
-        ]);
+        requireConfigValues(config, ["api_url", "pinata_jwt"]);
         ensurePrivateKey(opts.key);
 
         const result = await submitSolution({
@@ -50,11 +45,17 @@ export function buildSubmitCommand() {
 
         if ("dryRun" in result && result.dryRun) {
           printSuccess("Dry run complete. No on-chain submission sent.");
+          printWarning(`Challenge address: ${result.challengeAddress}`);
           printWarning(`Pinned result: ${result.resultCid}`);
           return;
         }
 
         printSuccess(`Submission tx sent: ${result.txHash}`);
+        printWarning(`Challenge address: ${result.challengeAddress}`);
+        printWarning(`On-chain submission id: ${result.onChainSubmissionId}`);
+        if (result.submissionId) {
+          printWarning(`Submission UUID: ${result.submissionId}`);
+        }
         if (result.warning) {
           printWarning(result.warning);
         }

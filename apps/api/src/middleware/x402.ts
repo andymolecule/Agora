@@ -7,81 +7,145 @@ import * as x402Core from "@x402/core/server";
 import * as x402Evm from "@x402/evm/exact/server";
 import * as x402Hono from "@x402/hono";
 import type { Context, MiddlewareHandler, Next } from "hono";
+import { jsonError } from "../lib/api-error.js";
 import type { ApiEnv } from "../types.js";
 
 type PaidRoute = {
   id: string;
   method: string;
-  path: string;
-  pattern: RegExp;
+  canonicalPath: string;
+  paths: {
+    path: string;
+    pattern: RegExp;
+  }[];
   priceUsd: number;
   description: string;
 };
 
 const API_PAID_ROUTES: PaidRoute[] = [
   {
-    id: "agent-list-challenges",
+    id: "challenge-list",
     method: "GET",
-    path: "/api/agent/challenges",
-    pattern: /^\/api\/agent\/challenges$/,
+    canonicalPath: "/api/challenges",
+    paths: [
+      {
+        path: "/api/challenges",
+        pattern: /^\/api\/challenges$/,
+      },
+      {
+        path: "/api/agent/challenges",
+        pattern: /^\/api\/agent\/challenges$/,
+      },
+    ],
     priceUsd: 0.001,
-    description: "Agent challenge discovery list",
+    description: "Challenge discovery list",
   },
   {
-    id: "agent-get-challenge",
+    id: "challenge-detail",
     method: "GET",
-    path: "/api/agent/challenges/:id",
-    pattern: /^\/api\/agent\/challenges\/[^/]+$/,
+    canonicalPath: "/api/challenges/:id",
+    paths: [
+      {
+        path: "/api/challenges/:id",
+        pattern: /^\/api\/challenges\/[^/]+$/,
+      },
+      {
+        path: "/api/challenges/by-address/:address",
+        pattern: /^\/api\/challenges\/by-address\/0x[a-fA-F0-9]{40}$/,
+      },
+      {
+        path: "/api/agent/challenges/:id",
+        pattern: /^\/api\/agent\/challenges\/[^/]+$/,
+      },
+    ],
     priceUsd: 0.002,
-    description: "Agent challenge detail",
+    description: "Challenge detail",
   },
   {
-    id: "agent-get-leaderboard",
+    id: "challenge-leaderboard",
     method: "GET",
-    path: "/api/agent/challenges/:id/leaderboard",
-    pattern: /^\/api\/agent\/challenges\/[^/]+\/leaderboard$/,
+    canonicalPath: "/api/challenges/:id/leaderboard",
+    paths: [
+      {
+        path: "/api/challenges/:id/leaderboard",
+        pattern: /^\/api\/challenges\/[^/]+\/leaderboard$/,
+      },
+      {
+        path: "/api/challenges/by-address/:address/leaderboard",
+        pattern:
+          /^\/api\/challenges\/by-address\/0x[a-fA-F0-9]{40}\/leaderboard$/,
+      },
+      {
+        path: "/api/agent/challenges/:id/leaderboard",
+        pattern: /^\/api\/agent\/challenges\/[^/]+\/leaderboard$/,
+      },
+    ],
     priceUsd: 0.002,
-    description: "Agent leaderboard query",
+    description: "Challenge leaderboard query",
   },
   {
     id: "verify-write",
     method: "POST",
-    path: "/api/verify",
-    pattern: /^\/api\/verify$/,
+    canonicalPath: "/api/verify",
+    paths: [
+      {
+        path: "/api/verify",
+        pattern: /^\/api\/verify$/,
+      },
+    ],
     priceUsd: 0.02,
     description: "Verification write endpoint",
   },
 ];
 let x402ResolutionLogged = false;
 
-function matchPaidRoute(method: string, pathname: string) {
-  return API_PAID_ROUTES.find(
-    (route) => route.method === method && route.pattern.test(pathname),
-  );
+export function matchPaidRoute(method: string, pathname: string) {
+  for (const route of API_PAID_ROUTES) {
+    if (route.method !== method) {
+      continue;
+    }
+    for (const routePath of route.paths) {
+      if (routePath.pattern.test(pathname)) {
+        return { route, routePath };
+      }
+    }
+  }
+  return undefined;
 }
 
 function routeCatalog(network: string) {
   return Object.fromEntries(
-    API_PAID_ROUTES.map((route) => [
-      `${route.method} ${route.path}`,
-      {
-        price: `$${route.priceUsd.toFixed(3)}`,
-        network,
-        config: { description: route.description },
-      },
-    ]),
+    API_PAID_ROUTES.flatMap((route) =>
+      route.paths.map((routePath) => [
+        `${route.method} ${routePath.path}`,
+        {
+          price: `$${route.priceUsd.toFixed(3)}`,
+          network,
+          config: {
+            description: route.description,
+            canonicalPath: route.canonicalPath,
+            legacyAlias: routePath.path !== route.canonicalPath,
+          },
+        },
+      ]),
+    ),
   );
 }
 
-function toPaymentRequired(route: PaidRoute, network: string, payTo: string) {
+function toPaymentRequired(
+  matched: NonNullable<ReturnType<typeof matchPaidRoute>>,
+  network: string,
+  payTo: string,
+) {
   return {
     protocol: "x402",
     network,
     payTo,
-    route: route.path,
-    method: route.method,
-    priceUsd: route.priceUsd,
-    description: route.description,
+    route: matched.routePath.path,
+    canonicalPath: matched.route.canonicalPath,
+    method: matched.route.method,
+    priceUsd: matched.route.priceUsd,
+    description: matched.route.description,
   };
 }
 
@@ -188,7 +252,11 @@ export function buildX402Metadata() {
     routes: API_PAID_ROUTES.map((route) => ({
       id: route.id,
       method: route.method,
-      path: route.path,
+      path: route.canonicalPath,
+      canonicalPath: route.canonicalPath,
+      aliasPaths: route.paths
+        .map((routePath) => routePath.path)
+        .filter((path) => path !== route.canonicalPath),
       priceUsd: route.priceUsd,
       description: route.description,
     })),
@@ -216,7 +284,7 @@ export function createX402Middleware(): MiddlewareHandler<ApiEnv> {
 
     if (reportOnly) {
       console.info(
-        `[x402][report-only] would charge route=${matched.id} method=${c.req.method} path=${c.req.path} price=$${matched.priceUsd.toFixed(3)}`,
+        `[x402][report-only] would charge route=${matched.route.id} method=${c.req.method} path=${c.req.path} price=$${matched.route.priceUsd.toFixed(3)}`,
       );
       c.res.headers.set("X-Agora-X402-Report", "would-charge");
       await next();
@@ -232,17 +300,19 @@ export function createX402Middleware(): MiddlewareHandler<ApiEnv> {
       c.req.header(name),
     );
     if (!paymentHeader) {
-      return c.json(
-        {
-          error: "Payment Required",
+      return jsonError(c, {
+        status: 402,
+        code: "PAYMENT_REQUIRED",
+        message: "Payment Required",
+        retriable: true,
+        extras: {
           payment: toPaymentRequired(
             matched,
             metadata.network,
             metadata.payTo as string,
           ),
         },
-        402,
-      );
+      });
     }
 
     const paid = await verifyAndSettleX402Payment({
@@ -253,7 +323,7 @@ export function createX402Middleware(): MiddlewareHandler<ApiEnv> {
         method: c.req.method,
         path: c.req.path,
         payTo: metadata.payTo as string,
-        priceUsd: matched.priceUsd,
+        priceUsd: matched.route.priceUsd,
       },
     });
     if (paid) {
@@ -261,11 +331,11 @@ export function createX402Middleware(): MiddlewareHandler<ApiEnv> {
       return;
     }
 
-    return c.json(
-      {
-        error: "Payment verification failed.",
-      },
-      402,
-    );
+    return jsonError(c, {
+      status: 402,
+      code: "PAYMENT_VERIFICATION_FAILED",
+      message: "Payment verification failed.",
+      retriable: true,
+    });
   };
 }

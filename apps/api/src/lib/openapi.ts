@@ -8,6 +8,10 @@ function isoDateTimeSchema() {
   return { type: "string", format: "date-time" } as const;
 }
 
+function addressSchema() {
+  return { type: "string", pattern: "^0x[a-fA-F0-9]{40}$" } as const;
+}
+
 export function buildOpenApiDocument(apiBaseUrl?: string) {
   const servers = apiBaseUrl ? [{ url: apiBaseUrl.replace(/\/$/, "") }] : [];
 
@@ -49,7 +53,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             {
               in: "query",
               name: "poster_address",
-              schema: { type: "string", pattern: "^0x[a-fA-F0-9]{40}$" },
+              schema: addressSchema(),
             },
             {
               in: "query",
@@ -113,6 +117,84 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
         },
       },
+      "/api/challenges/by-address/{address}": {
+        get: {
+          operationId: "getChallengeByAddress",
+          summary: "Get full challenge details by contract address",
+          parameters: [
+            {
+              in: "path",
+              name: "address",
+              required: true,
+              schema: addressSchema(),
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Challenge detail.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ChallengeDetailResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/challenges/by-address/{address}/validate-submission": {
+        post: {
+          operationId: "validateSubmissionByAddress",
+          summary:
+            "Validate a submission file against the cached challenge contract",
+          parameters: [
+            {
+              in: "path",
+              name: "address",
+              required: true,
+              schema: addressSchema(),
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "multipart/form-data": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    file: { type: "string", format: "binary" },
+                  },
+                  required: ["file"],
+                },
+              },
+              "application/octet-stream": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Submission validation result.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/SubmissionValidationResponse",
+                  },
+                },
+              },
+            },
+            "400": {
+              description: "Missing or invalid upload.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/challenges/{id}": {
         get: {
           operationId: "getChallenge",
@@ -133,6 +215,93 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   schema: {
                     $ref: "#/components/schemas/ChallengeDetailResponse",
                   },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/challenges/{id}/validate-submission": {
+        post: {
+          operationId: "validateSubmission",
+          summary:
+            "Validate a submission file against the cached challenge contract",
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: uuidSchema(),
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "multipart/form-data": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    file: { type: "string", format: "binary" },
+                  },
+                  required: ["file"],
+                },
+              },
+              "application/octet-stream": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Submission validation result.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/SubmissionValidationResponse",
+                  },
+                },
+              },
+            },
+            "400": {
+              description: "Missing or invalid upload.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/challenges/by-address/{address}/leaderboard": {
+        get: {
+          operationId: "getChallengeLeaderboardByAddress",
+          summary:
+            "Get the challenge leaderboard by contract address once results are visible",
+          parameters: [
+            {
+              in: "path",
+              name: "address",
+              required: true,
+              schema: addressSchema(),
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Leaderboard entries.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ChallengeLeaderboardResponse",
+                  },
+                },
+              },
+            },
+            "403": {
+              description: "Leaderboard hidden while the challenge is open.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
@@ -173,6 +342,39 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
         },
       },
+      "/api/submissions/by-onchain/{challengeAddress}/{subId}/status": {
+        get: {
+          operationId: "getSubmissionStatusByOnChain",
+          summary:
+            "Get public scoring status for a submission by challenge address and on-chain submission id",
+          parameters: [
+            {
+              in: "path",
+              name: "challengeAddress",
+              required: true,
+              schema: addressSchema(),
+            },
+            {
+              in: "path",
+              name: "subId",
+              required: true,
+              schema: { type: "integer", minimum: 0 },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Submission scoring status.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/SubmissionStatusResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/submissions/{id}/status": {
         get: {
           operationId: "getSubmissionStatus",
@@ -193,6 +395,40 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   schema: {
                     $ref: "#/components/schemas/SubmissionStatusResponse",
                   },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/submissions/by-onchain/{challengeAddress}/{subId}/public": {
+        get: {
+          operationId: "getPublicSubmissionVerificationByOnChain",
+          summary:
+            "Get public verification payload by challenge address and on-chain submission id once challenge results unlock",
+          parameters: [
+            {
+              in: "path",
+              name: "challengeAddress",
+              required: true,
+              schema: addressSchema(),
+            },
+            {
+              in: "path",
+              name: "subId",
+              required: true,
+              schema: { type: "integer", minimum: 0 },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Verification payload.",
+            },
+            "403": {
+              description: "Verification hidden while the challenge is open.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
@@ -302,6 +538,35 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
         },
       },
+      "/api/submissions/attach-metadata": {
+        post: {
+          operationId: "attachSubmissionMetadata",
+          summary:
+            "Idempotently attach metadata to a confirmed on-chain submission",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/SubmissionRegistrationRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Submission metadata attached.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/SubmissionRegistrationResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     },
     components: {
       schemas: {
@@ -309,8 +574,25 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           type: "object",
           properties: {
             error: { type: "string" },
+            code: { type: "string" },
+            retriable: { type: "boolean" },
           },
-          required: ["error"],
+          required: ["error", "code", "retriable"],
+        },
+        ChallengeRefs: {
+          type: "object",
+          properties: {
+            challengeId: uuidSchema(),
+            challengeAddress: addressSchema(),
+            factoryAddress: { ...addressSchema(), nullable: true },
+            factoryChallengeId: { type: "integer", minimum: 0, nullable: true },
+          },
+          required: [
+            "challengeId",
+            "challengeAddress",
+            "factoryAddress",
+            "factoryChallengeId",
+          ],
         },
         ChallengeSummary: {
           type: "object",
@@ -326,8 +608,16 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             spec_cid: { type: "string", nullable: true },
             dataset_train_cid: { type: "string", nullable: true },
             dataset_test_cid: { type: "string", nullable: true },
+            contract_address: addressSchema(),
+            factory_address: { ...addressSchema(), nullable: true },
+            factory_challenge_id: {
+              type: "integer",
+              minimum: 0,
+              nullable: true,
+            },
             submissions_count: { type: "integer", minimum: 0 },
             created_at: { ...isoDateTimeSchema(), nullable: true },
+            refs: { $ref: "#/components/schemas/ChallengeRefs" },
           },
           required: [
             "id",
@@ -336,6 +626,53 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             "reward_amount",
             "deadline",
             "status",
+            "contract_address",
+            "factory_address",
+            "factory_challenge_id",
+            "refs",
+          ],
+        },
+        ChallengeDetail: {
+          allOf: [
+            { $ref: "#/components/schemas/ChallengeSummary" },
+            {
+              type: "object",
+              properties: {
+                poster_address: addressSchema(),
+                eval_metric: { type: "string", nullable: true },
+                eval_image: { type: "string", nullable: true },
+                distribution_type: {
+                  type: "string",
+                  enum: ["winner_take_all", "top_3", "proportional"],
+                  nullable: true,
+                },
+                dispute_window_hours: {
+                  type: "integer",
+                  minimum: 0,
+                  nullable: true,
+                },
+                minimum_score: { type: "number", nullable: true },
+                max_submissions_total: {
+                  type: "integer",
+                  minimum: 1,
+                  nullable: true,
+                },
+                max_submissions_per_solver: {
+                  type: "integer",
+                  minimum: 1,
+                  nullable: true,
+                },
+                expected_columns: {
+                  type: "array",
+                  items: { type: "string" },
+                  nullable: true,
+                },
+                submission_contract: {
+                  type: "object",
+                  nullable: true,
+                },
+              },
+            },
           ],
         },
         ChallengeDatasets: {
@@ -402,7 +739,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             data: {
               type: "object",
               properties: {
-                challenge: { $ref: "#/components/schemas/ChallengeSummary" },
+                challenge: { $ref: "#/components/schemas/ChallengeDetail" },
                 datasets: { $ref: "#/components/schemas/ChallengeDatasets" },
                 submissions: {
                   type: "array",
@@ -432,6 +769,48 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
           required: ["data"],
         },
+        SubmissionRefs: {
+          type: "object",
+          properties: {
+            submissionId: uuidSchema(),
+            challengeId: uuidSchema(),
+            challengeAddress: addressSchema(),
+            onChainSubmissionId: { type: "integer", minimum: 0 },
+          },
+          required: [
+            "submissionId",
+            "challengeId",
+            "challengeAddress",
+            "onChainSubmissionId",
+          ],
+        },
+        SubmissionStatusPayload: {
+          type: "object",
+          properties: {
+            id: uuidSchema(),
+            challenge_id: uuidSchema(),
+            challenge_address: addressSchema(),
+            on_chain_sub_id: { type: "integer", minimum: 0 },
+            solver_address: addressSchema(),
+            score: { type: "string", nullable: true },
+            scored: { type: "boolean" },
+            submitted_at: isoDateTimeSchema(),
+            scored_at: { ...isoDateTimeSchema(), nullable: true },
+            refs: { $ref: "#/components/schemas/SubmissionRefs" },
+          },
+          required: [
+            "id",
+            "challenge_id",
+            "challenge_address",
+            "on_chain_sub_id",
+            "solver_address",
+            "score",
+            "scored",
+            "submitted_at",
+            "scored_at",
+            "refs",
+          ],
+        },
         SubmissionStatusResponse: {
           type: "object",
           properties: {
@@ -439,30 +818,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               type: "object",
               properties: {
                 submission: {
-                  type: "object",
-                  properties: {
-                    id: uuidSchema(),
-                    challenge_id: uuidSchema(),
-                    on_chain_sub_id: { type: "integer", minimum: 0 },
-                    solver_address: {
-                      type: "string",
-                      pattern: "^0x[a-fA-F0-9]{40}$",
-                    },
-                    score: { type: "string", nullable: true },
-                    scored: { type: "boolean" },
-                    submitted_at: isoDateTimeSchema(),
-                    scored_at: { ...isoDateTimeSchema(), nullable: true },
-                  },
-                  required: [
-                    "id",
-                    "challenge_id",
-                    "on_chain_sub_id",
-                    "solver_address",
-                    "score",
-                    "scored",
-                    "submitted_at",
-                    "scored_at",
-                  ],
+                  $ref: "#/components/schemas/SubmissionStatusPayload",
                 },
                 proofBundle: {
                   type: "object",
@@ -472,12 +828,79 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   },
                   required: ["reproducible"],
                 },
+                job: {
+                  type: "object",
+                  nullable: true,
+                  properties: {
+                    status: {
+                      type: "string",
+                      enum: [
+                        "queued",
+                        "running",
+                        "scored",
+                        "failed",
+                        "skipped",
+                      ],
+                    },
+                    attempts: { type: "integer", minimum: 0 },
+                    maxAttempts: { type: "integer", minimum: 0 },
+                    lastError: { type: "string", nullable: true },
+                    nextAttemptAt: { ...isoDateTimeSchema(), nullable: true },
+                    lockedAt: { ...isoDateTimeSchema(), nullable: true },
+                  },
+                  required: [
+                    "status",
+                    "attempts",
+                    "maxAttempts",
+                    "lastError",
+                    "nextAttemptAt",
+                    "lockedAt",
+                  ],
+                },
                 scoringStatus: {
                   type: "string",
                   enum: ["pending", "complete", "scored_awaiting_proof"],
                 },
               },
-              required: ["submission", "proofBundle", "scoringStatus"],
+              required: ["submission", "proofBundle", "job", "scoringStatus"],
+            },
+          },
+          required: ["data"],
+        },
+        SubmissionValidationResponse: {
+          type: "object",
+          properties: {
+            data: {
+              type: "object",
+              properties: {
+                valid: { type: "boolean" },
+                contractKind: { type: "string", nullable: true },
+                maxBytes: { type: "integer", minimum: 1, nullable: true },
+                expectedExtension: { type: "string", nullable: true },
+                message: { type: "string", nullable: true },
+                missingColumns: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                extraColumns: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                presentColumns: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+              },
+              required: [
+                "valid",
+                "contractKind",
+                "maxBytes",
+                "expectedExtension",
+                "message",
+                "missingColumns",
+                "extraColumns",
+                "presentColumns",
+              ],
             },
           },
           required: ["data"],
@@ -488,7 +911,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             data: {
               type: "object",
               properties: {
-                version: { type: "integer" },
+                version: { type: "string", enum: ["sealed_submission_v2"] },
                 alg: { type: "string" },
                 kid: { type: "string" },
                 publicKeyPem: { type: "string" },
@@ -502,9 +925,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           type: "object",
           properties: {
             challengeId: uuidSchema(),
+            challengeAddress: addressSchema(),
             solverAddress: {
-              type: "string",
-              pattern: "^0x[a-fA-F0-9]{40}$",
+              ...addressSchema(),
             },
             resultCid: { type: "string" },
             resultFormat: {
@@ -512,7 +935,11 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               enum: ["plain_v0", "sealed_submission_v2"],
             },
           },
-          required: ["challengeId", "solverAddress", "resultCid"],
+          required: ["solverAddress", "resultCid"],
+          anyOf: [
+            { required: ["challengeId"] },
+            { required: ["challengeAddress"] },
+          ],
         },
         SubmissionIntentResponse: {
           type: "object",
@@ -537,6 +964,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           type: "object",
           properties: {
             challengeId: uuidSchema(),
+            challengeAddress: addressSchema(),
             resultCid: { type: "string" },
             txHash: {
               type: "string",
@@ -547,7 +975,11 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               enum: ["plain_v0", "sealed_submission_v2"],
             },
           },
-          required: ["challengeId", "resultCid", "txHash"],
+          required: ["resultCid", "txHash"],
+          anyOf: [
+            { required: ["challengeId"] },
+            { required: ["challengeAddress"] },
+          ],
         },
         ChallengeRegistrationRequest: {
           type: "object",
@@ -567,12 +999,23 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               properties: {
                 ok: { type: "boolean" },
                 challengeAddress: {
-                  type: "string",
-                  pattern: "^0x[a-fA-F0-9]{40}$",
+                  ...addressSchema(),
                 },
                 challengeId: uuidSchema(),
+                factoryChallengeId: {
+                  type: "integer",
+                  minimum: 0,
+                  nullable: true,
+                },
+                refs: { $ref: "#/components/schemas/ChallengeRefs" },
               },
-              required: ["ok", "challengeAddress", "challengeId"],
+              required: [
+                "ok",
+                "challengeAddress",
+                "challengeId",
+                "factoryChallengeId",
+                "refs",
+              ],
             },
           },
           required: ["data"],
@@ -585,8 +1028,20 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               type: "object",
               properties: {
                 id: uuidSchema(),
+                challenge_id: uuidSchema(),
+                challenge_address: addressSchema(),
+                on_chain_sub_id: { type: "integer", minimum: 0 },
+                solver_address: addressSchema(),
+                refs: { $ref: "#/components/schemas/SubmissionRefs" },
               },
-              required: ["id"],
+              required: [
+                "id",
+                "challenge_id",
+                "challenge_address",
+                "on_chain_sub_id",
+                "solver_address",
+                "refs",
+              ],
             },
             warning: { type: "string", nullable: true },
           },

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import http from "node:http";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import { loadConfig, readFeaturePolicy } from "@agora/common";
+import { readFeaturePolicy } from "@agora/common";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -106,12 +106,12 @@ function createServer(options?: {
     "agora-get-challenge",
     {
       description:
-        "Get full challenge details including description, datasets, submissions, and leaderboard. Response includes 'datasets' object with both canonical IPFS CIDs (train_cid, test_cid, spec_cid) and HTTP gateway download URLs (train_url, test_url, spec_url).",
+        "Get full challenge details including description, datasets, submissions, and leaderboard. Accepts either the Agora challenge UUID or the on-chain challenge contract address. Response includes 'datasets' object with both canonical IPFS CIDs (train_cid, test_cid, spec_cid) and HTTP gateway download URLs (train_url, test_url, spec_url).",
       inputSchema: z.object({
         challengeId: z
           .string()
-          .uuid()
-          .describe("Challenge UUID from agora-list-challenges"),
+          .min(1)
+          .describe("Challenge UUID or contract address"),
       }),
     },
     async (input) => asToolResult(await agoraGetChallenge(input)),
@@ -121,9 +121,12 @@ function createServer(options?: {
     "agora-get-leaderboard",
     {
       description:
-        "Get ranked submissions for a challenge, sorted by score (highest first). Each entry includes solver address, score, and submission ID.",
+        "Get ranked submissions for a challenge, sorted by score (highest first). Accepts either the Agora challenge UUID or the on-chain challenge contract address. Each entry includes solver address, score, and submission ID.",
       inputSchema: z.object({
-        challengeId: z.string().uuid().describe("Challenge UUID"),
+        challengeId: z
+          .string()
+          .min(1)
+          .describe("Challenge UUID or contract address"),
       }),
     },
     async (input) => asToolResult(await agoraGetLeaderboard(input)),
@@ -133,15 +136,38 @@ function createServer(options?: {
     "agora-get-submission-status",
     {
       description:
-        "Check the scoring status of a specific submission. Returns score, proof bundle CID, and whether the submission has been scored on-chain.",
-      inputSchema: z.object({
-        submissionId: z
-          .string()
-          .uuid()
-          .describe(
-            "Submission UUID from agora-get-challenge or agora-submit-solution",
-          ),
-      }),
+        "Check the scoring status of a specific submission. Returns score, proof bundle CID, and whether the submission has been scored on-chain. Use submissionId when registration is confirmed, or challengeAddress plus onChainSubmissionId when it is still pending reconciliation.",
+      inputSchema: z
+        .object({
+          submissionId: z
+            .string()
+            .uuid()
+            .optional()
+            .describe(
+              "Submission UUID from agora-get-challenge leaderboard entries or the submission.id field returned by agora-submit-solution",
+            ),
+          challengeAddress: z
+            .string()
+            .regex(/^0x[a-fA-F0-9]{40}$/)
+            .optional()
+            .describe("Challenge contract address"),
+          onChainSubmissionId: z
+            .number()
+            .int()
+            .nonnegative()
+            .optional()
+            .describe("Numeric on-chain submission id"),
+        })
+        .refine(
+          (value) =>
+            Boolean(value.submissionId) ||
+            (Boolean(value.challengeAddress) &&
+              typeof value.onChainSubmissionId === "number"),
+          {
+            message:
+              "Provide submissionId or challengeAddress with onChainSubmissionId.",
+          },
+        ),
     },
     async (input) => asToolResult(await agoraGetSubmissionStatus(input)),
   );
@@ -169,9 +195,12 @@ function createServer(options?: {
       "agora-submit-solution",
       {
         description:
-          "Pin a submission file to IPFS and submit its hash on-chain. Costs gas. Use agora-score-local first to verify your score. The submission is automatically queued for scoring by the oracle worker. In stdio mode, uses the server's configured wallet. SECURITY: Only provide privateKey in trusted local stdio mode.",
+          "Pin a submission file to IPFS and submit its hash on-chain. Costs gas. Use agora-score-local first to verify your score. Returns challengeAddress plus onChainSubmissionId immediately, and submission.id once registration is confirmed. The submission is automatically queued for scoring by the oracle worker. In stdio mode, uses the server's configured wallet. SECURITY: Only provide privateKey in trusted local stdio mode.",
         inputSchema: z.object({
-          challengeId: z.string().uuid().describe("Challenge UUID"),
+          challengeId: z
+            .string()
+            .min(1)
+            .describe("Challenge UUID or contract address"),
           filePath: z
             .string()
             .min(1)
@@ -197,9 +226,12 @@ function createServer(options?: {
       "agora-claim-payout",
       {
         description:
-          "Claim your USDC payout after a challenge is finalized. Only callable by winning solvers. The challenge must be in 'finalized' status. Returns the claim transaction hash.",
+          "Claim your USDC payout after a challenge is finalized. Only callable by winning solvers. Accepts a challenge UUID or contract address. Returns the claim transaction hash.",
         inputSchema: z.object({
-          challengeId: z.string().uuid().describe("Challenge UUID"),
+          challengeId: z
+            .string()
+            .min(1)
+            .describe("Challenge UUID or contract address"),
           privateKey: z
             .string()
             .regex(/^0x[a-fA-F0-9]{64}$/)
@@ -286,17 +318,7 @@ async function createHttpMcpSession(
   return session;
 }
 
-function assertRequiredConfig(mode: McpServerMode) {
-  const config = loadConfig();
-  if (mode === "stdio" && !config.AGORA_PINATA_JWT) {
-    throw new Error(
-      "AGORA_PINATA_JWT is not set. Submissions require IPFS pinning. Set it in .env or environment.",
-    );
-  }
-}
-
 async function startStdioMode() {
-  assertRequiredConfig("stdio");
   const server = createServer({
     allowRemotePrivateKey: true,
     mode: "stdio",
@@ -306,7 +328,6 @@ async function startStdioMode() {
 }
 
 function startHttpMode() {
-  assertRequiredConfig("http");
   const port = Number(process.env.AGORA_MCP_PORT ?? 3001);
   const allowRemotePrivateKey = readFeaturePolicy().allowMcpRemotePrivateKeys;
   const sessions = new Map<string, HttpMcpSession>();

@@ -39,6 +39,7 @@ import { keccak256, toBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   createSubmissionIntentWithApi,
+  getChallengeFromApi,
   getSubmissionPublicKeyFromApi,
   registerSubmissionWithApi,
 } from "./api-client.js";
@@ -79,6 +80,92 @@ function normalizeOptionalPrivateKey(
   return normalizedPrivateKey as `0x${string}`;
 }
 
+type SubmitChallengeApiRecord = {
+  id?: string;
+  contract_address?: string;
+  deadline?: string;
+  status?: string;
+};
+
+function isAddressRef(value: string): value is `0x${string}` {
+  return /^0x[a-fA-F0-9]{40}$/.test(value);
+}
+
+function toChallengeTargetPayload(input: {
+  challengeId: string | null;
+  challengeAddress: `0x${string}`;
+}) {
+  if (input.challengeId) {
+    return { challengeId: input.challengeId };
+  }
+  return { challengeAddress: input.challengeAddress };
+}
+
+export type SubmissionRegistrationStatus =
+  | "confirmed"
+  | "pending_reconciliation";
+
+export interface SubmitSolutionDryRunResult {
+  challengeId: string | null;
+  challengeAddress: `0x${string}`;
+  resultCid: string;
+  dryRun: true;
+}
+
+export interface SubmitSolutionResult {
+  challengeId: string | null;
+  challengeAddress: `0x${string}`;
+  txHash: `0x${string}`;
+  resultCid: string;
+  submissionId: string | null;
+  onChainSubmissionId: number;
+  submission: { id: string } | null;
+  registrationStatus: SubmissionRegistrationStatus;
+  warning: string | null;
+}
+
+async function resolveChallengeTargetFromApi(input: {
+  challengeId: string;
+  apiUrl?: string;
+}) {
+  const response = await getChallengeFromApi(input.challengeId, input.apiUrl);
+  const challenge = response.data.challenge as SubmitChallengeApiRecord;
+  if (!challenge.contract_address) {
+    throw new Error(
+      "Challenge detail response is missing contract_address. Next step: retry against the canonical Agora API or inspect challenge registration.",
+    );
+  }
+
+  return {
+    challengeId: typeof challenge.id === "string" ? challenge.id : null,
+    challengeAddress: challenge.contract_address as `0x${string}`,
+    deadline: challenge.deadline,
+    status: challenge.status,
+  };
+}
+
+async function resolveSubmitTarget(input: {
+  challengeId: string;
+  apiUrl?: string;
+}) {
+  const challenge = await resolveChallengeTargetFromApi(input);
+  if (challenge.status && challenge.status !== "open") {
+    throw new Error(
+      "Challenge is no longer accepting submissions. Next step: choose an open challenge or wait for scoring to complete.",
+    );
+  }
+
+  if (challenge.deadline) {
+    const deadlineMs = Date.parse(challenge.deadline);
+    if (Number.isFinite(deadlineMs) && deadlineMs <= Date.now()) {
+      throw new Error(
+        "Challenge deadline has passed. Next step: choose another challenge or wait for the next one.",
+      );
+    }
+  }
+  return challenge;
+}
+
 export async function submitSolution(input: {
   challengeId: string;
   filePath: string;
@@ -86,17 +173,11 @@ export async function submitSolution(input: {
   allowRawPrivateKey?: boolean;
   apiUrl?: string;
   dryRun?: boolean;
-}) {
-  const db = createSupabaseClient(true);
-  const challenge = await getChallengeById(db, input.challengeId);
-  const challengeAddress = challenge.contract_address as `0x${string}`;
-
-  if (challenge.deadline && new Date(challenge.deadline) <= new Date()) {
-    throw new Error(
-      "Challenge deadline has passed. Next step: choose another challenge or wait for the next one.",
-    );
-  }
-
+}): Promise<SubmitSolutionDryRunResult | SubmitSolutionResult> {
+  const { challengeId, challengeAddress } = await resolveSubmitTarget({
+    challengeId: input.challengeId,
+    apiUrl: input.apiUrl,
+  });
   const normalizedPrivateKey = normalizeOptionalPrivateKey(
     input.privateKey,
     input.allowRawPrivateKey ?? false,
@@ -122,8 +203,13 @@ export async function submitSolution(input: {
   const publicKey = await importSubmissionSealPublicKey(
     publicKeyPayload.data.publicKeyPem,
   );
+  const challengeTarget = toChallengeTargetPayload({
+    challengeId,
+    challengeAddress,
+  });
+  const challengeSealRef = challengeId ?? challengeAddress;
   const sealedEnvelope = await sealSubmission({
-    challengeId: input.challengeId,
+    challengeId: challengeSealRef,
     solverAddress,
     fileName: path.basename(sourcePath),
     mimeType: "application/octet-stream",
@@ -132,13 +218,14 @@ export async function submitSolution(input: {
     publicKey,
   });
   const resultCid = await pinJSON(
-    `sealed-submission-${input.challengeId}`,
+    `sealed-submission-${challengeSealRef}`,
     sealedEnvelope,
   );
 
   if (input.dryRun) {
     return {
-      challengeId: input.challengeId,
+      challengeId,
+      challengeAddress,
       resultCid,
       dryRun: true,
     };
@@ -146,7 +233,7 @@ export async function submitSolution(input: {
 
   const submissionIntent = await createSubmissionIntentWithApi(
     {
-      challengeId: input.challengeId,
+      ...challengeTarget,
       solverAddress: solverAddress as `0x${string}`,
       resultCid,
       resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
@@ -175,14 +262,17 @@ export async function submitSolution(input: {
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
   });
-  const { submissionId } = parseSubmittedReceipt(receipt, challengeAddress);
+  const { submissionId: onChainSubmissionId } = parseSubmittedReceipt(
+    receipt,
+    challengeAddress,
+  );
   let registrationWarning: string | null = null;
-  let registeredSubmission: { id: string } | undefined;
+  let registeredSubmission: { id: string } | null = null;
 
   try {
     const registration = await registerSubmissionWithApi(
       {
-        challengeId: input.challengeId,
+        ...challengeTarget,
         resultCid,
         txHash,
         resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
@@ -199,10 +289,16 @@ export async function submitSolution(input: {
   }
 
   return {
+    challengeId,
+    challengeAddress,
     txHash,
     resultCid,
-    submissionId: submissionId.toString(),
+    submissionId: registeredSubmission?.id ?? null,
+    onChainSubmissionId: Number(onChainSubmissionId),
     submission: registeredSubmission,
+    registrationStatus: registeredSubmission
+      ? "confirmed"
+      : "pending_reconciliation",
     warning: registrationWarning,
   };
 }
@@ -211,18 +307,28 @@ export async function claimChallengePayout(input: {
   challengeId: string;
   privateKey?: string;
   allowRawPrivateKey?: boolean;
+  apiUrl?: string;
 }) {
-  const db = createSupabaseClient(false);
-  const challenge = await getChallengeById(db, input.challengeId);
-  const challengeAddress = challenge.contract_address as `0x${string}`;
+  const target = isAddressRef(input.challengeId)
+    ? {
+        challengeId: null,
+        challengeAddress: input.challengeId,
+      }
+    : await resolveChallengeTargetFromApi({
+        challengeId: input.challengeId,
+        apiUrl: input.apiUrl,
+      });
   const normalizedPrivateKey = normalizeOptionalPrivateKey(
     input.privateKey,
     input.allowRawPrivateKey ?? false,
   );
 
   const txHash = normalizedPrivateKey
-    ? await claimPayoutWithPrivateKey(challengeAddress, normalizedPrivateKey)
-    : await claimPayout(challengeAddress);
+    ? await claimPayoutWithPrivateKey(
+        target.challengeAddress,
+        normalizedPrivateKey,
+      )
+    : await claimPayout(target.challengeAddress);
 
   const publicClient = getPublicClient();
   const receipt = await publicClient.waitForTransactionReceipt({
@@ -234,7 +340,12 @@ export async function claimChallengePayout(input: {
     );
   }
 
-  return { txHash, challengeId: input.challengeId, status: "claimed" };
+  return {
+    txHash,
+    challengeId: target.challengeId,
+    challengeAddress: target.challengeAddress,
+    status: "claimed",
+  };
 }
 
 export async function scoreLocal(input: {

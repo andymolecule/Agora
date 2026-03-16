@@ -636,9 +636,10 @@ erDiagram
 | `GET` | `/api/pin-spec` | — | — | Pin-spec auth nonce |
 | `POST` | `/api/pin-spec` | Signed auth | — | Pin challenge spec to IPFS |
 | `POST` | `/api/verify` | Rate limit | Paid | Re-run scorer verification |
-| `GET` | `/api/agent/challenges` | — | Paid | Agent discovery (x402 gated) |
 
 > **Note:** MCP sessions are handled by the separate MCP server on port 3001, not the API.
+>
+> The legacy `/api/agent/challenges*` namespace remains mounted only as an x402-billed compatibility alias over the canonical `/api/challenges*` routes. It is not a separate API surface.
 
 ### Authentication Flow (SIWE)
 

@@ -4,6 +4,10 @@ import { buildGetCommand } from "../src/commands/get.js";
 import { buildListCommand } from "../src/commands/list.js";
 import { buildStatusCommand } from "../src/commands/status.js";
 
+const challengeId = "11111111-1111-4111-8111-111111111111";
+const challengeAddress = "0x0000000000000000000000000000000000000001";
+const factoryAddress = "0x0000000000000000000000000000000000000002";
+
 function withConsoleCapture(fn: () => Promise<void>) {
   const logs: string[] = [];
   const originalLog = console.log;
@@ -27,13 +31,22 @@ test("list command works with only AGORA_API_URL configured", async () => {
       JSON.stringify({
         data: [
           {
-            id: "11111111-1111-4111-8111-111111111111",
+            id: challengeId,
             title: "Challenge",
             domain: "longevity",
             reward_amount: 42,
             deadline: "2026-03-20T00:00:00.000Z",
             status: "open",
+            contract_address: challengeAddress,
+            factory_address: factoryAddress,
+            factory_challenge_id: 7,
             submissions_count: 0,
+            refs: {
+              challengeId,
+              challengeAddress,
+              factoryAddress,
+              factoryChallengeId: 7,
+            },
           },
         ],
         meta: { next_cursor: null },
@@ -63,7 +76,7 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
       JSON.stringify({
         data: {
           challenge: {
-            id: "11111111-1111-4111-8111-111111111111",
+            id: challengeId,
             title: "Challenge",
             description: "desc",
             domain: "longevity",
@@ -72,6 +85,15 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
             deadline: "2026-03-20T00:00:00.000Z",
             status: "open",
             spec_cid: "ipfs://spec",
+            contract_address: challengeAddress,
+            factory_address: factoryAddress,
+            factory_challenge_id: 7,
+            refs: {
+              challengeId,
+              challengeAddress,
+              factoryAddress,
+              factoryChallengeId: 7,
+            },
           },
           datasets: {
             train_cid: null,
@@ -90,19 +112,17 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
 
   try {
     const getLogs = await withConsoleCapture(async () => {
-      await buildGetCommand().parseAsync(
-        ["11111111-1111-4111-8111-111111111111", "--format", "json"],
-        { from: "user" },
-      );
+      await buildGetCommand().parseAsync([challengeId, "--format", "json"], {
+        from: "user",
+      });
     });
     const statusLogs = await withConsoleCapture(async () => {
-      await buildStatusCommand().parseAsync(
-        ["11111111-1111-4111-8111-111111111111", "--format", "json"],
-        { from: "user" },
-      );
+      await buildStatusCommand().parseAsync([challengeId, "--format", "json"], {
+        from: "user",
+      });
     });
 
-    assert.match(getLogs.join("\n"), /11111111-1111-4111-8111-111111111111/);
+    assert.match(getLogs.join("\n"), new RegExp(challengeId));
     assert.match(statusLogs.join("\n"), /countdown/);
   } finally {
     process.env = originalEnv;

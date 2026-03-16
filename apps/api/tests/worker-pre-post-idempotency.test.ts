@@ -112,3 +112,71 @@ test("processJob skips repost when submission becomes scored before post", async
     "pre-post reconciliation should complete the job via existing conventions",
   );
 });
+
+test("processJob skips posting when challenge finalizes after scoring", async () => {
+  let lifecycleReads = 0;
+  let skippedReason: string | undefined;
+  let postCalls = 0;
+  let proofWrites = 0;
+
+  await processJob({} as never, job, log, {
+    getChallengeById: async () => challenge,
+    getSubmissionById: async () => submission,
+    getChallengeLifecycleState: async () => {
+      lifecycleReads += 1;
+      return {
+        status:
+          lifecycleReads === 1
+            ? CHALLENGE_STATUS.scoring
+            : CHALLENGE_STATUS.finalized,
+        deadline: 0n,
+        disputeWindowHours: 0n,
+      };
+    },
+    getPublicClient: () => ({}) as never,
+    reconcileScoredSubmission: async () => false,
+    handlePreviouslyPostedScoreTx: async () => false,
+    scoreSubmissionAndBuildProof: async () => ({
+      ok: true,
+      score: 0.42,
+      scoreWad: 42n,
+      proofCid: "ipfs://proof",
+      proofHash: `0x${"1".repeat(64)}` as `0x${string}`,
+      proof: {
+        inputHash: "input-hash",
+        outputHash: "output-hash",
+        containerImageDigest: "ghcr.io/andymolecule/repro-scorer@sha256:abc",
+        scorerLog: "ok",
+      },
+    }),
+    postScoreAndWaitForConfirmation: async () => {
+      postCalls += 1;
+      return `0x${"2".repeat(64)}` as `0x${string}`;
+    },
+    upsertProofBundle: async () => {
+      proofWrites += 1;
+      return null as never;
+    },
+    markScoreJobSkipped: async (_db, _payload, reason) => {
+      skippedReason = reason;
+      return null;
+    },
+    updateScore: async () => {
+      throw new Error("updateScore should not be called");
+    },
+    completeJob: async () => {
+      throw new Error("completeJob should not be called");
+    },
+    failJob: async () => {
+      throw new Error("failJob should not be called");
+    },
+    requeueJobWithoutAttemptPenalty: async () => {
+      throw new Error("requeueJobWithoutAttemptPenalty should not be called");
+    },
+  });
+
+  assert.equal(lifecycleReads, 2);
+  assert.equal(postCalls, 0);
+  assert.equal(proofWrites, 0);
+  assert.equal(skippedReason, "challenge_finalized");
+});

@@ -15,6 +15,7 @@ test("open challenge detail redacts submissions and leaderboard", async () => {
 
   const data = await getChallengeWithLeaderboard("challenge-1", {
     createSupabaseClient: () => ({}) as never,
+    getChallengeByContractAddress: async () => ({}) as never,
     getChallengeById: async () =>
       ({
         id: "challenge-1",
@@ -45,6 +46,7 @@ test("open challenge detail redacts submissions and leaderboard", async () => {
 test("challenge detail floors submissions_count when settlement state is ahead of projections", async () => {
   const data = await getChallengeWithLeaderboard("challenge-1", {
     createSupabaseClient: () => ({}) as never,
+    getChallengeByContractAddress: async () => ({}) as never,
     getChallengeById: async () =>
       ({
         id: "challenge-1",
@@ -98,6 +100,9 @@ test("challenge list derives effective scoring status once deadline passes", asy
       {},
       {
         createSupabaseClient: () => ({}) as never,
+        getChallengeByContractAddress: async () => {
+          throw new Error("not used");
+        },
         getChallengeById: async () => {
           throw new Error("not used");
         },
@@ -136,6 +141,9 @@ test("challenge list filters open and scoring after effective-status normalizati
   try {
     const sharedDeps = {
       createSupabaseClient: () => ({}) as never,
+      getChallengeByContractAddress: async () => {
+        throw new Error("not used");
+      },
       getChallengeById: async () => {
         throw new Error("not used");
       },
@@ -194,6 +202,9 @@ test("challenge list forwards updated_since and cursor to the shared DB query", 
     }),
     {
       createSupabaseClient: () => ({}) as never,
+      getChallengeByContractAddress: async () => {
+        throw new Error("not used");
+      },
       getChallengeById: async () => {
         throw new Error("not used");
       },
@@ -223,6 +234,9 @@ test("challenge list is returned newest-first even if the backing query order dr
     {},
     {
       createSupabaseClient: () => ({}) as never,
+      getChallengeByContractAddress: async () => {
+        throw new Error("not used");
+      },
       getChallengeById: async () => {
         throw new Error("not used");
       },
