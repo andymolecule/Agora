@@ -279,7 +279,7 @@ Validate CLI configuration, connectivity, and environment readiness.
 agora doctor
 ```
 
-Checks: config file, API URL, RPC URL, factory/USDC addresses, Supabase, Pinata, private key, Docker availability, and official scorer images.
+Checks: config file, API URL, RPC URL, factory/USDC addresses, private key, Docker availability, and official scorer images. Supabase and Pinata checks are only relevant for operator or advanced direct-IPFS workflows.
 
 ---
 
@@ -288,6 +288,10 @@ Checks: config file, API URL, RPC URL, factory/USDC addresses, Supabase, Pinata,
 ### `agora config set <key> <value>`
 
 Set a CLI configuration value.
+
+### `agora config init --api-url <url>`
+
+Bootstrap public solver config from the Agora API. This sets `api_url`, `chain_id`, `factory_address`, `usdc_address`, and a default public `rpc_url` for the configured chain.
 
 ### `agora config get <key>`
 
@@ -303,11 +307,11 @@ List all configuration values.
 |-----|-------------|
 | `rpc_url` | Base RPC URL |
 | `api_url` | Agora API base URL |
-| `pinata_jwt` | Pinata JWT for IPFS |
 | `private_key` | Solver/poster wallet private key (use `env:VAR_NAME` to read from env) |
 | `factory_address` | Active AgoraFactory contract address |
 | `usdc_address` | USDC token address |
 | `chain_id` | Chain ID (default: `84532` for Base Sepolia) |
-| `supabase_url` | Supabase project URL |
-| `supabase_anon_key` | Supabase anon key |
-| `supabase_service_key` | Supabase service role key |
+| `pinata_jwt` | Pinata JWT for direct IPFS pinning or poster flows |
+| `supabase_url` | Supabase project URL for operator or legacy local reads |
+| `supabase_anon_key` | Supabase anon key for legacy read-only local scoring fallback |
+| `supabase_service_key` | Supabase service role key for worker/operator flows |

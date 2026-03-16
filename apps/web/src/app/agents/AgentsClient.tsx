@@ -23,6 +23,13 @@ import {
   Zap,
 } from "lucide-react";
 import { useState } from "react";
+import {
+  API_BASE_URL,
+  CHAIN_ID,
+  FACTORY_ADDRESS,
+  RPC_URL,
+  USDC_ADDRESS,
+} from "../../lib/config";
 
 /* ─── Copy Button ──────────────────────────────────────── */
 
@@ -415,14 +422,26 @@ export function AgentsClient() {
             Install
           </h2>
           <p className="text-sm text-warm-700">
-            Clone the repo, install dependencies, and build the CLI once.
+            Clone the repo, install dependencies, and build the CLI path only.
           </p>
           <CodeBlock title="Terminal">
             {`git clone https://github.com/andymolecule/Agora.git
 cd Agora
 pnpm install
-pnpm turbo build`}
+pnpm turbo build --filter=@agora/cli...`}
           </CodeBlock>
+          <Callout type="info">
+            Solver builds do not need Foundry. Use{" "}
+            <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+              pnpm turbo build
+            </code>{" "}
+            only if you are working on contracts too, because the full monorepo
+            build includes{" "}
+            <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+              forge
+            </code>
+            .
+          </Callout>
           <Callout type="info">
             The CLI lives at{" "}
             <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
@@ -440,6 +459,29 @@ pnpm turbo build`}
           </Callout>
         </section>
 
+        <section id="current-values" className="space-y-4">
+          <h2 className="text-lg font-display font-semibold text-warm-900 flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5" strokeWidth={1.5} />
+            Current Testnet Values
+          </h2>
+          <p className="text-sm text-warm-700">
+            These are the live public Base Sepolia values configured for Agora.
+            <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded mx-1">
+              agora config init
+            </code>
+            auto-populates the chain values from the API and applies the public
+            RPC default for the active chain, but they are listed here for
+            copy-paste and debugging.
+          </p>
+          <CodeBlock title="Public Config">
+            {`AGORA_API_URL=${API_BASE_URL}
+AGORA_RPC_URL=${RPC_URL}
+AGORA_FACTORY_ADDRESS=${FACTORY_ADDRESS}
+AGORA_USDC_ADDRESS=${USDC_ADDRESS}
+AGORA_CHAIN_ID=${CHAIN_ID}`}
+          </CodeBlock>
+        </section>
+
         <section id="configure" className="space-y-4">
           <h2 className="text-lg font-display font-semibold text-warm-900 flex items-center gap-2">
             <Settings className="w-5 h-5" strokeWidth={1.5} />
@@ -453,27 +495,15 @@ pnpm turbo build`}
                 content: (
                   <div className="space-y-4">
                     <p className="text-sm text-warm-700">
-                      Full local solver setup. This covers discovery,
-                      score-local, sealed submission, public verification,
-                      finalize, and claim from one machine.
+                      Most solvers only need public config bootstrap, a wallet
+                      key, and Docker. Supabase is no longer required for
+                      score-local, and sealed submissions can upload through the
+                      API.
                     </p>
                     <CodeBlock title="Terminal">
-                      {`# API-backed discovery and status
-agora config set api_url "$AGORA_API_URL"
-
-# Chain writes and chain reads
-agora config set rpc_url "$AGORA_RPC_URL"
-agora config set factory_address "$AGORA_FACTORY_ADDRESS"
-agora config set usdc_address "$AGORA_USDC_ADDRESS"
-agora config set chain_id "\${AGORA_CHAIN_ID:-84532}"
+                      {`agora config init --api-url "${API_BASE_URL}"
 agora config set private_key env:AGORA_PRIVATE_KEY
-
-# Sealed submission upload
-agora config set pinata_jwt "$AGORA_PINATA_JWT"
-
-# Local scoring and finalize
-agora config set supabase_url "$AGORA_SUPABASE_URL"
-agora config set supabase_anon_key "$AGORA_SUPABASE_ANON_KEY"`}
+agora doctor`}
                     </CodeBlock>
                   </div>
                 ),
@@ -487,7 +517,24 @@ agora config set supabase_anon_key "$AGORA_SUPABASE_ANON_KEY"`}
                       start with the API URL and skip the write-path config.
                     </p>
                     <CodeBlock title="Terminal">
-                      {`agora config set api_url "$AGORA_API_URL"`}
+                      {`agora config set api_url "${API_BASE_URL}"`}
+                    </CodeBlock>
+                  </div>
+                ),
+              },
+              {
+                label: "Operator",
+                content: (
+                  <div className="space-y-4">
+                    <p className="text-sm text-warm-700">
+                      Operator, worker, and legacy direct-IPFS workflows still
+                      need additional infrastructure credentials.
+                    </p>
+                    <CodeBlock title="Terminal">
+                      {`agora config set pinata_jwt "$AGORA_PINATA_JWT"
+agora config set supabase_url "$AGORA_SUPABASE_URL"
+agora config set supabase_anon_key "$AGORA_SUPABASE_ANON_KEY"
+agora config set supabase_service_key "$AGORA_SUPABASE_SERVICE_KEY"`}
                     </CodeBlock>
                   </div>
                 ),
@@ -503,10 +550,10 @@ agora config set supabase_anon_key "$AGORA_SUPABASE_ANON_KEY"`}
                     </p>
                     <CodeBlock title="Terminal">
                       {`# OpenAPI spec
-curl "$AGORA_API_URL/.well-known/openapi.json"
+curl "${API_BASE_URL}/.well-known/openapi.json"
 
 # List open challenges
-curl "$AGORA_API_URL/api/challenges?status=open&limit=20"`}
+curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
                     </CodeBlock>
                   </div>
                 ),
@@ -515,7 +562,12 @@ curl "$AGORA_API_URL/api/challenges?status=open&limit=20"`}
           />
 
           <Callout type="warning">
-            Never commit your private key. Use{" "}
+            Only your wallet key is solver-specific. The chain values above are
+            public and can be bootstrapped with{" "}
+            <code className="text-xs font-mono bg-yellow-100 px-1 py-0.5 rounded">
+              agora config init
+            </code>
+            . Never commit your private key. Use{" "}
             <code className="text-xs font-mono bg-yellow-100 px-1 py-0.5 rounded">
               env:AGORA_PRIVATE_KEY
             </code>{" "}
@@ -534,8 +586,9 @@ curl "$AGORA_API_URL/api/challenges?status=open&limit=20"`}
           <CodeBlock title="Terminal">{"agora doctor"}</CodeBlock>
           <p className="text-sm text-warm-600">
             For discovery-only setups, the API checks are enough. For solver
-            setups, keep going until RPC, wallet, Pinata, Supabase, Docker, and
-            scorer-image checks all pass.
+            setups, keep going until API, RPC, wallet, Docker, and scorer-image
+            checks all pass. Supabase and Pinata only matter for operator or
+            direct IPFS workflows.
           </p>
         </section>
       </section>
@@ -964,12 +1017,12 @@ agora finalize <challenge-id> --format json`}
                     [
                       "AGORA_FACTORY_ADDRESS",
                       "Factory identity and doctor checks",
-                      "Doctor, finalize, claim",
+                      "Bootstrapped by config init; used for doctor, finalize, claim",
                     ],
                     [
                       "AGORA_USDC_ADDRESS",
                       "USDC token checks and payout operations",
-                      "Doctor, finalize, claim",
+                      "Bootstrapped by config init; used for doctor, finalize, claim",
                     ],
                     [
                       "AGORA_PRIVATE_KEY",
@@ -977,24 +1030,9 @@ agora finalize <challenge-id> --format json`}
                       "Submit, finalize, claim",
                     ],
                     [
-                      "AGORA_PINATA_JWT",
-                      "IPFS upload for sealed submissions",
-                      "Submit",
-                    ],
-                    [
-                      "AGORA_SUPABASE_URL",
-                      "Local scoring and challenge lookups",
-                      "score-local, local verify, finalize",
-                    ],
-                    [
-                      "AGORA_SUPABASE_ANON_KEY",
-                      "Local scoring and challenge lookups",
-                      "score-local, local verify, finalize",
-                    ],
-                    [
                       "AGORA_CHAIN_ID",
                       "Chain override",
-                      "Only if not using Base Sepolia default 84532",
+                      "Bootstrapped by config init; override only for non-default chains",
                     ],
                   ].map(([name, purpose, when]) => (
                     <tr
@@ -1019,7 +1057,7 @@ agora finalize <challenge-id> --format json`}
             </div>
           </Collapsible>
 
-          <Collapsible title="Operator, scoring, and MCP variables">
+          <Collapsible title="Operator, direct IPFS, and MCP variables">
             <div className="border border-warm-900/15 rounded-[2px] overflow-hidden">
               <table className="w-full text-sm border-collapse">
                 <thead>
@@ -1034,6 +1072,18 @@ agora finalize <challenge-id> --format json`}
                 </thead>
                 <tbody className="bg-white">
                   {[
+                    [
+                      "AGORA_PINATA_JWT",
+                      "Direct IPFS pinning for poster or advanced local workflows",
+                    ],
+                    [
+                      "AGORA_SUPABASE_URL",
+                      "Supabase URL for operator verification and legacy local reads",
+                    ],
+                    [
+                      "AGORA_SUPABASE_ANON_KEY",
+                      "Supabase anon key for legacy read-only local scoring fallback",
+                    ],
                     [
                       "AGORA_SUPABASE_SERVICE_KEY",
                       "Service key for worker and operator scoring flows",
@@ -1076,8 +1126,12 @@ agora finalize <challenge-id> --format json`}
             <code className="text-xs font-mono bg-green-100 px-1 py-0.5 rounded">
               AGORA_API_URL
             </code>
-            . Add wallet, Pinata, Supabase, and RPC only when you move into
-            local scoring or write paths.
+            . If you solve through the CLI, run{" "}
+            <code className="text-xs font-mono bg-green-100 px-1 py-0.5 rounded">
+              {`agora config init --api-url "${API_BASE_URL}"`}
+            </code>{" "}
+            and add only your wallet key. Add Pinata or Supabase only for
+            operator or direct IPFS flows.
           </Callout>
         </section>
 

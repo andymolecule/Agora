@@ -328,16 +328,33 @@ export function SubmitSolution({
   async function pinResultToIpfs(file: File): Promise<string> {
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const pinRes = await fetch("/api/pin-data", {
+      const pinRes = await fetch("/api/submissions/upload", {
         method: "POST",
-        body: formData,
+        headers: {
+          "content-type": file.type || "application/octet-stream",
+          "x-file-name": file.name || "sealed-submission.json",
+        },
+        body: file,
       });
-      if (!pinRes.ok) throw new Error(await pinRes.text());
-      const { cid } = (await pinRes.json()) as { cid: string };
-      return cid;
+      if (!pinRes.ok) {
+        const body = await pinRes.text();
+        let message = body || `Upload failed (${pinRes.status}).`;
+        try {
+          const parsed = JSON.parse(body) as { error?: unknown };
+          if (typeof parsed.error === "string" && parsed.error.trim().length > 0) {
+            message = parsed.error;
+          }
+        } catch {
+          // Fall back to the raw response body.
+        }
+        throw new Error(message);
+      }
+      const {
+        data: { resultCid },
+      } = (await pinRes.json()) as {
+        data: { resultCid: string };
+      };
+      return resultCid;
     } finally {
       setUploading(false);
     }

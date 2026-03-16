@@ -32,6 +32,7 @@ const scoreJobStatusSchema = z.enum([...SCORE_JOB_STATUSES] as [
 ]);
 const nonNegativeIntegerSchema = z.number().int().nonnegative();
 const positiveIntegerSchema = z.number().int().positive();
+const chainIdSchema = z.number().int().nonnegative();
 const challengeTargetFields = {
   challengeId: challengeIdSchema.optional(),
   challengeAddress: normalizedAddressSchema.optional(),
@@ -177,6 +178,17 @@ export const challengeRegistrationResponseSchema = z.object({
   }),
 });
 
+export const indexerHealthResponseSchema = z.object({
+  ok: z.boolean(),
+  status: z.string(),
+  configured: z.object({
+    chainId: chainIdSchema,
+    factoryAddress: addressSchema,
+    usdcAddress: addressSchema,
+  }),
+  checkedAt: z.string(),
+});
+
 const submissionStatusSubmissionSchema = z.object({
   id: submissionIdSchema,
   challenge_id: challengeIdSchema,
@@ -243,6 +255,12 @@ export const submissionPublicKeyResponseSchema = z.object({
     alg: z.string().optional(),
     kid: z.string(),
     publicKeyPem: z.string(),
+  }),
+});
+
+export const submissionUploadResponseSchema = z.object({
+  data: z.object({
+    resultCid: z.string().min(1),
   }),
 });
 

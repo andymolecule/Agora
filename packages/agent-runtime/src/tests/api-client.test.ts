@@ -3,12 +3,14 @@ import test from "node:test";
 import {
   createSubmissionIntentWithApi,
   getChallengeFromApi,
+  getIndexerHealthFromApi,
   getSubmissionPublicKeyFromApi,
   getSubmissionStatusByOnChainFromApi,
   getSubmissionStatusFromApi,
   listChallengesFromApi,
   registerChallengeWithApi,
   registerSubmissionWithApi,
+  uploadSubmissionArtifactToApi,
 } from "../api-client.js";
 
 test("listChallengesFromApi serializes discovery query params", async () => {
@@ -138,6 +140,72 @@ test("submission public-key endpoint parses the sealed-submission version", asyn
     const response = await getSubmissionPublicKeyFromApi("https://api.example");
     assert.equal(response.data.version, "sealed_submission_v2");
     assert.equal(response.data.kid, "submission-seal");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("indexer health endpoint exposes runtime discovery values", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        ok: true,
+        status: "ok",
+        configured: {
+          chainId: 84532,
+          factoryAddress: "0x0000000000000000000000000000000000000002",
+          usdcAddress: "0x0000000000000000000000000000000000000003",
+        },
+        checkedAt: "2026-03-16T00:00:00.000Z",
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+
+  try {
+    const response = await getIndexerHealthFromApi("https://api.example");
+    assert.equal(response.configured.chainId, 84532);
+    assert.equal(
+      response.configured.factoryAddress,
+      "0x0000000000000000000000000000000000000002",
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("submission upload endpoint parses the returned CID", async () => {
+  const originalFetch = global.fetch;
+  let requestedUrl = "";
+  let requestedHeaders: Record<string, string> | undefined;
+  global.fetch = async (input, init) => {
+    requestedUrl = String(input);
+    requestedHeaders = init?.headers as Record<string, string> | undefined;
+    return new Response(
+      JSON.stringify({
+        data: {
+          resultCid: "ipfs://sealed-submission",
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  try {
+    const response = await uploadSubmissionArtifactToApi(
+      {
+        bytes: new TextEncoder().encode('{"ok":true}'),
+        fileName: "sealed-submission.json",
+        contentType: "application/json",
+      },
+      "https://api.example",
+    );
+    assert.equal(response.resultCid, "ipfs://sealed-submission");
+    assert.equal(requestedUrl, "https://api.example/api/submissions/upload");
+    assert.deepEqual(requestedHeaders, {
+      "content-type": "application/json",
+      "x-file-name": "sealed-submission.json",
+    });
   } finally {
     global.fetch = originalFetch;
   }

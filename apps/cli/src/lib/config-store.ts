@@ -124,7 +124,9 @@ export function requireConfigValues(
     return value === undefined || value === "";
   });
   if (missing.length > 0) {
-    throw new Error(`Missing required config values: ${missing.join(", ")}.`);
+    throw new Error(
+      `Missing required config values: ${missing.join(", ")}. Next step: set the missing keys with "agora config set" or run "agora config init --api-url <url>" and retry.`,
+    );
   }
 }
 

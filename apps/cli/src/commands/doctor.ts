@@ -90,21 +90,23 @@ export function buildDoctorCommand() {
       checks.push({
         name: "RPC URL",
         status: config.rpc_url ? "ok" : "warn",
-        detail: config.rpc_url ? "configured" : "AGORA_RPC_URL missing",
+        detail: config.rpc_url
+          ? "configured"
+          : "AGORA_RPC_URL missing; run agora config init --api-url <url> or set it manually",
       });
       checks.push({
         name: "Factory address",
         status: isHexAddress(config.factory_address) ? "ok" : "warn",
         detail: isHexAddress(config.factory_address)
           ? "valid address"
-          : "AGORA_FACTORY_ADDRESS missing or invalid",
+          : "AGORA_FACTORY_ADDRESS missing or invalid; run agora config init --api-url <url>",
       });
       checks.push({
         name: "USDC address",
         status: isHexAddress(config.usdc_address) ? "ok" : "warn",
         detail: isHexAddress(config.usdc_address)
           ? "valid address"
-          : "AGORA_USDC_ADDRESS missing or invalid",
+          : "AGORA_USDC_ADDRESS missing or invalid; run agora config init --api-url <url>",
       });
       checks.push({
         name: "Runtime identity",
@@ -117,17 +119,19 @@ export function buildDoctorCommand() {
         detail: `chainId=${config.chain_id ?? "?"} factory=${config.factory_address ?? "missing"} usdc=${config.usdc_address ?? "missing"}`,
       });
       checks.push({
-        name: "Supabase",
-        status: config.supabase_url && config.supabase_anon_key ? "ok" : "warn",
+        name: "Legacy Supabase read config",
+        status: config.supabase_url && config.supabase_anon_key ? "ok" : "skip",
         detail:
           config.supabase_url && config.supabase_anon_key
-            ? "configured"
-            : "AGORA_SUPABASE_URL or AGORA_SUPABASE_ANON_KEY missing",
+            ? "configured for legacy/operator workflows"
+            : "not required for solver score-local when AGORA_API_URL is configured",
       });
       checks.push({
-        name: "Pinata JWT",
-        status: config.pinata_jwt ? "ok" : "warn",
-        detail: config.pinata_jwt ? "configured" : "AGORA_PINATA_JWT missing",
+        name: "Direct Pinata upload",
+        status: config.pinata_jwt ? "ok" : "skip",
+        detail: config.pinata_jwt
+          ? "configured for direct IPFS pinning"
+          : "not required for solver submit; the API can upload sealed submissions",
       });
       checks.push({
         name: "Private key",
@@ -137,17 +141,17 @@ export function buildDoctorCommand() {
           : "AGORA_PRIVATE_KEY missing or invalid",
       });
       checks.push({
-        name: "Local execution ready",
+        name: "Solver path ready",
         status:
+          Boolean(config.api_url) &&
           Boolean(config.rpc_url) &&
           isHexAddress(config.factory_address) &&
           isHexAddress(config.usdc_address) &&
-          Boolean(config.pinata_jwt) &&
           isPrivateKey(config.private_key)
             ? "ok"
             : "warn",
         detail:
-          "requires RPC, factory, USDC, Pinata JWT, and a private key for local scoring/submission",
+          "requires API URL, RPC, factory, USDC, and a private key for solver preview + submit",
       });
 
       if (config.api_url) {

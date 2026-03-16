@@ -5,6 +5,7 @@ import {
   DEFAULT_X402_NETWORK,
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
+  getPublicRpcUrlForChainId,
   getEffectiveChallengeStatus,
   isMetadataBlockedScoreJobError,
   isProductionRuntime,
@@ -102,6 +103,16 @@ assert.equal(
   DEFAULT_X402_NETWORK,
   `eip155:${DEFAULT_CHAIN_ID}`,
   "DEFAULT_X402_NETWORK should derive from DEFAULT_CHAIN_ID",
+);
+assert.equal(
+  getPublicRpcUrlForChainId(DEFAULT_CHAIN_ID),
+  "https://sepolia.base.org",
+  "default chain should resolve to the public Base Sepolia RPC",
+);
+assert.equal(
+  getPublicRpcUrlForChainId(999999),
+  null,
+  "unknown chains should not guess a public RPC URL",
 );
 
 const originalEnv = { ...process.env };

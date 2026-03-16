@@ -7,13 +7,15 @@ import {
   apiErrorResponseSchema,
   challengeRegistrationRequestSchema,
   challengeRegistrationResponseSchema,
-  loadConfig,
+  indexerHealthResponseSchema,
+  readApiClientRuntimeConfig,
   submissionIntentRequestSchema,
   submissionIntentResponseSchema,
   submissionPublicKeyResponseSchema,
   submissionRegistrationRequestSchema,
   submissionRegistrationResponseSchema,
   submissionStatusResponseSchema,
+  submissionUploadResponseSchema,
 } from "@agora/common";
 
 function isAddressRef(value: string) {
@@ -21,7 +23,7 @@ function isAddressRef(value: string) {
 }
 
 function resolveApiUrl(explicitApiUrl?: string) {
-  const apiUrl = explicitApiUrl ?? loadConfig().AGORA_API_URL;
+  const apiUrl = explicitApiUrl ?? readApiClientRuntimeConfig().apiUrl;
   if (!apiUrl) {
     throw new Error(
       "AGORA_API_URL is required for API requests. Next step: set AGORA_API_URL and retry.",
@@ -60,25 +62,29 @@ async function requestJson<T>(input: {
     },
   );
   if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    const parsedError = apiErrorResponseSchema.safeParse(payload);
-    if (parsedError.success) {
-      throw new AgoraError(parsedError.data.error, {
-        code: parsedError.data.code,
-        retriable: parsedError.data.retriable,
-        status: response.status,
-      });
-    }
-    throw new AgoraError(
-      `API request failed (${response.status}). Next step: retry or inspect the API response body.`,
-      {
-        code: "API_REQUEST_FAILED",
-        retriable: response.status >= 500,
-        status: response.status,
-      },
-    );
+    throw await toApiRequestError(response);
   }
   return input.parse(await response.json());
+}
+
+async function toApiRequestError(response: Response) {
+  const payload = await response.json().catch(() => null);
+  const parsedError = apiErrorResponseSchema.safeParse(payload);
+  if (parsedError.success) {
+    return new AgoraError(parsedError.data.error, {
+      code: parsedError.data.code,
+      retriable: parsedError.data.retriable,
+      status: response.status,
+    });
+  }
+  return new AgoraError(
+    `API request failed (${response.status}). Next step: retry or inspect the API response body.`,
+    {
+      code: "API_REQUEST_FAILED",
+      retriable: response.status >= 500,
+      status: response.status,
+    },
+  );
 }
 
 export async function listChallengesFromApi(
@@ -133,6 +139,14 @@ export async function registerChallengeWithApi(
   return response.data;
 }
 
+export async function getIndexerHealthFromApi(apiUrl?: string) {
+  return requestJson({
+    apiUrl,
+    pathname: "/api/indexer-health",
+    parse: (json) => indexerHealthResponseSchema.parse(json),
+  });
+}
+
 export async function getChallengeLeaderboardFromApi(
   challengeIdOrAddress: string,
   apiUrl?: string,
@@ -178,6 +192,28 @@ export async function getSubmissionPublicKeyFromApi(apiUrl?: string) {
     pathname: "/api/submissions/public-key",
     parse: (json) => submissionPublicKeyResponseSchema.parse(json),
   });
+}
+
+export async function uploadSubmissionArtifactToApi(
+  input: {
+    bytes: Uint8Array;
+    fileName?: string;
+    contentType?: string;
+  },
+  apiUrl?: string,
+) {
+  const response = await fetch(`${resolveApiUrl(apiUrl)}/api/submissions/upload`, {
+    method: "POST",
+    headers: {
+      ...(input.contentType ? { "content-type": input.contentType } : {}),
+      ...(input.fileName ? { "x-file-name": input.fileName } : {}),
+    },
+    body: input.bytes,
+  });
+  if (!response.ok) {
+    throw await toApiRequestError(response);
+  }
+  return submissionUploadResponseSchema.parse(await response.json()).data;
 }
 
 export async function createSubmissionIntentWithApi(

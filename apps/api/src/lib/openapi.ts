@@ -481,6 +481,47 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
         },
       },
+      "/api/submissions/upload": {
+        post: {
+          operationId: "uploadSubmissionArtifact",
+          summary: "Upload a sealed submission artifact and return its CID",
+          requestBody: {
+            required: true,
+            content: {
+              "application/octet-stream": {
+                schema: {
+                  type: "string",
+                  format: "binary",
+                },
+              },
+              "multipart/form-data": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    file: {
+                      type: "string",
+                      format: "binary",
+                    },
+                  },
+                  required: ["file"],
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Submission artifact uploaded.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/SubmissionUploadResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/submissions/intent": {
         post: {
           operationId: "createSubmissionIntent",
@@ -956,6 +997,19 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 matchedSubmissionId: { ...uuidSchema(), nullable: true },
               },
               required: ["resultHash", "expiresAt"],
+            },
+          },
+          required: ["data"],
+        },
+        SubmissionUploadResponse: {
+          type: "object",
+          properties: {
+            data: {
+              type: "object",
+              properties: {
+                resultCid: { type: "string" },
+              },
+              required: ["resultCid"],
             },
           },
           required: ["data"],

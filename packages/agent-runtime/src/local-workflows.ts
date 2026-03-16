@@ -14,11 +14,14 @@ import {
   SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
   type SubmissionContractOutput,
+  challengeSpecSchema,
   importSubmissionSealPublicKey,
   loadConfig,
+  readApiClientRuntimeConfig,
   resolveEvalSpec,
   resolveSubmissionOpenPrivateKeys,
   sealSubmission,
+  serializeSealedSubmissionEnvelope,
 } from "@agora/common";
 import type { ProofBundle as ProofBundlePayload } from "@agora/common";
 import {
@@ -28,7 +31,7 @@ import {
   getProofBundleBySubmissionId,
   getSubmissionById,
 } from "@agora/db";
-import { getJSON, pinJSON, unpinCid } from "@agora/ipfs";
+import { getJSON } from "@agora/ipfs";
 import {
   executeScoringPipeline,
   resolveScoringRuntimeConfig,
@@ -40,6 +43,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import {
   createSubmissionIntentWithApi,
   getChallengeFromApi,
+  uploadSubmissionArtifactToApi,
   getSubmissionPublicKeyFromApi,
   registerSubmissionWithApi,
 } from "./api-client.js";
@@ -174,15 +178,16 @@ export async function submitSolution(input: {
   apiUrl?: string;
   dryRun?: boolean;
 }): Promise<SubmitSolutionDryRunResult | SubmitSolutionResult> {
+  const apiUrl = input.apiUrl ?? readApiClientRuntimeConfig().apiUrl;
   const { challengeId, challengeAddress } = await resolveSubmitTarget({
     challengeId: input.challengeId,
-    apiUrl: input.apiUrl,
+    apiUrl,
   });
   const normalizedPrivateKey = normalizeOptionalPrivateKey(
     input.privateKey,
     input.allowRawPrivateKey ?? false,
   );
-  const publicKeyPayload = await getSubmissionPublicKeyFromApi(input.apiUrl);
+  const publicKeyPayload = await getSubmissionPublicKeyFromApi(apiUrl);
   const sourcePath = path.resolve(input.filePath);
   const sourceBytes = await fs.readFile(sourcePath);
   if (sourceBytes.byteLength > SUBMISSION_LIMITS.maxUploadBytes) {
@@ -217,9 +222,16 @@ export async function submitSolution(input: {
     keyId: publicKeyPayload.data.kid,
     publicKey,
   });
-  const resultCid = await pinJSON(
-    `sealed-submission-${challengeSealRef}`,
-    sealedEnvelope,
+  const sealedEnvelopeBytes = new TextEncoder().encode(
+    serializeSealedSubmissionEnvelope(sealedEnvelope),
+  );
+  const { resultCid } = await uploadSubmissionArtifactToApi(
+    {
+      bytes: sealedEnvelopeBytes,
+      fileName: `sealed-submission-${challengeSealRef}.json`,
+      contentType: "application/json",
+    },
+    apiUrl,
   );
 
   if (input.dryRun) {
@@ -238,25 +250,19 @@ export async function submitSolution(input: {
       resultCid,
       resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
     },
-    input.apiUrl,
+    apiUrl,
   );
 
-  let txHash: `0x${string}`;
-  try {
-    txHash = normalizedPrivateKey
-      ? await submitChallengeResultWithPrivateKey(
-          challengeAddress,
-          submissionIntent.resultHash as `0x${string}`,
-          normalizedPrivateKey,
-        )
-      : await submitChallengeResult(
-          challengeAddress,
-          submissionIntent.resultHash as `0x${string}`,
-        );
-  } catch (error) {
-    await unpinCid(resultCid).catch(() => {});
-    throw error;
-  }
+  const txHash: `0x${string}` = normalizedPrivateKey
+    ? await submitChallengeResultWithPrivateKey(
+        challengeAddress,
+        submissionIntent.resultHash as `0x${string}`,
+        normalizedPrivateKey,
+      )
+    : await submitChallengeResult(
+        challengeAddress,
+        submissionIntent.resultHash as `0x${string}`,
+      );
 
   const publicClient = getPublicClient();
   const receipt = await publicClient.waitForTransactionReceipt({
@@ -277,7 +283,7 @@ export async function submitSolution(input: {
         txHash,
         resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
       },
-      input.apiUrl,
+      apiUrl,
     );
     registrationWarning = registration.warning ?? null;
     registeredSubmission = registration.submission;
@@ -351,26 +357,16 @@ export async function claimChallengePayout(input: {
 export async function scoreLocal(input: {
   challengeId: string;
   filePath: string;
+  apiUrl?: string;
 }) {
   return withScorerLock(async () => {
-    const db = createSupabaseClient(false);
-    const challenge = await getChallengeById(db, input.challengeId);
-    const evalPlan = resolveEvalSpec(challenge);
-    if (!evalPlan.evaluationBundleCid) {
-      throw new Error(
-        "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
-      );
-    }
-    const scoringSpecConfig = await resolveScoringRuntimeConfig({
-      env: (challenge as { scoring_env_json?: Record<string, string> | null })
-        .scoring_env_json,
-      submissionContract: (
-        challenge as {
-          submission_contract_json?: SubmissionContractOutput | null;
-        }
-      ).submission_contract_json,
-      specCid: (challenge as { spec_cid?: string | null }).spec_cid ?? null,
-    });
+    const apiUrl = input.apiUrl ?? readApiClientRuntimeConfig().apiUrl;
+    const { evalPlan, scoringSpecConfig } = apiUrl
+      ? await resolveLocalScoringConfigFromApi({
+          challengeId: input.challengeId,
+          apiUrl,
+        })
+      : await resolveLocalScoringConfigFromDb(input.challengeId);
 
     const run = await executeScoringPipeline({
       image: evalPlan.image,
@@ -399,6 +395,57 @@ export async function scoreLocal(input: {
       await run.cleanup();
     }
   });
+}
+
+async function resolveLocalScoringConfigFromDb(challengeId: string) {
+  const db = createSupabaseClient(false);
+  const challenge = await getChallengeById(db, challengeId);
+  const evalPlan = resolveEvalSpec(challenge);
+  if (!evalPlan.evaluationBundleCid) {
+    throw new Error(
+      "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
+    );
+  }
+  const scoringSpecConfig = await resolveScoringRuntimeConfig({
+    env: (challenge as { scoring_env_json?: Record<string, string> | null })
+      .scoring_env_json,
+    submissionContract: (
+      challenge as {
+        submission_contract_json?: SubmissionContractOutput | null;
+      }
+    ).submission_contract_json,
+    specCid: (challenge as { spec_cid?: string | null }).spec_cid ?? null,
+  });
+  return { evalPlan, scoringSpecConfig };
+}
+
+async function resolveLocalScoringConfigFromApi(input: {
+  challengeId: string;
+  apiUrl: string;
+}) {
+  const response = await getChallengeFromApi(input.challengeId, input.apiUrl);
+  const challenge = response.data.challenge;
+  const specCid = challenge.spec_cid ?? response.data.datasets.spec_cid ?? null;
+  if (!specCid) {
+    throw new Error(
+      "Challenge detail is missing spec_cid. Next step: retry against the canonical Agora API or choose a current-schema challenge.",
+    );
+  }
+
+  const spec = challengeSpecSchema.parse(await getJSON(specCid));
+  const evalPlan = resolveEvalSpec(spec);
+  if (!evalPlan.evaluationBundleCid) {
+    throw new Error(
+      "Challenge spec is missing an evaluation bundle CID. Next step: inspect the pinned spec and retry against a scoreable challenge.",
+    );
+  }
+
+  const scoringSpecConfig = await resolveScoringRuntimeConfig({
+    submissionContract: challenge.submission_contract ?? undefined,
+    specCid,
+  });
+
+  return { evalPlan, scoringSpecConfig };
 }
 
 export async function verifySubmission(input: {

@@ -1,4 +1,8 @@
-import { DEFAULT_CHAIN_ID, normalizeOptionalAddress } from "@agora/common";
+import {
+  DEFAULT_CHAIN_ID,
+  getPublicRpcUrlForChainId,
+  normalizeOptionalAddress,
+} from "@agora/common";
 
 function normalizeAddress(value: string | undefined) {
   return normalizeOptionalAddress(value) ?? undefined;
@@ -60,4 +64,6 @@ export const CHAIN_ID = Number(
 );
 
 export const RPC_URL =
-  process.env.NEXT_PUBLIC_AGORA_RPC_URL ?? "https://sepolia.base.org";
+  process.env.NEXT_PUBLIC_AGORA_RPC_URL ??
+  getPublicRpcUrlForChainId(CHAIN_ID) ??
+  "https://sepolia.base.org";

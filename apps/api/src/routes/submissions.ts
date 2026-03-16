@@ -1,3 +1,7 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
 import {
   type OnChainSubmission,
   getChallengeLifecycleState,
@@ -10,6 +14,7 @@ import {
 import {
   CHALLENGE_STATUS,
   type ChallengeStatus,
+  SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
   SUBMISSION_SEAL_ALG,
   SUBMISSION_SEAL_VERSION,
@@ -33,7 +38,7 @@ import {
   reconcileSubmissionIntentMatch,
   upsertSubmissionOnChain,
 } from "@agora/db";
-import { getJSON } from "@agora/ipfs";
+import { getJSON, pinFile } from "@agora/ipfs";
 import { zValidator } from "@hono/zod-validator";
 import { type Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
@@ -230,6 +235,35 @@ function sanitizeScoreJobError(error: string | null) {
   return error.length > 300 ? `${error.slice(0, 297)}...` : error;
 }
 
+async function readSubmissionUpload(c: Context<ApiEnv>) {
+  const contentType = c.req.header("content-type") ?? "";
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await c.req.raw.formData();
+    const file = formData.get("file");
+    if (!(file instanceof File)) {
+      return null;
+    }
+    return {
+      bytes: new Uint8Array(await file.arrayBuffer()),
+      fileName: file.name,
+    };
+  }
+
+  const bytes = new Uint8Array(await c.req.raw.arrayBuffer());
+  if (bytes.byteLength === 0) {
+    return null;
+  }
+  return {
+    bytes,
+    fileName: c.req.header("x-file-name") ?? null,
+  };
+}
+
+function normalizeUploadFileName(fileName: string | null) {
+  const normalized = path.basename(fileName ?? "sealed-submission.json").trim();
+  return normalized.length > 0 ? normalized : "sealed-submission.json";
+}
+
 export async function getSubmissionStatusData(submissionId: string) {
   const db = createSupabaseClient(true);
   const submission = await getSubmissionById(db, submissionId);
@@ -370,6 +404,62 @@ router.get("/public-key", async (c) => {
     },
   });
 });
+
+router.post(
+  "/upload",
+  requireWriteQuota("/api/submissions/upload"),
+  async (c) => {
+    const upload = await readSubmissionUpload(c);
+    if (!upload) {
+      return jsonError(c, {
+        status: 400,
+        code: "SUBMISSION_UPLOAD_MISSING_FILE",
+        message:
+          "Submission upload requires a non-empty file body. Next step: attach the sealed submission payload and retry.",
+      });
+    }
+    if (upload.bytes.byteLength > SUBMISSION_LIMITS.maxUploadBytes) {
+      return jsonError(c, {
+        status: 413,
+        code: "SUBMISSION_UPLOAD_TOO_LARGE",
+        message: `Submission upload exceeds the ${SUBMISSION_LIMITS.maxUploadBytes / 1024 / 1024}MB limit. Next step: shrink the file and retry.`,
+      });
+    }
+
+    const safeFileName = normalizeUploadFileName(upload.fileName);
+    let tempDir: string | null = null;
+    let tempFilePath: string | null = null;
+
+    try {
+      tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "agora-submission-"));
+      tempFilePath = path.join(tempDir, `${randomUUID()}-${safeFileName}`);
+      await fs.writeFile(tempFilePath, Buffer.from(upload.bytes));
+      const resultCid = await pinFile(tempFilePath, safeFileName);
+      return c.json({
+        data: {
+          resultCid,
+        },
+      });
+    } catch (error) {
+      return jsonError(c, {
+        status: 500,
+        code: "SUBMISSION_UPLOAD_FAILED",
+        message:
+          error instanceof Error
+            ? `Submission upload failed: ${error.message}. Next step: retry, then inspect API IPFS credentials if the error persists.`
+            : "Submission upload failed. Next step: retry, then inspect API IPFS credentials if the error persists.",
+        retriable: true,
+      });
+    } finally {
+      if (tempFilePath) {
+        await fs.rm(tempFilePath, { force: true });
+      }
+      if (tempDir) {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    }
+  },
+);
 
 router.get("/by-onchain/:challengeAddress/:subId/status", async (c) => {
   const challengeAddress = c.req.param("challengeAddress");

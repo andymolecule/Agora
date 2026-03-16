@@ -28,7 +28,12 @@ export function buildSubmitCommand() {
       ) => {
         const config = loadCliConfig();
         applyConfigToEnv(config);
-        requireConfigValues(config, ["api_url", "pinata_jwt"]);
+        requireConfigValues(config, [
+          "api_url",
+          "rpc_url",
+          "factory_address",
+          "usdc_address",
+        ]);
         ensurePrivateKey(opts.key);
 
         const result = await submitSolution({

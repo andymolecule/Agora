@@ -21,12 +21,15 @@ export function buildScoreLocalCommand() {
       ) => {
         const config = loadCliConfig();
         applyConfigToEnv(config);
-        requireConfigValues(config, ["supabase_url", "supabase_anon_key"]);
+        if (!config.api_url) {
+          requireConfigValues(config, ["supabase_url", "supabase_anon_key"]);
+        }
 
         const runSpinner = createSpinner("Running scorer container...");
         const result = await scoreLocal({
           challengeId,
           filePath: opts.submission,
+          apiUrl: config.api_url,
         });
         runSpinner.succeed("Scorer finished");
 

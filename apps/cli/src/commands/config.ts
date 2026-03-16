@@ -1,8 +1,13 @@
+import { getIndexerHealthFromApi } from "@agora/agent-runtime";
+import { getPublicRpcUrlForChainId } from "@agora/common";
 import { Command } from "commander";
+import { z } from "zod";
 import {
   getConfigValue,
   loadCliConfig,
+  readConfigFile,
   setConfigValue,
+  writeConfigFile,
 } from "../lib/config-store";
 import { printJson, printTable } from "../lib/output";
 
@@ -21,6 +26,11 @@ const CONFIG_KEYS = [
 
 type ConfigKey = (typeof CONFIG_KEYS)[number];
 
+const configInitOptionsSchema = z.object({
+  apiUrl: z.string().url(),
+  format: z.enum(["table", "json"]).default("table"),
+});
+
 function assertKey(key: string): asserts key is ConfigKey {
   if (!CONFIG_KEYS.includes(key as ConfigKey)) {
     throw new Error(`Unknown config key: ${key}`);
@@ -29,6 +39,61 @@ function assertKey(key: string): asserts key is ConfigKey {
 
 export function buildConfigCommand() {
   const config = new Command("config").description("Manage Agora CLI config");
+
+  config
+    .command("init")
+    .description("Bootstrap public solver config from the Agora API")
+    .requiredOption("--api-url <url>", "Agora API base URL")
+    .option("--format <format>", "table or json", "table")
+    .action(
+      async (rawOpts: {
+        apiUrl: string;
+        format?: string;
+      }) => {
+        const opts = configInitOptionsSchema.parse(rawOpts);
+        const apiUrl = opts.apiUrl.replace(/\/$/, "");
+        const health = await getIndexerHealthFromApi(apiUrl);
+        const existing = readConfigFile();
+        const discoveredRpcUrl = getPublicRpcUrlForChainId(
+          health.configured.chainId,
+        );
+        const nextConfig = {
+          ...existing,
+          api_url: apiUrl,
+          chain_id: health.configured.chainId,
+          factory_address: health.configured.factoryAddress,
+          usdc_address: health.configured.usdcAddress,
+          rpc_url: existing.rpc_url ?? discoveredRpcUrl ?? undefined,
+        };
+        writeConfigFile(nextConfig);
+
+        const rpcSource = existing.rpc_url
+          ? "preserved"
+          : discoveredRpcUrl
+            ? "default"
+            : "manual";
+        const payload = {
+          api_url: apiUrl,
+          rpc_url: nextConfig.rpc_url ?? null,
+          chain_id: nextConfig.chain_id,
+          factory_address: nextConfig.factory_address,
+          usdc_address: nextConfig.usdc_address,
+          rpc_source: rpcSource,
+        };
+
+        if (opts.format === "json") {
+          printJson(payload);
+          return;
+        }
+
+        printTable(
+          Object.entries(payload).map(([key, value]) => ({
+            key,
+            value: value ?? "",
+          })),
+        );
+      },
+    );
 
   config
     .command("set")

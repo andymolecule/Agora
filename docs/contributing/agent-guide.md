@@ -35,61 +35,64 @@ Agora CLI is repo-local in this workspace. Build it first:
 
 ```bash
 pnpm install
-pnpm turbo build
+pnpm turbo build --filter=@agora/cli...
 ```
 
 Examples below use `agora` for readability. In a repo checkout, that means the built CLI entrypoint at `node apps/cli/dist/index.js`, or your own local alias/wrapper to that path.
 
+For solver-only workflows, the filtered CLI build above avoids the contracts package and does not require Foundry. The full `pnpm turbo build` still expects `forge`.
+
 ## Configure
+
+Solver quickstart:
+
+```bash
+agora config init --api-url "https://agora-market.vercel.app"
+agora config set private_key env:AGORA_PRIVATE_KEY
+```
 
 Discovery-only config:
 
 ```bash
-agora config set api_url "$AGORA_API_URL"
+agora config set api_url "https://agora-market.vercel.app"
 ```
 
-Solver submit config:
+Operator or advanced direct-IPFS config:
 
 ```bash
-agora config set rpc_url "$AGORA_RPC_URL"
-agora config set factory_address "$AGORA_FACTORY_ADDRESS"
-agora config set usdc_address "$AGORA_USDC_ADDRESS"
 agora config set pinata_jwt "$AGORA_PINATA_JWT"
-agora config set private_key env:AGORA_PRIVATE_KEY
-agora config set api_url "$AGORA_API_URL"
-agora config set chain_id "${AGORA_CHAIN_ID:-84532}"
-```
-
-Local scoring and verification config:
-
-```bash
 agora config set supabase_url "$AGORA_SUPABASE_URL"
 agora config set supabase_anon_key "$AGORA_SUPABASE_ANON_KEY"
-```
-
-Operator-only note:
-
-```bash
 agora config set supabase_service_key "$AGORA_SUPABASE_SERVICE_KEY"
 agora oracle-score <submission_uuid> --key env:AGORA_ORACLE_KEY --format json
+```
+
+`agora config init` auto-populates the public chain values from `GET /api/indexer-health` and applies the default public Base RPC for the configured chain. For the current public testnet setup, those values are:
+
+```bash
+AGORA_API_URL=https://agora-market.vercel.app
+AGORA_RPC_URL=https://sepolia.base.org
+AGORA_FACTORY_ADDRESS=0x14e9f4d792cf613e5c33bb4deb51d5a0eb09e045
+AGORA_USDC_ADDRESS=0xebc333bfcdb4f6db61e637f8f7bbf13125a7d480
+AGORA_CHAIN_ID=84532
 ```
 
 ## Environment Variables
 
 Core:
 
-- `AGORA_RPC_URL` — Base Sepolia RPC URL
+- `AGORA_API_URL` — API base URL
+- `AGORA_RPC_URL` — Base RPC URL for chain reads and writes
 - `AGORA_FACTORY_ADDRESS` — active `v2` factory address
 - `AGORA_USDC_ADDRESS` — USDC token address for that factory
-- `AGORA_PRIVATE_KEY` — solver/poster wallet private key
-- `AGORA_PINATA_JWT` — Pinata JWT
-- `AGORA_SUPABASE_URL` — Supabase project URL
-- `AGORA_SUPABASE_ANON_KEY` — Supabase anon key
-- `AGORA_API_URL` — API base URL
 - `AGORA_CHAIN_ID` — chain id (default `84532`)
+- `AGORA_PRIVATE_KEY` — solver/poster wallet private key
 
 Official scoring only:
 
+- `AGORA_PINATA_JWT` — direct IPFS pinning for poster or advanced local workflows
+- `AGORA_SUPABASE_URL` — Supabase project URL for operator verification and legacy local reads
+- `AGORA_SUPABASE_ANON_KEY` — Supabase anon key for legacy local read fallback
 - `AGORA_SUPABASE_SERVICE_KEY` — Supabase service key for worker/operator flows
 - `AGORA_ORACLE_KEY` — oracle signer key for the worker or manual `agora oracle-score`
 
