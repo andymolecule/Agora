@@ -1,16 +1,23 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  AmbiguousWriteResultError,
+  assertClaimChallengePayoutAffordable,
+  assertSubmitChallengeResultAffordable,
   claimPayout,
   claimPayoutWithPrivateKey,
+  getChallengePayoutByAddress,
   getOnChainSubmission,
   getPublicClient,
   getWalletClient,
   parseSubmittedReceipt,
+  sendWriteWithRetry,
   submitChallengeResult,
   submitChallengeResultWithPrivateKey,
 } from "@agora/chain";
 import {
+  AGORA_ERROR_CODES,
+  AgoraError,
   SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
   type SubmissionContractOutput,
@@ -41,21 +48,26 @@ import {
 import { keccak256, toBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
+  cleanupSubmissionArtifactWithApi,
   createSubmissionIntentWithApi,
   getChallengeFromApi,
-  uploadSubmissionArtifactToApi,
+  getChallengeSolverStatusFromApi,
   getSubmissionPublicKeyFromApi,
   registerSubmissionWithApi,
+  uploadSubmissionArtifactToApi,
 } from "./api-client.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const SUBMISSION_DEADLINE_SAFETY_WINDOW_MS = 45_000;
 let scorerRunning = false;
 
 async function withScorerLock<T>(fn: () => Promise<T>): Promise<T> {
   if (scorerRunning) {
-    throw new Error(
-      "A scoring container is already running. Next step: wait for it to finish before starting another score-local or verify run.",
-    );
+    throw new AgoraError("A scoring container is already running.", {
+      code: AGORA_ERROR_CODES.cliCommandFailed,
+      nextAction:
+        "Wait for it to finish before starting another score-local or verify run.",
+    });
   }
   scorerRunning = true;
   try {
@@ -72,13 +84,21 @@ function normalizeOptionalPrivateKey(
   const normalizedPrivateKey = privateKey?.trim();
   if (!normalizedPrivateKey) return undefined;
   if (!/^0x[a-fA-F0-9]{64}$/.test(normalizedPrivateKey)) {
-    throw new Error(
-      "Invalid privateKey: expected a 0x-prefixed 32-byte hex string. Next step: provide a valid hex private key or remove the field.",
+    throw new AgoraError(
+      "Invalid privateKey: expected a 0x-prefixed 32-byte hex string.",
+      {
+        code: AGORA_ERROR_CODES.invalidPrivateKeyReference,
+        nextAction: "Provide a valid hex private key or remove the field.",
+      },
     );
   }
   if (!allowRawPrivateKey) {
-    throw new Error(
-      "Raw privateKey input is disabled for this workflow. Next step: use the configured wallet-backed runtime instead.",
+    throw new AgoraError(
+      "Raw privateKey input is disabled for this workflow.",
+      {
+        code: AGORA_ERROR_CODES.invalidPrivateKeyReference,
+        nextAction: "Use the configured wallet-backed runtime instead.",
+      },
     );
   }
   return normalizedPrivateKey as `0x${string}`;
@@ -103,6 +123,49 @@ function toChallengeTargetPayload(input: {
     return { challengeId: input.challengeId };
   }
   return { challengeAddress: input.challengeAddress };
+}
+
+async function assertSubmitDeadlineSafetyWindow(deadline: string | undefined) {
+  if (!deadline) {
+    return;
+  }
+
+  const deadlineMs = Date.parse(deadline);
+  if (!Number.isFinite(deadlineMs)) {
+    return;
+  }
+
+  const latestBlock = await getPublicClient().getBlock({ blockTag: "latest" });
+  const chainNowMs = Number(latestBlock.timestamp) * 1000;
+  if (deadlineMs > chainNowMs + SUBMISSION_DEADLINE_SAFETY_WINDOW_MS) {
+    return;
+  }
+
+  throw new AgoraError(
+    "Challenge deadline is too close to safely confirm a submission.",
+    {
+      code: AGORA_ERROR_CODES.challengeDeadlineTooClose,
+      nextAction: "Submit earlier or choose another challenge.",
+    },
+  );
+}
+
+async function cleanupFailedSubmissionArtifact(input: {
+  apiUrl?: string;
+  resultCid: string;
+  intentId?: string;
+}) {
+  try {
+    await cleanupSubmissionArtifactWithApi(
+      {
+        resultCid: input.resultCid,
+        intentId: input.intentId,
+      },
+      input.apiUrl,
+    );
+  } catch {
+    // Best effort cleanup only; the primary failure should still surface.
+  }
 }
 
 export type SubmissionRegistrationStatus =
@@ -135,8 +198,13 @@ async function resolveChallengeTargetFromApi(input: {
   const response = await getChallengeFromApi(input.challengeId, input.apiUrl);
   const challenge = response.data.challenge as SubmitChallengeApiRecord;
   if (!challenge.contract_address) {
-    throw new Error(
-      "Challenge detail response is missing contract_address. Next step: retry against the canonical Agora API or inspect challenge registration.",
+    throw new AgoraError(
+      "Challenge detail response is missing contract_address.",
+      {
+        code: AGORA_ERROR_CODES.apiRequestFailed,
+        nextAction:
+          "Retry against the canonical Agora API or inspect challenge registration.",
+      },
     );
   }
 
@@ -154,17 +222,19 @@ async function resolveSubmitTarget(input: {
 }) {
   const challenge = await resolveChallengeTargetFromApi(input);
   if (challenge.status && challenge.status !== "open") {
-    throw new Error(
-      "Challenge is no longer accepting submissions. Next step: choose an open challenge or wait for scoring to complete.",
-    );
+    throw new AgoraError("Challenge is no longer accepting submissions.", {
+      code: AGORA_ERROR_CODES.challengeNotOpen,
+      nextAction: "Choose an open challenge or wait for scoring to complete.",
+    });
   }
 
   if (challenge.deadline) {
     const deadlineMs = Date.parse(challenge.deadline);
     if (Number.isFinite(deadlineMs) && deadlineMs <= Date.now()) {
-      throw new Error(
-        "Challenge deadline has passed. Next step: choose another challenge or wait for the next one.",
-      );
+      throw new AgoraError("Challenge deadline has passed.", {
+        code: AGORA_ERROR_CODES.challengeDeadlinePassed,
+        nextAction: "Choose another challenge or wait for the next one.",
+      });
     }
   }
   return challenge;
@@ -179,10 +249,12 @@ export async function submitSolution(input: {
   dryRun?: boolean;
 }): Promise<SubmitSolutionDryRunResult | SubmitSolutionResult> {
   const apiUrl = input.apiUrl ?? readApiClientRuntimeConfig().apiUrl;
-  const { challengeId, challengeAddress } = await resolveSubmitTarget({
-    challengeId: input.challengeId,
-    apiUrl,
-  });
+  const { challengeId, challengeAddress, deadline } = await resolveSubmitTarget(
+    {
+      challengeId: input.challengeId,
+      apiUrl,
+    },
+  );
   const normalizedPrivateKey = normalizeOptionalPrivateKey(
     input.privateKey,
     input.allowRawPrivateKey ?? false,
@@ -191,8 +263,16 @@ export async function submitSolution(input: {
   const sourcePath = path.resolve(input.filePath);
   const sourceBytes = await fs.readFile(sourcePath);
   if (sourceBytes.byteLength > SUBMISSION_LIMITS.maxUploadBytes) {
-    throw new Error(
-      `Submission file exceeds the ${SUBMISSION_LIMITS.maxUploadBytes / 1024 / 1024}MB limit. Next step: shrink the file and retry.`,
+    throw new AgoraError(
+      `Submission file exceeds the ${SUBMISSION_LIMITS.maxUploadBytes / 1024 / 1024}MB limit.`,
+      {
+        code: AGORA_ERROR_CODES.submissionTooLarge,
+        nextAction: "Shrink the file and retry.",
+        details: {
+          maxUploadBytes: SUBMISSION_LIMITS.maxUploadBytes,
+          receivedBytes: sourceBytes.byteLength,
+        },
+      },
     );
   }
 
@@ -200,9 +280,38 @@ export async function submitSolution(input: {
     ? privateKeyToAccount(normalizedPrivateKey).address.toLowerCase()
     : getWalletClient().account?.address?.toLowerCase();
   if (!solverAddress) {
-    throw new Error(
-      "No submitter wallet is configured. Next step: set AGORA_PRIVATE_KEY or provide a trusted local private key reference.",
+    throw new AgoraError("No submitter wallet is configured.", {
+      code: AGORA_ERROR_CODES.missingPrivateKeyEnv,
+      nextAction:
+        "Set AGORA_PRIVATE_KEY or provide a trusted local private key reference.",
+    });
+  }
+
+  if (!input.dryRun) {
+    await assertSubmitDeadlineSafetyWindow(deadline);
+    const solverStatus = await getChallengeSolverStatusFromApi(
+      challengeId ?? challengeAddress,
+      solverAddress as `0x${string}`,
+      apiUrl,
     );
+    if (solverStatus.data.has_reached_submission_limit) {
+      const limit = solverStatus.data.max_submissions_per_solver ?? 0;
+      throw new AgoraError(
+        `Solver submission limit reached (${solverStatus.data.submissions_used}/${limit}).`,
+        {
+          code: AGORA_ERROR_CODES.submissionLimitReached,
+          nextAction: "Wait for scoring or use a different solver wallet.",
+          details: {
+            limit,
+            submissionsUsed: solverStatus.data.submissions_used,
+          },
+        },
+      );
+    }
+    await assertSubmitChallengeResultAffordable({
+      accountAddress: solverAddress as `0x${string}`,
+      challengeAddress,
+    });
   }
 
   const publicKey = await importSubmissionSealPublicKey(
@@ -243,31 +352,72 @@ export async function submitSolution(input: {
     };
   }
 
-  const submissionIntent = await createSubmissionIntentWithApi(
-    {
-      ...challengeTarget,
-      solverAddress: solverAddress as `0x${string}`,
+  let submissionIntent: Awaited<
+    ReturnType<typeof createSubmissionIntentWithApi>
+  >;
+  try {
+    submissionIntent = await createSubmissionIntentWithApi(
+      {
+        ...challengeTarget,
+        solverAddress: solverAddress as `0x${string}`,
+        resultCid,
+        resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+      },
+      apiUrl,
+    );
+  } catch (error) {
+    await cleanupFailedSubmissionArtifact({
+      apiUrl,
       resultCid,
-      resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
-    },
-    apiUrl,
-  );
+    });
+    throw error;
+  }
 
-  const txHash: `0x${string}` = normalizedPrivateKey
-    ? await submitChallengeResultWithPrivateKey(
-        challengeAddress,
-        submissionIntent.resultHash as `0x${string}`,
-        normalizedPrivateKey,
-      )
-    : await submitChallengeResult(
-        challengeAddress,
-        submissionIntent.resultHash as `0x${string}`,
-      );
+  let txHash: `0x${string}`;
+  try {
+    txHash = await sendWriteWithRetry({
+      accountAddress: solverAddress as `0x${string}`,
+      label: "Submission transaction",
+      write: () =>
+        normalizedPrivateKey
+          ? submitChallengeResultWithPrivateKey(
+              challengeAddress,
+              submissionIntent.resultHash as `0x${string}`,
+              normalizedPrivateKey,
+            )
+          : submitChallengeResult(
+              challengeAddress,
+              submissionIntent.resultHash as `0x${string}`,
+            ),
+    });
+  } catch (error) {
+    if (!(error instanceof AmbiguousWriteResultError)) {
+      await cleanupFailedSubmissionArtifact({
+        apiUrl,
+        resultCid,
+        intentId: submissionIntent.intentId,
+      });
+    }
+    throw error;
+  }
 
   const publicClient = getPublicClient();
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
   });
+  if (receipt.status !== "success") {
+    await cleanupFailedSubmissionArtifact({
+      apiUrl,
+      resultCid,
+      intentId: submissionIntent.intentId,
+    });
+    throw new AgoraError(`Submission transaction reverted: ${txHash}.`, {
+      code: AGORA_ERROR_CODES.txReverted,
+      nextAction:
+        "Confirm the challenge is still open, the deadline has not passed, and the solver has remaining submission slots.",
+      details: { txHash },
+    });
+  }
   const { submissionId: onChainSubmissionId } = parseSubmittedReceipt(
     receipt,
     challengeAddress,
@@ -328,22 +478,60 @@ export async function claimChallengePayout(input: {
     input.privateKey,
     input.allowRawPrivateKey ?? false,
   );
+  const caller = normalizedPrivateKey
+    ? privateKeyToAccount(normalizedPrivateKey).address
+    : getWalletClient().account?.address;
+  if (!caller) {
+    throw new AgoraError("No caller wallet is configured.", {
+      code: AGORA_ERROR_CODES.missingPrivateKeyEnv,
+      nextAction:
+        "Set AGORA_PRIVATE_KEY or provide a trusted local private key reference.",
+    });
+  }
 
-  const txHash = normalizedPrivateKey
-    ? await claimPayoutWithPrivateKey(
-        target.challengeAddress,
-        normalizedPrivateKey,
-      )
-    : await claimPayout(target.challengeAddress);
+  const claimable = await getChallengePayoutByAddress(
+    target.challengeAddress,
+    caller,
+  );
+  if (claimable === 0n) {
+    throw new AgoraError("No payout is currently claimable for this wallet.", {
+      code: AGORA_ERROR_CODES.noClaimablePayout,
+      nextAction:
+        "Confirm the challenge is finalized and that this solver placed in a paid position.",
+      details: {
+        challengeAddress: target.challengeAddress,
+        caller,
+      },
+    });
+  }
+  await assertClaimChallengePayoutAffordable({
+    accountAddress: caller,
+    challengeAddress: target.challengeAddress,
+  });
+
+  const txHash = await sendWriteWithRetry({
+    accountAddress: caller,
+    label: "Claim transaction",
+    write: () =>
+      normalizedPrivateKey
+        ? claimPayoutWithPrivateKey(
+            target.challengeAddress,
+            normalizedPrivateKey,
+          )
+        : claimPayout(target.challengeAddress),
+  });
 
   const publicClient = getPublicClient();
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
   });
   if (receipt.status !== "success") {
-    throw new Error(
-      `Claim transaction reverted: ${txHash}. Next step: confirm the challenge is finalized and that the caller is eligible to claim.`,
-    );
+    throw new AgoraError(`Claim transaction reverted: ${txHash}.`, {
+      code: AGORA_ERROR_CODES.txReverted,
+      nextAction:
+        "Confirm the challenge is finalized and that the caller is eligible to claim.",
+      details: { txHash },
+    });
   }
 
   return {

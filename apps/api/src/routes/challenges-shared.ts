@@ -9,6 +9,7 @@ import {
   isChallengeStatus,
 } from "@agora/common";
 import {
+  countSubmissionsForChallenge,
   createSupabaseClient,
   getChallengeByContractAddress,
   getChallengeById,
@@ -33,6 +34,7 @@ type ProofBundleRow = {
 };
 
 type ChallengeSharedDeps = {
+  countSubmissionsForChallenge: typeof countSubmissionsForChallenge;
   createSupabaseClient: typeof createSupabaseClient;
   getChallengeByContractAddress: typeof getChallengeByContractAddress;
   getChallengeById: typeof getChallengeById;
@@ -42,6 +44,7 @@ type ChallengeSharedDeps = {
 };
 
 const defaultDeps: ChallengeSharedDeps = {
+  countSubmissionsForChallenge,
   createSupabaseClient,
   getChallengeByContractAddress,
   getChallengeById,
@@ -291,7 +294,7 @@ export async function listChallengesFromQuery(
   query: z.output<typeof listChallengesQuerySchema>,
   deps: ChallengeSharedDeps = defaultDeps,
 ) {
-  const db = deps.createSupabaseClient(false);
+  const db = deps.createSupabaseClient(true);
   const dbStatusFilter =
     query.status &&
     query.status !== CHALLENGE_STATUS.open &&
@@ -378,18 +381,32 @@ async function getChallengeWithLeaderboardFromRow(
   const lifecycle = await deps.getChallengeLifecycleState(
     challenge.contract_address as `0x${string}`,
   );
+  const winningOnChainSubId = (
+    challenge as { winning_on_chain_sub_id?: unknown }
+  ).winning_on_chain_sub_id;
   const normalizedChallenge = {
     ...challenge,
     status: lifecycle.status,
     submissions_count: floorSubmissionCount(
-      0,
-      (challenge as { winning_on_chain_sub_id?: unknown })
-        .winning_on_chain_sub_id,
+      (challenge as { submissions_count?: unknown }).submissions_count,
+      winningOnChainSubId,
     ),
   };
   if (!canExposeChallengeResults(normalizedChallenge.status)) {
+    const db = deps.createSupabaseClient(true);
+    const submissionsCount = await deps.countSubmissionsForChallenge(
+      db,
+      challenge.id,
+    );
+    const challengeWithCounts = {
+      ...normalizedChallenge,
+      submissions_count: floorSubmissionCount(
+        submissionsCount,
+        winningOnChainSubId,
+      ),
+    };
     return toChallengeDetailResponse({
-      challenge: normalizedChallenge as ChallengeRow,
+      challenge: challengeWithCounts as ChallengeRow,
       submissions: [],
       leaderboard: [],
     });
@@ -405,8 +422,7 @@ async function getChallengeWithLeaderboardFromRow(
     ...normalizedChallenge,
     submissions_count: floorSubmissionCount(
       rawSubmissions.length,
-      (challenge as { winning_on_chain_sub_id?: unknown })
-        .winning_on_chain_sub_id,
+      winningOnChainSubId,
     ),
   };
   const leaderboard =

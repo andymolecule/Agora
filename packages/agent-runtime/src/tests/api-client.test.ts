@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { AgoraError } from "@agora/common";
 import {
+  cleanupSubmissionArtifactWithApi,
   createSubmissionIntentWithApi,
   getChallengeFromApi,
+  getChallengeSolverStatusFromApi,
   getIndexerHealthFromApi,
   getSubmissionPublicKeyFromApi,
   getSubmissionStatusByOnChainFromApi,
@@ -11,6 +14,7 @@ import {
   registerChallengeWithApi,
   registerSubmissionWithApi,
   uploadSubmissionArtifactToApi,
+  waitForSubmissionStatusFromApi,
 } from "../api-client.js";
 
 test("listChallengesFromApi serializes discovery query params", async () => {
@@ -74,6 +78,8 @@ test("submission endpoints parse canonical API responses", async () => {
             proofBundle: null,
             job: null,
             scoringStatus: "pending",
+            terminal: false,
+            recommendedPollSeconds: 20,
           },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -120,6 +126,65 @@ test("submission endpoints parse canonical API responses", async () => {
   }
 });
 
+test("submission wait endpoint parses long-poll metadata", async () => {
+  const originalFetch = global.fetch;
+  let requestedUrl = "";
+  global.fetch = async (input) => {
+    requestedUrl = String(input);
+    return new Response(
+      JSON.stringify({
+        data: {
+          submission: {
+            id: "22222222-2222-4222-8222-222222222222",
+            challenge_id: "11111111-1111-4111-8111-111111111111",
+            challenge_address: "0x0000000000000000000000000000000000000001",
+            on_chain_sub_id: 1,
+            solver_address: "0x0000000000000000000000000000000000000001",
+            score: "100",
+            scored: true,
+            submitted_at: "2026-03-12T00:00:00.000Z",
+            scored_at: "2026-03-12T00:05:00.000Z",
+            refs: {
+              submissionId: "22222222-2222-4222-8222-222222222222",
+              challengeId: "11111111-1111-4111-8111-111111111111",
+              challengeAddress: "0x0000000000000000000000000000000000000001",
+              onChainSubmissionId: 1,
+            },
+          },
+          proofBundle: { reproducible: true },
+          job: {
+            status: "scored",
+            attempts: 1,
+            maxAttempts: 3,
+            lastError: null,
+            nextAttemptAt: null,
+            lockedAt: null,
+          },
+          scoringStatus: "complete",
+          terminal: true,
+          recommendedPollSeconds: 60,
+          waitedMs: 4_000,
+          timedOut: false,
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  try {
+    const response = await waitForSubmissionStatusFromApi(
+      "22222222-2222-4222-8222-222222222222",
+      { timeoutSeconds: 20 },
+      "https://api.example",
+    );
+    assert.match(requestedUrl, /timeout_seconds=20/);
+    assert.equal(response.data.waitedMs, 4_000);
+    assert.equal(response.data.timedOut, false);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test("submission public-key endpoint parses the sealed-submission version", async () => {
   const originalFetch = global.fetch;
   global.fetch = async () =>
@@ -140,6 +205,147 @@ test("submission public-key endpoint parses the sealed-submission version", asyn
     const response = await getSubmissionPublicKeyFromApi("https://api.example");
     assert.equal(response.data.version, "sealed_submission_v2");
     assert.equal(response.data.kid, "submission-seal");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("challenge solver status endpoint parses submission limits and claimable payout", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        data: {
+          challenge_id: "11111111-1111-4111-8111-111111111111",
+          challenge_address: "0x0000000000000000000000000000000000000001",
+          solver_address: "0x0000000000000000000000000000000000000002",
+          status: "open",
+          max_submissions_per_solver: 3,
+          submissions_used: 1,
+          submissions_remaining: 2,
+          has_reached_submission_limit: false,
+          can_submit: true,
+          claimable: "0",
+          can_claim: false,
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+
+  try {
+    const response = await getChallengeSolverStatusFromApi(
+      "11111111-1111-4111-8111-111111111111",
+      "0x0000000000000000000000000000000000000002",
+      "https://api.example",
+    );
+    assert.equal(response.data.submissions_remaining, 2);
+    assert.equal(response.data.can_submit, true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("submission cleanup endpoint parses the cleanup result", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        data: {
+          cleanedIntent: true,
+          unpinned: true,
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+
+  try {
+    const response = await cleanupSubmissionArtifactWithApi(
+      {
+        resultCid: "ipfs://sealed-submission",
+        intentId: "22222222-2222-4222-8222-222222222222",
+      },
+      "https://api.example",
+    );
+    assert.equal(response.cleanedIntent, true);
+    assert.equal(response.unpinned, true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("API client returns a machine-readable retry exhaustion error for transport failures", async () => {
+  const originalFetch = global.fetch;
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    throw new Error("fetch failed");
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        listChallengesFromApi(
+          {
+            limit: 1,
+          },
+          "https://api.example",
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof AgoraError);
+        assert.equal(error.code, "API_REQUEST_FAILED");
+        assert.equal(error.retriable, true);
+        assert.equal(error.details?.pathname, "/api/challenges?limit=1");
+        assert.equal(error.details?.lastError, "fetch failed");
+        return true;
+      },
+    );
+    assert.equal(calls, 3);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("submission intent creation retries retriable API failures", async () => {
+  const originalFetch = global.fetch;
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    if (calls === 1) {
+      return new Response(
+        JSON.stringify({
+          error: "temporary outage",
+          code: "TEMPORARY_OUTAGE",
+          retriable: true,
+        }),
+        { status: 503, headers: { "content-type": "application/json" } },
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        data: {
+          intentId: "22222222-2222-4222-8222-222222222222",
+          resultHash:
+            "0x1111111111111111111111111111111111111111111111111111111111111111",
+          expiresAt: "2026-03-13T00:00:00.000Z",
+          matchedSubmissionId: null,
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  try {
+    const intent = await createSubmissionIntentWithApi(
+      {
+        challengeId: "11111111-1111-4111-8111-111111111111",
+        solverAddress: "0x0000000000000000000000000000000000000001",
+        resultCid: "ipfs://result",
+        resultFormat: "sealed_submission_v2",
+      },
+      "https://api.example",
+    );
+    assert.equal(calls, 2);
+    assert.equal(intent.intentId, "22222222-2222-4222-8222-222222222222");
   } finally {
     global.fetch = originalFetch;
   }
@@ -363,6 +569,8 @@ test("API client supports protocol-ref challenge and submission lookups", async 
             proofBundle: null,
             job: null,
             scoringStatus: "pending",
+            terminal: false,
+            recommendedPollSeconds: 20,
           },
         }),
         { status: 200, headers: { "content-type": "application/json" } },

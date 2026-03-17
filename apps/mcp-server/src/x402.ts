@@ -4,6 +4,7 @@ import {
   readX402RuntimeConfig,
   verifyAndSettleX402Payment,
 } from "@agora/common";
+import { mcpLogger } from "./observability.js";
 
 const MCP_SESSION_PRICE_USD = 0.01;
 let x402ConfigLogged = false;
@@ -35,8 +36,16 @@ export async function enforceMcpSessionPayment(
   const config = readX402RuntimeConfig();
 
   if (!x402ConfigLogged) {
-    console.info(
-      `[x402][mcp] enabled=${config.enabled} reportOnly=${config.reportOnly} facilitator=${config.facilitatorUrl} network=${config.network} payTo=${config.payTo}`,
+    mcpLogger.info(
+      {
+        event: "mcp.x402.config",
+        enabled: config.enabled,
+        reportOnly: config.reportOnly,
+        facilitatorUrl: config.facilitatorUrl,
+        network: config.network,
+        payTo: config.payTo,
+      },
+      "Loaded MCP x402 configuration",
     );
     x402ConfigLogged = true;
   }
@@ -44,8 +53,15 @@ export async function enforceMcpSessionPayment(
   if (!config.enabled) return true;
 
   if (config.reportOnly) {
-    console.info(
-      `[x402][report-only] would charge route=mcp-session method=${req.method ?? "UNKNOWN"} path=/mcp price=$${MCP_SESSION_PRICE_USD.toFixed(2)}`,
+    mcpLogger.info(
+      {
+        event: "mcp.x402.report_only",
+        routeId: "mcp-session",
+        method: req.method ?? "UNKNOWN",
+        path: "/mcp",
+        priceUsd: MCP_SESSION_PRICE_USD,
+      },
+      "MCP x402 report-only charge evaluated",
     );
     return true;
   }

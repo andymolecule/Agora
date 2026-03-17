@@ -140,6 +140,7 @@ export async function handlePreviouslyPostedScoreTx(
         log("info", "Posted tx succeeded; reconciled and completed job", {
           jobId: job.id,
           submissionId: submission.id,
+          traceId: job.trace_id ?? submission.trace_id ?? null,
           txHash: job.score_tx_hash,
         });
         return true;
@@ -156,6 +157,7 @@ export async function handlePreviouslyPostedScoreTx(
       log("warn", reason, {
         jobId: job.id,
         submissionId: submission.id,
+        traceId: job.trace_id ?? submission.trace_id ?? null,
         txHash: job.score_tx_hash,
       });
       return true;
@@ -168,6 +170,7 @@ export async function handlePreviouslyPostedScoreTx(
       {
         jobId: job.id,
         submissionId: submission.id,
+        traceId: job.trace_id ?? submission.trace_id ?? null,
         txHash: job.score_tx_hash,
       },
     );
@@ -190,6 +193,7 @@ export async function handlePreviouslyPostedScoreTx(
       log("info", reason, {
         jobId: job.id,
         submissionId: submission.id,
+        traceId: job.trace_id ?? submission.trace_id ?? null,
       });
       return true;
     }
@@ -211,6 +215,7 @@ export async function postScoreAndWaitForConfirmation(
     jobId: job.id,
     submissionId: submission.id,
     challengeId: job.challenge_id,
+    traceId: job.trace_id ?? submission.trace_id ?? null,
     scoreWad: scoreWad.toString(),
   };
   const txHash = await runWorkerPhase(log, "post_tx", phaseMeta, async () => {

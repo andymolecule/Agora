@@ -5,10 +5,12 @@ import {
   agentChallengesQuerySchema,
   apiErrorResponseSchema,
   challengeRegistrationResponseSchema,
+  challengeSolverStatusResponseSchema,
   submissionPublicKeyResponseSchema,
   submissionRegistrationResponseSchema,
   submissionStatusResponseSchema,
   submissionValidationResponseSchema,
+  submissionWaitStatusResponseSchema,
 } from "../index.js";
 
 const query = agentChallengesQuerySchema.parse({
@@ -187,11 +189,41 @@ const statusResponse = submissionStatusResponseSchema.parse({
       lockedAt: null,
     },
     scoringStatus: "pending",
+    terminal: false,
+    recommendedPollSeconds: 15,
   },
 });
 
 assert.equal(statusResponse.data.scoringStatus, "pending");
 assert.equal(statusResponse.data.job?.status, "queued");
+
+const waitResponse = submissionWaitStatusResponseSchema.parse({
+  data: {
+    ...statusResponse.data,
+    waitedMs: 4_000,
+    timedOut: false,
+  },
+});
+
+assert.equal(waitResponse.data.waitedMs, 4_000);
+
+const solverStatusResponse = challengeSolverStatusResponseSchema.parse({
+  data: {
+    challenge_id: "11111111-1111-4111-8111-111111111111",
+    challenge_address: "0x0000000000000000000000000000000000000001",
+    solver_address: "0x0000000000000000000000000000000000000002",
+    status: "open",
+    max_submissions_per_solver: 3,
+    submissions_used: 1,
+    submissions_remaining: 2,
+    has_reached_submission_limit: false,
+    can_submit: true,
+    claimable: "0",
+    can_claim: false,
+  },
+});
+
+assert.equal(solverStatusResponse.data.submissions_remaining, 2);
 
 const submissionValidation = submissionValidationResponseSchema.parse({
   data: {
@@ -212,6 +244,14 @@ const apiError = apiErrorResponseSchema.parse({
   error: "Rate limit exceeded. Try again later.",
   code: "RATE_LIMITED",
   retriable: true,
+  nextAction: "Wait for the quota window to reset before retrying.",
+  details: {
+    retryAfterSeconds: 60,
+  },
 });
 
 assert.equal(apiError.code, "RATE_LIMITED");
+assert.equal(
+  apiError.nextAction,
+  "Wait for the quota window to reset before retrying.",
+);

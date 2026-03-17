@@ -9,6 +9,13 @@ const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
 const DEFAULT_FETCH_MAX_ATTEMPTS = 3;
 const DEFAULT_FETCH_RETRY_BASE_MS = 500;
 
+function warnSharedGatewayInProduction(gateway: string) {
+  process.emitWarning("Using the shared IPFS gateway in production.", {
+    code: "AGORA_IPFS_SHARED_GATEWAY",
+    detail: `Set AGORA_IPFS_GATEWAY to a dedicated gateway before production use. gateway=${gateway}`,
+  });
+}
+
 function envInt(name: string, fallback: number, min = 0) {
   const raw = process.env[name];
   if (typeof raw !== "string" || raw.length === 0) return fallback;
@@ -43,17 +50,14 @@ function resolveGateway(cidOrUrl: string): string {
   const isCid = cidOrUrl.startsWith("ipfs://") || isBareIpfsCid(cidOrUrl);
   if (isCid) {
     const config = loadIpfsConfig();
-    const gateway =
-      config.AGORA_IPFS_GATEWAY ?? DEFAULT_IPFS_GATEWAY;
+    const gateway = config.AGORA_IPFS_GATEWAY ?? DEFAULT_IPFS_GATEWAY;
     if (
-      !warnedSharedGateway
-      && process.env.NODE_ENV === "production"
-      && gateway === DEFAULT_IPFS_GATEWAY
+      !warnedSharedGateway &&
+      process.env.NODE_ENV === "production" &&
+      gateway === DEFAULT_IPFS_GATEWAY
     ) {
       warnedSharedGateway = true;
-      console.warn(
-        "Using shared IPFS gateway in production. Set AGORA_IPFS_GATEWAY to a dedicated gateway to reduce rate limiting.",
-      );
+      warnSharedGatewayInProduction(gateway);
     }
     const bareHash = cidOrUrl.replace("ipfs://", "");
     return `${gateway}${bareHash}`;
@@ -131,7 +135,9 @@ async function fetchWithTimeoutAndRetry(url: string): Promise<Response> {
 
   throw (
     lastError ??
-    new Error(`Failed to fetch from ${url} after ${FETCH_MAX_ATTEMPTS} attempts`)
+    new Error(
+      `Failed to fetch from ${url} after ${FETCH_MAX_ATTEMPTS} attempts`,
+    )
   );
 }
 

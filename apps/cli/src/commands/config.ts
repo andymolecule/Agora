@@ -4,7 +4,7 @@ import { Command } from "commander";
 import { z } from "zod";
 import {
   getConfigValue,
-  loadCliConfig,
+  loadDisplayedCliConfig,
   readConfigFile,
   setConfigValue,
   writeConfigFile,
@@ -100,6 +100,10 @@ export function buildConfigCommand() {
     .argument("<key>")
     .argument("<value>")
     .description("Set a config value")
+    .addHelpText(
+      "after",
+      '\nExamples:\n  agora config set api_url "https://agora-market.vercel.app"\n  agora config set private_key env:AGORA_PRIVATE_KEY\n',
+    )
     .option("--format <format>", "table or json", "json")
     .action((key: string, value: string, opts: { format: string }) => {
       assertKey(key);
@@ -135,7 +139,7 @@ export function buildConfigCommand() {
     .description("List config values")
     .option("--format <format>", "table or json", "table")
     .action((opts: { format: string }) => {
-      const data = loadCliConfig();
+      const data = loadDisplayedCliConfig();
       const rows = CONFIG_KEYS.map((key) => ({ key, value: data[key] ?? "" }));
       if (opts.format === "json") {
         printJson(data);

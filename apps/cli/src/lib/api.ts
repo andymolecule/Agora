@@ -1,16 +1,24 @@
 import {
   type AgentChallengesQuery,
   getChallengeFromApi,
+  getChallengeSolverStatusFromApi,
+  getSubmissionStatusFromApi,
   listChallengesFromApi,
+  waitForSubmissionStatusFromApi,
 } from "@agora/agent-runtime";
-import { readApiClientRuntimeConfig } from "@agora/common";
+import {
+  AGORA_ERROR_CODES,
+  AgoraError,
+  readApiClientRuntimeConfig,
+} from "@agora/common";
 
 function requireApiUrl() {
   const apiUrl = readApiClientRuntimeConfig().apiUrl;
   if (!apiUrl) {
-    throw new Error(
-      "AGORA_API_URL is required for API requests. Next step: set AGORA_API_URL and retry.",
-    );
+    throw new AgoraError("AGORA_API_URL is required for API requests.", {
+      code: AGORA_ERROR_CODES.configMissing,
+      nextAction: "Set AGORA_API_URL and retry.",
+    });
   }
   return apiUrl;
 }
@@ -34,4 +42,30 @@ export async function listChallengesApi(query: AgentChallengesQuery) {
 
 export async function getChallengeApi(challengeId: string) {
   return getChallengeFromApi(challengeId, requireApiUrl());
+}
+
+export async function getChallengeSolverStatusApi(
+  challengeId: string,
+  solverAddress: string,
+) {
+  return getChallengeSolverStatusFromApi(
+    challengeId,
+    solverAddress,
+    requireApiUrl(),
+  );
+}
+
+export async function getSubmissionStatusApi(submissionId: string) {
+  return getSubmissionStatusFromApi(submissionId, requireApiUrl());
+}
+
+export async function waitForSubmissionStatusApi(
+  submissionId: string,
+  timeoutSeconds?: number,
+) {
+  return waitForSubmissionStatusFromApi(
+    submissionId,
+    { timeoutSeconds },
+    requireApiUrl(),
+  );
 }

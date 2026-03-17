@@ -7,13 +7,28 @@ import {
   readContractStrict,
   readImmutableContractWithLatestFallback,
 } from "../contract-read.js";
+import { chainReadLogger } from "../observability.js";
+
+function patchChainReadLogger(level: "warn" | "error", sink: unknown[][]) {
+  const logger = chainReadLogger as unknown as Record<
+    string,
+    (...args: unknown[]) => void
+  >;
+  const original = logger[level];
+  if (!original) {
+    throw new Error(`chainReadLogger.${level} is unavailable in tests`);
+  }
+  logger[level] = (...args: unknown[]) => {
+    sink.push(args);
+  };
+  return () => {
+    logger[level] = original;
+  };
+}
 
 test("challenge definition metadata falls back to latest when the pinned block header is unavailable", async () => {
   const warnings: unknown[][] = [];
-  const originalWarn = console.warn;
-  console.warn = (...args: unknown[]) => {
-    warnings.push(args);
-  };
+  const restoreWarn = patchChainReadLogger("warn", warnings);
 
   try {
     const calls: Array<{ functionName: string; blockNumber?: bigint }> = [];
@@ -63,16 +78,13 @@ test("challenge definition metadata falls back to latest when the pinned block h
     );
     assert.equal(warnings.length, 3);
   } finally {
-    console.warn = originalWarn;
+    restoreWarn();
   }
 });
 
 test("challenge definition metadata falls back to latest when the pinned block returns no data", async () => {
   const warnings: unknown[][] = [];
-  const originalWarn = console.warn;
-  console.warn = (...args: unknown[]) => {
-    warnings.push(args);
-  };
+  const restoreWarn = patchChainReadLogger("warn", warnings);
 
   try {
     const calls: Array<{ functionName: string; blockNumber?: bigint }> = [];
@@ -124,16 +136,13 @@ test("challenge definition metadata falls back to latest when the pinned block r
       ],
     );
   } finally {
-    console.warn = originalWarn;
+    restoreWarn();
   }
 });
 
 test("challenge definition metadata does not swallow non-block RPC errors", async () => {
   const errors: unknown[][] = [];
-  const originalError = console.error;
-  console.error = (...args: unknown[]) => {
-    errors.push(args);
-  };
+  const restoreError = patchChainReadLogger("error", errors);
 
   try {
     const publicClient = {
@@ -153,7 +162,7 @@ test("challenge definition metadata does not swallow non-block RPC errors", asyn
     );
     assert.equal(errors.length, 3);
   } finally {
-    console.error = originalError;
+    restoreError();
   }
 });
 
@@ -180,10 +189,7 @@ test("transient pinned contract read classifier matches code-availability lag er
 
 test("immutable fallback contract reads emit a warning when the pinned block header is unavailable", async () => {
   const warnings: unknown[][] = [];
-  const originalWarn = console.warn;
-  console.warn = (...args: unknown[]) => {
-    warnings.push(args);
-  };
+  const restoreWarn = patchChainReadLogger("warn", warnings);
 
   try {
     let callCount = 0;
@@ -209,20 +215,17 @@ test("immutable fallback contract reads emit a warning when the pinned block hea
     assert.equal(callCount, 2);
     assert.equal(warnings.length, 1);
     assert.equal(
-      warnings[0]?.[0],
-      "[chain-read] Pinned immutable contract read fell back to latest",
+      warnings[0]?.[1],
+      "Pinned immutable contract read fell back to latest",
     );
   } finally {
-    console.warn = originalWarn;
+    restoreWarn();
   }
 });
 
 test("strict contract reads emit an error log when they fail", async () => {
   const errors: unknown[][] = [];
-  const originalError = console.error;
-  console.error = (...args: unknown[]) => {
-    errors.push(args);
-  };
+  const restoreError = patchChainReadLogger("error", errors);
 
   try {
     const publicClient = {
@@ -243,9 +246,9 @@ test("strict contract reads emit an error log when they fail", async () => {
     );
 
     assert.equal(errors.length, 1);
-    assert.equal(errors[0]?.[0], "[chain-read] Contract read failed");
+    assert.equal(errors[0]?.[1], "Contract read failed");
   } finally {
-    console.error = originalError;
+    restoreError();
   }
 });
 

@@ -23,6 +23,26 @@ test("executor healthz returns backend metadata", async () => {
   assert.equal(body.ok, true);
   assert.equal(body.service, "executor");
   assert.equal(body.backend, "local_docker");
+  assert.match(response.headers.get("x-request-id") ?? "", /^[0-9a-f-]{36}$/i);
+});
+
+test("executor healthz preserves a caller supplied x-request-id", async () => {
+  const app = createApp({
+    backend: "local_docker",
+    authToken: undefined,
+    ensureReady: async () => undefined,
+    preflightImages: async () => 0,
+    runScorer: async () => {
+      throw new Error("unused");
+    },
+  });
+
+  const response = await app.request(
+    new Request("http://localhost/healthz", {
+      headers: { "x-request-id": "exec-req-123" },
+    }),
+  );
+  assert.equal(response.headers.get("x-request-id"), "exec-req-123");
 });
 
 test("executor preflight requires auth when configured", async () => {
@@ -84,12 +104,8 @@ test("executor execute stages uploaded files and returns scorer output", async (
       strictPull: false,
     }),
   );
-  form.append(
-    "files",
-    new Blob(["id,prediction\ns1,1.0\n"]),
-    "submission.csv",
-  );
-  form.append("files", new Blob(["{\"version\":\"v1\"}"]), "agora-runtime.json");
+  form.append("files", new Blob(["id,prediction\ns1,1.0\n"]), "submission.csv");
+  form.append("files", new Blob(['{"version":"v1"}']), "agora-runtime.json");
 
   const response = await app.request(
     new Request("http://localhost/execute", {

@@ -26,9 +26,23 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
   {
     id: "submission_intents_columns",
     table: "submission_intents",
-    select: "result_format,matched_submission_id",
+    select: "result_format,matched_submission_id,trace_id",
     nextStep:
-      "Apply migration 005_add_submission_intents.sql, then reload the PostgREST schema cache before restarting services.",
+      "Apply migrations 005_add_submission_intents.sql and 013_add_trace_ids.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
+    id: "submissions_trace_id_column",
+    table: "submissions",
+    select: "trace_id",
+    nextStep:
+      "Apply migration 013_add_trace_ids.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
+    id: "score_jobs_trace_id_column",
+    table: "score_jobs",
+    select: "trace_id",
+    nextStep:
+      "Apply migration 013_add_trace_ids.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
     id: "worker_runtime_version_column",

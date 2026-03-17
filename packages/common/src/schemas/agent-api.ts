@@ -164,6 +164,24 @@ export const agentChallengeDetailResponseSchema = z.object({
   }),
 });
 
+export const challengeSolverStatusSchema = z.object({
+  challenge_id: challengeIdSchema,
+  challenge_address: addressSchema,
+  solver_address: addressSchema,
+  status: challengeStatusSchema,
+  max_submissions_per_solver: positiveIntegerSchema.nullable(),
+  submissions_used: nonNegativeIntegerSchema,
+  submissions_remaining: nonNegativeIntegerSchema.nullable(),
+  has_reached_submission_limit: z.boolean(),
+  can_submit: z.boolean(),
+  claimable: z.string(),
+  can_claim: z.boolean(),
+});
+
+export const challengeSolverStatusResponseSchema = z.object({
+  data: challengeSolverStatusSchema,
+});
+
 export const agentChallengeLeaderboardResponseSchema = z.object({
   data: z.array(challengeLeaderboardEntrySchema),
 });
@@ -224,10 +242,19 @@ export const submissionStatusSchema = z.object({
     })
     .nullable(),
   scoringStatus: z.enum(["pending", "complete", "scored_awaiting_proof"]),
+  terminal: z.boolean(),
+  recommendedPollSeconds: positiveIntegerSchema,
 });
 
 export const submissionStatusResponseSchema = z.object({
   data: submissionStatusSchema,
+});
+
+export const submissionWaitStatusResponseSchema = z.object({
+  data: submissionStatusSchema.extend({
+    waitedMs: nonNegativeIntegerSchema,
+    timedOut: z.boolean(),
+  }),
 });
 
 export const submissionValidationResponseSchema = z.object({
@@ -247,6 +274,8 @@ export const apiErrorResponseSchema = z.object({
   error: z.string(),
   code: z.string(),
   retriable: z.boolean(),
+  nextAction: z.string().optional(),
+  details: z.record(z.unknown()).optional(),
 });
 
 export const submissionPublicKeyResponseSchema = z.object({
@@ -284,6 +313,18 @@ export const submissionRegistrationResponseSchema = z.object({
     refs: true,
   }),
   warning: z.string().nullable().optional(),
+});
+
+export const submissionCleanupRequestSchema = z.object({
+  intentId: z.string().uuid().optional(),
+  resultCid: z.string().min(1),
+});
+
+export const submissionCleanupResponseSchema = z.object({
+  data: z.object({
+    cleanedIntent: z.boolean(),
+    unpinned: z.boolean(),
+  }),
 });
 
 export const submissionIntentRequestSchema = z

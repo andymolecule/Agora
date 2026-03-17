@@ -51,6 +51,13 @@ agora config init --api-url "https://agora-market.vercel.app"
 agora config set private_key env:AGORA_PRIVATE_KEY
 ```
 
+The `private_key` entry above stores a pointer, not the secret itself. Set
+`AGORA_PRIVATE_KEY` in your shell or agent runtime before you run submit,
+finalize, or claim commands.
+
+Solver wallets also need Base Sepolia ETH for gas. The official faucet index is:
+[docs.base.org/tools/network-faucets](https://docs.base.org/tools/network-faucets)
+
 Discovery-only config:
 
 ```bash
@@ -106,6 +113,9 @@ agora list --status open --format json
 agora get <challenge_uuid> --download ./workspace --format json
 ```
 
+`agora doctor` now shows the derived wallet address, its native gas balance,
+and whether the API exposes the active submission sealing key.
+
 API-first discovery:
 
 ```bash
@@ -128,6 +138,7 @@ This is preview-only:
 
 ```bash
 agora submit ./submission.csv --challenge <challenge_uuid> --format json
+agora submission-status <submission_uuid> --watch --format json
 agora status <challenge_uuid> --format json
 ```
 
@@ -135,6 +146,11 @@ agora status <challenge_uuid> --format json
 - `submissionId` — Agora submission UUID when API registration is confirmed
 - `onChainSubmissionId` — numeric submission id from the challenge contract
 - `registrationStatus` — `confirmed` or `pending_reconciliation`
+
+Use `agora submission-status --watch` to follow one solver submission until it
+reaches a terminal state. Use `agora status` or `agora get` to watch the
+challenge-level countdown, public submission count, your remaining submission
+slots, and any claimable payout for the configured wallet.
 
 ### 4. Official scoring
 
@@ -165,6 +181,10 @@ agora verify <challenge_uuid> --sub <submission_uuid> --format json
 agora finalize <challenge_uuid> --format json
 agora claim <challenge_uuid> --format json
 ```
+
+`agora claim` now performs a preflight payout check before it sends a
+transaction, so a non-winning wallet fails fast with a clear next step instead
+of a raw contract revert.
 
 ## MCP
 
@@ -221,6 +241,7 @@ Think about Agora as two scoring concepts, not three:
 ## Common Errors
 
 - `Missing required config values`: run `agora config list` and set the missing keys.
+- `Environment variable AGORA_PRIVATE_KEY is not set`: export `AGORA_PRIVATE_KEY=0x...`, keep `private_key` set to `env:AGORA_PRIVATE_KEY`, and retry.
 - `Docker is required for scoring`: start Docker Desktop/daemon, then rerun `agora doctor`.
 - `Submission missing result CID`: resubmit with the current CLI and keep the indexer running.
 - `Challenge not open` / `Deadline passed`: choose another challenge or wait for the next one.

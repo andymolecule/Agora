@@ -10,6 +10,7 @@ import {
 } from "@agora/common";
 import type { AgoraDbClient } from "../index";
 import {
+  attachScoreJobTraceIdIfMissing,
   createScoreJob,
   getScoreJobBySubmissionId,
   markScoreJobSkipped,
@@ -30,6 +31,7 @@ export interface SubmissionIntentInsert {
   result_cid: string;
   result_format?: SubmissionResultFormat;
   expires_at: string;
+  trace_id?: string | null;
 }
 
 export interface SubmissionIntentRow {
@@ -41,6 +43,7 @@ export interface SubmissionIntentRow {
   result_format: SubmissionResultFormat;
   matched_submission_id: string | null;
   matched_at: string | null;
+  trace_id: string | null;
   expires_at: string;
   created_at: string;
 }
@@ -71,6 +74,7 @@ export interface ReconcileSubmissionIntentResult {
     result_cid: string | null;
     result_format: SubmissionResultFormat;
     scored: boolean;
+    trace_id?: string | null;
   } | null;
   scoreJobAction: SubmissionIntentScoreJobAction;
   warning: string | null;
@@ -127,6 +131,69 @@ export async function findOldestUnmatchedSubmissionIntent(
   return (data as SubmissionIntentRow | null) ?? null;
 }
 
+export async function getSubmissionIntentById(
+  db: AgoraDbClient,
+  intentId: string,
+) {
+  const { data, error } = await db
+    .from("submission_intents")
+    .select("*")
+    .eq("id", intentId)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Failed to fetch submission intent: ${error.message}`);
+  }
+
+  return (data as SubmissionIntentRow | null) ?? null;
+}
+
+export async function deleteUnmatchedSubmissionIntentById(
+  db: AgoraDbClient,
+  intentId: string,
+) {
+  const { data, error } = await db
+    .from("submission_intents")
+    .delete()
+    .eq("id", intentId)
+    .is("matched_submission_id", null)
+    .select("*")
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Failed to delete submission intent: ${error.message}`);
+  }
+
+  return (data as SubmissionIntentRow | null) ?? null;
+}
+
+export async function countUnmatchedSubmissionIntentsByResultCid(
+  db: AgoraDbClient,
+  resultCid: string,
+  input?: {
+    excludeIntentId?: string;
+  },
+) {
+  let query = db
+    .from("submission_intents")
+    .select("id", { count: "exact", head: true })
+    .eq("result_cid", resultCid)
+    .is("matched_submission_id", null);
+
+  if (input?.excludeIntentId) {
+    query = query.neq("id", input.excludeIntentId);
+  }
+
+  const { count, error } = await query;
+  if (error) {
+    throw new Error(
+      `Failed to count unmatched submission intents: ${error.message}`,
+    );
+  }
+
+  return count ?? 0;
+}
+
 export async function markSubmissionIntentMatched(
   db: AgoraDbClient,
   intentId: string,
@@ -163,7 +230,9 @@ async function ensureScoreJobForSubmission(
     on_chain_sub_id: number;
     solver_address: string;
     scored: boolean;
+    trace_id?: string | null;
   },
+  traceId?: string | null,
 ): Promise<{
   action: SubmissionIntentScoreJobAction;
   warning: string | null;
@@ -205,6 +274,7 @@ async function ensureScoreJobForSubmission(
       {
         submission_id: submission.id,
         challenge_id: challenge.id,
+        trace_id: traceId ?? submission.trace_id ?? null,
       },
       violation,
     );
@@ -218,6 +288,9 @@ async function ensureScoreJobForSubmission(
 
   const existingJob = await getScoreJobBySubmissionId(db, submission.id);
   if (existingJob) {
+    if (traceId && !existingJob.trace_id) {
+      await attachScoreJobTraceIdIfMissing(db, existingJob.id, traceId);
+    }
     if (
       existingJob.status === SCORE_JOB_STATUS.failed &&
       existingJob.last_error?.startsWith(SUBMISSION_RESULT_CID_MISSING_ERROR)
@@ -230,6 +303,7 @@ async function ensureScoreJobForSubmission(
   await createScoreJob(db, {
     submission_id: submission.id,
     challenge_id: challenge.id,
+    trace_id: traceId ?? submission.trace_id ?? null,
   });
   return { action: "queued", warning: null };
 }
@@ -289,19 +363,26 @@ export async function reconcileSubmissionIntentMatch(
     existingExactSubmission.id,
     intent.result_cid,
     intent.result_format,
+    intent.trace_id,
   );
   const matchedIntent = await markSubmissionIntentMatched(
     db,
     intent.id,
     attachedSubmission.id,
   );
-  const scoreJob = await ensureScoreJobForSubmission(db, input.challenge, {
-    id: attachedSubmission.id,
-    challenge_id: attachedSubmission.challenge_id,
-    on_chain_sub_id: attachedSubmission.on_chain_sub_id,
-    solver_address: attachedSubmission.solver_address,
-    scored: attachedSubmission.scored,
-  });
+  const scoreJob = await ensureScoreJobForSubmission(
+    db,
+    input.challenge,
+    {
+      id: attachedSubmission.id,
+      challenge_id: attachedSubmission.challenge_id,
+      on_chain_sub_id: attachedSubmission.on_chain_sub_id,
+      solver_address: attachedSubmission.solver_address,
+      scored: attachedSubmission.scored,
+      trace_id: attachedSubmission.trace_id ?? intent.trace_id,
+    },
+    intent.trace_id,
+  );
 
   return {
     matched: Boolean(matchedIntent),

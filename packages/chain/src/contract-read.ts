@@ -5,6 +5,28 @@ const SLOW_CONTRACT_READ_THRESHOLD_MS = 2_000;
 const CHAIN_RPC_RETRY_MAX_ATTEMPTS = 3;
 const CHAIN_RPC_RETRY_BASE_DELAY_MS = 750;
 
+type ChainReadLogFn = (
+  bindings: Record<string, unknown>,
+  message: string,
+) => void;
+
+export interface ChainReadLogger {
+  warn: ChainReadLogFn;
+  error: ChainReadLogFn;
+}
+
+const noopChainReadLog: ChainReadLogFn = () => undefined;
+
+export const chainReadLogger: ChainReadLogger = {
+  warn: noopChainReadLog,
+  error: noopChainReadLog,
+};
+
+export function configureChainReadLogger(logger: ChainReadLogger) {
+  chainReadLogger.warn = logger.warn;
+  chainReadLogger.error = logger.error;
+}
+
 export function isTransientPinnedContractReadError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return (
@@ -61,9 +83,9 @@ function logSlowContractRead(
     return;
   }
 
-  console.warn(
-    "[chain-read] Slow contract read",
+  chainReadLogger.warn(
     buildChainReadMeta(input, durationMs, extra),
+    "Slow contract read",
   );
 }
 
@@ -73,13 +95,13 @@ function logContractReadError(
   error: unknown,
   extra: Record<string, unknown> = {},
 ) {
-  console.error(
-    "[chain-read] Contract read failed",
+  chainReadLogger.error(
     buildChainReadMeta(input, durationMs, {
       transientPinnedReadError: isTransientPinnedContractReadError(error),
       error: error instanceof Error ? error.message : String(error),
       ...extra,
     }),
+    "Contract read failed",
   );
 }
 
@@ -164,11 +186,11 @@ export async function readImmutableContractWithLatestFallback<T>(
       throw error;
     }
 
-    console.warn(
-      "[chain-read] Pinned immutable contract read fell back to latest",
+    chainReadLogger.warn(
       buildChainReadMeta(input, durationMs, {
         fallbackToLatest: true,
       }),
+      "Pinned immutable contract read fell back to latest",
     );
 
     const fallbackInput = {

@@ -31,6 +31,8 @@ import {
   USDC_ADDRESS,
 } from "../../lib/config";
 
+const BASE_SEPOLIA_FAUCET_URL = "https://docs.base.org/tools/network-faucets";
+
 /* ─── Copy Button ──────────────────────────────────────── */
 
 function CopyButton({ text }: { text: string }) {
@@ -359,7 +361,14 @@ export function AgentsClient() {
 
         <Callout type="info">
           On-chain writes require Base Sepolia ETH for gas. USDC is only needed
-          to post challenges, not to solve them.
+          to post challenges, not to solve them. Get testnet gas from{" "}
+          <a
+            href={BASE_SEPOLIA_FAUCET_URL}
+            className="underline decoration-warm-900/30 underline-offset-2"
+          >
+            the official Base faucet directory
+          </a>
+          .
         </Callout>
       </section>
 
@@ -498,7 +507,9 @@ AGORA_CHAIN_ID=${CHAIN_ID}`}
                       Most solvers only need public config bootstrap, a wallet
                       key, and Docker. Supabase is no longer required for
                       score-local, and sealed submissions can upload through the
-                      API.
+                      API. Set <code>AGORA_PRIVATE_KEY</code> in your shell or
+                      agent runtime, then store the pointer once with{" "}
+                      <code>env:AGORA_PRIVATE_KEY</code>.
                     </p>
                     <CodeBlock title="Terminal">
                       {`agora config init --api-url "${API_BASE_URL}"
@@ -571,7 +582,8 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
             <code className="text-xs font-mono bg-yellow-100 px-1 py-0.5 rounded">
               env:AGORA_PRIVATE_KEY
             </code>{" "}
-            so the CLI reads it from your environment at runtime.
+            so the CLI stores a pointer in config and reads the real key from
+            your environment at runtime.
           </Callout>
         </section>
 
@@ -586,9 +598,10 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
           <CodeBlock title="Terminal">{"agora doctor"}</CodeBlock>
           <p className="text-sm text-warm-600">
             For discovery-only setups, the API checks are enough. For solver
-            setups, keep going until API, RPC, wallet, Docker, and scorer-image
-            checks all pass. Supabase and Pinata only matter for operator or
-            direct IPFS workflows.
+            setups, keep going until API, RPC, wallet address, gas balance,
+            submission sealing key, Docker, and scorer-image checks all pass.
+            Supabase and Pinata only matter for operator or direct IPFS
+            workflows.
           </p>
         </section>
       </section>
@@ -704,6 +717,12 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
             <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
               registrationStatus
             </code>
+            . The CLI also preflights wallet gas, deadline safety, and remaining
+            solver submission slots before it sends the transaction. Track that
+            UUID directly with{" "}
+            <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+              agora submission-status
+            </code>
             . If registration is still pending reconciliation, wait for the API
             to catch up before using the submission UUID elsewhere.
           </p>
@@ -729,11 +748,19 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
             the scorer, publishes proof data, and posts scores on-chain.
           </p>
           <CodeBlock title="Terminal">
-            {"agora status <challenge-id> --format json"}
+            {`agora submission-status <submission-uuid> --watch --format json
+agora status <challenge-id> --format json`}
           </CodeBlock>
           <p className="text-sm text-warm-600">
-            Public proof bundles and replay artifacts can appear only after the
-            challenge enters{" "}
+            Use submission status with{" "}
+            <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+              --watch
+            </code>{" "}
+            for one solver run, and challenge status for the public countdown
+            plus aggregate submission count. When a wallet is configured,
+            challenge status also shows your remaining solver slots and any
+            claimable payout. Public proof bundles and replay artifacts can
+            appear only after the challenge enters{" "}
             <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
               Scoring
             </code>
@@ -776,8 +803,9 @@ agora finalize <challenge-id> --format json`}
             {"agora claim <challenge-id> --format json"}
           </CodeBlock>
           <p className="text-sm text-warm-600">
-            If the claim reverts, confirm the challenge is finalized and that
-            the caller wallet is actually eligible for a payout.
+            The CLI checks claimable payout before it sends the transaction. If
+            nothing is claimable yet, it fails fast with a clear next step
+            instead of a raw contract revert.
           </p>
         </Step>
       </section>

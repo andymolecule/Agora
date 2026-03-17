@@ -84,6 +84,14 @@ const configSchema = z.object({
     )
     .optional(),
   AGORA_LOG_LEVEL: z.string().min(1).optional(),
+  AGORA_SENTRY_DSN: z.string().url().optional(),
+  AGORA_SENTRY_ENVIRONMENT: z.string().min(1).optional(),
+  AGORA_SENTRY_TRACES_SAMPLE_RATE: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().min(0).max(1),
+    )
+    .default(0),
   AGORA_INDEXER_START_BLOCK: z
     .preprocess(
       (value) => (typeof value === "string" ? Number(value) : value),
@@ -328,6 +336,15 @@ const executorServerRuntimeConfigSchema = configSchema.pick({
   AGORA_EXECUTOR_AUTH_TOKEN: true,
 });
 
+const observabilityRuntimeConfigSchema = configSchema.pick({
+  NODE_ENV: true,
+  AGORA_LOG_LEVEL: true,
+  AGORA_SENTRY_DSN: true,
+  AGORA_SENTRY_ENVIRONMENT: true,
+  AGORA_SENTRY_TRACES_SAMPLE_RATE: true,
+  AGORA_RUNTIME_VERSION: true,
+});
+
 export interface AgoraApiServerRuntimeConfig {
   nodeEnv: string;
   apiUrl?: string;
@@ -376,6 +393,15 @@ export interface AgoraExecutorServerRuntimeConfig {
   nodeEnv: string;
   port: number;
   authToken?: string;
+}
+
+export interface AgoraObservabilityRuntimeConfig {
+  nodeEnv: string;
+  logLevel: string;
+  runtimeVersion: string;
+  sentryDsn?: string;
+  sentryEnvironment: string;
+  sentryTracesSampleRate: number;
 }
 
 export function hasSubmissionSealPublicConfig(config: AgoraConfig): boolean {
@@ -453,6 +479,19 @@ function parseConfigSection<Schema extends z.ZodTypeAny>(
     throw new Error(formatZodError(result.error));
   }
   return result.data;
+}
+
+function unsetBlankStringValues(
+  env: Record<string, string | undefined>,
+  keys: string[],
+) {
+  const normalized: Record<string, string | undefined> = { ...env };
+  for (const key of keys) {
+    if (normalized[key] === "") {
+      normalized[key] = undefined;
+    }
+  }
+  return normalized;
 }
 
 let cachedConfig: AgoraConfig | null = null;
@@ -563,7 +602,10 @@ export function resolveRuntimePrivateKey(
 export function readApiServerRuntimeConfig(
   env: Record<string, string | undefined> = process.env,
 ): AgoraApiServerRuntimeConfig {
-  const parsed = parseConfigSection(apiServerRuntimeConfigSchema, env);
+  const parsed = parseConfigSection(
+    apiServerRuntimeConfigSchema,
+    unsetBlankStringValues(env, ["AGORA_API_URL", "AGORA_CORS_ORIGINS"]),
+  );
   return {
     nodeEnv: parsed.NODE_ENV,
     apiUrl: parsed.AGORA_API_URL,
@@ -580,7 +622,10 @@ export function readApiServerRuntimeConfig(
 export function readApiClientRuntimeConfig(
   env: Record<string, string | undefined> = process.env,
 ): AgoraApiClientRuntimeConfig {
-  const parsed = parseConfigSection(apiClientRuntimeConfigSchema, env);
+  const parsed = parseConfigSection(
+    apiClientRuntimeConfigSchema,
+    unsetBlankStringValues(env, ["AGORA_API_URL"]),
+  );
   return {
     apiUrl: parsed.AGORA_API_URL,
   };
@@ -589,7 +634,20 @@ export function readApiClientRuntimeConfig(
 export function readCliRuntimeConfig(
   env: Record<string, string | undefined> = process.env,
 ): AgoraCliRuntimeConfig {
-  return parseConfigSection(cliRuntimeConfigSchema, env);
+  return parseConfigSection(
+    cliRuntimeConfigSchema,
+    unsetBlankStringValues(env, [
+      "AGORA_RPC_URL",
+      "AGORA_API_URL",
+      "AGORA_PINATA_JWT",
+      "AGORA_PRIVATE_KEY",
+      "AGORA_FACTORY_ADDRESS",
+      "AGORA_USDC_ADDRESS",
+      "AGORA_SUPABASE_URL",
+      "AGORA_SUPABASE_ANON_KEY",
+      "AGORA_SUPABASE_SERVICE_KEY",
+    ]),
+  );
 }
 
 export function readIndexerHealthRuntimeConfig(
@@ -645,6 +703,23 @@ export function readExecutorServerRuntimeConfig(
     nodeEnv: parsed.NODE_ENV,
     port: parsed.AGORA_EXECUTOR_PORT ?? 3200,
     authToken: parsed.AGORA_EXECUTOR_AUTH_TOKEN,
+  };
+}
+
+export function readObservabilityRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraObservabilityRuntimeConfig {
+  const parsed = parseConfigSection(
+    observabilityRuntimeConfigSchema,
+    withResolvedRuntimeVersion(env),
+  );
+  return {
+    nodeEnv: parsed.NODE_ENV,
+    logLevel: parsed.AGORA_LOG_LEVEL ?? "info",
+    runtimeVersion: parsed.AGORA_RUNTIME_VERSION ?? "dev",
+    sentryDsn: parsed.AGORA_SENTRY_DSN,
+    sentryEnvironment: parsed.AGORA_SENTRY_ENVIRONMENT ?? parsed.NODE_ENV,
+    sentryTracesSampleRate: parsed.AGORA_SENTRY_TRACES_SAMPLE_RATE,
   };
 }
 

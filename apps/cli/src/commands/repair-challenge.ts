@@ -1,8 +1,4 @@
-import {
-  getPublicClient,
-  reconcileChallengeProjection,
-  resolveChallengeInitialFromBlock,
-} from "@agora/chain";
+import { getPublicClient } from "@agora/chain";
 import { loadConfig } from "@agora/common";
 import {
   createSupabaseClient,
@@ -74,6 +70,10 @@ export function buildRepairChallengeCommand() {
           config.AGORA_INDEXER_START_BLOCK !== undefined
             ? BigInt(config.AGORA_INDEXER_START_BLOCK)
             : BigInt(0);
+        const {
+          reconcileChallengeProjection,
+          resolveChallengeInitialFromBlock,
+        } = await import("@agora/chain/indexer/handlers");
         const challengeFromBlock = await resolveChallengeInitialFromBlock(
           challenge.tx_hash,
           publicClient,

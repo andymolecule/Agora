@@ -5,17 +5,20 @@ import {
   DEFAULT_X402_NETWORK,
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
-  getPublicRpcUrlForChainId,
   getEffectiveChallengeStatus,
+  getPublicRpcUrlForChainId,
   isMetadataBlockedScoreJobError,
   isProductionRuntime,
   isTerminalScoreJobError,
   loadConfig,
   loadIpfsConfig,
+  readApiClientRuntimeConfig,
   readApiServerRuntimeConfig,
+  readCliRuntimeConfig,
   readExecutorServerRuntimeConfig,
   readFeaturePolicy,
   readIndexerHealthRuntimeConfig,
+  readObservabilityRuntimeConfig,
   readScorerExecutorRuntimeConfig,
   readWorkerTimingConfig,
   readX402RuntimeConfig,
@@ -190,6 +193,10 @@ try {
   process.env.AGORA_WORKER_JOB_LEASE_MS = "666";
   process.env.AGORA_WORKER_HEARTBEAT_MS = "555";
   process.env.AGORA_WORKER_HEARTBEAT_STALE_MS = "777";
+  process.env.AGORA_LOG_LEVEL = "debug";
+  process.env.AGORA_SENTRY_DSN = "https://public@example.ingest.sentry.io/123";
+  process.env.AGORA_SENTRY_ENVIRONMENT = "staging";
+  process.env.AGORA_SENTRY_TRACES_SAMPLE_RATE = "0.5";
   const apiRuntime = readApiServerRuntimeConfig();
   assert.equal(apiRuntime.nodeEnv, "production");
   assert.equal(apiRuntime.apiPort, 4010);
@@ -198,6 +205,46 @@ try {
     "https://preview.example",
   ]);
   assert.equal(isProductionRuntime(apiRuntime), true);
+
+  const observabilityRuntime = readObservabilityRuntimeConfig();
+  assert.equal(observabilityRuntime.logLevel, "debug");
+  assert.equal(
+    observabilityRuntime.sentryDsn,
+    "https://public@example.ingest.sentry.io/123",
+  );
+  assert.equal(observabilityRuntime.sentryEnvironment, "staging");
+  assert.equal(observabilityRuntime.sentryTracesSampleRate, 0.5);
+  assert.equal(observabilityRuntime.runtimeVersion, "release-2026-03-12");
+
+  const blankApiClientRuntime = readApiClientRuntimeConfig({
+    AGORA_API_URL: "",
+  });
+  assert.equal(
+    blankApiClientRuntime.apiUrl,
+    undefined,
+    "blank API client URLs should be treated as unset so CLI preflight can report a missing config error",
+  );
+
+  const blankCliRuntime = readCliRuntimeConfig({
+    AGORA_API_URL: "",
+    AGORA_RPC_URL: "",
+    AGORA_PRIVATE_KEY: "",
+  });
+  assert.equal(
+    blankCliRuntime.AGORA_API_URL,
+    undefined,
+    "blank CLI API URLs should be treated as unset rather than invalid config",
+  );
+  assert.equal(
+    blankCliRuntime.AGORA_RPC_URL,
+    undefined,
+    "blank CLI RPC URLs should be treated as unset rather than invalid config",
+  );
+  assert.equal(
+    blankCliRuntime.AGORA_PRIVATE_KEY,
+    undefined,
+    "blank CLI private keys should be treated as unset rather than invalid config",
+  );
 
   const indexerRuntime = readIndexerHealthRuntimeConfig();
   assert.equal(indexerRuntime.warningLagBlocks, 42);
@@ -220,10 +267,7 @@ try {
   process.env.AGORA_EXECUTOR_AUTH_TOKEN = "executor-auth";
   const scorerExecutorRuntime = readScorerExecutorRuntimeConfig();
   assert.equal(scorerExecutorRuntime.backend, "remote_http");
-  assert.equal(
-    scorerExecutorRuntime.url,
-    "https://executor.example",
-  );
+  assert.equal(scorerExecutorRuntime.url, "https://executor.example");
   assert.equal(scorerExecutorRuntime.token, "executor-token");
   const executorServerRuntime = readExecutorServerRuntimeConfig();
   assert.equal(executorServerRuntime.port, 3200);

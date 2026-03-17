@@ -1,26 +1,37 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  type ScorerExecutorBackend,
   readExecutorServerRuntimeConfig,
   scorerExecutorHealthResponseSchema,
   scorerExecutorPreflightRequestSchema,
   scorerExecutorPreflightResponseSchema,
   scorerExecutorRunRequestSchema,
   scorerExecutorRunResponseSchema,
-  type ScorerExecutorBackend,
 } from "@agora/common";
+import type { AgoraLogger } from "@agora/common/server-observability";
 import {
+  type RunScorerInput,
+  type RunnerScoreResult,
   cleanupWorkspace,
   createScoringWorkspace,
   ensureDockerReady,
   ensureScorerImagePullable,
   runScorer,
-  type RunScorerInput,
-  type RunnerScoreResult,
 } from "@agora/scorer-runtime";
 import { Hono } from "hono";
+import {
+  captureExecutorException,
+  createExecutorRequestObservabilityMiddleware,
+  initExecutorObservability,
+} from "./lib/observability.js";
 
-type ExecutorEnv = Record<string, never>;
+type ExecutorEnv = {
+  Variables: {
+    logger: AgoraLogger;
+    requestId: string;
+  };
+};
 
 export interface ExecutorAppDeps {
   backend: ScorerExecutorBackend;
@@ -95,12 +106,15 @@ async function stageUploadedFiles(formData: FormData, inputDir: string) {
 }
 
 export function createApp(deps: Partial<ExecutorAppDeps> = {}) {
+  initExecutorObservability();
   const resolvedDeps = {
     ...buildDefaultDeps(),
     ...deps,
   } satisfies ExecutorAppDeps;
 
-  const app = new Hono<{ Bindings: ExecutorEnv }>();
+  const app = new Hono<ExecutorEnv>();
+
+  app.use("*", createExecutorRequestObservabilityMiddleware());
 
   app.use("*", async (c, next) => {
     const authError = await requireExecutorAuth(
@@ -150,10 +164,21 @@ export function createApp(deps: Partial<ExecutorAppDeps> = {}) {
       );
     }
 
-    const request = scorerExecutorRunRequestSchema.parse(JSON.parse(requestRaw));
+    const request = scorerExecutorRunRequestSchema.parse(
+      JSON.parse(requestRaw),
+    );
     const workspace = await createScoringWorkspace();
     try {
       await stageUploadedFiles(formData, workspace.inputDir);
+      c.get("logger").info(
+        {
+          event: "executor.run.started",
+          image: request.image,
+          requestId: c.get("requestId"),
+          stagedFileCount: formData.getAll("files").length,
+        },
+        "Executor run started",
+      );
       const result = await resolvedDeps.runScorer({
         image: request.image,
         inputDir: workspace.inputDir,
@@ -175,6 +200,13 @@ export function createApp(deps: Partial<ExecutorAppDeps> = {}) {
         }),
       );
     } finally {
+      c.get("logger").info(
+        {
+          event: "executor.run.finished",
+          requestId: c.get("requestId"),
+        },
+        "Executor run finished",
+      );
       await cleanupWorkspace(workspace.root);
     }
   });
@@ -182,6 +214,13 @@ export function createApp(deps: Partial<ExecutorAppDeps> = {}) {
   app.notFound((c) => c.json({ error: "Not found" }, 404));
 
   app.onError((error, c) => {
+    captureExecutorException(error, {
+      logger: c.get("logger"),
+      requestId: c.get("requestId"),
+      method: c.req.method,
+      path: new URL(c.req.url).pathname,
+    });
+    c.header("x-request-id", c.get("requestId"));
     return c.json(
       {
         error: error instanceof Error ? error.message : "Internal server error",

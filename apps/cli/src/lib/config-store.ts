@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { readCliRuntimeConfig, resetConfigCache } from "@agora/common";
+import {
+  AGORA_ERROR_CODES,
+  AgoraError,
+  readCliRuntimeConfig,
+  resetConfigCache,
+} from "@agora/common";
 
 export interface CliConfig {
   rpc_url?: string;
@@ -18,6 +23,7 @@ export interface CliConfig {
 
 const configDir = path.join(os.homedir(), ".agora");
 const configPath = path.join(configDir, "config.json");
+const ENV_REFERENCE_PATTERN = /^env:([A-Za-z_][A-Za-z0-9_]*)$/;
 
 function filterDefined<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(
@@ -60,8 +66,36 @@ function fromRuntimeConfig(
   });
 }
 
+export function getEnvReferenceName(value?: string): string | undefined {
+  if (!value?.startsWith("env:")) return undefined;
+  const match = ENV_REFERENCE_PATTERN.exec(value);
+  if (!match) {
+    throw new Error(
+      `Invalid env reference: ${value}. Next step: use env:VAR_NAME, for example env:AGORA_PRIVATE_KEY.`,
+    );
+  }
+  return match[1];
+}
+
+export function resolveConfigValue(value?: string): string | undefined {
+  const envName = getEnvReferenceName(value);
+  if (!envName) return value;
+  return process.env[envName];
+}
+
 function validateCliConfig(config: CliConfig): CliConfig {
-  return fromRuntimeConfig(readCliRuntimeConfig(toEnvConfig(config)));
+  const privateKeyEnvName = getEnvReferenceName(config.private_key);
+  const normalized = {
+    ...config,
+    private_key: privateKeyEnvName ? undefined : config.private_key,
+  };
+  const validated = fromRuntimeConfig(
+    readCliRuntimeConfig(toEnvConfig(normalized)),
+  );
+  return filterDefined({
+    ...validated,
+    private_key: privateKeyEnvName ? config.private_key : validated.private_key,
+  });
 }
 
 export function getConfigPath() {
@@ -91,6 +125,16 @@ export function loadCliConfig(): CliConfig {
   };
 }
 
+export function loadDisplayedCliConfig(): CliConfig {
+  const fileConfig = readConfigFile();
+  const envConfig = fromRuntimeConfig(readCliRuntimeConfig());
+
+  return {
+    ...envConfig,
+    ...fileConfig,
+  };
+}
+
 export function applyConfigToEnv(config: CliConfig) {
   const validated = validateCliConfig(config);
   const setIfMissing = (key: string, value: string | number | undefined) => {
@@ -103,7 +147,7 @@ export function applyConfigToEnv(config: CliConfig) {
   setIfMissing("AGORA_RPC_URL", validated.rpc_url);
   setIfMissing("AGORA_API_URL", validated.api_url);
   setIfMissing("AGORA_PINATA_JWT", validated.pinata_jwt);
-  setIfMissing("AGORA_PRIVATE_KEY", validated.private_key);
+  setIfMissing("AGORA_PRIVATE_KEY", resolveConfigValue(validated.private_key));
   setIfMissing("AGORA_FACTORY_ADDRESS", validated.factory_address);
   setIfMissing("AGORA_USDC_ADDRESS", validated.usdc_address);
   setIfMissing("AGORA_CHAIN_ID", validated.chain_id);
@@ -120,12 +164,21 @@ export function requireConfigValues(
   keys: (keyof CliConfig)[],
 ) {
   const missing = keys.filter((key) => {
-    const value = config[key];
+    const value =
+      key === "private_key"
+        ? resolveConfigValue(config.private_key)
+        : config[key];
     return value === undefined || value === "";
   });
   if (missing.length > 0) {
-    throw new Error(
-      `Missing required config values: ${missing.join(", ")}. Next step: set the missing keys with "agora config set" or run "agora config init --api-url <url>" and retry.`,
+    throw new AgoraError(
+      `Missing required config values: ${missing.join(", ")}.`,
+      {
+        code: AGORA_ERROR_CODES.configMissing,
+        nextAction:
+          'Set the missing keys with "agora config set" or run "agora config init --api-url <url>" and retry.',
+        details: { missing },
+      },
     );
   }
 }
@@ -140,7 +193,7 @@ export function setConfigValue(key: keyof CliConfig, value: string) {
 }
 
 export function getConfigValue(key: keyof CliConfig): string | undefined {
-  const config = loadCliConfig();
+  const config = loadDisplayedCliConfig();
   const value = config[key];
   if (typeof value === "number") return String(value);
   return value;

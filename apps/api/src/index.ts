@@ -11,8 +11,14 @@ import {
 } from "@agora/db";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
+import {
+  apiLogger,
+  captureApiException,
+  initApiObservability,
+} from "./lib/observability.js";
 
 async function start() {
+  initApiObservability();
   const config = loadConfig();
   const port = config.AGORA_API_PORT ?? 3000;
   const db = createSupabaseClient(true);
@@ -26,13 +32,21 @@ async function start() {
 
   serve({ fetch: app.fetch, port });
 
-  console.log("Agora API runtime identity", runtimeIdentity);
-  console.log(`Agora API listening on http://localhost:${port}`);
+  apiLogger.info(
+    {
+      event: "api.startup",
+      port,
+      runtimeIdentity,
+    },
+    "Agora API listening",
+  );
 }
 
 start().catch((error) => {
-  console.error(
-    `Agora API failed to start: ${error instanceof Error ? error.message : String(error)}`,
-  );
+  captureApiException(error, {
+    service: "api",
+    logger: apiLogger,
+    bindings: { event: "api.startup.failed" },
+  });
   process.exit(1);
 });

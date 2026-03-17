@@ -12,9 +12,14 @@ import {
 
 test("open challenge detail redacts submissions and leaderboard", async () => {
   let submissionReads = 0;
+  let submissionCountReads = 0;
 
   const data = await getChallengeWithLeaderboard("challenge-1", {
     createSupabaseClient: () => ({}) as never,
+    countSubmissionsForChallenge: async () => {
+      submissionCountReads += 1;
+      return 1;
+    },
     getChallengeByContractAddress: async () => ({}) as never,
     getChallengeById: async () =>
       ({
@@ -37,8 +42,13 @@ test("open challenge detail redacts submissions and leaderboard", async () => {
     0,
     "open challenges should not query submissions",
   );
+  assert.equal(
+    submissionCountReads,
+    1,
+    "open challenges should still read the public submission count",
+  );
   assert.equal(data.challenge.status, CHALLENGE_STATUS.open);
-  assert.equal(data.challenge.submissions_count, 0);
+  assert.equal(data.challenge.submissions_count, 1);
   assert.deepEqual(data.submissions, []);
   assert.deepEqual(data.leaderboard, []);
 });
@@ -46,6 +56,7 @@ test("open challenge detail redacts submissions and leaderboard", async () => {
 test("challenge detail floors submissions_count when settlement state is ahead of projections", async () => {
   const data = await getChallengeWithLeaderboard("challenge-1", {
     createSupabaseClient: () => ({}) as never,
+    countSubmissionsForChallenge: async () => 0,
     getChallengeByContractAddress: async () => ({}) as never,
     getChallengeById: async () =>
       ({
@@ -100,6 +111,7 @@ test("challenge list derives effective scoring status once deadline passes", asy
       {},
       {
         createSupabaseClient: () => ({}) as never,
+        countSubmissionsForChallenge: async () => 0,
         getChallengeByContractAddress: async () => {
           throw new Error("not used");
         },
@@ -141,6 +153,7 @@ test("challenge list filters open and scoring after effective-status normalizati
   try {
     const sharedDeps = {
       createSupabaseClient: () => ({}) as never,
+      countSubmissionsForChallenge: async () => 0,
       getChallengeByContractAddress: async () => {
         throw new Error("not used");
       },
@@ -202,6 +215,7 @@ test("challenge list forwards updated_since and cursor to the shared DB query", 
     }),
     {
       createSupabaseClient: () => ({}) as never,
+      countSubmissionsForChallenge: async () => 0,
       getChallengeByContractAddress: async () => {
         throw new Error("not used");
       },
@@ -234,6 +248,7 @@ test("challenge list is returned newest-first even if the backing query order dr
     {},
     {
       createSupabaseClient: () => ({}) as never,
+      countSubmissionsForChallenge: async () => 0,
       getChallengeByContractAddress: async () => {
         throw new Error("not used");
       },

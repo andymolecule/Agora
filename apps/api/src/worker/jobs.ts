@@ -123,6 +123,7 @@ async function ensureChallengeIsScoreable(input: {
     {
       submission_id: input.submission.id,
       challenge_id: input.challenge.id,
+      trace_id: input.job.trace_id ?? input.submission.trace_id ?? null,
     },
     reason,
   );
@@ -151,10 +152,12 @@ export async function processJob(
     )) as SubmissionRow;
     const challengeAddress = challenge.contract_address as `0x${string}`;
     const publicClient = resolvedDeps.getPublicClient();
+    const traceId = job.trace_id ?? submission.trace_id ?? null;
     const phaseMeta = {
       jobId: job.id,
       submissionId: submission.id,
       challengeId: challenge.id,
+      traceId,
     };
     const shouldAbortForLeaseLoss = (phase: string) => {
       if (!leaseGuard?.hasLostLease()) return false;
@@ -180,6 +183,7 @@ export async function processJob(
         {
           jobId: job.id,
           submissionId: submission.id,
+          traceId,
         },
       );
       return;
@@ -219,6 +223,7 @@ export async function processJob(
         {
           submissionId: submission.id,
           challengeId: challenge.id,
+          traceId,
         },
       );
       await resolvedDeps.markScoreJobSkipped(
@@ -226,6 +231,7 @@ export async function processJob(
         {
           submission_id: submission.id,
           challenge_id: challenge.id,
+          trace_id: job.trace_id ?? submission.trace_id ?? null,
         },
         SUBMISSION_RESULT_CID_MISSING_ERROR,
       );
@@ -249,12 +255,14 @@ export async function processJob(
           submissionId: submission.id,
           challengeId: challenge.id,
           reason: scoringOutcome.reason,
+          traceId,
         });
         await resolvedDeps.markScoreJobSkipped(
           db,
           {
             submission_id: submission.id,
             challenge_id: challenge.id,
+            trace_id: job.trace_id ?? submission.trace_id ?? null,
           },
           scoringOutcome.reason,
         );
@@ -265,12 +273,14 @@ export async function processJob(
         submissionId: submission.id,
         challengeId: challenge.id,
         error: scoringOutcome.reason,
+        traceId,
       });
       await resolvedDeps.markScoreJobSkipped(
         db,
         {
           submission_id: submission.id,
           challenge_id: challenge.id,
+          trace_id: job.trace_id ?? submission.trace_id ?? null,
         },
         `invalid_submission: ${scoringOutcome.reason}`,
       );
@@ -298,6 +308,7 @@ export async function processJob(
         {
           jobId: job.id,
           submissionId: submission.id,
+          traceId,
         },
       );
       return;
@@ -354,6 +365,7 @@ export async function processJob(
     log("info", `✓ Job complete for submission ${submission.id}`, {
       txHash,
       score: scoringOutcome.score,
+      traceId,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -364,6 +376,7 @@ export async function processJob(
         {
           jobId: job.id,
           submissionId: job.submission_id,
+          traceId: job.trace_id ?? null,
         },
       );
       await resolvedDeps.requeueJobWithoutAttemptPenalty(
@@ -380,12 +393,14 @@ export async function processJob(
         jobId: job.id,
         submissionId: job.submission_id,
         error: message,
+        traceId: job.trace_id ?? null,
       });
       await resolvedDeps.markScoreJobSkipped(
         db,
         {
           submission_id: job.submission_id,
           challenge_id: job.challenge_id,
+          trace_id: job.trace_id ?? null,
         },
         message,
       );
@@ -397,6 +412,7 @@ export async function processJob(
       attempts: job.attempts,
       maxAttempts: job.max_attempts,
       error: message,
+      traceId: job.trace_id ?? null,
     });
     await resolvedDeps.failJob(
       db,

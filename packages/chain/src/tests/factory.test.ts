@@ -1,19 +1,37 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getFactoryContractVersion } from "../factory.js";
 import type { getPublicClient } from "../client.js";
+import { getFactoryContractVersion } from "../factory.js";
+import { chainReadLogger } from "../observability.js";
+
+function patchChainReadLogger(level: "warn" | "error", sink: unknown[][]) {
+  const logger = chainReadLogger as unknown as Record<
+    string,
+    (...args: unknown[]) => void
+  >;
+  const original = logger[level];
+  if (!original) {
+    throw new Error(`chainReadLogger.${level} is unavailable in tests`);
+  }
+  logger[level] = (...args: unknown[]) => {
+    sink.push(args);
+  };
+  return () => {
+    logger[level] = original;
+  };
+}
 
 test("factory contractVersion falls back to latest when the pinned block header is unavailable", async () => {
   const warnings: unknown[][] = [];
-  const originalWarn = console.warn;
-  console.warn = (...args: unknown[]) => {
-    warnings.push(args);
-  };
+  const restoreWarn = patchChainReadLogger("warn", warnings);
 
   try {
     const calls: Array<{ functionName: string; blockNumber?: bigint }> = [];
     const publicClient = {
-      async readContract(input: { functionName: string; blockNumber?: bigint }) {
+      async readContract(input: {
+        functionName: string;
+        blockNumber?: bigint;
+      }) {
         calls.push(input);
         if (input.blockNumber !== undefined) {
           throw new Error("header not found");
@@ -41,16 +59,13 @@ test("factory contractVersion falls back to latest when the pinned block header 
     );
     assert.equal(warnings.length, 1);
   } finally {
-    console.warn = originalWarn;
+    restoreWarn();
   }
 });
 
 test("factory contractVersion does not swallow non-transient RPC errors", async () => {
   const errors: unknown[][] = [];
-  const originalError = console.error;
-  console.error = (...args: unknown[]) => {
-    errors.push(args);
-  };
+  const restoreError = patchChainReadLogger("error", errors);
 
   try {
     const publicClient = {
@@ -70,6 +85,6 @@ test("factory contractVersion does not swallow non-transient RPC errors", async 
     );
     assert.equal(errors.length, 1);
   } finally {
-    console.error = originalError;
+    restoreError();
   }
 });

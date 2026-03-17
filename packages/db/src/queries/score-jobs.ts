@@ -1,9 +1,9 @@
 import {
-  readWorkerTimingConfig,
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
   SUBMISSION_RESULT_CID_MISSING_ERROR,
   type ScoreJobStatus,
+  readWorkerTimingConfig,
 } from "@agora/common";
 import { CHALLENGE_STATUS } from "@agora/common";
 import type { AgoraDbClient } from "../index";
@@ -11,6 +11,7 @@ import type { AgoraDbClient } from "../index";
 export interface ScoreJobInsert {
   submission_id: string;
   challenge_id: string;
+  trace_id?: string | null;
 }
 
 export interface ScoreJobRow {
@@ -26,6 +27,7 @@ export interface ScoreJobRow {
   locked_by: string | null;
   last_error: string | null;
   score_tx_hash: string | null;
+  trace_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -88,18 +90,22 @@ export async function createScoreJob(
   payload: ScoreJobInsert,
 ): Promise<ScoreJobRow | null> {
   const nowIso = new Date().toISOString();
+  const upsertPayload: Record<string, unknown> = {
+    submission_id: payload.submission_id,
+    challenge_id: payload.challenge_id,
+    status: SCORE_JOB_STATUS.queued,
+    next_attempt_at: nowIso,
+    run_started_at: null,
+  };
+  if (payload.trace_id !== undefined) {
+    upsertPayload.trace_id = payload.trace_id;
+  }
   const { data, error } = await db
     .from("score_jobs")
-    .upsert(
-      {
-        submission_id: payload.submission_id,
-        challenge_id: payload.challenge_id,
-        status: SCORE_JOB_STATUS.queued,
-        next_attempt_at: nowIso,
-        run_started_at: null,
-      },
-      { onConflict: "submission_id", ignoreDuplicates: true },
-    )
+    .upsert(upsertPayload, {
+      onConflict: "submission_id",
+      ignoreDuplicates: true,
+    })
     .select("*")
     .maybeSingle();
 
@@ -117,24 +123,25 @@ export async function markScoreJobSkipped(
   reason: string,
 ): Promise<ScoreJobRow | null> {
   const nowIso = new Date().toISOString();
+  const upsertPayload: Record<string, unknown> = {
+    submission_id: payload.submission_id,
+    challenge_id: payload.challenge_id,
+    status: SCORE_JOB_STATUS.skipped,
+    attempts: 0,
+    max_attempts: 0,
+    next_attempt_at: nowIso,
+    last_error: reason,
+    locked_at: null,
+    run_started_at: null,
+    locked_by: null,
+    updated_at: nowIso,
+  };
+  if (payload.trace_id !== undefined) {
+    upsertPayload.trace_id = payload.trace_id;
+  }
   const { data, error } = await db
     .from("score_jobs")
-    .upsert(
-      {
-        submission_id: payload.submission_id,
-        challenge_id: payload.challenge_id,
-        status: SCORE_JOB_STATUS.skipped,
-        attempts: 0,
-        max_attempts: 0,
-        next_attempt_at: nowIso,
-        last_error: reason,
-        locked_at: null,
-        run_started_at: null,
-        locked_by: null,
-        updated_at: nowIso,
-      },
-      { onConflict: "submission_id" },
-    )
+    .upsert(upsertPayload, { onConflict: "submission_id" })
     .select("*")
     .maybeSingle();
 
@@ -158,6 +165,28 @@ export async function getScoreJobBySubmissionId(
     throw new Error(
       `Failed to fetch score job by submission: ${error.message}`,
     );
+  }
+
+  return (data as ScoreJobRow | null) ?? null;
+}
+
+export async function attachScoreJobTraceIdIfMissing(
+  db: AgoraDbClient,
+  jobId: string,
+  traceId: string,
+) {
+  const { data, error } = await db
+    .from("score_jobs")
+    .update({
+      trace_id: traceId,
+    })
+    .eq("id", jobId)
+    .is("trace_id", null)
+    .select("*")
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Failed to attach score job trace id: ${error.message}`);
   }
 
   return (data as ScoreJobRow | null) ?? null;

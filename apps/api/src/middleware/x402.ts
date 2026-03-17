@@ -8,6 +8,7 @@ import * as x402Evm from "@x402/evm/exact/server";
 import * as x402Hono from "@x402/hono";
 import type { Context, MiddlewareHandler, Next } from "hono";
 import { jsonError } from "../lib/api-error.js";
+import { apiLogger, getRequestLogger } from "../lib/observability.js";
 import type { ApiEnv } from "../types.js";
 
 type PaidRoute = {
@@ -213,8 +214,15 @@ function loadX402Middleware(
   }
 
   if (!x402ResolutionLogged) {
-    console.info(
-      `[x402][api] exports payment=${paymentResolved.name} server=${serverResolved.name} facilitator=${facilitatorResolved.name} scheme=${schemeResolved.name}`,
+    apiLogger.info(
+      {
+        event: "x402.exports.resolved",
+        paymentExport: paymentResolved.name,
+        serverExport: serverResolved.name,
+        facilitatorExport: facilitatorResolved.name,
+        schemeExport: schemeResolved.name,
+      },
+      "Resolved x402 library exports",
     );
     x402ResolutionLogged = true;
   }
@@ -283,8 +291,15 @@ export function createX402Middleware(): MiddlewareHandler<ApiEnv> {
     }
 
     if (reportOnly) {
-      console.info(
-        `[x402][report-only] would charge route=${matched.route.id} method=${c.req.method} path=${c.req.path} price=$${matched.route.priceUsd.toFixed(3)}`,
+      getRequestLogger(c).info(
+        {
+          event: "x402.report_only",
+          routeId: matched.route.id,
+          method: c.req.method,
+          path: c.req.path,
+          priceUsd: matched.route.priceUsd,
+        },
+        "x402 report-only charge evaluated",
       );
       c.res.headers.set("X-Agora-X402-Report", "would-charge");
       await next();

@@ -21,6 +21,7 @@
     "@agora/scorer": "workspace:*",
     "@hono/node-server": "^1.19.9",
     "@hono/zod-validator": "^0.7.6",
+    "@sentry/node": "^10.43.0",
     "@x402/core": "2.5.0",
     "@x402/evm": "2.5.0",
     "@x402/hono": "2.5.0",

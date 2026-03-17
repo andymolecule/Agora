@@ -45,7 +45,11 @@ const log: WorkerLogFn = () => {};
 test("missing result CID is skipped instead of failed", async () => {
   let skipped:
     | {
-        payload: { submission_id: string; challenge_id: string };
+        payload: {
+          submission_id: string;
+          challenge_id: string;
+          trace_id?: string | null;
+        };
         reason: string;
       }
     | undefined;
@@ -77,6 +81,7 @@ test("missing result CID is skipped instead of failed", async () => {
     payload: {
       submission_id: baseSubmission.id,
       challenge_id: challenge.id,
+      trace_id: null,
     },
     reason: SUBMISSION_RESULT_CID_MISSING_ERROR,
   });

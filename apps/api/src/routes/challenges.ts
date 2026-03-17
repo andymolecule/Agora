@@ -16,6 +16,7 @@ import {
   type ChallengeSpecOutput,
   SUBMISSION_LIMITS,
   challengeRegistrationRequestSchema,
+  getEffectiveChallengeStatus,
   loadConfig,
   validateScoringContainer,
   validateSubmissionUploadAgainstContract,
@@ -23,6 +24,7 @@ import {
 import {
   type ChallengeInsert,
   buildChallengeInsert,
+  countSubmissionsBySolverForChallenge,
   createSupabaseClient,
   getChallengeByContractAddress,
   getChallengeById,
@@ -51,6 +53,118 @@ function normalizeAddress(value: string | null | undefined) {
     ? (value.toLowerCase() as `0x${string}`)
     : undefined;
 }
+
+async function readChallengeClaimableState(input: {
+  contractAddress: `0x${string}`;
+  solverAddress?: `0x${string}`;
+}) {
+  const publicClient = getPublicClient();
+  const contractVersion = await getChallengeContractVersion(
+    input.contractAddress,
+  );
+  const supportedVersion = contractVersion === ACTIVE_CONTRACT_VERSION;
+
+  if (!supportedVersion) {
+    return {
+      onChainStatus: "unsupported",
+      contractVersion,
+      supportedVersion: false,
+      reviewEndsAt: null,
+      scoringGraceEndsAt: null,
+      earliestFinalizeAt: null,
+      canFinalize: false,
+      finalizeBlockedReason: "unsupported_version",
+      claimable: "0",
+      canClaim: false,
+    };
+  }
+
+  const finalizeState = await getChallengeFinalizeState(input.contractAddress);
+  const latestBlock = await publicClient.getBlock({ blockTag: "latest" });
+  const nowSeconds = latestBlock.timestamp;
+  const reviewEndsAtSeconds =
+    finalizeState.deadline + finalizeState.disputeWindowHours * 3600n;
+  const scoringGraceEndsAtSeconds =
+    finalizeState.deadline + finalizeState.scoringGracePeriod;
+  const allScored = finalizeState.scoredCount >= finalizeState.submissionCount;
+  const earliestFinalizeAtSeconds = allScored
+    ? reviewEndsAtSeconds
+    : reviewEndsAtSeconds > scoringGraceEndsAtSeconds
+      ? reviewEndsAtSeconds
+      : scoringGraceEndsAtSeconds;
+
+  const timestamps = [
+    reviewEndsAtSeconds,
+    scoringGraceEndsAtSeconds,
+    earliestFinalizeAtSeconds,
+  ];
+  if (
+    timestamps.some(
+      (value) => value > BigInt(Math.floor(Number.MAX_SAFE_INTEGER / 1000)),
+    )
+  ) {
+    throw new Error("Finalization timestamp out of range.");
+  }
+
+  const reviewEndsAt = new Date(
+    Number(reviewEndsAtSeconds) * 1000,
+  ).toISOString();
+  const scoringGraceEndsAt = new Date(
+    Number(scoringGraceEndsAtSeconds) * 1000,
+  ).toISOString();
+  const earliestFinalizeAt = new Date(
+    Number(earliestFinalizeAtSeconds) * 1000,
+  ).toISOString();
+
+  let canFinalize = false;
+  let finalizeBlockedReason: string | null = null;
+  if (finalizeState.status === CHALLENGE_STATUS.open) {
+    finalizeBlockedReason = "open";
+  } else if (finalizeState.status === CHALLENGE_STATUS.disputed) {
+    finalizeBlockedReason = "disputed";
+  } else if (finalizeState.status === CHALLENGE_STATUS.cancelled) {
+    finalizeBlockedReason = "cancelled";
+  } else if (finalizeState.status === CHALLENGE_STATUS.finalized) {
+    finalizeBlockedReason = "finalized";
+  } else if (nowSeconds <= reviewEndsAtSeconds) {
+    finalizeBlockedReason = "review_window_active";
+  } else if (!allScored && nowSeconds <= scoringGraceEndsAtSeconds) {
+    finalizeBlockedReason = "scoring_incomplete";
+  } else {
+    canFinalize = true;
+  }
+
+  let claimable = "0";
+  if (
+    input.solverAddress &&
+    finalizeState.status === CHALLENGE_STATUS.finalized
+  ) {
+    claimable = (
+      await getChallengePayoutByAddress(
+        input.contractAddress,
+        input.solverAddress,
+      )
+    ).toString();
+  }
+
+  return {
+    onChainStatus: finalizeState.status,
+    contractVersion,
+    supportedVersion,
+    reviewEndsAt,
+    scoringGraceEndsAt,
+    earliestFinalizeAt,
+    canFinalize,
+    finalizeBlockedReason,
+    claimable,
+    canClaim:
+      finalizeState.status === CHALLENGE_STATUS.finalized && claimable !== "0",
+  };
+}
+
+type ChallengeClaimableState = Awaited<
+  ReturnType<typeof readChallengeClaimableState>
+>;
 
 export function getChallengeRegistrationRetryMessage() {
   return "Challenge transaction is confirmed, but Agora could not read immutable registration metadata from chain yet. Next step: retry in a few seconds.";
@@ -400,6 +514,76 @@ router.get("/by-address/:address", async (c) => {
   return jsonWithEtag(c, { data });
 });
 
+router.get("/by-address/:address/solver-status", async (c) => {
+  const solverAddress = normalizeAddress(
+    c.req.query("solver_address") ?? c.req.query("address"),
+  );
+  if (!solverAddress) {
+    return jsonError(c, {
+      status: 400,
+      code: "INVALID_ADDRESS",
+      message:
+        "Invalid solver address. Next step: provide a 0x-prefixed wallet address in the address query parameter.",
+    });
+  }
+
+  const db = createSupabaseClient(true);
+  const challenge = await getChallengeByContractAddress(
+    db,
+    c.req.param("address"),
+  );
+  const submissionsUsed = await countSubmissionsBySolverForChallenge(
+    db,
+    challenge.id,
+    solverAddress,
+  );
+  const maxSubmissionsPerSolver = challenge.max_submissions_per_solver ?? null;
+  const submissionsRemaining =
+    typeof maxSubmissionsPerSolver === "number"
+      ? Math.max(maxSubmissionsPerSolver - submissionsUsed, 0)
+      : null;
+  const hasReachedSubmissionLimit =
+    submissionsRemaining !== null && submissionsRemaining === 0;
+  let claimableState: ChallengeClaimableState;
+  try {
+    claimableState = await readChallengeClaimableState({
+      contractAddress: challenge.contract_address as `0x${string}`,
+      solverAddress,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return jsonError(c, {
+      status: 503,
+      code: "CHAIN_READ_FAILED",
+      message: `Unable to read solver challenge status from chain right now. Next step: retry in a few seconds. Details: ${message}`,
+      retriable: true,
+    });
+  }
+  const effectiveStatus = getEffectiveChallengeStatus(
+    claimableState.onChainStatus === "unsupported"
+      ? challenge.status
+      : claimableState.onChainStatus,
+    challenge.deadline,
+  );
+
+  return c.json({
+    data: {
+      challenge_id: challenge.id,
+      challenge_address: challenge.contract_address,
+      solver_address: solverAddress,
+      status: effectiveStatus,
+      max_submissions_per_solver: maxSubmissionsPerSolver,
+      submissions_used: submissionsUsed,
+      submissions_remaining: submissionsRemaining,
+      has_reached_submission_limit: hasReachedSubmissionLimit,
+      can_submit:
+        effectiveStatus === CHALLENGE_STATUS.open && !hasReachedSubmissionLimit,
+      claimable: claimableState.claimable,
+      can_claim: claimableState.canClaim,
+    },
+  });
+});
+
 router.get("/by-address/:address/leaderboard", async (c) => {
   const challengeAddress = c.req.param("address");
   const data = await getChallengeWithLeaderboardByAddress(challengeAddress);
@@ -493,6 +677,73 @@ router.get("/:id", async (c) => {
   return jsonWithEtag(c, { data });
 });
 
+router.get("/:id/solver-status", async (c) => {
+  const solverAddress = normalizeAddress(
+    c.req.query("solver_address") ?? c.req.query("address"),
+  );
+  if (!solverAddress) {
+    return jsonError(c, {
+      status: 400,
+      code: "INVALID_ADDRESS",
+      message:
+        "Invalid solver address. Next step: provide a 0x-prefixed wallet address in the address query parameter.",
+    });
+  }
+
+  const db = createSupabaseClient(true);
+  const challenge = await getChallengeById(db, c.req.param("id"));
+  const submissionsUsed = await countSubmissionsBySolverForChallenge(
+    db,
+    challenge.id,
+    solverAddress,
+  );
+  const maxSubmissionsPerSolver = challenge.max_submissions_per_solver ?? null;
+  const submissionsRemaining =
+    typeof maxSubmissionsPerSolver === "number"
+      ? Math.max(maxSubmissionsPerSolver - submissionsUsed, 0)
+      : null;
+  const hasReachedSubmissionLimit =
+    submissionsRemaining !== null && submissionsRemaining === 0;
+  let claimableState: ChallengeClaimableState;
+  try {
+    claimableState = await readChallengeClaimableState({
+      contractAddress: challenge.contract_address as `0x${string}`,
+      solverAddress,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return jsonError(c, {
+      status: 503,
+      code: "CHAIN_READ_FAILED",
+      message: `Unable to read solver challenge status from chain right now. Next step: retry in a few seconds. Details: ${message}`,
+      retriable: true,
+    });
+  }
+  const effectiveStatus = getEffectiveChallengeStatus(
+    claimableState.onChainStatus === "unsupported"
+      ? challenge.status
+      : claimableState.onChainStatus,
+    challenge.deadline,
+  );
+
+  return c.json({
+    data: {
+      challenge_id: challenge.id,
+      challenge_address: challenge.contract_address,
+      solver_address: solverAddress,
+      status: effectiveStatus,
+      max_submissions_per_solver: maxSubmissionsPerSolver,
+      submissions_used: submissionsUsed,
+      submissions_remaining: submissionsRemaining,
+      has_reached_submission_limit: hasReachedSubmissionLimit,
+      can_submit:
+        effectiveStatus === CHALLENGE_STATUS.open && !hasReachedSubmissionLimit,
+      claimable: claimableState.claimable,
+      can_claim: claimableState.canClaim,
+    },
+  });
+});
+
 router.get("/:id/leaderboard", async (c) => {
   const challengeId = c.req.param("id");
   const data = await getChallengeWithLeaderboard(challengeId);
@@ -528,123 +779,34 @@ router.get("/:id/claimable", async (c) => {
   }
 
   const contractAddress = challenge.contract_address as `0x${string}`;
-  const publicClient = getPublicClient();
-  const contractVersion = await getChallengeContractVersion(contractAddress);
-  const supportedVersion = contractVersion === ACTIVE_CONTRACT_VERSION;
-
-  if (!supportedVersion) {
-    return c.json({
-      data: {
-        onChainStatus: "unsupported",
-        contractVersion,
-        supportedVersion: false,
-        reviewEndsAt: null,
-        scoringGraceEndsAt: null,
-        earliestFinalizeAt: null,
-        canFinalize: false,
-        finalizeBlockedReason: "unsupported_version",
-        claimable: "0",
-        canClaim: false,
-      },
+  let claimableState: ChallengeClaimableState;
+  try {
+    claimableState = await readChallengeClaimableState({
+      contractAddress,
+      solverAddress: normalizeAddress(address),
     });
-  }
-
-  const finalizeState = await getChallengeFinalizeState(contractAddress);
-  const latestBlock = await publicClient.getBlock({ blockTag: "latest" });
-  const nowSeconds = latestBlock.timestamp;
-  const reviewEndsAtSeconds =
-    finalizeState.deadline + finalizeState.disputeWindowHours * 3600n;
-  const scoringGraceEndsAtSeconds =
-    finalizeState.deadline + finalizeState.scoringGracePeriod;
-  const allScored = finalizeState.scoredCount >= finalizeState.submissionCount;
-  const earliestFinalizeAtSeconds = allScored
-    ? reviewEndsAtSeconds
-    : reviewEndsAtSeconds > scoringGraceEndsAtSeconds
-      ? reviewEndsAtSeconds
-      : scoringGraceEndsAtSeconds;
-
-  // Compute timestamps from on-chain fields.
-  const timestamps = [
-    reviewEndsAtSeconds,
-    scoringGraceEndsAtSeconds,
-    earliestFinalizeAtSeconds,
-  ];
-  if (
-    timestamps.some(
-      (value) => value > BigInt(Math.floor(Number.MAX_SAFE_INTEGER / 1000)),
-    )
-  ) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     return jsonError(c, {
-      status: 500,
-      code: "FINALIZE_TIMESTAMP_OUT_OF_RANGE",
-      message: "Finalization timestamp out of range.",
+      status: 503,
+      code: "CHAIN_READ_FAILED",
+      message: `Unable to read claimable payout from chain right now. Next step: retry in a few seconds. Details: ${message}`,
+      retriable: true,
     });
-  }
-  const reviewEndsAt = new Date(
-    Number(reviewEndsAtSeconds) * 1000,
-  ).toISOString();
-  const scoringGraceEndsAt = new Date(
-    Number(scoringGraceEndsAtSeconds) * 1000,
-  ).toISOString();
-  const earliestFinalizeAt = new Date(
-    Number(earliestFinalizeAtSeconds) * 1000,
-  ).toISOString();
-
-  let canFinalize = false;
-  let finalizeBlockedReason: string | null = null;
-  if (!supportedVersion) {
-    finalizeBlockedReason = "unsupported_version";
-  } else if (finalizeState.status === CHALLENGE_STATUS.open) {
-    finalizeBlockedReason = "open";
-  } else if (finalizeState.status === CHALLENGE_STATUS.disputed) {
-    finalizeBlockedReason = "disputed";
-  } else if (finalizeState.status === CHALLENGE_STATUS.cancelled) {
-    finalizeBlockedReason = "cancelled";
-  } else if (finalizeState.status === CHALLENGE_STATUS.finalized) {
-    finalizeBlockedReason = "finalized";
-  } else if (nowSeconds <= reviewEndsAtSeconds) {
-    finalizeBlockedReason = "review_window_active";
-  } else if (!allScored && nowSeconds <= scoringGraceEndsAtSeconds) {
-    finalizeBlockedReason = "scoring_incomplete";
-  } else {
-    canFinalize = true;
-  }
-
-  // Read claimable amount for address (if provided)
-  let claimable = "0";
-  if (address && finalizeState.status === CHALLENGE_STATUS.finalized) {
-    try {
-      const payout = await getChallengePayoutByAddress(
-        contractAddress,
-        address as `0x${string}`,
-      );
-      claimable = payout.toString();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return jsonError(c, {
-        status: 503,
-        code: "CHAIN_READ_FAILED",
-        message: `Unable to read claimable payout from chain right now. Next step: retry in a few seconds. Details: ${message}`,
-        retriable: true,
-      });
-    }
   }
 
   return c.json({
     data: {
-      onChainStatus: finalizeState.status,
-      contractVersion,
-      supportedVersion,
-      reviewEndsAt,
-      scoringGraceEndsAt,
-      earliestFinalizeAt,
-      canFinalize,
-      finalizeBlockedReason,
-      claimable,
-      canClaim:
-        supportedVersion &&
-        finalizeState.status === CHALLENGE_STATUS.finalized &&
-        claimable !== "0",
+      onChainStatus: claimableState.onChainStatus,
+      contractVersion: claimableState.contractVersion,
+      supportedVersion: claimableState.supportedVersion,
+      reviewEndsAt: claimableState.reviewEndsAt,
+      scoringGraceEndsAt: claimableState.scoringGraceEndsAt,
+      earliestFinalizeAt: claimableState.earliestFinalizeAt,
+      canFinalize: claimableState.canFinalize,
+      finalizeBlockedReason: claimableState.finalizeBlockedReason,
+      claimable: claimableState.claimable,
+      canClaim: claimableState.canClaim,
     },
   });
 });

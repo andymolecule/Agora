@@ -40,7 +40,19 @@ const checks: RuntimeSchemaCheck[] = [
   {
     id: "submission_intents_columns",
     table: "submission_intents",
-    select: "result_format,matched_submission_id",
+    select: "result_format,matched_submission_id,trace_id",
+    nextStep: "apply migration",
+  },
+  {
+    id: "submissions_trace_id_column",
+    table: "submissions",
+    select: "trace_id",
+    nextStep: "apply migration",
+  },
+  {
+    id: "score_jobs_trace_id_column",
+    table: "score_jobs",
+    select: "trace_id",
     nextStep: "apply migration",
   },
 ];
@@ -55,8 +67,7 @@ assert.deepEqual(passingFailures, []);
 const failingDb = createMockDb({
   "worker_runtime_state:executor_ready": {
     error: {
-      message:
-        "Could not find the 'executor_ready' column in the schema cache",
+      message: "Could not find the 'executor_ready' column in the schema cache",
     },
   },
 });

@@ -1,8 +1,11 @@
 import {
+  assertFinalizeChallengeAffordable,
   finalizeChallenge,
   getPublicClient,
   getWalletClient,
+  sendWriteWithRetry,
 } from "@agora/chain";
+import { AGORA_ERROR_CODES, AgoraError } from "@agora/common";
 import { createSupabaseClient, getChallengeById } from "@agora/db";
 import { Command } from "commander";
 import {
@@ -51,13 +54,24 @@ export function buildFinalizeCommand() {
         const walletClient = getWalletClient();
         const caller = walletClient.account?.address;
         if (!caller) {
-          throw new Error("Wallet client is missing an account address.");
+          throw new AgoraError("Wallet client is missing an account address.", {
+            code: AGORA_ERROR_CODES.missingPrivateKeyEnv,
+            nextAction: "Configure AGORA_PRIVATE_KEY and retry.",
+          });
         }
 
-const spinner = createSpinner("Finalizing challenge on-chain...");
-        const txHash = await finalizeChallenge(
-          challenge.contract_address as `0x${string}`,
-        );
+        await assertFinalizeChallengeAffordable({
+          accountAddress: caller,
+          challengeAddress: challenge.contract_address as `0x${string}`,
+        });
+
+        const spinner = createSpinner("Finalizing challenge on-chain...");
+        const txHash = await sendWriteWithRetry({
+          accountAddress: caller,
+          label: "Finalize transaction",
+          write: () =>
+            finalizeChallenge(challenge.contract_address as `0x${string}`),
+        });
         const publicClient = getPublicClient();
         const receipt = await publicClient.waitForTransactionReceipt({
           hash: txHash,
@@ -65,7 +79,11 @@ const spinner = createSpinner("Finalizing challenge on-chain...");
         });
         if (receipt.status !== "success") {
           spinner.fail("Finalize transaction reverted.");
-          throw new Error("Finalize transaction failed.");
+          throw new AgoraError("Finalize transaction reverted.", {
+            code: AGORA_ERROR_CODES.txReverted,
+            nextAction:
+              "Confirm the dispute window has ended and all required scores are posted before retrying.",
+          });
         }
         spinner.succeed(`Finalized: ${txHash}`);
 

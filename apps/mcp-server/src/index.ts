@@ -7,6 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
+import { mcpLogger } from "./observability.js";
 import { agoraClaimPayout } from "./tools/claim-payout.js";
 import { agoraGetChallenge } from "./tools/get-challenge.js";
 import { agoraGetLeaderboard } from "./tools/get-leaderboard.js";
@@ -413,6 +414,13 @@ function startHttpMode() {
         session.lastSeenAt = Date.now();
         await session.transport.handleRequest(req, res);
       } catch (error) {
+        mcpLogger.error(
+          {
+            event: "mcp.request.failed",
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "MCP request failed",
+        );
         res.statusCode = 500;
         res.setHeader("Content-Type", "application/json; charset=utf-8");
         res.end(
@@ -427,14 +435,25 @@ function startHttpMode() {
 
   const host = process.env.AGORA_MCP_HOST ?? "127.0.0.1";
   if (host !== "127.0.0.1" && host !== "localhost" && allowRemotePrivateKey) {
-    console.warn(
-      "WARNING: MCP HTTP server bound to non-localhost with remote private keys enabled. " +
-        "Private keys sent over the network can be intercepted.",
+    mcpLogger.warn(
+      {
+        event: "mcp.remote_private_key_warning",
+        host,
+      },
+      "MCP HTTP server is bound to a non-localhost interface with remote private keys enabled",
     );
   }
 
   server.listen(port, host, () => {
-    console.log(`Agora MCP server listening on http://${host}:${port}`);
+    mcpLogger.info(
+      {
+        event: "mcp.startup",
+        host,
+        port,
+        mode: "http",
+      },
+      "Agora MCP server listening",
+    );
   });
 }
 

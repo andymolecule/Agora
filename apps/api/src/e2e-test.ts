@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
-  type ChallengeListRow,
   approve,
   claimPayout,
   createChallenge,
@@ -13,13 +12,16 @@ import {
   parseChallengeCreatedReceipt,
   parseChallengeLogs,
   parseFactoryLogs,
-  processChallengeLog,
-  processFactoryLog,
-  reconcileChallengeProjection,
   resolveDispute,
   startChallengeScoring,
   submitChallengeResult,
 } from "@agora/chain";
+import {
+  type ChallengeListRow,
+  processChallengeLog,
+  processFactoryLog,
+  reconcileChallengeProjection,
+} from "@agora/chain/indexer/handlers";
 import {
   SUBMISSION_RESULT_FORMAT,
   createCsvTableSubmissionContract,

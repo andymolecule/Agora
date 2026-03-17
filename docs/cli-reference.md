@@ -57,6 +57,7 @@ agora get ch-001 --download ./workspace --format json
 | Flag | Type | Description |
 |------|------|-------------|
 | `--download <dir>` | string | Download spec + datasets to this directory |
+| `--address <address>` | string | Show solver-specific remaining submissions and claimable payout for this wallet |
 
 ### `agora status <id>`
 
@@ -65,6 +66,9 @@ Show quick challenge status summary.
 ```bash
 agora status ch-001
 ```
+
+If a wallet is configured, or you pass `--address 0x...`, status also reports
+solver-specific submission usage and claimable payout.
 
 ---
 
@@ -90,11 +94,26 @@ Pin a result file to IPFS and submit its hash on-chain.
 agora submit ./results.csv --challenge ch-001 --format json
 ```
 
+The submit path checks wallet gas balance, deadline safety, and per-solver
+submission limits before it sends the transaction.
+
 | Flag | Type | Required | Description |
 |------|------|----------|-------------|
 | `--challenge <id>` | string | Yes | Challenge id |
 | `--dry-run` | boolean | No | Pin only, skip on-chain submission |
 | `--key <ref>` | string | No | Private key reference (e.g. `env:AGORA_PRIVATE_KEY`) |
+
+### `agora submission-status <submissionId>`
+
+Check one submission by UUID, including queue state, score, and proof readiness.
+
+```bash
+agora submission-status <submission_uuid> --format json
+agora submission-status <submission_uuid> --watch
+```
+
+When `--watch` is enabled, the CLI follows the submission until it reaches a
+terminal state using the API's recommended polling interval.
 
 ---
 
@@ -119,6 +138,9 @@ Claim USDC payout on a finalized challenge for the caller wallet.
 ```bash
 agora claim ch-001 --format json
 ```
+
+The claim path checks claimable payout first, then sends the on-chain claim
+transaction only when the caller wallet is eligible.
 
 | Flag | Type | Description |
 |------|------|-------------|
@@ -279,7 +301,14 @@ Validate CLI configuration, connectivity, and environment readiness.
 agora doctor
 ```
 
-Checks: config file, API URL, RPC URL, factory/USDC addresses, private key, Docker availability, and official scorer images. Supabase and Pinata checks are only relevant for operator or advanced direct-IPFS workflows.
+Checks: config file, API URL, RPC URL, factory/USDC addresses, private key,
+derived wallet address, wallet gas balance, submission sealing key, Docker
+availability, and official scorer images. Supabase and Pinata checks are only
+relevant for operator or advanced direct-IPFS workflows.
+
+If the configured chain is Base Sepolia and the wallet has no gas, doctor now
+points to the official faucet directory:
+[docs.base.org/tools/network-faucets](https://docs.base.org/tools/network-faucets)
 
 ---
 
@@ -288,6 +317,9 @@ Checks: config file, API URL, RPC URL, factory/USDC addresses, private key, Dock
 ### `agora config set <key> <value>`
 
 Set a CLI configuration value.
+
+For `private_key`, use `env:VAR_NAME` to store an environment-variable pointer
+instead of writing the raw secret into `~/.agora/config.json`.
 
 ### `agora config init --api-url <url>`
 

@@ -221,6 +221,39 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
         },
       },
+      "/api/challenges/{id}/solver-status": {
+        get: {
+          operationId: "getChallengeSolverStatus",
+          summary:
+            "Get solver-specific submission usage and claimable payout for a challenge",
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: uuidSchema(),
+            },
+            {
+              in: "query",
+              name: "solver_address",
+              required: true,
+              schema: addressSchema(),
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Solver status for this challenge.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ChallengeSolverStatusResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/challenges/{id}/validate-submission": {
         post: {
           operationId: "validateSubmission",
@@ -302,6 +335,39 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               content: {
                 "application/json": {
                   schema: { $ref: "#/components/schemas/Error" },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/challenges/by-address/{address}/solver-status": {
+        get: {
+          operationId: "getChallengeSolverStatusByAddress",
+          summary:
+            "Get solver-specific submission usage and claimable payout by challenge address",
+          parameters: [
+            {
+              in: "path",
+              name: "address",
+              required: true,
+              schema: addressSchema(),
+            },
+            {
+              in: "query",
+              name: "solver_address",
+              required: true,
+              schema: addressSchema(),
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Solver status for this challenge.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ChallengeSolverStatusResponse",
+                  },
                 },
               },
             },
@@ -394,6 +460,40 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 "application/json": {
                   schema: {
                     $ref: "#/components/schemas/SubmissionStatusResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/submissions/{id}/wait": {
+        get: {
+          operationId: "waitForSubmissionStatus",
+          summary:
+            "Long-poll for submission progress until the status changes, completes, or the timeout elapses",
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: uuidSchema(),
+            },
+            {
+              in: "query",
+              name: "timeout_seconds",
+              required: false,
+              schema: { type: "integer", minimum: 1, maximum: 60 },
+            },
+          ],
+          responses: {
+            "200": {
+              description:
+                "Submission status after waiting for a change or terminal state.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/SubmissionWaitResponse",
                   },
                 },
               },
@@ -551,6 +651,40 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
         },
       },
+      "/api/submissions/cleanup": {
+        post: {
+          operationId: "cleanupSubmissionArtifact",
+          summary:
+            "Delete an unmatched submission intent and unpin its sealed artifact when safe",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    intentId: uuidSchema(),
+                    resultCid: { type: "string" },
+                  },
+                  required: ["resultCid"],
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Cleanup result.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/SubmissionCleanupResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/submissions": {
         post: {
           operationId: "registerSubmission",
@@ -617,6 +751,11 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             error: { type: "string" },
             code: { type: "string" },
             retriable: { type: "boolean" },
+            nextAction: { type: "string" },
+            details: {
+              type: "object",
+              additionalProperties: true,
+            },
           },
           required: ["error", "code", "retriable"],
         },
@@ -810,6 +949,58 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
           required: ["data"],
         },
+        ChallengeSolverStatusResponse: {
+          type: "object",
+          properties: {
+            data: {
+              type: "object",
+              properties: {
+                challenge_id: uuidSchema(),
+                challenge_address: addressSchema(),
+                solver_address: addressSchema(),
+                status: {
+                  type: "string",
+                  enum: [
+                    "open",
+                    "scoring",
+                    "finalized",
+                    "disputed",
+                    "cancelled",
+                  ],
+                },
+                max_submissions_per_solver: {
+                  type: "integer",
+                  minimum: 1,
+                  nullable: true,
+                },
+                submissions_used: { type: "integer", minimum: 0 },
+                submissions_remaining: {
+                  type: "integer",
+                  minimum: 0,
+                  nullable: true,
+                },
+                has_reached_submission_limit: { type: "boolean" },
+                can_submit: { type: "boolean" },
+                claimable: { type: "string" },
+                can_claim: { type: "boolean" },
+              },
+              required: [
+                "challenge_id",
+                "challenge_address",
+                "solver_address",
+                "status",
+                "max_submissions_per_solver",
+                "submissions_used",
+                "submissions_remaining",
+                "has_reached_submission_limit",
+                "can_submit",
+                "claimable",
+                "can_claim",
+              ],
+            },
+          },
+          required: ["data"],
+        },
         SubmissionRefs: {
           type: "object",
           properties: {
@@ -902,8 +1093,106 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   type: "string",
                   enum: ["pending", "complete", "scored_awaiting_proof"],
                 },
+                terminal: { type: "boolean" },
+                recommendedPollSeconds: {
+                  type: "integer",
+                  minimum: 1,
+                },
               },
-              required: ["submission", "proofBundle", "job", "scoringStatus"],
+              required: [
+                "submission",
+                "proofBundle",
+                "job",
+                "scoringStatus",
+                "terminal",
+                "recommendedPollSeconds",
+              ],
+            },
+          },
+          required: ["data"],
+        },
+        SubmissionWaitResponse: {
+          type: "object",
+          properties: {
+            data: {
+              type: "object",
+              properties: {
+                submission: {
+                  $ref: "#/components/schemas/SubmissionStatusPayload",
+                },
+                proofBundle: {
+                  type: "object",
+                  nullable: true,
+                  properties: {
+                    reproducible: { type: "boolean" },
+                  },
+                  required: ["reproducible"],
+                },
+                job: {
+                  type: "object",
+                  nullable: true,
+                  properties: {
+                    status: {
+                      type: "string",
+                      enum: [
+                        "queued",
+                        "running",
+                        "scored",
+                        "failed",
+                        "skipped",
+                      ],
+                    },
+                    attempts: { type: "integer", minimum: 0 },
+                    maxAttempts: { type: "integer", minimum: 0 },
+                    lastError: { type: "string", nullable: true },
+                    nextAttemptAt: { ...isoDateTimeSchema(), nullable: true },
+                    lockedAt: { ...isoDateTimeSchema(), nullable: true },
+                  },
+                  required: [
+                    "status",
+                    "attempts",
+                    "maxAttempts",
+                    "lastError",
+                    "nextAttemptAt",
+                    "lockedAt",
+                  ],
+                },
+                scoringStatus: {
+                  type: "string",
+                  enum: ["pending", "complete", "scored_awaiting_proof"],
+                },
+                terminal: { type: "boolean" },
+                recommendedPollSeconds: {
+                  type: "integer",
+                  minimum: 1,
+                },
+                waitedMs: { type: "integer", minimum: 0 },
+                timedOut: { type: "boolean" },
+              },
+              required: [
+                "submission",
+                "proofBundle",
+                "job",
+                "scoringStatus",
+                "terminal",
+                "recommendedPollSeconds",
+                "waitedMs",
+                "timedOut",
+              ],
+            },
+          },
+          required: ["data"],
+        },
+        SubmissionCleanupResponse: {
+          type: "object",
+          properties: {
+            data: {
+              type: "object",
+              properties: {
+                cleanedIntent: { type: "boolean" },
+                unpinned: { type: "boolean" },
+              },
+              required: ["cleanedIntent", "unpinned"],
             },
           },
           required: ["data"],

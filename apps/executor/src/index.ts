@@ -1,21 +1,33 @@
-import { serve } from "@hono/node-server";
 import { readExecutorServerRuntimeConfig } from "@agora/common";
+import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
+import {
+  captureExecutorException,
+  executorLogger,
+  initExecutorObservability,
+} from "./lib/observability.js";
 
 async function start() {
+  initExecutorObservability();
   const runtime = readExecutorServerRuntimeConfig();
   const app = createApp();
 
   serve({ fetch: app.fetch, port: runtime.port });
 
-  console.log(
-    `Agora executor listening on http://localhost:${runtime.port} (${runtime.nodeEnv})`,
+  executorLogger.info(
+    {
+      event: "executor.startup",
+      port: runtime.port,
+      nodeEnv: runtime.nodeEnv,
+    },
+    "Agora executor listening",
   );
 }
 
 start().catch((error) => {
-  console.error(
-    `Agora executor failed to start: ${error instanceof Error ? error.message : String(error)}`,
-  );
+  captureExecutorException(error, {
+    logger: executorLogger,
+    bindings: { event: "executor.startup.failed" },
+  });
   process.exit(1);
 });

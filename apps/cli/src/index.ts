@@ -16,6 +16,7 @@ import { buildRetryFailedJobsCommand } from "./commands/retry-failed-jobs";
 import { buildOracleScoreCommand } from "./commands/score";
 import { buildScoreLocalCommand } from "./commands/score-local";
 import { buildStatusCommand } from "./commands/status";
+import { buildSubmissionStatusCommand } from "./commands/submission-status";
 import { buildSubmitCommand } from "./commands/submit";
 import { buildValidateCommand } from "./commands/validate";
 import { buildVerifyCommand } from "./commands/verify";
@@ -38,6 +39,7 @@ async function main() {
   program.addCommand(buildListCommand());
   program.addCommand(buildGetCommand());
   program.addCommand(buildStatusCommand());
+  program.addCommand(buildSubmissionStatusCommand());
   program.addCommand(buildFinalizeCommand());
   program.addCommand(buildClaimCommand());
   program.addCommand(buildSubmitCommand());

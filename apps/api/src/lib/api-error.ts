@@ -40,6 +40,8 @@ export function toApiErrorResponse(error: unknown): {
         message: error.message,
         code: error.code,
         retriable: error.retriable,
+        nextAction: error.nextAction,
+        details: error.details,
       }),
     };
   }

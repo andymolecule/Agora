@@ -15,6 +15,7 @@ export interface SubmissionOnChainWrite {
   submitted_at: string;
   scored_at?: string | null;
   tx_hash: string;
+  trace_id?: string | null;
 }
 
 /**
@@ -122,6 +123,28 @@ export async function getSubmissionById(db: AgoraDbClient, id: string) {
   return data;
 }
 
+export async function attachSubmissionTraceIdIfMissing(
+  db: AgoraDbClient,
+  submissionId: string,
+  traceId: string,
+) {
+  const { data, error } = await db
+    .from("submissions")
+    .update({
+      trace_id: traceId,
+    })
+    .eq("id", submissionId)
+    .is("trace_id", null)
+    .select("*")
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Failed to attach submission trace id: ${error.message}`);
+  }
+
+  return (data as Awaited<ReturnType<typeof getSubmissionById>> | null) ?? null;
+}
+
 export async function listSubmissionsForChallenge(
   db: AgoraDbClient,
   challengeId: string,
@@ -163,6 +186,22 @@ export async function countSubmissionsBySolverForChallenge(
     .eq("solver_address", solverAddress.toLowerCase());
   if (error) {
     throw new Error(`Failed to count submissions for solver: ${error.message}`);
+  }
+  return count ?? 0;
+}
+
+export async function countSubmissionsByResultCid(
+  db: AgoraDbClient,
+  resultCid: string,
+) {
+  const { count, error } = await db
+    .from("submissions")
+    .select("id", { count: "exact", head: true })
+    .eq("result_cid", resultCid);
+  if (error) {
+    throw new Error(
+      `Failed to count submissions by result CID: ${error.message}`,
+    );
   }
   return count ?? 0;
 }
@@ -289,13 +328,18 @@ export async function attachSubmissionResultMetadata(
   submissionId: string,
   resultCid: string,
   resultFormat: SubmissionResultFormat = SUBMISSION_RESULT_FORMAT.plainV0,
+  traceId?: string | null,
 ) {
+  const updatePayload: Record<string, unknown> = {
+    result_cid: resultCid,
+    result_format: resultFormat,
+  };
+  if (traceId) {
+    updatePayload.trace_id = traceId;
+  }
   const { data, error } = await db
     .from("submissions")
-    .update({
-      result_cid: resultCid,
-      result_format: resultFormat,
-    })
+    .update(updatePayload)
     .eq("id", submissionId)
     .is("result_cid", null)
     .select("*")
@@ -312,6 +356,12 @@ export async function attachSubmissionResultMetadata(
     current.result_cid === resultCid &&
     current.result_format === resultFormat
   ) {
+    if (traceId && !current.trace_id) {
+      return (
+        (await attachSubmissionTraceIdIfMissing(db, submissionId, traceId)) ??
+        current
+      );
+    }
     return current;
   }
 

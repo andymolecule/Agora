@@ -29,6 +29,19 @@ import { buildProofBundle } from "./proof.js";
 import { resolveSubmissionSource } from "./sealed-submission.js";
 import { scoreToWad } from "./staging.js";
 
+function warnLegacyScoringConfigFallback(input: {
+  challengeId: string;
+  specCid: string;
+}) {
+  process.emitWarning(
+    "Challenge is missing cached scoring config; falling back to the IPFS spec.",
+    {
+      code: "AGORA_SCORER_LEGACY_SPEC_FALLBACK",
+      detail: `Backfill the cached scoring config for challenge ${input.challengeId}. specCid=${input.specCid}`,
+    },
+  );
+}
+
 export interface OracleScoreInput {
   /** Supabase client (service-key level). */
   db: AgoraDbClient;
@@ -89,9 +102,10 @@ export async function oracleScore(
     submissionContract: challenge.submission_contract_json,
     specCid: challenge.spec_cid,
     onLegacyFallback: (specCid) => {
-      console.warn(
-        `Challenge ${challenge.id} is missing cached scoring config; falling back to IPFS spec fetch for ${specCid}.`,
-      );
+      warnLegacyScoringConfigFallback({
+        challengeId: challenge.id,
+        specCid,
+      });
     },
   });
   const submissionSource = await resolveSubmissionSource({

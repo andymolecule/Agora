@@ -16,6 +16,7 @@ export interface SubmissionRow {
   challenge_id: string;
   on_chain_sub_id: number;
   solver_address: string;
+  trace_id?: string | null;
   result_cid: string | null;
   result_format?: string | null;
   proof_bundle_cid?: string | null;
@@ -25,6 +26,7 @@ export interface ScoreJobRow {
   id: string;
   submission_id: string;
   challenge_id: string;
+  trace_id?: string | null;
   attempts: number;
   max_attempts: number;
   score_tx_hash: string | null;

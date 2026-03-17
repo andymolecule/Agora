@@ -10,9 +10,17 @@ import { http, createPublicClient } from "viem";
 import {
   applyConfigToEnv,
   getConfigPath,
+  getEnvReferenceName,
   loadCliConfig,
+  resolveConfigValue,
 } from "../lib/config-store";
 import { printJson, printTable } from "../lib/output";
+import {
+  deriveWalletAddress,
+  formatWalletGasBalance,
+  getGasTopUpHint,
+  readWalletGasBalance,
+} from "../lib/wallet";
 
 interface DoctorCheck {
   name: string;
@@ -57,6 +65,68 @@ function pullOfficialImageAnonymously(image: string) {
   }
 }
 
+export async function checkApiHealth(
+  apiUrl: string,
+  fetchImpl: typeof fetch = fetch,
+) {
+  const baseUrl = apiUrl.replace(/\/$/, "");
+  const endpoints = [
+    {
+      label: "/healthz",
+      url: `${baseUrl}/healthz`,
+      detail: "healthz ok",
+    },
+    {
+      label: "/api/healthz",
+      url: `${baseUrl}/api/healthz`,
+      detail: "api/healthz ok via web proxy",
+    },
+  ];
+  const failures: string[] = [];
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetchImpl(endpoint.url, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (response.ok) {
+        return endpoint.detail;
+      }
+      failures.push(`${endpoint.label} returned ${response.status}`);
+    } catch (error) {
+      failures.push(
+        `${endpoint.label} ${
+          error instanceof Error ? error.message : "request failed"
+        }`,
+      );
+    }
+  }
+
+  throw new Error(failures.join("; "));
+}
+
+export async function checkSubmissionPublicKey(
+  apiUrl: string,
+  fetchImpl: typeof fetch = fetch,
+) {
+  const baseUrl = apiUrl.replace(/\/$/, "");
+  const response = await fetchImpl(`${baseUrl}/api/submissions/public-key`, {
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!response.ok) {
+    throw new Error(`/api/submissions/public-key returned ${response.status}`);
+  }
+  const payload = (await response.json().catch(() => null)) as {
+    data?: {
+      kid?: string;
+      version?: string;
+    };
+  } | null;
+  const kid = payload?.data?.kid ?? "unknown";
+  const version = payload?.data?.version ?? "unknown";
+  return `kid=${kid}, version=${version}`;
+}
+
 export function buildDoctorCommand() {
   const cmd = new Command("doctor")
     .description("Validate Agora CLI configuration and connectivity")
@@ -73,6 +143,11 @@ export function buildDoctorCommand() {
       });
 
       const config = loadCliConfig();
+      const resolvedPrivateKey = resolveConfigValue(config.private_key);
+      const privateKeyEnvName = getEnvReferenceName(config.private_key);
+      const walletAddress = isPrivateKey(resolvedPrivateKey)
+        ? deriveWalletAddress(resolvedPrivateKey).toLowerCase()
+        : null;
       applyConfigToEnv(config);
 
       checks.push({
@@ -135,10 +210,17 @@ export function buildDoctorCommand() {
       });
       checks.push({
         name: "Private key",
-        status: isPrivateKey(config.private_key) ? "ok" : "warn",
-        detail: isPrivateKey(config.private_key)
+        status: isPrivateKey(resolvedPrivateKey) ? "ok" : "warn",
+        detail: isPrivateKey(resolvedPrivateKey)
           ? "configured"
-          : "AGORA_PRIVATE_KEY missing or invalid",
+          : privateKeyEnvName
+            ? `${privateKeyEnvName} is missing or invalid`
+            : "AGORA_PRIVATE_KEY missing or invalid",
+      });
+      checks.push({
+        name: "Wallet address",
+        status: walletAddress ? "ok" : "skip",
+        detail: walletAddress ?? "Private key not configured",
       });
       checks.push({
         name: "Solver path ready",
@@ -147,7 +229,7 @@ export function buildDoctorCommand() {
           Boolean(config.rpc_url) &&
           isHexAddress(config.factory_address) &&
           isHexAddress(config.usdc_address) &&
-          isPrivateKey(config.private_key)
+          isPrivateKey(resolvedPrivateKey)
             ? "ok"
             : "warn",
         detail:
@@ -156,19 +238,11 @@ export function buildDoctorCommand() {
 
       if (config.api_url) {
         try {
-          const response = await fetch(
-            `${config.api_url.replace(/\/$/, "")}/healthz`,
-            {
-              signal: AbortSignal.timeout(5000),
-            },
-          );
-          if (!response.ok) {
-            throw new Error(`healthz returned ${response.status}`);
-          }
+          const detail = await checkApiHealth(config.api_url);
           checks.push({
             name: "API connectivity",
             status: "ok",
-            detail: "healthz ok",
+            detail,
           });
         } catch (error) {
           checks.push({
@@ -181,6 +255,32 @@ export function buildDoctorCommand() {
       } else {
         checks.push({
           name: "API connectivity",
+          status: "skip",
+          detail: "API URL not configured",
+        });
+      }
+
+      if (config.api_url) {
+        try {
+          const detail = await checkSubmissionPublicKey(config.api_url);
+          checks.push({
+            name: "Submission sealing key",
+            status: "ok",
+            detail,
+          });
+        } catch (error) {
+          checks.push({
+            name: "Submission sealing key",
+            status: "error",
+            detail:
+              error instanceof Error
+                ? error.message
+                : "public-key request failed",
+          });
+        }
+      } else {
+        checks.push({
+          name: "Submission sealing key",
           status: "skip",
           detail: "API URL not configured",
         });
@@ -213,6 +313,35 @@ export function buildDoctorCommand() {
           name: "RPC connectivity",
           status: "skip",
           detail: "RPC URL not configured",
+        });
+      }
+
+      if (config.rpc_url && walletAddress) {
+        try {
+          const balance = await readWalletGasBalance(walletAddress);
+          const faucet = getGasTopUpHint(config.chain_id);
+          const faucetDetail =
+            balance === 0n && faucet ? `; top up via ${faucet}` : "";
+          checks.push({
+            name: "Wallet gas balance",
+            status: balance > 0n ? "ok" : "warn",
+            detail: `${formatWalletGasBalance(balance)}${faucetDetail}`,
+          });
+        } catch (error) {
+          checks.push({
+            name: "Wallet gas balance",
+            status: "error",
+            detail:
+              error instanceof Error ? error.message : "balance lookup failed",
+          });
+        }
+      } else {
+        checks.push({
+          name: "Wallet gas balance",
+          status: "skip",
+          detail: walletAddress
+            ? "RPC URL not configured"
+            : "Wallet not configured",
         });
       }
 

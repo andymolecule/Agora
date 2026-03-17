@@ -6,6 +6,13 @@ import {
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { jsonError, toApiErrorResponse } from "./lib/api-error.js";
+import {
+  captureApiException,
+  createApiRequestObservabilityMiddleware,
+  getRequestId,
+  getRequestLogger,
+  initApiObservability,
+} from "./lib/observability.js";
 import { buildOpenApiDocument } from "./lib/openapi.js";
 import { buildX402Metadata, createX402Middleware } from "./middleware/x402.js";
 import agentChallengeRoutes from "./routes/agent-challenges.js";
@@ -25,8 +32,11 @@ import type { ApiEnv } from "./types.js";
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
 export function createApp() {
   const runtimeConfig = readApiServerRuntimeConfig();
+  initApiObservability();
   const app = new Hono<ApiEnv>();
   const x402Middleware = createX402Middleware();
+
+  app.use("*", createApiRequestObservabilityMiddleware());
 
   app.use(
     "*",
@@ -45,7 +55,9 @@ export function createApp() {
         "X-PAYMENT",
         "X-PAYMENT-RESPONSE",
         "X-402-PAYMENT",
+        "X-Request-Id",
       ],
+      exposeHeaders: ["X-Request-Id"],
       credentials: true,
     }),
   );
@@ -101,7 +113,15 @@ export function createApp() {
   );
 
   app.onError((error, c) => {
+    captureApiException(error, {
+      service: "api",
+      logger: getRequestLogger(c),
+      requestId: getRequestId(c),
+      method: c.req.method,
+      path: new URL(c.req.url).pathname,
+    });
     const response = toApiErrorResponse(error);
+    c.header("x-request-id", getRequestId(c));
     return c.json(response.body, response.status);
   });
 

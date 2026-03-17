@@ -30,6 +30,11 @@ import {
   isRemoteExecutorConfigured,
   preflightOfficialScorerImages,
 } from "@agora/scorer";
+import {
+  captureApiException,
+  initWorkerObservability,
+  workerLogger,
+} from "../lib/observability.js";
 import { sweepChallengeLifecycle } from "./chain.js";
 import { processJob } from "./jobs.js";
 import { sleep } from "./policy.js";
@@ -48,11 +53,13 @@ export const WORKER_STARTING_READINESS_ERROR =
 const WORKER_HOST = os.hostname();
 
 class WorkerFatalExitError extends Error {}
+const structuredWorkerLogger = workerLogger.child({
+  workerId: LOG_WORKER_ID,
+  host: WORKER_HOST,
+});
 
 const log: WorkerLogFn = (level, message, meta) => {
-  const ts = new Date().toISOString();
-  const metaStr = meta ? ` ${JSON.stringify(meta)}` : "";
-  console[level](`[${ts}] [${LOG_WORKER_ID}] ${message}${metaStr}`);
+  structuredWorkerLogger[level](meta ?? {}, message);
 };
 
 export { resolveRunnerPolicyForChallenge };
@@ -83,6 +90,7 @@ function startJobLeaseHeartbeat(
         log("warn", "Job lease heartbeat lost ownership", {
           jobId: job.id,
           submissionId: job.submission_id,
+          traceId: job.trace_id ?? null,
           workerId: claimWorkerId,
         });
       }
@@ -91,6 +99,7 @@ function startJobLeaseHeartbeat(
         log("warn", "Job lease heartbeat failed", {
           jobId: job.id,
           submissionId: job.submission_id,
+          traceId: job.trace_id ?? null,
           error: error instanceof Error ? error.message : String(error),
         });
       }
@@ -333,7 +342,9 @@ async function refreshWorkerRuntimeReadiness(
   },
   log: WorkerLogFn,
 ) {
-  if (!(await ensureWorkerRuntimeIsActive(db, runtimeWorkerId, runtimeState, log))) {
+  if (
+    !(await ensureWorkerRuntimeIsActive(db, runtimeWorkerId, runtimeState, log))
+  ) {
     return 0;
   }
 
@@ -408,6 +419,7 @@ async function refreshWorkerRuntimeReadiness(
 }
 
 export async function startWorker() {
+  initWorkerObservability();
   const config = loadConfig();
   const timing = readWorkerTimingConfig();
 
@@ -576,6 +588,7 @@ export async function startWorker() {
           log("info", `Claimed job ${job.id}`, {
             submissionId: job.submission_id,
             challengeId: job.challenge_id,
+            traceId: job.trace_id ?? null,
             attempt: job.attempts,
             maxAttempts: job.max_attempts,
             claimWorkerId: runtimeWorkerId,
@@ -597,6 +610,14 @@ export async function startWorker() {
         if (error instanceof WorkerFatalExitError) {
           throw error;
         }
+        captureApiException(error, {
+          service: "worker",
+          logger: workerLogger,
+          bindings: {
+            event: "worker.loop.error",
+            workerId: LOG_WORKER_ID,
+          },
+        });
         log("error", "Worker loop error", {
           error: error instanceof Error ? error.message : String(error),
         });
@@ -618,6 +639,14 @@ export function maybeRunWorkerCli(importMetaUrl: string, argv1?: string) {
   if (!isEntrypoint) return;
 
   startWorker().catch((error) => {
+    captureApiException(error, {
+      service: "worker",
+      logger: workerLogger,
+      bindings: {
+        event: "worker.startup.failed",
+        workerId: LOG_WORKER_ID,
+      },
+    });
     log("error", "Worker failed to start", {
       error: error instanceof Error ? error.message : String(error),
     });

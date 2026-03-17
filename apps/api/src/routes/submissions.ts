@@ -1,7 +1,7 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import {
   type OnChainSubmission,
   getChallengeLifecycleState,
@@ -23,22 +23,28 @@ import {
   isValidPinnedSpecCid,
   loadConfig,
   resolveEvalSpec,
+  submissionCleanupRequestSchema,
   submissionIntentRequestSchema,
   submissionRegistrationRequestSchema,
 } from "@agora/common";
 import {
+  countSubmissionsByResultCid,
+  countUnmatchedSubmissionIntentsByResultCid,
   createSubmissionIntent,
   createSupabaseClient,
+  deleteUnmatchedSubmissionIntentById,
+  findOldestUnmatchedSubmissionIntent,
   getChallengeByContractAddress,
   getChallengeById,
   getProofBundleBySubmissionId,
   getScoreJobBySubmissionId,
   getSubmissionByChainId,
   getSubmissionById,
+  getSubmissionIntentById,
   reconcileSubmissionIntentMatch,
   upsertSubmissionOnChain,
 } from "@agora/db";
-import { getJSON, pinFile } from "@agora/ipfs";
+import { getJSON, pinFile, unpinCid } from "@agora/ipfs";
 import { zValidator } from "@hono/zod-validator";
 import { type Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
@@ -46,6 +52,7 @@ import { jsonError } from "../lib/api-error.js";
 import { getSession } from "../lib/auth-store.js";
 import { getMatchingOptionalSessionAddress } from "../lib/auth/session-policy.js";
 import { jsonWithEtag } from "../lib/http-cache.js";
+import { getRequestId, getRequestLogger } from "../lib/observability.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import { requireSiweSession } from "../middleware/siwe.js";
 import type { ApiEnv } from "../types.js";
@@ -56,6 +63,10 @@ import {
 } from "./challenges-shared.js";
 
 const SUBMISSION_INTENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const SUBMISSION_DEADLINE_SAFETY_WINDOW_MS = 45 * 1000;
+const SUBMISSION_WAIT_DEFAULT_TIMEOUT_SECONDS = 30;
+const SUBMISSION_WAIT_MAX_TIMEOUT_SECONDS = 60;
+const SUBMISSION_WAIT_POLL_INTERVAL_MS = 2_000;
 
 type PublicSubmissionVerification = {
   challengeId: string;
@@ -198,6 +209,18 @@ function toSubmissionStatusPayload(
     scoringStatus = "scored_awaiting_proof";
   }
 
+  const terminal =
+    scoringStatus === "complete" ||
+    scoreJob?.status === "failed" ||
+    scoreJob?.status === "skipped";
+  const recommendedPollSeconds = terminal
+    ? 60
+    : scoreJob?.status === "running"
+      ? 5
+      : scoreJob?.status === "queued"
+        ? 15
+        : 20;
+
   return {
     submission: {
       id: submission.id,
@@ -227,6 +250,39 @@ function toSubmissionStatusPayload(
         }
       : null,
     scoringStatus,
+    terminal,
+    recommendedPollSeconds,
+  };
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getSubmissionStatusSignature(
+  payload: ReturnType<typeof toSubmissionStatusPayload>,
+) {
+  return JSON.stringify({
+    scored: payload.submission.scored,
+    score: payload.submission.score,
+    scoringStatus: payload.scoringStatus,
+    terminal: payload.terminal,
+    jobStatus: payload.job?.status ?? null,
+    attempts: payload.job?.attempts ?? null,
+    lastError: payload.job?.lastError ?? null,
+    scoredAt: payload.submission.scored_at,
+  });
+}
+
+function withSubmissionWaitMetadata(
+  payload: ReturnType<typeof toSubmissionStatusPayload>,
+  waitedMs: number,
+  timedOut: boolean,
+) {
+  return {
+    ...payload,
+    waitedMs,
+    timedOut,
   };
 }
 
@@ -264,6 +320,42 @@ function normalizeUploadFileName(fileName: string | null) {
   return normalized.length > 0 ? normalized : "sealed-submission.json";
 }
 
+async function cleanupSubmissionArtifact(input: {
+  intentId?: string;
+  resultCid: string;
+}) {
+  const db = createSupabaseClient(true);
+  let deletedIntentId: string | null = null;
+
+  if (input.intentId) {
+    const deletedIntent = await deleteUnmatchedSubmissionIntentById(
+      db,
+      input.intentId,
+    );
+    deletedIntentId = deletedIntent?.id ?? null;
+  }
+
+  const [remainingIntents, persistedSubmissions] = await Promise.all([
+    countUnmatchedSubmissionIntentsByResultCid(db, input.resultCid, {
+      excludeIntentId: deletedIntentId ?? undefined,
+    }),
+    countSubmissionsByResultCid(db, input.resultCid),
+  ]);
+
+  if (remainingIntents > 0 || persistedSubmissions > 0) {
+    return {
+      cleanedIntent: Boolean(deletedIntentId),
+      unpinned: false,
+    };
+  }
+
+  await unpinCid(input.resultCid);
+  return {
+    cleanedIntent: Boolean(deletedIntentId),
+    unpinned: true,
+  };
+}
+
 export async function getSubmissionStatusData(submissionId: string) {
   const db = createSupabaseClient(true);
   const submission = await getSubmissionById(db, submissionId);
@@ -276,6 +368,55 @@ export async function getSubmissionStatusData(submissionId: string) {
     proofBundle,
     scoreJob,
   );
+}
+
+async function waitForSubmissionStatusData(input: {
+  submissionId: string;
+  timeoutSeconds: number;
+}) {
+  return waitForSubmissionStatusDataWithReader({
+    submissionId: input.submissionId,
+    timeoutSeconds: input.timeoutSeconds,
+    readStatus: getSubmissionStatusData,
+  });
+}
+
+export async function waitForSubmissionStatusDataWithReader(input: {
+  submissionId: string;
+  timeoutSeconds: number;
+  readStatus: (
+    submissionId: string,
+  ) => Promise<ReturnType<typeof toSubmissionStatusPayload>>;
+  sleepImpl?: (ms: number) => Promise<void>;
+}) {
+  const startedAt = Date.now();
+  const timeoutMs =
+    Math.min(
+      Math.max(1, Math.trunc(input.timeoutSeconds)),
+      SUBMISSION_WAIT_MAX_TIMEOUT_SECONDS,
+    ) * 1000;
+  const sleepImpl = input.sleepImpl ?? sleep;
+  const initial = await input.readStatus(input.submissionId);
+  if (initial.terminal) {
+    return withSubmissionWaitMetadata(initial, 0, false);
+  }
+
+  const initialSignature = getSubmissionStatusSignature(initial);
+  let latest = initial;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const remainingMs = timeoutMs - (Date.now() - startedAt);
+    await sleepImpl(
+      Math.min(SUBMISSION_WAIT_POLL_INTERVAL_MS, Math.max(1, remainingMs)),
+    );
+    latest = await input.readStatus(input.submissionId);
+    const signature = getSubmissionStatusSignature(latest);
+    if (latest.terminal || signature !== initialSignature) {
+      return withSubmissionWaitMetadata(latest, Date.now() - startedAt, false);
+    }
+  }
+
+  return withSubmissionWaitMetadata(latest, Date.now() - startedAt, true);
 }
 
 async function getSubmissionStatusDataByProtocolRefs(input: {
@@ -461,6 +602,37 @@ router.post(
   },
 );
 
+router.post(
+  "/cleanup",
+  requireWriteQuota("/api/submissions/cleanup"),
+  zValidator("json", submissionCleanupRequestSchema, (result, c) => {
+    if (!result.success) {
+      return jsonError(c, {
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message:
+          "Invalid submission cleanup payload. Next step: provide the pinned resultCid and retry.",
+        extras: { issues: result.error.issues },
+      });
+    }
+  }),
+  async (c) => {
+    const payload = c.req.valid("json");
+    try {
+      const data = await cleanupSubmissionArtifact(payload);
+      return c.json({ data });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonError(c, {
+        status: 500,
+        code: "SUBMISSION_CLEANUP_FAILED",
+        message: `Submission cleanup failed. Next step: inspect API IPFS credentials and retry. Details: ${message}`,
+        retriable: true,
+      });
+    }
+  },
+);
+
 router.get("/by-onchain/:challengeAddress/:subId/status", async (c) => {
   const challengeAddress = c.req.param("challengeAddress");
   const onChainSubmissionId = parseOnChainSubmissionId(c.req.param("subId"));
@@ -538,6 +710,27 @@ router.get("/:id/status", async (c) => {
   return jsonWithEtag(c, { data });
 });
 
+router.get("/:id/wait", async (c) => {
+  const rawTimeoutSeconds = c.req.query("timeout_seconds");
+  const timeoutSeconds = rawTimeoutSeconds
+    ? Number(rawTimeoutSeconds)
+    : SUBMISSION_WAIT_DEFAULT_TIMEOUT_SECONDS;
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
+    return jsonError(c, {
+      status: 400,
+      code: "INVALID_TIMEOUT",
+      message:
+        "Invalid timeout_seconds. Next step: provide a positive integer up to 60 seconds.",
+    });
+  }
+
+  const data = await waitForSubmissionStatusData({
+    submissionId: c.req.param("id"),
+    timeoutSeconds,
+  });
+  return c.json({ data });
+});
+
 router.get("/:id/public", async (c) => {
   const submissionId = c.req.param("id");
   const db = createSupabaseClient(true);
@@ -607,6 +800,7 @@ router.post(
       resultCid,
       resultFormat,
     } = c.req.valid("json");
+    const requestId = getRequestId(c);
     const normalizedResultCid = resultCid.trim();
     if (!isValidPinnedSpecCid(normalizedResultCid)) {
       return jsonError(c, {
@@ -657,18 +851,38 @@ router.post(
           "Challenge submission deadline has passed. Next step: do not submit on-chain; wait for scoring or create a new challenge.",
       });
     }
+    if (
+      window.deadlineMs <=
+      Date.now() + SUBMISSION_DEADLINE_SAFETY_WINDOW_MS
+    ) {
+      return jsonError(c, {
+        status: 409,
+        code: "CHALLENGE_DEADLINE_TOO_CLOSE",
+        message:
+          "Challenge deadline is too close to safely confirm a submission. Next step: submit earlier or choose another challenge.",
+      });
+    }
 
     const normalizedSolverAddress =
       sessionAddress ?? solverAddress.toLowerCase();
     const resultHash = computeSubmissionResultHash(normalizedResultCid);
-    const intent = await createSubmissionIntent(db, {
-      challenge_id: challenge.id,
-      solver_address: normalizedSolverAddress,
-      result_hash: resultHash,
-      result_cid: normalizedResultCid,
-      result_format: resultFormat ?? SUBMISSION_RESULT_FORMAT.plainV0,
-      expires_at: getSubmissionIntentExpiry({ deadlineMs: window.deadlineMs }),
-    });
+    const intent =
+      (await findOldestUnmatchedSubmissionIntent(db, {
+        challengeId: challenge.id,
+        solverAddress: normalizedSolverAddress,
+        resultHash,
+      })) ??
+      (await createSubmissionIntent(db, {
+        challenge_id: challenge.id,
+        solver_address: normalizedSolverAddress,
+        result_hash: resultHash,
+        result_cid: normalizedResultCid,
+        result_format: resultFormat ?? SUBMISSION_RESULT_FORMAT.plainV0,
+        expires_at: getSubmissionIntentExpiry({
+          deadlineMs: window.deadlineMs,
+        }),
+        trace_id: requestId,
+      }));
     const reconcileResult = await reconcileSubmissionIntentMatch(db, {
       challenge: {
         id: challenge.id,
@@ -679,6 +893,18 @@ router.post(
       solverAddress: normalizedSolverAddress,
       resultHash,
     });
+
+    getRequestLogger(c).info(
+      {
+        event: "submission.intent.created",
+        challengeId: challenge.id,
+        intentId: intent.id,
+        solverAddress: normalizedSolverAddress,
+        matchedSubmissionId: reconcileResult.submission?.id ?? null,
+        traceId: requestId,
+      },
+      "Submission intent created",
+    );
 
     return c.json({
       data: {
@@ -703,7 +929,9 @@ async function handleSubmissionRegistration(
 ) {
   const { challengeId, challengeAddress, resultCid, txHash, resultFormat } =
     payload;
+  const requestId = getRequestId(c);
   const normalizedResultCid = resultCid.trim();
+  const logger = getRequestLogger(c);
   if (!isValidPinnedSpecCid(normalizedResultCid)) {
     return jsonError(c, {
       status: 400,
@@ -736,7 +964,8 @@ async function handleSubmissionRegistration(
     return jsonError(c, {
       status: 400,
       code: "TRANSACTION_FAILED",
-      message: "Transaction failed.",
+      message:
+        "Submission transaction reverted on-chain. Next step: confirm the challenge is still open, the deadline has not passed, and the solver has remaining submission slots.",
     });
   }
   const resolvedChallengeAddress = (
@@ -847,6 +1076,7 @@ async function handleSubmissionRegistration(
     scored: onChain.scored,
     submitted_at: new Date(Number(onChain.submittedAt) * 1000).toISOString(),
     tx_hash: txHash,
+    trace_id: requestId,
   });
 
   const requestedResultFormat =
@@ -856,6 +1086,16 @@ async function handleSubmissionRegistration(
       submissionRow.result_cid === normalizedResultCid &&
       submissionRow.result_format === requestedResultFormat
     ) {
+      logger.info(
+        {
+          event: "submission.registration.replayed",
+          challengeId: challenge.id,
+          submissionId: submissionRow.id,
+          onChainSubmissionId: submissionRow.on_chain_sub_id,
+          txHash,
+        },
+        "Submission registration replay returned the existing row",
+      );
       return c.json(
         toSubmissionRegistrationResponse({
           submission: submissionRow,
@@ -895,9 +1135,24 @@ async function handleSubmissionRegistration(
       expires_at: getSubmissionIntentExpiry({
         deadlineMs: new Date(challenge.deadline).getTime(),
       }),
+      trace_id: requestId,
     });
     reconcileResult = await reconcileSubmissionIntentMatch(db, reconcileInput);
   }
+
+  logger.info(
+    {
+      event: "submission.registration.confirmed",
+      challengeId: challenge.id,
+      submissionId: submissionRow.id,
+      onChainSubmissionId: submissionRow.on_chain_sub_id,
+      txHash,
+      scoreJobAction: reconcileResult.scoreJobAction,
+      matchedSubmissionId: reconcileResult.submission?.id ?? null,
+      traceId: reconcileResult.submission?.trace_id ?? requestId,
+    },
+    "Submission registration confirmed",
+  );
   const submission =
     reconcileResult.submission &&
     (await getSubmissionById(db, reconcileResult.submission.id));

@@ -60,6 +60,9 @@ export function buildSubmitCommand() {
         printWarning(`On-chain submission id: ${result.onChainSubmissionId}`);
         if (result.submissionId) {
           printWarning(`Submission UUID: ${result.submissionId}`);
+          printWarning(
+            `Follow progress: agora submission-status ${result.submissionId} --watch`,
+          );
         }
         if (result.warning) {
           printWarning(result.warning);

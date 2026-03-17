@@ -1,12 +1,28 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { buildGetCommand } from "../src/commands/get.js";
+import { resolveDatasetFileName } from "../src/commands/get.js";
 import { buildListCommand } from "../src/commands/list.js";
 import { buildStatusCommand } from "../src/commands/status.js";
+import { buildSubmissionStatusCommand } from "../src/commands/submission-status.js";
 
 const challengeId = "11111111-1111-4111-8111-111111111111";
 const challengeAddress = "0x0000000000000000000000000000000000000001";
 const factoryAddress = "0x0000000000000000000000000000000000000002";
+const cliDir = path.resolve(import.meta.dirname ?? ".", "..");
+
+function withTempHome<T>(fn: (homeDir: string) => T) {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "agora-cli-home-"));
+  try {
+    return fn(homeDir);
+  } finally {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+}
 
 function withConsoleCapture(fn: () => Promise<void>) {
   const logs: string[] = [];
@@ -71,44 +87,244 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
   const originalEnv = { ...process.env };
   const originalFetch = global.fetch;
   process.env = { AGORA_API_URL: "https://api.example" };
-  global.fetch = async () =>
-    new Response(
-      JSON.stringify({
-        data: {
-          challenge: {
-            id: challengeId,
-            title: "Challenge",
-            description: "desc",
-            domain: "longevity",
-            challenge_type: "prediction",
-            reward_amount: 42,
-            deadline: "2026-03-20T00:00:00.000Z",
-            status: "open",
-            spec_cid: "ipfs://spec",
-            contract_address: challengeAddress,
-            factory_address: factoryAddress,
-            factory_challenge_id: 7,
-            refs: {
-              challengeId,
-              challengeAddress,
-              factoryAddress,
-              factoryChallengeId: 7,
+  global.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith(`/api/challenges/${challengeId}`)) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            challenge: {
+              id: challengeId,
+              title: "Challenge",
+              description: "desc",
+              domain: "longevity",
+              challenge_type: "prediction",
+              reward_amount: 42,
+              deadline: "2026-03-20T00:00:00.000Z",
+              status: "open",
+              submissions_count: 2,
+              spec_cid: "ipfs://spec",
+              contract_address: challengeAddress,
+              factory_address: factoryAddress,
+              factory_challenge_id: 7,
+              submission_contract: {
+                version: "v1",
+                kind: "csv_table",
+                file: {
+                  extension: ".csv",
+                  mime: "text/csv",
+                  max_bytes: 1024,
+                },
+                columns: {
+                  required: ["sample_id", "prediction"],
+                  id: "sample_id",
+                  value: "prediction",
+                  allow_extra: true,
+                },
+              },
+              refs: {
+                challengeId,
+                challengeAddress,
+                factoryAddress,
+                factoryChallengeId: 7,
+              },
             },
+            datasets: {
+              train_cid: null,
+              train_url: null,
+              test_cid: null,
+              test_url: null,
+              spec_cid: "ipfs://spec",
+              spec_url: "https://gateway/spec",
+            },
+            submissions: [
+              {
+                id: "22222222-2222-4222-8222-222222222222",
+                on_chain_sub_id: 0,
+                solver_address: "0x0000000000000000000000000000000000000003",
+                score: null,
+                scored: false,
+                submitted_at: "2026-03-19T00:00:00.000Z",
+              },
+            ],
+            leaderboard: [],
           },
-          datasets: {
-            train_cid: null,
-            train_url: null,
-            test_cid: null,
-            test_url: null,
-            spec_cid: "ipfs://spec",
-            spec_url: "https://gateway/spec",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    if (
+      url.endsWith(
+        "/api/submissions/22222222-2222-4222-8222-222222222222/status",
+      )
+    ) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            submission: {
+              id: "22222222-2222-4222-8222-222222222222",
+              challenge_id: challengeId,
+              challenge_address: challengeAddress,
+              on_chain_sub_id: 0,
+              solver_address: "0x0000000000000000000000000000000000000003",
+              score: null,
+              scored: false,
+              submitted_at: "2026-03-19T00:00:00.000Z",
+              scored_at: null,
+              refs: {
+                submissionId: "22222222-2222-4222-8222-222222222222",
+                challengeId,
+                challengeAddress,
+                onChainSubmissionId: 0,
+              },
+            },
+            proofBundle: null,
+            job: {
+              status: "queued",
+              attempts: 1,
+              maxAttempts: 3,
+              lastError: null,
+              nextAttemptAt: null,
+              lockedAt: null,
+            },
+            scoringStatus: "pending",
+            terminal: false,
+            recommendedPollSeconds: 15,
           },
-          submissions: [],
-          leaderboard: [],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    throw new Error(`Unexpected fetch URL: ${url}`);
+  };
+
+  try {
+    const getLogs = await withConsoleCapture(async () => {
+      await buildGetCommand().parseAsync([challengeId, "--format", "json"], {
+        from: "user",
+      });
+    });
+    const statusLogs = await withConsoleCapture(async () => {
+      await buildStatusCommand().parseAsync([challengeId, "--format", "json"], {
+        from: "user",
+      });
+    });
+    const submissionStatusLogs = await withConsoleCapture(async () => {
+      await buildSubmissionStatusCommand().parseAsync(
+        ["22222222-2222-4222-8222-222222222222", "--format", "json"],
+        {
+          from: "user",
         },
-      }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
+      );
+    });
+
+    const getPayload = JSON.parse(getLogs.join("\n")) as {
+      submissions: Array<{ on_chain_sub_id: number }>;
+      leaderboard: unknown[];
+    };
+    const statusPayload = JSON.parse(statusLogs.join("\n")) as {
+      submissions: number;
+      topScore: string | null;
+    };
+    const submissionStatusPayload = JSON.parse(
+      submissionStatusLogs.join("\n"),
+    ) as {
+      scoringStatus: string;
+      terminal: boolean;
+      job: { status: string } | null;
+    };
+
+    assert.equal(getPayload.submissions[0]?.on_chain_sub_id, 0);
+    assert.deepEqual(getPayload.leaderboard, []);
+    assert.equal(statusPayload.submissions, 2);
+    assert.equal(statusPayload.topScore, null);
+    assert.equal(submissionStatusPayload.scoringStatus, "pending");
+    assert.equal(submissionStatusPayload.terminal, false);
+    assert.equal(submissionStatusPayload.job?.status, "queued");
+  } finally {
+    process.env = originalEnv;
+    global.fetch = originalFetch;
+  }
+});
+
+test("status and get commands expose solver-specific submission limits and claimable payout", async () => {
+  const originalEnv = { ...process.env };
+  const originalFetch = global.fetch;
+  process.env = {
+    AGORA_API_URL: "https://api.example",
+    AGORA_PRIVATE_KEY:
+      "0x1111111111111111111111111111111111111111111111111111111111111111",
+  };
+  global.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith(`/api/challenges/${challengeId}`)) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            challenge: {
+              id: challengeId,
+              title: "Challenge",
+              description: "desc",
+              domain: "longevity",
+              challenge_type: "prediction",
+              reward_amount: 42,
+              deadline: "2026-03-20T00:00:00.000Z",
+              status: "finalized",
+              submissions_count: 2,
+              spec_cid: "ipfs://spec",
+              contract_address: challengeAddress,
+              factory_address: factoryAddress,
+              factory_challenge_id: 7,
+              refs: {
+                challengeId,
+                challengeAddress,
+                factoryAddress,
+                factoryChallengeId: 7,
+              },
+            },
+            datasets: {
+              train_cid: null,
+              train_url: null,
+              test_cid: null,
+              test_url: null,
+              spec_cid: "ipfs://spec",
+              spec_url: "https://gateway/spec",
+            },
+            submissions: [],
+            leaderboard: [],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    if (
+      url.includes(
+        `/api/challenges/${challengeId}/solver-status?solver_address=`,
+      )
+    ) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            challenge_id: challengeId,
+            challenge_address: challengeAddress,
+            solver_address: "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",
+            status: "finalized",
+            max_submissions_per_solver: 3,
+            submissions_used: 2,
+            submissions_remaining: 1,
+            has_reached_submission_limit: false,
+            can_submit: false,
+            claimable: "5000000",
+            can_claim: true,
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    throw new Error(`Unexpected fetch URL: ${url}`);
+  };
 
   try {
     const getLogs = await withConsoleCapture(async () => {
@@ -122,10 +338,190 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
       });
     });
 
-    assert.match(getLogs.join("\n"), new RegExp(challengeId));
-    assert.match(statusLogs.join("\n"), /countdown/);
+    const getPayload = JSON.parse(getLogs.join("\n")) as {
+      solver: { claimable: string; submissions_remaining: number };
+    };
+    const statusPayload = JSON.parse(statusLogs.join("\n")) as {
+      solver: { can_claim: boolean; submissions_used: number };
+    };
+
+    assert.equal(getPayload.solver.claimable, "5000000");
+    assert.equal(getPayload.solver.submissions_remaining, 1);
+    assert.equal(statusPayload.solver.can_claim, true);
+    assert.equal(statusPayload.solver.submissions_used, 2);
   } finally {
     process.env = originalEnv;
     global.fetch = originalFetch;
   }
+});
+
+test("submission-status --watch waits for a terminal state", async () => {
+  const originalEnv = { ...process.env };
+  const originalFetch = global.fetch;
+  process.env = { AGORA_API_URL: "https://api.example" };
+  let calls = 0;
+  global.fetch = async (input) => {
+    calls += 1;
+    const url = String(input);
+    assert.match(
+      url,
+      /\/api\/submissions\/22222222-2222-4222-8222-222222222222\/wait\?timeout_seconds=/,
+    );
+    return new Response(
+      JSON.stringify({
+        data: {
+          submission: {
+            id: "22222222-2222-4222-8222-222222222222",
+            challenge_id: challengeId,
+            challenge_address: challengeAddress,
+            on_chain_sub_id: 0,
+            solver_address: "0x0000000000000000000000000000000000000003",
+            score: calls >= 2 ? "100" : null,
+            scored: calls >= 2,
+            submitted_at: "2026-03-19T00:00:00.000Z",
+            scored_at: calls >= 2 ? "2026-03-19T00:10:00.000Z" : null,
+            refs: {
+              submissionId: "22222222-2222-4222-8222-222222222222",
+              challengeId,
+              challengeAddress,
+              onChainSubmissionId: 0,
+            },
+          },
+          proofBundle: calls >= 2 ? { reproducible: true } : null,
+          job:
+            calls >= 2
+              ? {
+                  status: "scored",
+                  attempts: 1,
+                  maxAttempts: 3,
+                  lastError: null,
+                  nextAttemptAt: null,
+                  lockedAt: null,
+                }
+              : {
+                  status: "running",
+                  attempts: 1,
+                  maxAttempts: 3,
+                  lastError: null,
+                  nextAttemptAt: null,
+                  lockedAt: null,
+                },
+          scoringStatus: calls >= 2 ? "complete" : "pending",
+          terminal: calls >= 2,
+          recommendedPollSeconds: 1,
+          waitedMs: calls >= 2 ? 100 : 1_000,
+          timedOut: calls < 2,
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  try {
+    const logs = await withConsoleCapture(async () => {
+      await buildSubmissionStatusCommand().parseAsync(
+        [
+          "22222222-2222-4222-8222-222222222222",
+          "--watch",
+          "--timeout-seconds",
+          "5",
+          "--format",
+          "json",
+        ],
+        {
+          from: "user",
+        },
+      );
+    });
+    const payload = JSON.parse(logs.join("\n")) as {
+      terminal: boolean;
+      scoringStatus: string;
+    };
+
+    assert.equal(calls, 2);
+    assert.equal(payload.terminal, true);
+    assert.equal(payload.scoringStatus, "complete");
+  } finally {
+    process.env = originalEnv;
+    global.fetch = originalFetch;
+  }
+});
+
+test("config set help documents env private key refs", () => {
+  withTempHome((homeDir) => {
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "src/index.ts", "config", "set", "--help"],
+      {
+        cwd: cliDir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          HOME: homeDir,
+        },
+      },
+    );
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stdout, /env:AGORA_PRIVATE_KEY/);
+  });
+});
+
+test("top-level CLI emits machine-readable JSON errors", () => {
+  withTempHome((homeDir) => {
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "src/index.ts",
+        "submission-status",
+        "22222222-2222-4222-8222-222222222222",
+        "--format",
+        "json",
+      ],
+      {
+        cwd: cliDir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          HOME: homeDir,
+          AGORA_API_URL: "",
+        },
+      },
+    );
+
+    assert.notEqual(result.status, 0);
+    const payload = JSON.parse(result.stderr) as {
+      code: string;
+      nextAction: string;
+    };
+    assert.equal(payload.code, "CONFIG_MISSING");
+    assert.match(payload.nextAction, /agora config init/i);
+  });
+});
+
+test("dataset downloads prefer the submission contract extension over .data", () => {
+  const resolved = resolveDatasetFileName({
+    source: "ipfs://bafytraincid",
+    baseName: "train",
+    challenge: {
+      id: challengeId,
+      title: "Challenge",
+      domain: "longevity",
+      challenge_type: "prediction",
+      reward_amount: 42,
+      deadline: "2026-03-20T00:00:00.000Z",
+      status: "open",
+      spec_cid: "ipfs://spec",
+      submission_contract: {
+        kind: "csv_table",
+        file: {
+          extension: ".csv",
+        },
+      },
+    },
+  });
+
+  assert.equal(resolved, "train.csv");
 });

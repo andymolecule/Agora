@@ -35,10 +35,15 @@ test("toPrivateSubmission normalizes numeric scores to strings", () => {
 });
 
 test("listChallengesFromQuery normalizes numeric reward fields for API consumers", async () => {
+  let createSupabaseClientArg: boolean | undefined;
   const rows = await listChallengesFromQuery(
     {},
     {
-      createSupabaseClient: (() => ({}) as never) as never,
+      createSupabaseClient: ((useServiceKey?: boolean) => {
+        createSupabaseClientArg = useServiceKey;
+        return {} as never;
+      }) as never,
+      countSubmissionsForChallenge: (async () => 0) as never,
       getChallengeByContractAddress: (async () => ({}) as never) as never,
       getChallengeById: (async () => ({}) as never) as never,
       getChallengeLifecycleState: (async () => ({}) as never) as never,
@@ -64,6 +69,7 @@ test("listChallengesFromQuery normalizes numeric reward fields for API consumers
   assert.equal(rows.length, 1);
   assert.equal(rows[0]?.reward_amount, 500);
   assert.equal(typeof rows[0]?.reward_amount, "number");
+  assert.equal(createSupabaseClientArg, true);
 });
 
 test("listChallengesFromQuery floors submissions_count from winning_on_chain_sub_id", async () => {
@@ -71,6 +77,7 @@ test("listChallengesFromQuery floors submissions_count from winning_on_chain_sub
     {},
     {
       createSupabaseClient: (() => ({}) as never) as never,
+      countSubmissionsForChallenge: (async () => 0) as never,
       getChallengeByContractAddress: (async () => ({}) as never) as never,
       getChallengeById: (async () => ({}) as never) as never,
       getChallengeLifecycleState: (async () => ({}) as never) as never,

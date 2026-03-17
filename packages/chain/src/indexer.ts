@@ -37,11 +37,17 @@ import {
   rewindStartBlock,
   sleep,
 } from "./indexer/polling.js";
+import {
+  captureIndexerException,
+  indexerLogger,
+  initIndexerObservability,
+} from "./observability.js";
 
 const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 export async function runIndexer() {
+  await initIndexerObservability();
   const config = loadConfig();
   const pollingConfig = resolveIndexerPollingConfig(config);
   const publicClient = getPublicClient();
@@ -83,7 +89,13 @@ export async function runIndexer() {
 
   let pollCount = 0;
 
-  console.log("[indexer] runtime identity", getAgoraRuntimeIdentity(config));
+  indexerLogger.info(
+    {
+      event: "indexer.startup",
+      runtimeIdentity: getAgoraRuntimeIdentity(config),
+    },
+    "Indexer runtime identity",
+  );
 
   while (true) {
     try {
@@ -94,8 +106,16 @@ export async function runIndexer() {
           : BigInt(0);
 
       if (pollCount === 0 || pollCount % 10 === 0) {
-        console.log(
-          `[indexer] poll #${pollCount} from=${fromBlock} to=${toBlock} head=${chainHead}`,
+        indexerLogger.info(
+          {
+            event: "indexer.poll",
+            pollCount,
+            fromBlock: fromBlock.toString(),
+            toBlock: toBlock.toString(),
+            chainHead: chainHead.toString(),
+            lagBlocks: (chainHead - toBlock).toString(),
+          },
+          "Indexer poll",
         );
       }
       pollCount++;
@@ -103,8 +123,13 @@ export async function runIndexer() {
       // Reorg safety: if our cursor is ahead of the confirmed chain tip,
       // a reorg has moved the chain behind us. Rewind to the safe tip.
       if (fromBlock > toBlock + BigInt(1)) {
-        console.warn(
-          `[indexer] possible reorg: cursor ${fromBlock} > confirmed tip ${toBlock}. Rewinding.`,
+        indexerLogger.warn(
+          {
+            event: "indexer.reorg_detected",
+            cursorBlock: fromBlock.toString(),
+            confirmedTipBlock: toBlock.toString(),
+          },
+          "Indexer cursor moved past the confirmed chain tip",
         );
         fromBlock = toBlock > BigInt(0) ? toBlock : BigInt(0);
         await setIndexerCursor(db, cursorKey, fromBlock);
@@ -190,12 +215,13 @@ export async function runIndexer() {
           }
 
           if (needsRepair) {
-            console.warn(
-              "[indexer] challenge projection drift detected; running targeted repair",
+            indexerLogger.warn(
               {
+                event: "indexer.challenge_projection_drift",
                 challengeId: challenge.id,
                 challengeAddress,
               },
+              "Challenge projection drift detected; running targeted repair",
             );
             try {
               const reconcileResult = await reconcileChallengeProjection({
@@ -210,22 +236,30 @@ export async function runIndexer() {
                 challengePersistTargets.delete(challengeCursorKey);
               }
             } catch (error) {
-              console.error("[indexer] targeted challenge repair failed", {
-                challengeId: challenge.id,
-                challengeAddress,
-                error: error instanceof Error ? error.message : String(error),
-              });
+              indexerLogger.error(
+                {
+                  event: "indexer.challenge_projection_repair_failed",
+                  challengeId: challenge.id,
+                  challengeAddress,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                "Targeted challenge repair failed",
+              );
               resolvedChallengeKeys.delete(challengeCursorKey);
               challengePersistTargets.delete(challengeCursorKey);
             }
           }
         }
       } catch (challengePollError) {
-        console.error(
-          "[indexer] challenge polling failed (factory ingestion unaffected)",
-          challengePollError instanceof Error
-            ? challengePollError.message
-            : String(challengePollError),
+        indexerLogger.error(
+          {
+            event: "indexer.challenge_poll.failed",
+            error:
+              challengePollError instanceof Error
+                ? challengePollError.message
+                : String(challengePollError),
+          },
+          "Challenge polling failed; factory ingestion remains active",
         );
         // Reset tracking so cursor persist still runs cleanly below
         resolvedChallengeKeys = new Set<string>();
@@ -252,10 +286,13 @@ export async function runIndexer() {
         pollingConfig,
       });
     } catch (error) {
-      console.error(
-        "[indexer] poll failed",
-        error instanceof Error ? error.message : String(error),
-      );
+      captureIndexerException(error, {
+        logger: indexerLogger,
+        bindings: {
+          event: "indexer.poll.failed",
+          pollCount,
+        },
+      });
     }
 
     await sleep(POLL_INTERVAL_MS);
@@ -268,10 +305,10 @@ const isEntrypoint =
 
 if (isEntrypoint) {
   runIndexer().catch((error) => {
-    console.error(
-      "Indexer failed",
-      error instanceof Error ? error.message : String(error),
-    );
+    captureIndexerException(error, {
+      logger: indexerLogger,
+      bindings: { event: "indexer.startup.failed" },
+    });
     process.exit(1);
   });
 }

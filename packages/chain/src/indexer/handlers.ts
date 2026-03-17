@@ -38,6 +38,7 @@ import {
   getOnChainSubmission,
 } from "../challenge.js";
 import type { getPublicClient } from "../client.js";
+import { indexerLogger } from "../observability.js";
 import {
   type IndexerPollingConfig,
   chunkedGetLogs,
@@ -546,12 +547,13 @@ export async function resolveChallengeInitialFromBlock(
     if (isRetryableError(error)) {
       throw error;
     }
-    console.warn(
-      "Failed to resolve challenge creation block; falling back to global cursor",
+    indexerLogger.warn(
       {
+        event: "indexer.challenge_creation_block_fallback",
         txHash: challengeTxHash,
         error: error instanceof Error ? error.message : String(error),
       },
+      "Failed to resolve challenge creation block; falling back to the global cursor",
     );
     return fallbackFromBlock;
   }
@@ -649,14 +651,15 @@ export async function processFactoryLog(input: {
         return;
       }
       if (retry.exhausted) {
-        console.error(
-          "Retryable factory event exhausted max attempts; marking invalid",
+        indexerLogger.error(
           {
+            event: "indexer.factory_event.retry_exhausted",
             eventName: log.eventName,
             txHash,
             logIndex,
             attempts: retry.attempts,
           },
+          "Retryable factory event exhausted max attempts; marking invalid",
         );
         await markEventIndexed(
           db,
@@ -668,9 +671,9 @@ export async function processFactoryLog(input: {
         );
         return;
       }
-      console.warn(
-        "Retryable factory event processing error; scheduling retry",
+      indexerLogger.warn(
         {
+          event: "indexer.factory_event.retry_scheduled",
           eventName: log.eventName,
           txHash,
           logIndex,
@@ -678,15 +681,20 @@ export async function processFactoryLog(input: {
           retryInMs: retry.waitMs,
           error: error instanceof Error ? error.message : String(error),
         },
+        "Retryable factory event processing error; scheduling retry",
       );
       return;
     }
-    console.error("Failed to process factory event", {
-      eventName: log.eventName,
-      txHash,
-      logIndex,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    indexerLogger.error(
+      {
+        event: "indexer.factory_event.invalid",
+        eventName: log.eventName,
+        txHash,
+        logIndex,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "Failed to process factory event",
+    );
     await markEventIndexed(
       db,
       txHash,
@@ -775,15 +783,24 @@ export async function processChallengeLog(input: {
         resultHash: submission.resultHash,
       });
       if (reconcileResult.warning) {
-        console.warn("Submission scoring skipped by limits", {
-          challengeId: challenge.id,
-          submissionId: Number(submissionId),
-          solver: submission.solver,
-          reason: reconcileResult.warning,
-          scoreJobAction: reconcileResult.scoreJobAction,
-          matchedIntent: reconcileResult.matched,
-          submissionRowId: row.id,
-        });
+        indexerLogger.warn(
+          {
+            event: "indexer.submission.skipped_by_limits",
+            challengeId: challenge.id,
+            submissionId: Number(submissionId),
+            solver: submission.solver,
+            traceId:
+              reconcileResult.submission?.trace_id ??
+              reconcileResult.intent?.trace_id ??
+              row.trace_id ??
+              null,
+            reason: reconcileResult.warning,
+            scoreJobAction: reconcileResult.scoreJobAction,
+            matchedIntent: reconcileResult.matched,
+            submissionRowId: row.id,
+          },
+          "Submission scoring skipped by configured limits",
+        );
       }
     }
 
@@ -901,14 +918,15 @@ export async function processChallengeLog(input: {
       );
       if (updatedPayoutRows === 0) {
         needsRepair = true;
-        console.warn(
-          "Challenge payout claim arrived without projected payout rows",
+        indexerLogger.warn(
           {
+            event: "indexer.challenge_payout_projection_missing",
             challengeId: challenge.id,
             challengeAddress,
             claimant,
             txHash,
           },
+          "Challenge payout claim arrived without projected payout rows",
         );
       }
     }
@@ -947,9 +965,9 @@ export async function processChallengeLog(input: {
         return { needsRepair: false };
       }
       if (retry.exhausted) {
-        console.error(
-          "Retryable challenge event exhausted max attempts; marking invalid",
+        indexerLogger.error(
           {
+            event: "indexer.challenge_event.retry_exhausted",
             challengeId: challenge.id,
             challengeAddress,
             eventName: log.eventName,
@@ -957,6 +975,7 @@ export async function processChallengeLog(input: {
             logIndex,
             attempts: retry.attempts,
           },
+          "Retryable challenge event exhausted max attempts; marking invalid",
         );
         await markEventIndexed(
           db,
@@ -969,9 +988,9 @@ export async function processChallengeLog(input: {
         challengePersistTargets.delete(challengeCursorKey);
         return { needsRepair: false };
       }
-      console.warn(
-        "Retryable challenge event processing error; scheduling retry",
+      indexerLogger.warn(
         {
+          event: "indexer.challenge_event.retry_scheduled",
           challengeId: challenge.id,
           challengeAddress,
           eventName: log.eventName,
@@ -981,17 +1000,22 @@ export async function processChallengeLog(input: {
           retryInMs: retry.waitMs,
           error: error instanceof Error ? error.message : String(error),
         },
+        "Retryable challenge event processing error; scheduling retry",
       );
       return { needsRepair: false };
     }
-    console.error("Failed to process challenge event", {
-      challengeId: challenge.id,
-      challengeAddress,
-      eventName: log.eventName,
-      txHash,
-      logIndex,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    indexerLogger.error(
+      {
+        event: "indexer.challenge_event.invalid",
+        challengeId: challenge.id,
+        challengeAddress,
+        eventName: log.eventName,
+        txHash,
+        logIndex,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "Failed to process challenge event",
+    );
     await markEventIndexed(
       db,
       txHash,
@@ -1040,12 +1064,13 @@ export async function loadChallengeCursor(input: {
       resolvedChallengeKeys.add(challengeCursorKey);
     } catch {
       challengeFromBlock = fromBlock;
-      console.warn(
-        "Skipping cursor persist for challenge with failed bootstrap",
+      indexerLogger.warn(
         {
+          event: "indexer.challenge_cursor.bootstrap_failed",
           challengeId: challenge.id,
           challengeAddress,
         },
+        "Skipping cursor persist for challenge with failed bootstrap",
       );
     }
   }

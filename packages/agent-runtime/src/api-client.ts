@@ -1,4 +1,5 @@
 import {
+  AGORA_ERROR_CODES,
   type AgentChallengesQuery,
   AgoraError,
   agentChallengeDetailResponseSchema,
@@ -7,8 +8,11 @@ import {
   apiErrorResponseSchema,
   challengeRegistrationRequestSchema,
   challengeRegistrationResponseSchema,
+  challengeSolverStatusResponseSchema,
   indexerHealthResponseSchema,
   readApiClientRuntimeConfig,
+  submissionCleanupRequestSchema,
+  submissionCleanupResponseSchema,
   submissionIntentRequestSchema,
   submissionIntentResponseSchema,
   submissionPublicKeyResponseSchema,
@@ -16,6 +20,7 @@ import {
   submissionRegistrationResponseSchema,
   submissionStatusResponseSchema,
   submissionUploadResponseSchema,
+  submissionWaitStatusResponseSchema,
 } from "@agora/common";
 
 function isAddressRef(value: string) {
@@ -25,11 +30,23 @@ function isAddressRef(value: string) {
 function resolveApiUrl(explicitApiUrl?: string) {
   const apiUrl = explicitApiUrl ?? readApiClientRuntimeConfig().apiUrl;
   if (!apiUrl) {
-    throw new Error(
-      "AGORA_API_URL is required for API requests. Next step: set AGORA_API_URL and retry.",
-    );
+    throw new AgoraError("AGORA_API_URL is required for API requests.", {
+      code: AGORA_ERROR_CODES.configMissing,
+      nextAction: "Set AGORA_API_URL and retry.",
+    });
   }
   return apiUrl.replace(/\/$/, "");
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableFetchError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /network|fetch failed|timeout|timed out|ECONNRESET|ECONNREFUSED|ETIMEDOUT/i.test(
+    message,
+  );
 }
 
 function appendQuery(
@@ -50,21 +67,62 @@ async function requestJson<T>(input: {
   pathname: string;
   init?: RequestInit;
   parse: (json: unknown) => T;
+  maxAttempts?: number;
 }) {
-  const response = await fetch(
-    `${resolveApiUrl(input.apiUrl)}${input.pathname}`,
-    {
-      headers: {
-        "content-type": "application/json",
-        ...(input.init?.headers ?? {}),
-      },
-      ...input.init,
-    },
-  );
-  if (!response.ok) {
-    throw await toApiRequestError(response);
+  const maxAttempts = input.maxAttempts ?? 1;
+  let lastRetryableError: unknown = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(
+        `${resolveApiUrl(input.apiUrl)}${input.pathname}`,
+        {
+          headers: {
+            "content-type": "application/json",
+            ...(input.init?.headers ?? {}),
+          },
+          ...input.init,
+        },
+      );
+      if (!response.ok) {
+        const error = await toApiRequestError(response);
+        if (error.retriable && attempt < maxAttempts) {
+          await sleep(500 * 2 ** (attempt - 1));
+          continue;
+        }
+        throw error;
+      }
+      return input.parse(await response.json());
+    } catch (error) {
+      if (attempt < maxAttempts && isRetryableFetchError(error)) {
+        lastRetryableError = error;
+        await sleep(500 * 2 ** (attempt - 1));
+        continue;
+      }
+      if (isRetryableFetchError(error)) {
+        lastRetryableError = error;
+        break;
+      }
+      throw error;
+    }
   }
-  return input.parse(await response.json());
+
+  throw new AgoraError("API request exhausted all retry attempts.", {
+    code: AGORA_ERROR_CODES.apiRequestFailed,
+    retriable: true,
+    nextAction: "Retry in a few seconds or inspect the API service health.",
+    cause: lastRetryableError ?? undefined,
+    details: {
+      pathname: input.pathname,
+      maxAttempts,
+      lastError:
+        lastRetryableError instanceof Error
+          ? lastRetryableError.message
+          : lastRetryableError
+            ? String(lastRetryableError)
+            : null,
+    },
+  });
 }
 
 async function toApiRequestError(response: Response) {
@@ -75,6 +133,8 @@ async function toApiRequestError(response: Response) {
       code: parsedError.data.code,
       retriable: parsedError.data.retriable,
       status: response.status,
+      nextAction: parsedError.data.nextAction,
+      details: parsedError.data.details,
     });
   }
   return new AgoraError(
@@ -103,6 +163,7 @@ export async function listChallengesFromApi(
       cursor: query.cursor,
     }),
     parse: (json) => agentChallengesListResponseSchema.parse(json),
+    maxAttempts: 3,
   });
 }
 
@@ -117,6 +178,7 @@ export async function getChallengeFromApi(
     apiUrl,
     pathname,
     parse: (json) => agentChallengeDetailResponseSchema.parse(json),
+    maxAttempts: 3,
   });
 }
 
@@ -135,6 +197,7 @@ export async function registerChallengeWithApi(
       body: JSON.stringify(payload),
     },
     parse: (json) => challengeRegistrationResponseSchema.parse(json),
+    maxAttempts: 3,
   });
   return response.data;
 }
@@ -144,6 +207,7 @@ export async function getIndexerHealthFromApi(apiUrl?: string) {
     apiUrl,
     pathname: "/api/indexer-health",
     parse: (json) => indexerHealthResponseSchema.parse(json),
+    maxAttempts: 3,
   });
 }
 
@@ -158,6 +222,7 @@ export async function getChallengeLeaderboardFromApi(
     apiUrl,
     pathname,
     parse: (json) => agentChallengeLeaderboardResponseSchema.parse(json),
+    maxAttempts: 3,
   });
 }
 
@@ -169,6 +234,24 @@ export async function getSubmissionStatusFromApi(
     apiUrl,
     pathname: `/api/submissions/${submissionId}/status`,
     parse: (json) => submissionStatusResponseSchema.parse(json),
+    maxAttempts: 3,
+  });
+}
+
+export async function waitForSubmissionStatusFromApi(
+  submissionId: string,
+  input?: {
+    timeoutSeconds?: number;
+  },
+  apiUrl?: string,
+) {
+  return requestJson({
+    apiUrl,
+    pathname: appendQuery(`/api/submissions/${submissionId}/wait`, {
+      timeout_seconds: input?.timeoutSeconds,
+    }),
+    parse: (json) => submissionWaitStatusResponseSchema.parse(json),
+    maxAttempts: 1,
   });
 }
 
@@ -183,6 +266,7 @@ export async function getSubmissionStatusByOnChainFromApi(
     apiUrl,
     pathname: `/api/submissions/by-onchain/${input.challengeAddress}/${input.onChainSubmissionId}/status`,
     parse: (json) => submissionStatusResponseSchema.parse(json),
+    maxAttempts: 3,
   });
 }
 
@@ -191,6 +275,7 @@ export async function getSubmissionPublicKeyFromApi(apiUrl?: string) {
     apiUrl,
     pathname: "/api/submissions/public-key",
     parse: (json) => submissionPublicKeyResponseSchema.parse(json),
+    maxAttempts: 3,
   });
 }
 
@@ -202,14 +287,17 @@ export async function uploadSubmissionArtifactToApi(
   },
   apiUrl?: string,
 ) {
-  const response = await fetch(`${resolveApiUrl(apiUrl)}/api/submissions/upload`, {
-    method: "POST",
-    headers: {
-      ...(input.contentType ? { "content-type": input.contentType } : {}),
-      ...(input.fileName ? { "x-file-name": input.fileName } : {}),
+  const response = await fetch(
+    `${resolveApiUrl(apiUrl)}/api/submissions/upload`,
+    {
+      method: "POST",
+      headers: {
+        ...(input.contentType ? { "content-type": input.contentType } : {}),
+        ...(input.fileName ? { "x-file-name": input.fileName } : {}),
+      },
+      body: input.bytes,
     },
-    body: input.bytes,
-  });
+  );
   if (!response.ok) {
     throw await toApiRequestError(response);
   }
@@ -235,6 +323,7 @@ export async function createSubmissionIntentWithApi(
       body: JSON.stringify(payload),
     },
     parse: (json) => submissionIntentResponseSchema.parse(json),
+    maxAttempts: 3,
   });
   return response.data;
 }
@@ -258,5 +347,43 @@ export async function registerSubmissionWithApi(
       body: JSON.stringify(payload),
     },
     parse: (json) => submissionRegistrationResponseSchema.parse(json),
+    maxAttempts: 3,
+  });
+}
+
+export async function cleanupSubmissionArtifactWithApi(
+  input: {
+    resultCid: string;
+    intentId?: string;
+  },
+  apiUrl?: string,
+) {
+  const payload = submissionCleanupRequestSchema.parse(input);
+  const response = await requestJson({
+    apiUrl,
+    pathname: "/api/submissions/cleanup",
+    init: {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    parse: (json) => submissionCleanupResponseSchema.parse(json),
+    maxAttempts: 3,
+  });
+  return response.data;
+}
+
+export async function getChallengeSolverStatusFromApi(
+  challengeIdOrAddress: string,
+  solverAddress: string,
+  apiUrl?: string,
+) {
+  const pathname = isAddressRef(challengeIdOrAddress)
+    ? `/api/challenges/by-address/${challengeIdOrAddress}/solver-status`
+    : `/api/challenges/${challengeIdOrAddress}/solver-status`;
+  return requestJson({
+    apiUrl,
+    pathname: appendQuery(pathname, { solver_address: solverAddress }),
+    parse: (json) => challengeSolverStatusResponseSchema.parse(json),
+    maxAttempts: 3,
   });
 }
