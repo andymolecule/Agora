@@ -7,15 +7,6 @@ import {
 
 export const SCORER_RUNTIME_CONFIG_FILE_NAME = "agora-runtime.json";
 
-const scoringMetricEnum = z.enum([
-  "rmse",
-  "mae",
-  "r2",
-  "pearson",
-  "spearman",
-  "custom",
-]);
-
 export const coveragePolicyEnum = z.enum(["reject", "ignore", "penalize"]);
 export const duplicateIdPolicyEnum = z.enum(["reject", "ignore"]);
 export const invalidValuePolicyEnum = z.enum(["reject", "ignore"]);
@@ -33,8 +24,8 @@ const scorerRuntimePoliciesSchema = z.object({
 
 export const scorerRuntimeConfigSchema = z.object({
   version: z.literal("v1"),
-  preset_id: z.string().min(1).optional(),
-  metric: scoringMetricEnum.default("custom"),
+  runtime_family: z.string().min(1).optional(),
+  metric: z.string().min(1).default("custom"),
   mount: z.object({
     evaluation_bundle_name: z.string().min(1).optional(),
     submission_file_name: z.string().min(1),
@@ -76,7 +67,7 @@ export function createCsvTableEvaluationContract(input: {
 }
 
 export function buildScorerRuntimeConfig(input: {
-  presetId?: string | null;
+  runtimeFamily?: string | null;
   metric?: string | null;
   mount: {
     evaluationBundleName?: string;
@@ -88,7 +79,7 @@ export function buildScorerRuntimeConfig(input: {
 }): ScorerRuntimeConfigOutput {
   return scorerRuntimeConfigSchema.parse({
     version: "v1",
-    ...(input.presetId ? { preset_id: input.presetId } : {}),
+    ...(input.runtimeFamily ? { runtime_family: input.runtimeFamily } : {}),
     metric: input.metric ?? "custom",
     mount: {
       ...(input.mount.evaluationBundleName

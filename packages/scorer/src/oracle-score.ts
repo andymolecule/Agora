@@ -11,7 +11,7 @@ import {
   SUBMISSION_RESULT_FORMAT,
   type SubmissionContractOutput,
   loadConfig,
-  resolveEvalSpec,
+  resolveChallengeEvaluation,
   resolveSubmissionOpenPrivateKeys,
 } from "@agora/common";
 import {
@@ -88,7 +88,7 @@ export async function oracleScore(
     submission_contract_json?: SubmissionContractOutput | null;
     scoring_env_json?: Record<string, string> | null;
   };
-  const evalPlan = resolveEvalSpec(challenge);
+  const evalPlan = resolveChallengeEvaluation(challenge);
   if (!evalPlan.evaluationBundleCid) {
     throw new Error(
       `Challenge ${submission.challenge_id} missing evaluation bundle CID.`,
@@ -117,6 +117,7 @@ export async function oracleScore(
   });
   const run = await executeScoringPipeline({
     image: evalPlan.image,
+    runtimeFamily: evalPlan.runtimeFamily,
     evaluationBundle: { cid: evalPlan.evaluationBundleCid },
     mount: evalPlan.mount,
     submission: submissionSource,

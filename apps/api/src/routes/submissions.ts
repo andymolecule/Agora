@@ -22,7 +22,7 @@ import {
   hasSubmissionSealPublicConfig,
   isValidPinnedSpecCid,
   loadConfig,
-  resolveEvalSpec,
+  resolveChallengeEvaluation,
   submissionCleanupRequestSchema,
   submissionIntentRequestSchema,
   submissionRegistrationRequestSchema,
@@ -546,7 +546,7 @@ async function buildPublicSubmissionVerification(
 
   const db = createSupabaseClient(true);
   const proofBundle = await getProofBundleBySubmissionId(db, submission.id);
-  const evalPlan = resolveEvalSpec(challenge);
+  const evalPlan = resolveChallengeEvaluation(challenge);
 
   let proofPayload: PublicProofBundle | null = null;
   if (proofBundle?.cid) {

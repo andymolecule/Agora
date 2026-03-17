@@ -9,7 +9,7 @@ How to add a new scoring method or a new challenge family without spreading logi
 Agora treats scoring extensibility as three small, separate concepts:
 
 1. **Challenge templates** in `packages/common/src/challenges/templates.ts`
-2. **Scoring presets** in `packages/common/src/presets.ts`
+2. **Managed runtime families** in `packages/common/src/runtime-families.ts`
 3. **Generic scorer execution** in `packages/scorer/src/pipeline.ts`
 
 Challenge type and domain catalogs remain centralized in:
@@ -20,7 +20,7 @@ The worker, API routes, score jobs, proofs, and indexer should not need product-
 ```mermaid
 flowchart LR
     Template["Challenge template<br/>authoring defaults"] --> Spec["Challenge spec<br/>submission_contract + eval_spec"]
-    Preset["Scoring preset<br/>image + limits + format + mount"] --> Spec
+    Runtime["Managed runtime family<br/>image + limits + format + mount"] --> Spec
     Spec --> Common["packages/common/src/schemas/challenge-spec.ts<br/>resolveEvalSpec()"]
     Common --> Worker["apps/api/src/worker/scoring.ts"]
     Common --> Scorer["packages/scorer/src/pipeline.ts<br/>writes agora-runtime.json"]
@@ -30,7 +30,7 @@ flowchart LR
 ELI5:
 
 - `templates.ts` decides what the posting flow should default to
-- `presets.ts` decides how official scoring runs
+- `runtime-families.ts` decides how official scoring runs
 - `pipeline.ts` stages files, writes the scorer runtime config, and runs Docker
 - the worker just asks common for the resolved plan and executes it
 
@@ -42,7 +42,7 @@ Use this when you need:
 
 - a new user-facing challenge family
 - different posting defaults
-- a new default preset for a challenge family
+- a new default runtime family for a challenge family
 - shared draft construction used by the web posting flow
 
 This file owns:
@@ -50,20 +50,19 @@ This file owns:
 - default label and description
 - default domain
 - default metric
-- default container
-- default preset id
+- default runtime family
 - shared submission-contract builders for current challenge families
 
-### `packages/common/src/presets.ts`
+### `packages/common/src/runtime-families.ts`
 
 Use this when you need a new scoring method that Agora will ship and support.
 
-Each preset owns:
+Each runtime family owns:
 
 - container image
 - runner limits
-- default minimum score
-- `expectedSubmissionKind`
+- supported metrics
+- submission kind
 - `mount`
 
 This is the only runtime scoring config layer.
@@ -72,7 +71,7 @@ The worker hot path reads the resolved submission contract and scoring env from
 the `challenges` table first. IPFS spec reads during scoring are now legacy
 fallback only.
 
-Official presets may also declare scorer-facing runtime defaults that the
+Official managed runtimes may also declare scorer-facing runtime defaults that the
 pipeline serializes into `/input/agora-runtime.json` for the container.
 
 ### `packages/common/src/schemas/challenge-spec.ts`
@@ -81,7 +80,7 @@ This is where the shared contract is validated and turned into a resolved runtim
 
 It owns:
 
-- preset-to-submission-contract validation
+- runtime-family-to-submission-contract validation
 - scoreability validation
 - `resolveEvalSpec()` for worker/scorer/oracle use
 
@@ -92,14 +91,14 @@ This is the generic runtime path.
 It owns:
 
 - staging evaluation bundle + submission files into the workspace
-- writing `/input/agora-runtime.json` from preset defaults + submission contract
+- writing `/input/agora-runtime.json` from runtime-family defaults + submission contract
 - pre-scoring contract validation
 - running the Docker scorer
 - DB-first runtime config resolution with legacy IPFS fallback
 
 ## Add a new official scoring method
 
-1. Add a preset entry in `packages/common/src/presets.ts`.
+1. Add a runtime-family entry in `packages/common/src/runtime-families.ts`.
 2. Publish the scorer Docker image.
 3. If the new method also needs a new authoring experience, add a challenge template entry in `packages/common/src/challenges/templates.ts`.
 4. Add tests in:
@@ -118,7 +117,7 @@ Use this path only when the user-facing posting flow genuinely differs.
 
 1. Add the new challenge type/domain value in `packages/common/src/types/challenge.ts`.
 2. Add its template entry in `packages/common/src/challenges/templates.ts`.
-3. Optionally add a preset in `packages/common/src/presets.ts` if Agora also ships an official scorer for it.
+3. Optionally add a runtime-family entry in `packages/common/src/runtime-families.ts` if Agora also ships an official scorer for it.
 4. Update docs/tests.
 
 ## ELI5 file map
@@ -126,7 +125,7 @@ Use this path only when the user-facing posting flow genuinely differs.
 - `packages/common/src/challenges/templates.ts`
   - "If a new company posts challenge type X, what should the draft look like?"
 
-- `packages/common/src/presets.ts`
+- `packages/common/src/runtime-families.ts`
   - "What container, resource limits, file layout, and submission kind does official scorer Y use?"
 
 - `packages/common/src/schemas/challenge-spec.ts`

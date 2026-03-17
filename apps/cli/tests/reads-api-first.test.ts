@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildGetCommand } from "../src/commands/get.js";
-import { resolveDatasetFileName } from "../src/commands/get.js";
+import { resolveArtifactFileName } from "../src/commands/get.js";
 import { buildListCommand } from "../src/commands/list.js";
 import { buildStatusCommand } from "../src/commands/status.js";
 import { buildSubmissionStatusCommand } from "../src/commands/submission-status.js";
@@ -107,6 +107,11 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
               contract_address: challengeAddress,
               factory_address: factoryAddress,
               factory_challenge_id: 7,
+              evaluation: {
+                runtime_family: "tabular_regression",
+                metric: "r2",
+                scorer_image: "ghcr.io/andymolecule/regression-scorer:v1",
+              },
               submission_contract: {
                 version: "v1",
                 kind: "csv_table",
@@ -129,13 +134,9 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
                 factoryChallengeId: 7,
               },
             },
-            datasets: {
-              train_cid: null,
-              train_file_name: null,
-              train_url: null,
-              test_cid: null,
-              test_file_name: null,
-              test_url: null,
+            artifacts: {
+              public: [],
+              private: [],
               spec_cid: "ipfs://spec",
               spec_url: "https://gateway/spec",
             },
@@ -223,9 +224,8 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
     });
 
     const getPayload = JSON.parse(getLogs.join("\n")) as {
-      datasets: {
-        train_file_name: string | null;
-        test_file_name: string | null;
+      artifacts: {
+        public: unknown[];
       };
       submissions: Array<{ on_chain_sub_id: number }>;
       leaderboard: unknown[];
@@ -243,7 +243,7 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
     };
 
     assert.equal(getPayload.submissions[0]?.on_chain_sub_id, 0);
-    assert.equal(getPayload.datasets.train_file_name, null);
+    assert.deepEqual(getPayload.artifacts.public, []);
     assert.deepEqual(getPayload.leaderboard, []);
     assert.equal(statusPayload.submissions, 2);
     assert.equal(statusPayload.topScore, null);
@@ -284,6 +284,11 @@ test("status and get commands expose solver-specific submission limits and claim
               contract_address: challengeAddress,
               factory_address: factoryAddress,
               factory_challenge_id: 7,
+              evaluation: {
+                runtime_family: "tabular_regression",
+                metric: "r2",
+                scorer_image: "ghcr.io/andymolecule/regression-scorer:v1",
+              },
               refs: {
                 challengeId,
                 challengeAddress,
@@ -291,13 +296,9 @@ test("status and get commands expose solver-specific submission limits and claim
                 factoryChallengeId: 7,
               },
             },
-            datasets: {
-              train_cid: null,
-              train_file_name: null,
-              train_url: null,
-              test_cid: null,
-              test_file_name: null,
-              test_url: null,
+            artifacts: {
+              public: [],
+              private: [],
               spec_cid: "ipfs://spec",
               spec_url: "https://gateway/spec",
             },
@@ -635,10 +636,14 @@ test("top-level CLI emits machine-readable JSON errors", () => {
   });
 });
 
-test("dataset downloads prefer the submission contract extension over .data", () => {
-  const resolved = resolveDatasetFileName({
-    source: "ipfs://bafytraincid",
-    baseName: "train",
+test("artifact downloads prefer the submission contract extension over .data", () => {
+  const resolved = resolveArtifactFileName({
+    artifact: {
+      role: "training_data",
+      visibility: "public",
+      uri: "ipfs://bafytraincid",
+    },
+    index: 0,
     challenge: {
       id: challengeId,
       title: "Challenge",
@@ -660,10 +665,15 @@ test("dataset downloads prefer the submission contract extension over .data", ()
   assert.equal(resolved, "train.csv");
 });
 
-test("dataset downloads prefer canonical file names from the API when available", () => {
-  const resolved = resolveDatasetFileName({
-    source: "ipfs://bafytraincid",
-    baseName: "train",
+test("artifact downloads prefer canonical file names from the API when available", () => {
+  const resolved = resolveArtifactFileName({
+    artifact: {
+      role: "training_data",
+      visibility: "public",
+      uri: "ipfs://bafytraincid",
+      file_name: "train.data",
+    },
+    index: 0,
     challenge: {
       id: challengeId,
       title: "Challenge",
@@ -673,9 +683,6 @@ test("dataset downloads prefer canonical file names from the API when available"
       deadline: "2026-03-20T00:00:00.000Z",
       status: "open",
       spec_cid: "ipfs://spec",
-    },
-    datasets: {
-      train_file_name: "train.data",
     },
   });
 

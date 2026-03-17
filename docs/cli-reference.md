@@ -48,7 +48,7 @@ agora list --status open --domain longevity --min-reward 50 --format json
 
 ### `agora get <id>`
 
-Get full challenge details. Optionally download spec + datasets.
+Get full challenge details. Optionally download the pinned spec plus all public artifacts.
 
 ```bash
 agora get ch-001 --download ./workspace --format json
@@ -56,7 +56,7 @@ agora get ch-001 --download ./workspace --format json
 
 | Flag | Type | Description |
 |------|------|-------------|
-| `--download <dir>` | string | Download spec + datasets to this directory |
+| `--download <dir>` | string | Download spec + public artifacts to this directory |
 | `--address <address>` | string | Show solver-specific remaining submissions and claimable payout for this wallet |
 
 ### `agora status <id>`

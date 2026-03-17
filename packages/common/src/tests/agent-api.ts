@@ -80,12 +80,16 @@ const detailResponse = agentChallengeDetailResponseSchema.parse({
         factoryAddress: "0x0000000000000000000000000000000000000002",
         factoryChallengeId: 7,
       },
+      evaluation: {
+        runtime_family: "tabular_regression",
+        metric: "r2",
+        scorer_image: "ghcr.io/andymolecule/regression-scorer:v1",
+      },
       distribution_type: "winner_take_all",
       dispute_window_hours: 168,
       minimum_score: 0,
       max_submissions_total: 10,
       max_submissions_per_solver: 3,
-      expected_columns: ["prediction"],
       submission_contract: {
         version: "v1",
         kind: "csv_table",
@@ -101,13 +105,25 @@ const detailResponse = agentChallengeDetailResponseSchema.parse({
         },
       },
     },
-    datasets: {
-      train_cid: null,
-      train_file_name: null,
-      train_url: null,
-      test_cid: null,
-      test_file_name: null,
-      test_url: null,
+    artifacts: {
+      public: [
+        {
+          role: "training_data",
+          visibility: "public",
+          uri: "ipfs://bafytrain",
+          file_name: "train.csv",
+          mime_type: "text/csv",
+          url: "https://gateway/train.csv",
+        },
+      ],
+      private: [
+        {
+          role: "hidden_labels",
+          visibility: "private",
+          file_name: "hidden.csv",
+          mime_type: "text/csv",
+        },
+      ],
       spec_cid: null,
       spec_url: null,
     },
@@ -115,7 +131,7 @@ const detailResponse = agentChallengeDetailResponseSchema.parse({
     leaderboard: [],
   },
 });
-assert.equal(detailResponse.data.datasets.spec_cid, null);
+assert.equal(detailResponse.data.artifacts.spec_cid, null);
 
 const challengeRegistration = challengeRegistrationResponseSchema.parse({
   data: {

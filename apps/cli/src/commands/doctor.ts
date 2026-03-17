@@ -2,7 +2,10 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { OFFICIAL_IMAGES, resolveOfficialImageToDigest } from "@agora/common";
+import {
+  OFFICIAL_SCORER_IMAGES,
+  resolveOfficialImageToDigest,
+} from "@agora/common";
 import { verifyRuntimeDatabaseSchema } from "@agora/db";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { Command } from "commander";
@@ -591,7 +594,7 @@ export function buildDoctorCommand() {
 
       try {
         const resolved = await Promise.all(
-          Object.values(OFFICIAL_IMAGES).map((image) =>
+          Object.values(OFFICIAL_SCORER_IMAGES).map((image) =>
             resolveOfficialImageToDigest(image, { env: {} }).then((digest) => ({
               image,
               digest,
@@ -622,13 +625,13 @@ export function buildDoctorCommand() {
         });
       } else {
         try {
-          for (const image of Object.values(OFFICIAL_IMAGES)) {
+          for (const image of Object.values(OFFICIAL_SCORER_IMAGES)) {
             pullOfficialImageAnonymously(image);
           }
           checks.push({
             name: "Official scorer docker pull",
             status: "ok",
-            detail: Object.values(OFFICIAL_IMAGES).join(", "),
+            detail: Object.values(OFFICIAL_SCORER_IMAGES).join(", "),
           });
         } catch (error) {
           checks.push({

@@ -73,7 +73,7 @@ pnpm --filter <package> test
 
 | Package | Key Test Areas |
 |---------|---------------|
-| `@agora/common` | Spec validation, templates, presets, CSV validation, submission contracts, sealing, x402 |
+| `@agora/common` | Spec validation, templates, runtime families, CSV validation, submission contracts, sealing, x402 |
 | `@agora/db` | Event projections, schema compatibility, score job lifecycle, submission intents, analytics |
 | `@agora/chain` | Indexer status projection, confirmation depth, chain integration |
 | `@agora/ipfs` | Fetch resilience, pin/fetch roundtrip |

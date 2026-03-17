@@ -1,5 +1,5 @@
 import { getOnChainSubmission } from "@agora/chain";
-import { challengeSpecSchema, resolveEvalSpec } from "@agora/common";
+import { challengeSpecSchema, resolveChallengeEvaluation } from "@agora/common";
 import { getJSON } from "@agora/ipfs";
 import {
   executeScoringPipeline,
@@ -153,7 +153,7 @@ export function buildVerifyPublicCommand() {
         const challengeSpec = challengeSpecSchema.parse(
           await getJSON(payload.challengeSpecCid),
         );
-        const evalPlan = resolveEvalSpec(challengeSpec);
+        const evalPlan = resolveChallengeEvaluation(challengeSpec);
         const run = await executeScoringPipeline({
           image: proof.containerImageDigest,
           evaluationBundle: { cid: payload.evaluationBundleCid },
@@ -161,6 +161,7 @@ export function buildVerifyPublicCommand() {
           submission: { cid: payload.replaySubmissionCid },
           submissionContract: scoringSpecConfig.submissionContract,
           metric: evalPlan.metric,
+          runtimeFamily: evalPlan.runtimeFamily,
           env: scoringSpecConfig.env,
           strictPull: true,
         });

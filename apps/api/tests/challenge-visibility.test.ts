@@ -10,6 +10,13 @@ import {
   listChallengesQuerySchema,
 } from "../src/routes/challenges-shared.js";
 
+const reproducibilityEvaluation = {
+  runtime_family: "reproducibility",
+  metric: "exact_match",
+  scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
+  evaluation_bundle: "ipfs://bundle",
+} as const;
+
 test("open challenge detail redacts submissions and leaderboard", async () => {
   let submissionReads = 0;
   let submissionCountReads = 0;
@@ -25,6 +32,9 @@ test("open challenge detail redacts submissions and leaderboard", async () => {
       ({
         id: "challenge-1",
         contract_address: "0x0000000000000000000000000000000000000001",
+        runtime_family: "reproducibility",
+        evaluation_json: reproducibilityEvaluation,
+        artifacts_json: [],
         status: CHALLENGE_STATUS.open,
       }) as never,
     getChallengeLifecycleState: async () => ({
@@ -62,6 +72,9 @@ test("challenge detail floors submissions_count when settlement state is ahead o
       ({
         id: "challenge-1",
         contract_address: "0x0000000000000000000000000000000000000001",
+        runtime_family: "reproducibility",
+        evaluation_json: reproducibilityEvaluation,
+        artifacts_json: [],
         status: CHALLENGE_STATUS.finalized,
         winning_on_chain_sub_id: 0,
       }) as never,

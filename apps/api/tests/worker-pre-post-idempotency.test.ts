@@ -12,10 +12,13 @@ import type {
 const challenge: ChallengeRow = {
   id: "challenge-1",
   contract_address: "0x0000000000000000000000000000000000000001",
-  eval_image: "ghcr.io/andymolecule/repro-scorer:v1",
-  eval_metric: "custom",
-  eval_bundle_cid: "ipfs://bundle",
-  runner_preset_id: "csv_comparison_v1",
+  runtime_family: "reproducibility",
+  evaluation_json: {
+    runtime_family: "reproducibility",
+    metric: "exact_match",
+    scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
+    evaluation_bundle: "ipfs://bundle",
+  },
 };
 
 const submission: SubmissionRow = {

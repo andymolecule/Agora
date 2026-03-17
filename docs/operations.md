@@ -28,7 +28,7 @@ This doc is authoritative for: service startup, monitoring, incident response, s
 - Browser auth/session traffic goes through the web origin's same-origin `/api` proxy; the browser should not call the backend API origin directly for SIWE/session flows
 - Indexer polls factory logs every 30s and only continuously polls active challenges; Worker polls score_jobs after challenges enter Scoring
 - Worker publishes readiness via `worker_runtime_state`, only claims jobs while `ready=true`, and uses a scorer execution backend (`local_docker` in dev, `remote_http` in production)
-- Health monitoring via /healthz, /api/indexer-health, /api/worker-health, agora doctor
+- Health monitoring via /healthz, /api/indexer-health, /api/worker-health, /api/posting/health, agora doctor
 - API, worker, executor, and indexer emit structured JSON logs. HTTP surfaces return `x-request-id`; include that header when tracing a failed request across logs or Sentry.
 
 ---
@@ -139,7 +139,7 @@ Architecture boundary:
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
 - Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` remains the active scoring runtime fence while API and worker-orchestrator roll forward together on Railway.
-- Official preset challenges should persist pinned image digests. The worker should only score from registry-backed official images, never from a host-local build that lacks a repo digest.
+- Official managed-runtime challenges should persist pinned image digests. The worker should only score from registry-backed official images, never from a host-local build that lacks a repo digest.
 - Wallet/session consistency is enforced in the web app by a global wallet session bridge. If the connected wallet disconnects or changes to a different address, stale SIWE state is cleared instead of being reused accidentally.
 
 ### Worker / Executor Flow
@@ -189,6 +189,7 @@ Verification checklist:
 ```bash
 curl -sS http://localhost:3000/healthz
 curl -sS http://localhost:3000/api/worker-health
+curl -sS http://localhost:3000/api/posting/health
 curl -sS http://localhost:3000/api/submissions/public-key
 pnpm schema:verify
 pnpm scorers:verify
@@ -199,6 +200,7 @@ Expected results:
 - `/healthz` returns `{"ok":true,"service":"api","runtimeVersion":"..."}` for API liveness plus deployed version.
 - API responses include `x-request-id`; if you pass one in the request header, the API preserves it for end-to-end correlation.
 - `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and `sealing.workerReady=true` for the active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
+- `/api/posting/health` returns `status: ok|warning|critical` and exposes managed-authoring backlog metrics such as expired sessions, stale compile sessions, and the oldest review wait time.
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"` whenever sealing is configured successfully.
 
 Existing testnet DBs:
@@ -333,8 +335,9 @@ Check every 15-30 minutes during first launch window:
 3. `indexed_events` block number continues advancing.
 4. `agora doctor` passes all required checks.
 5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version. If `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`, this also implies the executor passed the worker readiness checks.
-6. Web proxy health: `curl <WEB_URL>/api/healthz` and `curl <WEB_URL>/api/worker-health` succeed without the `AGORA_API_URL` proxy-misconfiguration error.
-7. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
+6. Managed authoring health: `curl <API_URL>/api/posting/health` stays `ok` during normal operation. `warning` means expired drafts need sweeping or review backlog is aging; `critical` means review SLA is breached.
+7. Web proxy health: `curl <WEB_URL>/api/healthz` and `curl <WEB_URL>/api/worker-health` succeed without the `AGORA_API_URL` proxy-misconfiguration error.
+8. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
 
 Health commands:
 
@@ -342,6 +345,7 @@ Health commands:
 curl -sS http://localhost:3000/healthz
 curl -sS http://localhost:3000/api/indexer-health
 curl -sS http://localhost:3000/api/worker-health
+curl -sS http://localhost:3000/api/posting/health
 agora doctor
 ```
 
@@ -349,6 +353,7 @@ Expected results:
 
 - API health returns `{"ok":true,"runtimeVersion":"..."}`.
 - Indexer health is `ok` or `warning`, not `critical`.
+- Posting health is `ok` during steady state. A temporary `warning` is acceptable during active moderation, but expired sessions should be swept and long-lived review backlog should be investigated.
 - `agora doctor` passes RPC/Supabase/factory checks.
 - If sealing is enabled, `/api/submissions/public-key` returns `sealed_submission_v2` whenever the public sealing key is configured.
 - If active scoring challenges use official Agora scorer images and those GHCR images are not pullable, the worker should stay alive but report `ready=false`, a `latestError`, and zero healthy workers for the active runtime version.
@@ -517,6 +522,15 @@ agora reindex --from-block <block_number>
    - All jobs stuck in `failed` or `running` after an infra incident -> recover them with `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` after the worker is healthy again.
    - Terminal validation/configuration rows lingering in `failed` -> inspect with `agora clean-failed-jobs` and skip only the rows that are truly unrecoverable.
 4. If the worker orchestrator process itself crashed: redeploy or restart the Railway worker service. If the executor crashed, restart the executor service on its host and re-check `/healthz`.
+
+### Managed Authoring Backlog
+
+1. Check `GET /api/posting/health`.
+2. If `sessions.expired > 0`, sweep expired drafts with:
+   `curl -X POST -H "x-agora-review-token: <token>" <API_URL>/api/posting/review/sweep-expired`
+3. If `sessions.stale_compiling > 0`, inspect recent API logs for interrupted compile requests, then ask the poster to retry from the draft.
+4. If `oldest_needs_review_age_ms` breaches the warning or critical threshold, review the queued drafts or send them to Expert Mode.
+5. If the sweep route returns `401` or `503`, verify `AGORA_POSTING_REVIEW_TOKEN` is configured consistently on the API and internal review surface.
 
 ### Oracle Key Issue
 

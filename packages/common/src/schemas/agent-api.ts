@@ -3,6 +3,10 @@ import { SUBMISSION_SEAL_VERSION } from "../submission-sealing.js";
 import { CHALLENGE_STATUS, CHALLENGE_TYPES } from "../types/challenge.js";
 import { SCORE_JOB_STATUSES } from "../types/score-job.js";
 import { SUBMISSION_RESULT_FORMAT } from "../types/submission.js";
+import {
+  challengeArtifactSchema,
+  challengeEvaluationSchema,
+} from "./challenge-spec.js";
 import { submissionContractSchema } from "./submission-contract.js";
 
 const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
@@ -98,8 +102,6 @@ export const challengeSummarySchema = z
     deadline: z.string().datetime({ offset: true }).or(z.string()),
     status: challengeStatusSchema,
     spec_cid: z.string().nullable().optional(),
-    dataset_train_cid: z.string().nullable().optional(),
-    dataset_test_cid: z.string().nullable().optional(),
     contract_address: addressSchema,
     factory_address: addressSchema.nullable(),
     factory_challenge_id: nonNegativeIntegerSchema.nullable(),
@@ -109,13 +111,22 @@ export const challengeSummarySchema = z
   })
   .strict();
 
-export const challengeDatasetsSchema = z.object({
-  train_cid: z.string().nullable(),
-  train_file_name: z.string().nullable(),
-  train_url: z.string().nullable(),
-  test_cid: z.string().nullable(),
-  test_file_name: z.string().nullable(),
-  test_url: z.string().nullable(),
+const publicChallengeArtifactSchema = challengeArtifactSchema.extend({
+  visibility: z.literal("public"),
+  url: z.string().nullable(),
+});
+
+const privateChallengeArtifactSchema = z.object({
+  role: z.string().trim().min(1),
+  visibility: z.literal("private"),
+  file_name: z.string().nullable().optional(),
+  mime_type: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+});
+
+export const challengeArtifactsSchema = z.object({
+  public: z.array(publicChallengeArtifactSchema),
+  private: z.array(privateChallengeArtifactSchema),
   spec_cid: z.string().nullable(),
   spec_url: z.string().nullable(),
 });
@@ -135,14 +146,14 @@ export const challengeDetailSchema = challengeSummarySchema
     poster_address: addressSchema.optional(),
     description: z.string(),
     challenge_type: challengeTypeSchema,
-    eval_metric: z.string().nullable().optional(),
-    eval_image: z.string().nullable().optional(),
+    evaluation: challengeEvaluationSchema
+      .omit({ evaluation_bundle: true })
+      .strict(),
     distribution_type: rewardDistributionSchema.nullable().optional(),
     dispute_window_hours: nonNegativeIntegerSchema.nullable().optional(),
     minimum_score: z.number().nullable().optional(),
     max_submissions_total: positiveIntegerSchema.nullable().optional(),
     max_submissions_per_solver: positiveIntegerSchema.nullable().optional(),
-    expected_columns: z.array(z.string()).nullable().optional(),
     submission_contract: submissionContractSchema.nullable().optional(),
   })
   .strict();
@@ -160,7 +171,7 @@ export const agentChallengesListResponseSchema = z.object({
 export const agentChallengeDetailResponseSchema = z.object({
   data: z.object({
     challenge: challengeDetailSchema,
-    datasets: challengeDatasetsSchema,
+    artifacts: challengeArtifactsSchema,
     submissions: z.array(challengeLeaderboardEntrySchema),
     leaderboard: z.array(challengeLeaderboardEntrySchema),
   }),

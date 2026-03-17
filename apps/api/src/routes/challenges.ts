@@ -18,7 +18,7 @@ import {
   challengeRegistrationRequestSchema,
   getEffectiveChallengeStatus,
   loadConfig,
-  validateScoringContainer,
+  validateChallengeScoreability,
   validateSubmissionUploadAgainstContract,
 } from "@agora/common";
 import {
@@ -449,13 +449,12 @@ router.post(
       });
     }
 
-    // P0: Reject unscorable bounties — container must be valid
-    const containerError = validateScoringContainer(spec.scoring.container);
-    if (containerError) {
+    const scoreability = validateChallengeScoreability(spec);
+    if (!scoreability.ok) {
       return jsonError(c, {
         status: 400,
-        code: "SCORING_CONTAINER_INVALID",
-        message: `Invalid scoring container: ${containerError}`,
+        code: "CHALLENGE_SCOREABILITY_INVALID",
+        message: scoreability.errors.join(" "),
       });
     }
 

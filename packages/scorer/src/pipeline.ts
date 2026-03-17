@@ -4,13 +4,11 @@ import {
   DEFAULT_SCORER_MOUNT,
   SCORER_RUNTIME_CONFIG_FILE_NAME,
   buildScorerRuntimeConfig,
-  type ChallengeScoring,
   type ScoringMountConfig,
   type SubmissionContractOutput,
   challengeSpecSchema,
-  inferPresetIdByContainer,
   resolveScoringEnvironmentFromSpec,
-  resolvePresetRuntimeDefaults,
+  resolveRuntimeFamilyRuntimeDefaults,
   validateSubmissionBytesAgainstContract,
 } from "@agora/common";
 import { downloadToPath } from "@agora/ipfs";
@@ -46,11 +44,12 @@ export interface ScoringPipelinePhaseObserver {
 
 export interface ExecuteScoringPipelineInput {
   image: string;
+  runtimeFamily?: string;
   evaluationBundle?: ScoringInputSource;
   submission: ScoringInputSource;
   mount?: ScoringMountConfig;
   submissionContract?: SubmissionContractOutput;
-  metric?: ChallengeScoring["metric"] | string;
+  metric?: string;
   env?: Record<string, string>;
   timeoutMs?: number;
   limits?: RunScorerInput["limits"];
@@ -87,22 +86,6 @@ interface ScoringMountPlan {
   evaluationBundlePath?: string;
   submissionPath: string;
   runtimeConfigPath: string;
-}
-
-function normalizeScoringMetric(
-  metric: string | undefined,
-): ChallengeScoring["metric"] | undefined {
-  switch (metric) {
-    case "rmse":
-    case "mae":
-    case "r2":
-    case "pearson":
-    case "spearman":
-    case "custom":
-      return metric;
-    default:
-      return undefined;
-  }
 }
 
 function buildScoringMountPlan(
@@ -252,15 +235,17 @@ export async function executeScoringPipeline(
         }
 
         await stageSourceToPath(input.submission, stagingPlan.submissionPath);
-        const presetId = inferPresetIdByContainer(input.image) ?? undefined;
-        const presetRuntimeDefaults = resolvePresetRuntimeDefaults(presetId);
+        const runtimeFamily = input.runtimeFamily;
+        const runtimeDefaults = runtimeFamily
+          ? resolveRuntimeFamilyRuntimeDefaults(runtimeFamily)
+          : null;
         const runtimeConfig = buildScorerRuntimeConfig({
-          presetId,
-          metric: normalizeScoringMetric(input.metric),
+          runtimeFamily,
+          metric: input.metric,
           mount: input.mount ?? DEFAULT_SCORER_MOUNT,
           submissionContract: input.submissionContract,
-          evaluationContract: presetRuntimeDefaults?.evaluationContract,
-          policies: presetRuntimeDefaults?.policies,
+          evaluationContract: runtimeDefaults?.evaluationContract,
+          policies: runtimeDefaults?.policies,
         });
         await fs.writeFile(
           stagingPlan.runtimeConfigPath,

@@ -23,9 +23,9 @@ Current turnkey categories:
 - `reproducibility`
 - `prediction`
 
-These fixture runs now target the current preset-based scoring model:
+These fixture runs now target the current managed-runtime scoring model:
 - challenge-family defaults come from `@agora/common/challenges/templates.ts`
-- official scoring runtime config comes from `@agora/common/presets.ts`
+- official scoring runtime config comes from `@agora/common/runtime-families.ts`
 - worker scoring reads cached DB config first and only falls back to IPFS for legacy rows
 
 ## Before You Start

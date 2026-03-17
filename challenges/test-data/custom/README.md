@@ -5,7 +5,7 @@ Generic posting fixtures for the Agora custom category.
 Use this folder when you want to test the broadest bring-your-own-scorer path in the web UI.
 
 This folder is aligned to the new model too:
-- no official preset/runtime adapter is involved
+- no official managed runtime adapter is involved
 - the poster defines the custom scorer contract and artifact shape
 - the current example uses a JSON payload carried via `opaque_file`
 
@@ -43,5 +43,5 @@ This folder is aligned to the new model too:
 ## What This Folder Helps You Catch
 
 - whether your bounty description explains the scorer contract clearly enough
-- whether the upload fields feel coherent for a non-preset challenge
+- whether the upload fields feel coherent for a non-managed challenge
 - whether the solver submission format is specific enough to avoid ambiguity

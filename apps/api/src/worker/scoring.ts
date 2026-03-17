@@ -1,16 +1,17 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  EXPERT_RUNTIME_FAMILY_ID,
   type RunnerLimits,
   SUBMISSION_RESULT_FORMAT,
   getSubmissionLimitViolation,
   isProductionRuntime,
   loadConfig,
-  lookupPreset,
-  resolveEvalSpec,
+  resolveChallengeEvaluation,
+  resolveRuntimeFamilyLimits,
   resolveSubmissionLimits,
   resolveSubmissionOpenPrivateKeys,
-  validatePresetIntegrity,
+  validateExpertScorerImage,
 } from "@agora/common";
 import {
   countSubmissionsBySolverForChallengeUpToOnChainSubId,
@@ -39,7 +40,7 @@ export interface ResolvedRunnerPolicy {
     pids: number;
   };
   timeoutMs?: number;
-  source: "runner_preset_id" | "default";
+  source: "runtime_family" | "default";
 }
 
 function policyFromLimits(
@@ -59,32 +60,25 @@ function policyFromLimits(
 
 export function resolveRunnerPolicyForChallenge(challenge: {
   image: string;
-  runner_preset_id: string;
+  runtime_family: string;
 }): ResolvedRunnerPolicy {
-  const presetId = challenge.runner_preset_id.trim();
+  const runtimeFamily = challenge.runtime_family.trim();
 
-  if (presetId === "custom") {
-    const customIntegrityError = validatePresetIntegrity(
-      "custom",
-      challenge.image,
-    );
+  if (runtimeFamily === EXPERT_RUNTIME_FAMILY_ID) {
+    const customIntegrityError = validateExpertScorerImage(challenge.image);
     if (customIntegrityError) {
       throw new Error(
-        `Invalid scoring preset configuration: ${customIntegrityError}`,
+        `Invalid runtime family configuration: ${customIntegrityError}`,
       );
     }
     return { source: "default" };
   }
 
-  const preset = lookupPreset(presetId);
-  if (!preset) {
-    throw new Error(`Unknown runner_preset_id on challenge: ${presetId}`);
+  const runnerLimits = resolveRuntimeFamilyLimits(runtimeFamily);
+  if (!runnerLimits) {
+    throw new Error(`Unknown runtime family on challenge: ${runtimeFamily}`);
   }
-  const integrityError = validatePresetIntegrity(presetId, challenge.image);
-  if (integrityError) {
-    throw new Error(`Invalid scoring preset configuration: ${integrityError}`);
-  }
-  return policyFromLimits(preset.runnerLimits, "runner_preset_id");
+  return policyFromLimits(runnerLimits, "runtime_family");
 }
 
 export interface ScoringOutcomeSuccess {
@@ -160,10 +154,10 @@ export async function scoreSubmissionAndBuildProof(
     };
   }
 
-  const evalPlan = resolveEvalSpec(challenge);
+  const evalPlan = resolveChallengeEvaluation(challenge);
   const runnerPolicy = resolveRunnerPolicyForChallenge({
     image: evalPlan.image,
-    runner_preset_id: challenge.runner_preset_id,
+    runtime_family: challenge.runtime_family,
   });
   const phaseMeta = {
     jobId,
@@ -209,6 +203,7 @@ export async function scoreSubmissionAndBuildProof(
   }
   const run = await executeScoringPipeline({
     image: evalPlan.image,
+    runtimeFamily: evalPlan.runtimeFamily,
     evaluationBundle: evalPlan.evaluationBundleCid
       ? { cid: evalPlan.evaluationBundleCid }
       : undefined,

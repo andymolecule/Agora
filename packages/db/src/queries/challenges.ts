@@ -1,17 +1,15 @@
 import {
   CHALLENGE_STATUS,
+  type ChallengeArtifact,
+  type ChallengeEvaluation,
   type ChallengeSpecOutput,
   type ChallengeStatus,
   SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
   defaultMinimumScoreForChallengeType,
-  deriveExpectedColumns,
-  findPresetIdsByContainer,
-  inferPresetIdByContainer,
-  resolveEvalSpec,
+  resolveChallengeEvaluation,
   resolveScoringEnvironmentFromSpec,
   validateChallengeScoreability,
-  validatePresetIntegrity,
 } from "@agora/common";
 import type { AgoraDbClient } from "../index";
 
@@ -27,16 +25,10 @@ export interface ChallengeInsert {
   description: string;
   domain: string;
   challenge_type: string;
+  runtime_family: string;
   spec_cid: string;
-  dataset_train_cid?: string | null;
-  dataset_test_cid?: string | null;
-  dataset_train_file_name?: string | null;
-  dataset_test_file_name?: string | null;
-  eval_image: string;
-  eval_metric: string;
-  runner_preset_id: string;
-  eval_bundle_cid?: string | null;
-  expected_columns?: string[] | null;
+  evaluation_json: ChallengeEvaluation;
+  artifacts_json: ChallengeArtifact[];
   submission_contract_json?: ChallengeSpecOutput["submission_contract"] | null;
   scoring_env_json?: Record<string, string> | null;
   minimum_score?: number | null;
@@ -73,66 +65,11 @@ export async function buildChallengeInsert(
   const canonicalSpec = await canonicalizeChallengeSpec(input.spec, {
     resolveOfficialPresetDigests: requirePinnedPresetDigest,
   });
-  const explicitPresetId =
-    typeof canonicalSpec.preset_id === "string" &&
-    canonicalSpec.preset_id.trim().length > 0
-      ? canonicalSpec.preset_id.trim()
-      : null;
-  const usesCustomScorer =
-    canonicalSpec.type === "custom" || canonicalSpec.type === "optimization";
-  const effectivePresetId =
-    explicitPresetId ?? (usesCustomScorer ? "custom" : null);
-  const inferredPresetId =
-    effectivePresetId ??
-    inferPresetIdByContainer(canonicalSpec.scoring.container);
-  const presetIdsForContainer = findPresetIdsByContainer(
-    canonicalSpec.scoring.container,
-  );
-
-  if (
-    !inferredPresetId &&
-    !usesCustomScorer &&
-    presetIdsForContainer.length > 1
-  ) {
-    throw new Error(
-      `Ambiguous scoring preset for container ${canonicalSpec.scoring.container}. Set preset_id explicitly.`,
-    );
-  }
-
-  if (
-    !inferredPresetId &&
-    !usesCustomScorer &&
-    presetIdsForContainer.length === 0
-  ) {
-    throw new Error(
-      `Unknown scorer container for non-custom challenge: ${canonicalSpec.scoring.container}. Use a registered preset container or set type to custom with a pinned digest.`,
-    );
-  }
-
-  if (inferredPresetId) {
-    const integrityError = validatePresetIntegrity(
-      inferredPresetId,
-      canonicalSpec.scoring.container,
-      {
-        requirePinnedPresetDigest,
-      },
-    );
-    if (integrityError) {
-      throw new Error(
-        `Invalid scoring preset configuration: ${integrityError}`,
-      );
-    }
-  }
-
   const scoreability = validateChallengeScoreability(canonicalSpec);
   if (!scoreability.ok) {
     throw new Error(scoreability.errors[0] ?? "Challenge is not scoreable.");
   }
-  const runnerPresetId = inferredPresetId ?? "custom";
-  const resolvedEvalPlan = resolveEvalSpec(canonicalSpec);
-  const expectedColumns = deriveExpectedColumns(
-    canonicalSpec.submission_contract,
-  );
+  const resolvedEvalPlan = resolveChallengeEvaluation(canonicalSpec);
   const scoringEnv = resolveScoringEnvironmentFromSpec(canonicalSpec);
 
   return {
@@ -147,16 +84,17 @@ export async function buildChallengeInsert(
     description: canonicalSpec.description,
     domain: canonicalSpec.domain,
     challenge_type: canonicalSpec.type,
+    runtime_family: canonicalSpec.evaluation.runtime_family,
     spec_cid: input.specCid,
-    dataset_train_cid: canonicalSpec.dataset?.train ?? null,
-    dataset_test_cid: canonicalSpec.dataset?.test ?? null,
-    dataset_train_file_name: canonicalSpec.dataset?.train_file_name ?? null,
-    dataset_test_file_name: canonicalSpec.dataset?.test_file_name ?? null,
-    eval_image: resolvedEvalPlan.image,
-    eval_metric: resolvedEvalPlan.metric,
-    runner_preset_id: runnerPresetId,
-    eval_bundle_cid: resolvedEvalPlan.evaluationBundleCid ?? null,
-    expected_columns: expectedColumns.length > 0 ? expectedColumns : null,
+    evaluation_json: {
+      runtime_family: resolvedEvalPlan.runtimeFamily,
+      metric: resolvedEvalPlan.metric,
+      scorer_image: resolvedEvalPlan.image,
+      ...(resolvedEvalPlan.evaluationBundleCid
+        ? { evaluation_bundle: resolvedEvalPlan.evaluationBundleCid }
+        : {}),
+    },
+    artifacts_json: canonicalSpec.artifacts,
     submission_contract_json: canonicalSpec.submission_contract,
     scoring_env_json: scoringEnv ?? null,
     minimum_score:

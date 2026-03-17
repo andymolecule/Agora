@@ -107,7 +107,7 @@ function createServer(options?: {
     "agora-get-challenge",
     {
       description:
-        "Get full challenge details including description, datasets, submissions, and leaderboard. Accepts either the Agora challenge UUID or the on-chain challenge contract address. Response includes 'datasets' object with both canonical IPFS CIDs (train_cid, test_cid, spec_cid) and HTTP gateway download URLs (train_url, test_url, spec_url).",
+        "Get full challenge details including description, public artifacts, submissions, and leaderboard. Accepts either the Agora challenge UUID or the on-chain challenge contract address. Response includes an 'artifacts' object with public artifact IPFS CIDs, gateway URLs, and the pinned spec reference.",
       inputSchema: z.object({
         challengeId: z
           .string()

@@ -18,11 +18,11 @@ def load_scorer_module():
     return module
 
 
-def runtime_config(id_column: str, value_column: str) -> dict:
+def runtime_config(id_column: str, value_column: str, metric: str = "r2") -> dict:
     return {
         "version": "v1",
-        "preset_id": "regression_v1",
-        "metric": "r2",
+        "runtime_family": "tabular_regression",
+        "metric": metric,
         "mount": {
             "evaluation_bundle_name": "ground_truth.csv",
             "submission_file_name": "submission.csv",
@@ -54,7 +54,13 @@ def runtime_config(id_column: str, value_column: str) -> dict:
     }
 
 
-def run_case(submission_text: str, id_column: str = "id", value_column: str = "prediction"):
+def run_case(
+    submission_text: str,
+    id_column: str = "id",
+    value_column: str = "prediction",
+    metric: str = "r2",
+    ground_truth_text: str | None = None,
+):
     module = load_scorer_module()
     workspace = Path(tempfile.mkdtemp(prefix="agora-regression-scorer-"))
     input_dir = workspace / "input"
@@ -62,10 +68,16 @@ def run_case(submission_text: str, id_column: str = "id", value_column: str = "p
     input_dir.mkdir()
     output_dir.mkdir()
 
-    shutil.copy(FIXTURE_DIR / "ground_truth.csv", input_dir / "ground_truth.csv")
+    if ground_truth_text is None:
+        shutil.copy(FIXTURE_DIR / "ground_truth.csv", input_dir / "ground_truth.csv")
+    else:
+        (input_dir / "ground_truth.csv").write_text(
+            ground_truth_text,
+            encoding="utf-8",
+        )
     (input_dir / "submission.csv").write_text(submission_text, encoding="utf-8")
     (input_dir / "agora-runtime.json").write_text(
-        json.dumps(runtime_config(id_column, value_column)),
+        json.dumps(runtime_config(id_column, value_column, metric)),
         encoding="utf-8",
     )
 
@@ -88,6 +100,7 @@ def run_case(submission_text: str, id_column: str = "id", value_column: str = "p
 
 
 sample_submission = (FIXTURE_DIR / "sample_submission.csv").read_text(encoding="utf-8")
+ground_truth = (FIXTURE_DIR / "ground_truth.csv").read_text(encoding="utf-8")
 custom_submission = sample_submission.replace("id,prediction", "sample_id,forecast")
 exit_code, payload = run_case(custom_submission, "sample_id", "forecast")
 assert exit_code == 0, f"custom column run should not crash: {exit_code}"
@@ -120,5 +133,24 @@ assert exit_code == 0, f"nonnumeric submission should be rejected as invalid, no
 assert payload["ok"] is False, payload
 assert "non-numeric prediction values" in payload["error"], payload
 assert payload["details"]["invalid_value_ids"] > 0, payload
+
+perfect_rmse_submission = ground_truth.replace("label", "prediction")
+exit_code, payload = run_case(perfect_rmse_submission, metric="rmse")
+assert exit_code == 0, f"rmse run should not crash: {exit_code}"
+assert payload["ok"] is True, payload
+assert payload["score"] == 1.0, payload
+assert payload["details"]["selected_metric"] == "rmse", payload
+assert payload["details"]["selected_metric_value"] == 0.0, payload
+
+classification_truth = "id,label\nrow-1,a\nrow-2,b\nrow-3,a\n"
+classification_submission = "id,prediction\nrow-1,a\nrow-2,b\nrow-3,b\n"
+exit_code, payload = run_case(
+    classification_submission,
+    metric="accuracy",
+    ground_truth_text=classification_truth,
+)
+assert exit_code == 0, f"classification run should not crash: {exit_code}"
+assert payload["ok"] is True, payload
+assert payload["details"]["accuracy"] == round(2 / 3, 12), payload
 
 print("regression scorer runtime tests passed")

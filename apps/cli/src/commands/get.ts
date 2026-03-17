@@ -24,17 +24,36 @@ type ChallengeRecord = {
   reward_amount: number | string;
   deadline: string;
   status: string;
-  spec_cid: string;
-  dataset_train_cid?: string | null;
-  dataset_test_cid?: string | null;
-  dataset_train_file_name?: string | null;
-  dataset_test_file_name?: string | null;
+  spec_cid?: string | null;
   submission_contract?: {
     kind?: string | null;
     file?: {
       extension?: string | null;
     } | null;
   } | null;
+};
+
+type PublicArtifactRecord = {
+  role: string;
+  visibility: "public";
+  uri: string;
+  file_name?: string | null;
+  mime_type?: string | null;
+  description?: string | null;
+  url?: string | null;
+};
+
+type ChallengeArtifactsRecord = {
+  public: PublicArtifactRecord[];
+  private: Array<{
+    role: string;
+    visibility: "private";
+    file_name?: string | null;
+    mime_type?: string | null;
+    description?: string | null;
+  }>;
+  spec_cid: string | null;
+  spec_url: string | null;
 };
 
 type SubmissionRecord = {
@@ -63,32 +82,47 @@ function filenameFromUrl(url: string, fallback: string) {
   }
 }
 
-function getDatasetFallbackExtension(challenge: ChallengeRecord) {
+function getArtifactFallbackExtension(
+  artifact: PublicArtifactRecord,
+  challenge: ChallengeRecord,
+) {
+  if (artifact.mime_type === "text/csv") {
+    return ".csv";
+  }
   const extension = challenge.submission_contract?.file?.extension?.trim();
   if (extension) {
     return extension.startsWith(".") ? extension : `.${extension}`;
   }
-  if (challenge.submission_contract?.kind === "csv_table") {
-    return ".csv";
-  }
   return ".data";
 }
 
-export function resolveDatasetFileName(input: {
-  source: string;
-  baseName: "train" | "test";
+function artifactBaseName(role: string) {
+  switch (role) {
+    case "training_data":
+      return "train";
+    case "evaluation_features":
+      return "test";
+    case "hidden_labels":
+      return "hidden_labels";
+    case "source_data":
+      return "source_data";
+    case "reference_output":
+      return "reference_output";
+    case "ranking_inputs":
+      return "ranking_inputs";
+    case "reference_ranking":
+      return "reference_ranking";
+    default:
+      return role;
+  }
+}
+
+export function resolveArtifactFileName(input: {
+  artifact: PublicArtifactRecord;
+  index: number;
   challenge: ChallengeRecord;
-  datasets?: {
-    train_file_name?: string | null;
-    test_file_name?: string | null;
-  };
 }) {
-  const explicitFileName =
-    input.baseName === "train"
-      ? (input.datasets?.train_file_name ??
-        input.challenge.dataset_train_file_name)
-      : (input.datasets?.test_file_name ??
-        input.challenge.dataset_test_file_name);
+  const explicitFileName = input.artifact.file_name;
   if (
     typeof explicitFileName === "string" &&
     explicitFileName.trim().length > 0
@@ -96,8 +130,8 @@ export function resolveDatasetFileName(input: {
     return explicitFileName.trim();
   }
   return filenameFromUrl(
-    input.source,
-    `${input.baseName}${getDatasetFallbackExtension(input.challenge)}`,
+    input.artifact.uri,
+    `${artifactBaseName(input.artifact.role)}${getArtifactFallbackExtension(input.artifact, input.challenge)}`,
   );
 }
 
@@ -105,7 +139,7 @@ export function buildGetCommand() {
   const cmd = new Command("get")
     .description("Get challenge details")
     .argument("<id>", "Challenge id")
-    .option("--download <dir>", "Download spec + datasets to directory")
+    .option("--download <dir>", "Download spec + public artifacts to directory")
     .option(
       "--address <address>",
       "Optional solver wallet address (defaults to the configured private key wallet when available)",
@@ -122,7 +156,7 @@ export function buildGetCommand() {
 
         const response = await getChallengeApi(id);
         const challenge = response.data.challenge as ChallengeRecord;
-        const datasets = response.data.datasets;
+        const artifacts = response.data.artifacts as ChallengeArtifactsRecord;
         const submissions = response.data.submissions as SubmissionRecord[];
         const leaderboard = response.data.leaderboard as SubmissionRecord[];
         const solverAddress = resolveOptionalSolverAddress(opts.address);
@@ -134,44 +168,41 @@ export function buildGetCommand() {
         if (opts.download) {
           const targetDir = path.resolve(process.cwd(), opts.download, id);
           await fs.mkdir(targetDir, { recursive: true });
-          const specText = await getText(
-            datasets.spec_cid ?? challenge.spec_cid,
-          );
+          const specCid = artifacts.spec_cid ?? challenge.spec_cid ?? null;
+          if (!specCid) {
+            throw new Error(
+              "Challenge detail is missing spec_cid. Next step: retry against the canonical Agora API or choose a current-schema challenge.",
+            );
+          }
+          const specText = await getText(specCid);
           await fs.writeFile(
             path.join(targetDir, "challenge.yaml"),
             specText,
             "utf8",
           );
 
-          if (datasets.train_cid ?? challenge.dataset_train_cid) {
-            const trainName = resolveDatasetFileName({
-              source: datasets.train_cid ?? challenge.dataset_train_cid ?? "",
-              baseName: "train",
+          const usedNames = new Set<string>();
+          for (const [index, artifact] of artifacts.public.entries()) {
+            let fileName = resolveArtifactFileName({
+              artifact,
+              index,
               challenge,
-              datasets,
             });
+            while (usedNames.has(fileName)) {
+              const parsed = path.parse(fileName);
+              fileName = `${parsed.name}-${index + 1}${parsed.ext}`;
+            }
+            usedNames.add(fileName);
             await downloadToPath(
-              datasets.train_cid ?? challenge.dataset_train_cid ?? "",
-              path.join(targetDir, trainName),
-            );
-          }
-          if (datasets.test_cid ?? challenge.dataset_test_cid) {
-            const testName = resolveDatasetFileName({
-              source: datasets.test_cid ?? challenge.dataset_test_cid ?? "",
-              baseName: "test",
-              challenge,
-              datasets,
-            });
-            await downloadToPath(
-              datasets.test_cid ?? challenge.dataset_test_cid ?? "",
-              path.join(targetDir, testName),
+              artifact.uri,
+              path.join(targetDir, fileName),
             );
           }
           printSuccess(`Downloaded challenge assets to ${targetDir}`);
         }
 
         if (opts.format === "json") {
-          printJson({ challenge, datasets, submissions, leaderboard, solver });
+          printJson({ challenge, artifacts, submissions, leaderboard, solver });
           return;
         }
 

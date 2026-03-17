@@ -2,9 +2,9 @@
 
 Human-oriented fixture kits for posting and testing Agora challenge types through the web UI.
 
-These folders are aligned to the **current preset-based scoring model**:
+These folders are aligned to the **current managed-runtime scoring model**:
 - challenge-family defaults come from `@agora/common/challenges/templates.ts`
-- official scoring runtime config comes from `@agora/common/presets.ts`
+- official scoring runtime config comes from `@agora/common/runtime-families.ts`
 - the worker reads cached scoring config from the DB first, with IPFS fallback only for legacy rows
 
 They are **not** written for the removed runtime engine-adapter layer.
@@ -24,7 +24,7 @@ Each subdirectory is organized around one category and contains:
 test-data/
   prediction/        fully executable prediction fixture kit
   reproducibility/   fully executable reproducibility fixture kit
-  docking/           realistic posting kit; current scorer is still a placeholder
+  docking/           fully executable docking fixture kit
   optimization/      realistic posting kit; requires a custom scorer image
   red_team/          realistic posting kit; requires a custom scorer image
   custom/            generic custom bounty posting kit; requires a custom scorer image
@@ -42,9 +42,9 @@ test-data/
 
 | Category | Current status | Notes |
 |----------|----------------|-------|
-| Prediction | Executable, aligned to new model | Uses the official `regression_v1` preset and its current default mount layout |
-| Reproducibility | Executable, aligned to new model | Uses the official `csv_comparison_v1` preset and its current default mount layout |
-| Docking | Posting scaffold on new model | Official `docking_v1` preset exists, but `containers/docking-scorer` is still a placeholder |
+| Prediction | Executable, aligned to new model | Uses the official `tabular_regression` runtime family and its current default mount layout |
+| Reproducibility | Executable, aligned to new model | Uses the official `reproducibility` runtime family and its current default mount layout |
+| Docking | Managed runtime on new model | Official `docking` runtime family exists with CSV docking score evaluation |
 | Optimization | Posting scaffold on new model | Uses the custom-scorer path with `opaque_file` submissions |
 | Red Team | Posting scaffold on new model | Uses the custom-scorer path with poster-defined scorer behavior |
 | Custom | Posting scaffold on new model | Fully bring-your-own scoring contract and artifact shape |
@@ -55,7 +55,8 @@ If you are walking the stack end to end tomorrow:
 
 1. Start with `reproducibility/`
 2. Then run `prediction/`
-3. Treat `docking/`, `optimization/`, `red_team/`, and `custom/` as posting-contract and UX walkthroughs unless you also have a real custom scorer image ready
+3. Then run `docking/`
+4. Treat `optimization/`, `red_team/`, and `custom/` as posting-contract and UX walkthroughs unless you also have a real custom scorer image ready
 
 ## Why This Structure Exists
 

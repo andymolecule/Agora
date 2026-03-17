@@ -2,12 +2,12 @@
 
 This directory is the shared policy layer for challenge creation and authoring defaults.
 
-It does **not** own scorer runtime config. Official scorer runtime config lives in `packages/common/src/presets.ts`.
+It does **not** own scorer runtime config. Official managed runtime config lives in `packages/common/src/runtime-families.ts`.
 
 ## Files
 
 - `templates.ts`
-  - Default challenge-type labels, containers, metrics, and preset ids
+  - Default challenge-type labels, runtime families, metrics, and authoring defaults
   - Shared challenge draft construction used by the web posting flow
   - Shared submission-contract builders for current challenge families
 
@@ -18,7 +18,7 @@ It does **not** own scorer runtime config. Official scorer runtime config lives 
 
 If the question is:
 
-- "Which preset/type should this challenge default to?"
+- "Which runtime family/type should this challenge default to?"
 - "How should a new challenge draft be assembled?"
 
 the answer belongs here.

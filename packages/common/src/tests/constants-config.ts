@@ -13,12 +13,14 @@ import {
   loadConfig,
   loadIpfsConfig,
   readApiClientRuntimeConfig,
+  readManagedAuthoringRuntimeConfig,
   readApiServerRuntimeConfig,
   readCliRuntimeConfig,
   readExecutorServerRuntimeConfig,
   readFeaturePolicy,
   readIndexerHealthRuntimeConfig,
   readObservabilityRuntimeConfig,
+  readPostingReviewRuntimeConfig,
   readScorerExecutorRuntimeConfig,
   readWorkerTimingConfig,
   readX402RuntimeConfig,
@@ -63,7 +65,7 @@ assert.equal(
 );
 assert.equal(
   isTerminalScoreJobError(
-    "Invalid scoring preset configuration: Container mismatch for preset csv_comparison_v1",
+    "Invalid runtime family configuration: scorer image is not valid for tabular_regression",
   ),
   true,
   "invalid challenge scoring configuration should count as terminal",
@@ -224,6 +226,59 @@ try {
     undefined,
     "blank API client URLs should be treated as unset so CLI preflight can report a missing config error",
   );
+
+  const defaultManagedAuthoringRuntime = readManagedAuthoringRuntimeConfig({
+    AGORA_MANAGED_AUTHORING_COMPILER_BACKEND: undefined,
+    AGORA_MANAGED_AUTHORING_MODEL: "",
+    AGORA_MANAGED_AUTHORING_BASE_URL: "",
+    AGORA_MANAGED_AUTHORING_API_KEY: "",
+    AGORA_MANAGED_AUTHORING_DRY_RUN_TIMEOUT_MS: undefined,
+  });
+  assert.equal(defaultManagedAuthoringRuntime.compilerBackend, "heuristic");
+  assert.equal(defaultManagedAuthoringRuntime.model, undefined);
+  assert.equal(defaultManagedAuthoringRuntime.apiKey, undefined);
+  assert.equal(defaultManagedAuthoringRuntime.dryRunTimeoutMs, 180_000);
+
+  const openAiCompatibleManagedAuthoringRuntime =
+    readManagedAuthoringRuntimeConfig({
+      AGORA_MANAGED_AUTHORING_COMPILER_BACKEND: "openai_compatible",
+      AGORA_MANAGED_AUTHORING_MODEL: "gpt-5-mini",
+      AGORA_MANAGED_AUTHORING_BASE_URL: "https://api.openai.com/v1",
+      AGORA_MANAGED_AUTHORING_API_KEY: "sk-test",
+      AGORA_MANAGED_AUTHORING_DRY_RUN_TIMEOUT_MS: "90000",
+    });
+  assert.equal(
+    openAiCompatibleManagedAuthoringRuntime.compilerBackend,
+    "openai_compatible",
+  );
+  assert.equal(openAiCompatibleManagedAuthoringRuntime.model, "gpt-5-mini");
+  assert.equal(
+    openAiCompatibleManagedAuthoringRuntime.baseUrl,
+    "https://api.openai.com/v1",
+  );
+  assert.equal(openAiCompatibleManagedAuthoringRuntime.apiKey, "sk-test");
+  assert.equal(
+    openAiCompatibleManagedAuthoringRuntime.dryRunTimeoutMs,
+    90_000,
+  );
+
+  assert.throws(
+    () =>
+      readManagedAuthoringRuntimeConfig({
+        AGORA_MANAGED_AUTHORING_COMPILER_BACKEND: "openai_compatible",
+        AGORA_MANAGED_AUTHORING_MODEL: "",
+        AGORA_MANAGED_AUTHORING_BASE_URL: "https://api.openai.com/v1",
+        AGORA_MANAGED_AUTHORING_API_KEY: "",
+      }),
+    /requires AGORA_MANAGED_AUTHORING_MODEL/,
+  );
+
+  const postingReviewRuntime = readPostingReviewRuntimeConfig({
+    AGORA_API_URL: "https://api.agora.example",
+    AGORA_POSTING_REVIEW_TOKEN: "review-token",
+  });
+  assert.equal(postingReviewRuntime.apiUrl, "https://api.agora.example");
+  assert.equal(postingReviewRuntime.token, "review-token");
 
   const blankCliRuntime = readCliRuntimeConfig({
     AGORA_API_URL: "",

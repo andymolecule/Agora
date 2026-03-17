@@ -15,9 +15,9 @@ Important realism note:
 
 ## Current Runtime Contract
 
-The reproducibility fixtures are aligned to the current preset-based runtime.
+The reproducibility fixtures are aligned to the current managed runtime.
 
-The official `csv_comparison_v1` preset currently resolves to:
+The official `reproducibility` runtime family currently resolves to:
 - evaluation bundle -> `ground_truth.csv`
 - solver artifact -> `submission.csv`
 
@@ -31,7 +31,7 @@ In the current platform architecture, that requirement should be authored as a
 worker runtime both validate against that same machine-readable contract before
 scoring, and the worker reads that contract from the DB cache first.
 
-The built-in preset is:
+The built-in runtime family is:
 - `CSV Comparison`
 - official container: `ghcr.io/andymolecule/repro-scorer:v1`
 
@@ -152,5 +152,5 @@ That is exactly what this folder is modeling.
 | Match rule | `Allow small drift` | Reflects the current reproducibility scoring model when minor numeric noise is acceptable |
 | Allowed drift | `0.001` | Matches the built-in scorer's absolute tolerance configuration |
 | Submission artifact | `CSV output only` | Reflects the current fixed submission contract for reproducibility |
-| Official scoring rule | `Deterministic CSV comparison` | Matches the official preset and current scorer implementation |
+| Official scoring rule | `Deterministic CSV comparison` | Matches the official runtime family and current scorer implementation |
 | Payout rule | `Winner takes all` | Best fit for a small reproducibility bounty |

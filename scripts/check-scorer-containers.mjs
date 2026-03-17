@@ -9,7 +9,7 @@ const disallowedAssetPattern =
 
 function fail(message) {
   throw new Error(
-    `${message} Next step: keep scorer images code-only and move hidden datasets or large assets into the evaluation bundle mounted at runtime.`,
+    `${message} Next step: keep scorer images code-only and move hidden evaluation artifacts or large assets into the evaluation bundle mounted at runtime.`,
   );
 }
 

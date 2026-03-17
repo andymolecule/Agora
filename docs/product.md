@@ -26,7 +26,7 @@ This doc is authoritative for: product concepts, actor roles, user-facing workfl
 - 3 primary interfaces: API, CLI, Web dashboard
 - MCP remains optional as a local/interop adapter, not the canonical remote surface
 - 2 challenge types are turnkey from this repo today: reproducibility and prediction
-- Official scoring methods are configured as preset entries plus scorer images; a new official method should not require worker/indexer branching
+- Official scoring methods are configured as runtime-family entries plus scorer images; a new official method should not require worker/indexer branching
 - Historical malformed specs are intentionally unsupported; Agora does not reconstruct old submission formats at read time
 
 > How Agora works, explained simply.
@@ -81,7 +81,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     A["1. Poster writes<br/>challenge.yaml"] --> B["2. Agora validates<br/>the spec (Zod)"]
-    B --> C["3. Spec + datasets<br/>pinned to IPFS"]
+    B --> C["3. Spec + public artifacts<br/>pinned to IPFS"]
     C --> D["4. USDC approved<br/>for smart contract"]
     D --> E["5. Factory deploys<br/>a new Challenge contract"]
     E --> F["6. USDC transferred<br/>from poster → escrow"]
@@ -90,8 +90,8 @@ flowchart TB
 
 **What the poster provides:**
 - Title and description of the problem
-- Training + test datasets (CSV, SDF, PDB files)
-- Either an official preset or a custom scoring container (Docker image)
+- Public and private challenge artifacts (CSV, SDF, PDB files)
+- Either an official managed runtime (`reproducibility`, `tabular_regression`, `tabular_classification`, `docking`, `ranking`) or a custom scoring container (Docker image)
 - Reward amount (USDC)
 - Deadline
 - Distribution type (winner-take-all, top 3, or proportional)
@@ -251,7 +251,7 @@ The web frontend lets humans:
 
 ## Challenge Types
 
-Today, only **reproducibility** and **prediction** ship as turnkey end-to-end flows from this repo. The other categories are valid product surfaces, but they currently depend on either a placeholder scorer or a poster-supplied custom scorer image.
+Today, **reproducibility**, **prediction**, and **docking** ship as turnkey end-to-end flows from this repo. The remaining categories are valid product surfaces, but they still depend on poster-supplied custom scorer images.
 
 | Type | What it measures | Example |
 |------|-----------------|---------|
@@ -303,9 +303,9 @@ flowchart TB
 |-----------|-------|-------|
 | Protocol fee | 10% | Only on successful finalization |
 | Dispute window | 0–2160 hours on testnet | Production policy targets 168–2160 hours (7–90 days) |
-| Official preset timeout | 1–20 minutes | Base runner fallback is 30 minutes when no preset override applies |
-| Container memory | 128 MB – 4 GB | Preset-dependent; base runner fallback is 256 MB |
-| Container CPUs | 0.5 – 2 | Preset-dependent; base runner fallback is 0.5 CPU |
+| Official managed runtime timeout | 1–20 minutes | Base runner fallback is 30 minutes when no runtime-family override applies |
+| Container memory | 128 MB – 4 GB | Runtime-family-dependent; base runner fallback is 256 MB |
+| Container CPUs | 0.5 – 2 | Runtime-family-dependent; base runner fallback is 0.5 CPU |
 | USDC reward range | 1–30 USDC | Testnet limits |
 | Oracle immutability | Per challenge | Fixed at creation, cannot be rotated mid-challenge |
 | Dispute timeout | 30 days | Full refund to poster |

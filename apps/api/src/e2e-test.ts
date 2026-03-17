@@ -23,11 +23,11 @@ import {
   reconcileChallengeProjection,
 } from "@agora/chain/indexer/handlers";
 import {
+  OFFICIAL_SCORER_IMAGES,
   SUBMISSION_RESULT_FORMAT,
   createCsvTableSubmissionContract,
   hasSubmissionSealWorkerConfig,
   importSubmissionSealPublicKey,
-  lookupPreset,
   loadConfig,
   resolveRuntimePrivateKey,
   sealSubmission,
@@ -164,34 +164,39 @@ async function ensureWalletMatchesOracle(
 
 function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
   return {
-    schema_version: 2 as const,
+    schema_version: 3 as const,
     id: `e2e-${Date.now()}`,
-    preset_id: "csv_comparison_v1",
     title: `E2E Reproducibility ${Date.now()}`,
     description:
       "End-to-end reproducibility flow using canonical worker scoring and settlement projection.",
     domain: "other" as const,
     type: "reproducibility" as const,
-    dataset: {
-      train: input.trainCid,
-      test: input.expectedCid,
-    },
-    scoring: {
-      container: "ghcr.io/andymolecule/repro-scorer:v1",
-      metric: "custom" as const,
+    artifacts: [
+      {
+        role: "source_data",
+        visibility: "public" as const,
+        uri: input.trainCid,
+      },
+      {
+        role: "reference_output",
+        visibility: "public" as const,
+        uri: input.expectedCid,
+      },
+    ],
+    evaluation: {
+      runtime_family: "reproducibility",
+      metric: "exact_match",
+      scorer_image: OFFICIAL_SCORER_IMAGES.reproducibility,
+      evaluation_bundle: input.expectedCid,
     },
     submission_contract: createCsvTableSubmissionContract({
       requiredColumns: ["sample_id", "normalized_signal", "condition"],
     }),
     reward: {
-      total: E2E_REWARD_USDC,
+      total: String(E2E_REWARD_USDC),
       distribution: "top_3" as const,
     },
     deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    evaluation: {
-      success_definition: "Row-by-row CSV match against expected output",
-      tolerance: "0.001",
-    },
     lab_tba: ZERO_ADDRESS,
   };
 }
@@ -201,33 +206,35 @@ function buildPredictionE2ESpec(input: {
   testCid: string;
   hiddenLabelsCid: string;
 }) {
-  const regressionContainer = lookupPreset("regression_v1")?.container;
-  if (!regressionContainer) {
-    throw new Error(
-      "Lifecycle E2E requires the official regression_v1 preset. Restore the preset registry entry and retry.",
-    );
-  }
-
   return {
-    schema_version: 2 as const,
+    schema_version: 3 as const,
     id: `e2e-prediction-${Date.now()}`,
-    preset_id: "regression_v1",
     title: `E2E Prediction ${Date.now()}`,
     description:
       "End-to-end prediction flow using the regression scorer, hidden labels, and on-chain settlement.",
     domain: "other" as const,
     type: "prediction" as const,
-    dataset: {
-      train: input.trainCid,
-      test: input.testCid,
-      hidden_labels: input.hiddenLabelsCid,
-    },
-    scoring: {
-      container: regressionContainer,
-      metric: "r2" as const,
-    },
-    eval_spec: {
-      engine_id: "regression_v1",
+    artifacts: [
+      {
+        role: "training_data",
+        visibility: "public" as const,
+        uri: input.trainCid,
+      },
+      {
+        role: "evaluation_features",
+        visibility: "public" as const,
+        uri: input.testCid,
+      },
+      {
+        role: "hidden_labels",
+        visibility: "private" as const,
+        uri: input.hiddenLabelsCid,
+      },
+    ],
+    evaluation: {
+      runtime_family: "tabular_regression",
+      metric: "r2",
+      scorer_image: OFFICIAL_SCORER_IMAGES.tabular,
       evaluation_bundle: input.hiddenLabelsCid,
     },
     submission_contract: createCsvTableSubmissionContract({
@@ -236,14 +243,10 @@ function buildPredictionE2ESpec(input: {
       valueColumn: "prediction",
     }),
     reward: {
-      total: E2E_REWARD_USDC,
+      total: String(E2E_REWARD_USDC),
       distribution: "top_3" as const,
     },
     deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    evaluation: {
-      success_definition:
-        "Predict held-out numeric labels for every evaluation row using R².",
-    },
     lab_tba: ZERO_ADDRESS,
   };
 }

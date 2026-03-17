@@ -1,1027 +1,126 @@
-import { DEFAULT_SCORER_MOUNT, PRESET_REGISTRY } from "../presets.js";
+import assert from "node:assert/strict";
 import {
-  CHALLENGE_TYPE_SCOREABILITY,
   canonicalizeChallengeSpec,
   challengeSpecSchema,
-  getChallengeTypeScoreabilityProfile,
-  resolveEvalSpec,
-  resolveScoringEnvironmentFromSpec,
+  resolveChallengeEvaluation,
   validateChallengeScoreability,
   validateChallengeSpec,
-} from "../schemas/challenge-spec";
-import {
-  createCsvTableSubmissionContract,
-  createOpaqueFileSubmissionContract,
-} from "../schemas/submission-contract";
-import { CHALLENGE_TYPES } from "../types/challenge.js";
-
-function csvContract(input: {
-  requiredColumns: string[];
-  idColumn?: string;
-  valueColumn?: string;
-}) {
-  return createCsvTableSubmissionContract({
-    requiredColumns: input.requiredColumns,
-    idColumn: input.idColumn,
-    valueColumn: input.valueColumn,
-  });
-}
-
-function opaqueContract(input: { extension?: string; mime?: string } = {}) {
-  return createOpaqueFileSubmissionContract(input);
-}
+} from "../schemas/challenge-spec.js";
 
 const sample = {
-  schema_version: 2,
+  schema_version: 3,
   id: "ch-001",
-  preset_id: "csv_comparison_v1",
-  title: "Reproduce Figure 3 from Gladyshev 2024 longevity clock",
-  domain: "longevity",
-  type: "reproducibility",
-  description: "Reproduce the main figure from the paper.",
-  dataset: {
-    train: "ipfs://QmTrain",
-    test: "ipfs://QmTest",
+  title: "Predict assay response",
+  domain: "omics",
+  type: "prediction",
+  description: "Predict the held-out labels.",
+  evaluation: {
+    runtime_family: "tabular_regression",
+    metric: "r2",
+    scorer_image: "ghcr.io/placeholder/will-be-overridden:v1",
+    evaluation_bundle: "ipfs://QmHiddenLabels",
   },
-  scoring: {
-    container: "ghcr.io/andymolecule/repro-scorer:v1",
-    metric: "custom",
+  artifacts: [
+    {
+      role: "training_data",
+      visibility: "public",
+      uri: "ipfs://QmTrain",
+      file_name: "train.csv",
+    },
+    {
+      role: "evaluation_features",
+      visibility: "public",
+      uri: "ipfs://QmTest",
+      file_name: "test.csv",
+    },
+    {
+      role: "hidden_labels",
+      visibility: "private",
+      uri: "ipfs://QmHiddenLabels",
+      file_name: "hidden_labels.csv",
+    },
+  ],
+  submission_contract: {
+    version: "v1",
+    kind: "csv_table",
+    file: {
+      extension: ".csv",
+      mime: "text/csv",
+      max_bytes: 10_000_000,
+    },
+    columns: {
+      required: ["id", "prediction"],
+      id: "id",
+      value: "prediction",
+      allow_extra: true,
+    },
   },
-  submission_contract: csvContract({
-    requiredColumns: ["sample_id", "normalized_signal", "condition"],
-    idColumn: "sample_id",
-    valueColumn: "normalized_signal",
-  }),
   reward: {
-    total: 10,
+    total: "25",
     distribution: "winner_take_all",
   },
-  deadline: "2026-03-04T23:59:59Z",
-  dispute_window_hours: 168,
+  deadline: "2026-03-20T00:00:00Z",
+  dispute_window_hours: 0,
 };
 
 const result = challengeSpecSchema.safeParse(sample);
+assert.equal(result.success, true, "sample spec should validate");
+
+const chainValidated = validateChallengeSpec(sample, 84532);
+assert.equal(chainValidated.success, true, "chain validation should succeed");
+
 if (!result.success) {
-  console.error(result.error.format());
-  process.exit(1);
+  throw new Error("Expected sample spec to parse");
 }
 
-if (result.data.preset_id !== "csv_comparison_v1") {
-  console.error("preset_id should be preserved by challengeSpecSchema");
-  process.exit(1);
-}
+const resolved = resolveChallengeEvaluation(result.data);
+assert.equal(resolved.runtimeFamily, "tabular_regression");
+assert.equal(resolved.metric, "r2");
+assert.equal(resolved.evaluationBundleCid, "ipfs://QmHiddenLabels");
 
-const sampleWithCanonicalDatasetNames = challengeSpecSchema.safeParse({
+const scoreability = validateChallengeScoreability(result.data);
+assert.equal(scoreability.ok, true, "sample spec should be scoreable");
+
+const canonicalized = await canonicalizeChallengeSpec(result.data, {
+  resolveOfficialPresetDigests: false,
+});
+assert.equal(
+  canonicalized.evaluation.scorer_image,
+  "ghcr.io/andymolecule/regression-scorer:v1",
+  "managed challenges should canonicalize their scorer image from the registry",
+);
+
+const invalidMetric = challengeSpecSchema.safeParse({
   ...sample,
-  id: "ch-001-names",
-  dataset: {
-    ...sample.dataset,
-    train_file_name: "train.csv",
-    test_file_name: "test.csv",
+  evaluation: {
+    ...sample.evaluation,
+    metric: "accuracy",
   },
 });
-if (!sampleWithCanonicalDatasetNames.success) {
-  console.error(
-    "challenge specs should accept canonical dataset file names when dataset sources are present",
-    sampleWithCanonicalDatasetNames.error.format(),
-  );
-  process.exit(1);
-}
+assert.equal(invalidMetric.success, false, "unsupported metric should fail");
 
-const orphanedDatasetFileName = challengeSpecSchema.safeParse({
+const expertSpec = challengeSpecSchema.safeParse({
   ...sample,
-  id: "ch-001-orphaned-name",
-  dataset: {
-    test: "ipfs://QmTest",
-    train_file_name: "train.csv",
-  },
-});
-if (orphanedDatasetFileName.success) {
-  console.error(
-    "challenge specs should reject dataset file names when the matching dataset source is missing",
-  );
-  process.exit(1);
-}
-
-const missingSubmissionContract = challengeSpecSchema.safeParse({
-  ...sample,
-  id: "ch-001a",
-  submission_contract: undefined,
-});
-if (missingSubmissionContract.success) {
-  console.error("challenge specs must require submission_contract");
-  process.exit(1);
-}
-
-const officialPresetWrongContract = challengeSpecSchema.safeParse({
-  ...sample,
-  id: "ch-001c",
-  submission_contract: opaqueContract(),
-});
-if (officialPresetWrongContract.success) {
-  console.error(
-    "official scorer presets must enforce their expected submission contract",
-  );
-  process.exit(1);
-}
-
-PRESET_REGISTRY.protein_rmsd_test_v1 = {
-  id: "protein_rmsd_test_v1",
-  label: "Protein RMSD",
-  description: "Test preset for opaque-file challenges.",
-  container: "ghcr.io/andymolecule/protein-rmsd-scorer:v1",
-  scoringDescription: "Test-only preset.",
-  runnerLimits: { memory: "2g", cpus: "2", pids: 64, timeoutMs: 600_000 },
-  defaultMinimumScore: 0,
-  expectedSubmissionKind: "opaque_file",
-  mount: {
-    evaluationBundleName: "reference.pdb",
-    submissionFileName: "submission.pdb",
-  },
-};
-
-const inferredOpaquePreset = challengeSpecSchema.safeParse({
-  ...sample,
-  id: "ch-001d",
-  preset_id: undefined,
-  scoring: {
-    container: "ghcr.io/andymolecule/protein-rmsd-scorer:v1",
+  type: "custom",
+  evaluation: {
+    runtime_family: "expert_custom",
     metric: "custom",
+    scorer_image: "ghcr.io/acme/expert@sha256:1234",
   },
-  submission_contract: opaqueContract({
-    extension: ".pdb",
-    mime: "chemical/x-pdb",
-  }),
 });
-if (!inferredOpaquePreset.success) {
-  console.error(
-    "challenge specs should infer preset requirements from scoring.container before falling back to challenge-type defaults",
-    inferredOpaquePreset.error.format(),
-  );
-  process.exit(1);
-}
+assert.equal(expertSpec.success, true, "expert spec should accept pinned digests");
 
-const inferredOpaqueEvalPlan = resolveEvalSpec(inferredOpaquePreset.data);
-if (
-  inferredOpaqueEvalPlan.mount.evaluationBundleName !== "reference.pdb" ||
-  inferredOpaqueEvalPlan.mount.submissionFileName !== "submission.pdb"
-) {
-  console.error(
-    "resolveEvalSpec should use the inferred preset mount when scoring.container matches a registered preset",
-  );
-  process.exit(1);
-}
-
-const shortDisputeWindow = validateChallengeSpec(
-  {
-    ...sample,
-    id: "ch-001b",
-    dispute_window_hours: 1,
-  },
-  8453,
-);
-if (!shortDisputeWindow.success) {
-  console.error(
-    "validateChallengeSpec should accept UI-selected short dispute windows",
-    shortDisputeWindow.error.format(),
-  );
-  process.exit(1);
-}
-
-const invalidLimits = challengeSpecSchema.safeParse({
+const missingBundleParse = challengeSpecSchema.safeParse({
   ...sample,
-  id: "ch-002",
-  max_submissions_total: 2,
-  max_submissions_per_solver: 3,
-});
-if (invalidLimits.success) {
-  console.error(
-    "max_submissions_per_solver > max_submissions_total should fail validation",
-  );
-  process.exit(1);
-}
-
-const sampleWithEvalSpec = {
-  ...sample,
-  id: "ch-003",
-  eval_spec: {
-    engine_id: "csv_comparison_v1",
-    engine_digest: "ghcr.io/andymolecule/repro-scorer@sha256:abc123",
-    evaluation_bundle: "ipfs://QmEvalBundle",
+  evaluation: {
+    ...sample.evaluation,
+    evaluation_bundle: undefined,
   },
-};
-
-const evalResult = challengeSpecSchema.safeParse(sampleWithEvalSpec);
-if (!evalResult.success) {
-  console.error("eval_spec should be accepted:", evalResult.error.format());
-  process.exit(1);
-}
-
-if (evalResult.data.eval_spec?.engine_id !== "csv_comparison_v1") {
-  console.error("eval_spec.engine_id should be preserved");
-  process.exit(1);
-}
-
-const resolvedNew = resolveEvalSpec(evalResult.data);
-if (resolvedNew.image !== "ghcr.io/andymolecule/repro-scorer@sha256:abc123") {
-  console.error("resolveEvalSpec should use eval_spec.engine_digest as image");
-  process.exit(1);
-}
-if (
-  resolvedNew.mount.evaluationBundleName !==
-    DEFAULT_SCORER_MOUNT.evaluationBundleName ||
-  resolvedNew.mount.submissionFileName !==
-    DEFAULT_SCORER_MOUNT.submissionFileName
-) {
-  console.error("resolveEvalSpec should resolve the preset/default mount");
-  process.exit(1);
-}
-if (resolvedNew.evaluationBundleCid !== "ipfs://QmEvalBundle") {
-  console.error("resolveEvalSpec should use eval_spec.evaluation_bundle");
-  process.exit(1);
-}
-if (resolvedNew.metric !== "custom") {
-  console.error("resolveEvalSpec should preserve scoring metric");
-  process.exit(1);
-}
-
-const resolvedScoringOnly = resolveEvalSpec(result.data);
-if (resolvedScoringOnly.evaluationBundleCid !== "ipfs://QmTest") {
-  console.error("resolveEvalSpec should fall back to dataset.test");
-  process.exit(1);
-}
-if (resolvedScoringOnly.image !== "ghcr.io/andymolecule/repro-scorer:v1") {
-  console.error("resolveEvalSpec should use scoring.container");
-  process.exit(1);
-}
-if (
-  resolvedScoringOnly.mount.evaluationBundleName !==
-    DEFAULT_SCORER_MOUNT.evaluationBundleName ||
-  resolvedScoringOnly.mount.submissionFileName !==
-    DEFAULT_SCORER_MOUNT.submissionFileName
-) {
-  console.error("resolveEvalSpec should infer mount config from the preset");
-  process.exit(1);
-}
-if (resolvedScoringOnly.metric !== "custom") {
-  console.error("resolveEvalSpec should preserve metric on scoring-only input");
-  process.exit(1);
-}
-
-const scoringEnv = resolveScoringEnvironmentFromSpec({
-  evaluation: { tolerance: "0.001" },
 });
-if (scoringEnv?.AGORA_TOLERANCE !== "0.001") {
-  console.error(
-    "resolveScoringEnvironmentFromSpec should expose tolerance as AGORA_TOLERANCE",
-  );
-  process.exit(1);
-}
-
-if (resolveScoringEnvironmentFromSpec({ evaluation: {} }) !== undefined) {
-  console.error(
-    "resolveScoringEnvironmentFromSpec should return undefined when no tolerance is set",
-  );
-  process.exit(1);
-}
-
-const resolvedRow = resolveEvalSpec({
-  eval_image: "ghcr.io/andymolecule/repro-scorer@sha256:def456",
-  eval_metric: "custom",
-  eval_bundle_cid: "ipfs://QmResolvedBundle",
-  runner_preset_id: "csv_comparison_v1",
-});
-if (resolvedRow.image !== "ghcr.io/andymolecule/repro-scorer@sha256:def456") {
-  console.error("resolveEvalSpec should use eval_image for DB rows");
-  process.exit(1);
-}
-if (
-  resolvedRow.mount.evaluationBundleName !==
-    DEFAULT_SCORER_MOUNT.evaluationBundleName ||
-  resolvedRow.mount.submissionFileName !==
-    DEFAULT_SCORER_MOUNT.submissionFileName
-) {
-  console.error("resolveEvalSpec should use runner_preset_id for stored rows");
-  process.exit(1);
-}
-if (resolvedRow.evaluationBundleCid !== "ipfs://QmResolvedBundle") {
-  console.error("resolveEvalSpec should prefer eval_bundle_cid for DB rows");
-  process.exit(1);
-}
-if (resolvedRow.metric !== "custom") {
-  console.error("resolveEvalSpec should preserve eval_metric for DB rows");
-  process.exit(1);
-}
-
-const predictionHiddenLabelsOnly = challengeSpecSchema.safeParse({
-  schema_version: 2,
-  id: "ch-004",
-  title: "Prediction hidden labels only",
-  domain: "omics",
-  type: "prediction",
-  description: "Prediction challenge with hidden labels only.",
-  dataset: {
-    hidden_labels: "ipfs://QmHiddenLabels",
-  },
-  scoring: {
-    container: "ghcr.io/andymolecule/regression-scorer:v1",
-    metric: "rmse",
-  },
-  submission_contract: csvContract({
-    requiredColumns: ["id", "prediction"],
-    idColumn: "id",
-    valueColumn: "prediction",
-  }),
-  reward: {
-    total: 10,
-    distribution: "winner_take_all",
-  },
-  deadline: "2026-03-04T23:59:59Z",
-  dispute_window_hours: 168,
-});
-if (!predictionHiddenLabelsOnly.success) {
-  console.error(
-    "prediction spec should accept dataset.hidden_labels as evaluation bundle input:",
-    predictionHiddenLabelsOnly.error.format(),
-  );
-  process.exit(1);
-}
-
-const resolvedPredictionHiddenLabels = resolveEvalSpec(
-  predictionHiddenLabelsOnly.data,
+assert.equal(
+  missingBundleParse.success,
+  false,
+  "managed runtime families should require an evaluation bundle",
 );
-if (
-  resolvedPredictionHiddenLabels.evaluationBundleCid !== "ipfs://QmHiddenLabels"
-) {
-  console.error(
-    "resolveEvalSpec should use dataset.hidden_labels for prediction specs",
-  );
-  process.exit(1);
-}
-const predictionScoreability = validateChallengeScoreability(
-  predictionHiddenLabelsOnly.data,
-);
-if (!predictionScoreability.ok) {
-  console.error(
-    "validateChallengeScoreability should accept prediction challenges with hidden_labels only",
-    predictionScoreability.errors,
-  );
-  process.exit(1);
-}
-
-const predictionCustomSubmissionColumns = challengeSpecSchema.safeParse({
-  schema_version: 2,
-  id: "ch-004a",
-  title: "Prediction custom submission columns",
-  domain: "omics",
-  type: "prediction",
-  description: "Prediction challenge with custom solver-facing columns.",
-  dataset: {
-    hidden_labels: "ipfs://QmHiddenLabels",
-  },
-  scoring: {
-    container: "ghcr.io/andymolecule/regression-scorer:v1",
-    metric: "r2",
-  },
-  submission_contract: csvContract({
-    requiredColumns: ["sample_id", "forecast"],
-    idColumn: "sample_id",
-    valueColumn: "forecast",
-  }),
-  reward: {
-    total: 10,
-    distribution: "winner_take_all",
-  },
-  deadline: "2026-03-04T23:59:59Z",
-  dispute_window_hours: 168,
-});
-if (!predictionCustomSubmissionColumns.success) {
-  console.error(
-    "prediction spec should accept custom submission column names when hidden labels are provided:",
-    predictionCustomSubmissionColumns.error.format(),
-  );
-  process.exit(1);
-}
-
-const predictionMissingSubmissionId = challengeSpecSchema.safeParse({
-  schema_version: 2,
-  id: "ch-004aa",
-  title: "Prediction missing submission id column",
-  domain: "omics",
-  type: "prediction",
-  description: "Prediction challenge without a submission id column.",
-  dataset: {
-    hidden_labels: "ipfs://QmHiddenLabels",
-  },
-  scoring: {
-    container: "ghcr.io/andymolecule/regression-scorer:v1",
-    metric: "r2",
-  },
-  submission_contract: csvContract({
-    requiredColumns: ["forecast"],
-    valueColumn: "forecast",
-  }),
-  reward: {
-    total: 10,
-    distribution: "winner_take_all",
-  },
-  deadline: "2026-03-04T23:59:59Z",
-  dispute_window_hours: 168,
-});
-if (predictionMissingSubmissionId.success) {
-  console.error(
-    "prediction specs should reject submission contracts without columns.id",
-  );
-  process.exit(1);
-}
-
-const predictionMissingSubmissionValue = challengeSpecSchema.safeParse({
-  schema_version: 2,
-  id: "ch-004ab",
-  title: "Prediction missing submission value column",
-  domain: "omics",
-  type: "prediction",
-  description: "Prediction challenge without a submission value column.",
-  dataset: {
-    hidden_labels: "ipfs://QmHiddenLabels",
-  },
-  scoring: {
-    container: "ghcr.io/andymolecule/regression-scorer:v1",
-    metric: "r2",
-  },
-  submission_contract: csvContract({
-    requiredColumns: ["sample_id"],
-    idColumn: "sample_id",
-  }),
-  reward: {
-    total: 10,
-    distribution: "winner_take_all",
-  },
-  deadline: "2026-03-04T23:59:59Z",
-  dispute_window_hours: 168,
-});
-if (predictionMissingSubmissionValue.success) {
-  console.error(
-    "prediction specs should reject submission contracts without columns.value",
-  );
-  process.exit(1);
-}
-
-const predictionTestOnly = challengeSpecSchema.safeParse({
-  schema_version: 2,
-  id: "ch-004b",
-  title: "Prediction test dataset only",
-  domain: "omics",
-  type: "prediction",
-  description: "Prediction challenge with dataset.test only.",
-  dataset: {
-    test: "ipfs://QmPredictionTest",
-  },
-  scoring: {
-    container: "ghcr.io/andymolecule/regression-scorer:v1",
-    metric: "rmse",
-  },
-  submission_contract: csvContract({
-    requiredColumns: ["id", "prediction"],
-    idColumn: "id",
-    valueColumn: "prediction",
-  }),
-  reward: {
-    total: 10,
-    distribution: "winner_take_all",
-  },
-  deadline: "2026-03-04T23:59:59Z",
-  dispute_window_hours: 168,
-});
-if (predictionTestOnly.success) {
-  console.error(
-    "prediction spec should reject dataset.test-only input for the official regression scorer",
-  );
-  process.exit(1);
-}
-
-const customPredictionTestOnly = challengeSpecSchema.safeParse({
-  schema_version: 2,
-  id: "ch-004c",
-  title: "Custom prediction test dataset only",
-  domain: "omics",
-  type: "prediction",
-  description:
-    "Prediction challenge with a custom scorer and dataset.test fallback.",
-  dataset: {
-    test: "ipfs://QmPredictionTest",
-  },
-  preset_id: "custom",
-  scoring: {
-    container:
-      "ghcr.io/example/custom-prediction@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    metric: "custom",
-  },
-  submission_contract: csvContract({
-    requiredColumns: ["id", "prediction"],
-    idColumn: "id",
-    valueColumn: "prediction",
-  }),
-  reward: {
-    total: 10,
-    distribution: "winner_take_all",
-  },
-  deadline: "2026-03-04T23:59:59Z",
-  dispute_window_hours: 168,
-});
-if (!customPredictionTestOnly.success) {
-  console.error(
-    "custom prediction specs should still accept dataset.test as the evaluation bundle fallback",
-    customPredictionTestOnly.error.format(),
-  );
-  process.exit(1);
-}
-
-const resolvedCustomPredictionTestOnly = resolveEvalSpec(
-  customPredictionTestOnly.data,
-);
-if (
-  resolvedCustomPredictionTestOnly.evaluationBundleCid !==
-  "ipfs://QmPredictionTest"
-) {
-  console.error(
-    "resolveEvalSpec should fall back to dataset.test for custom prediction specs",
-  );
-  process.exit(1);
-}
-
-const predictionMissingEvalBundle = challengeSpecSchema.safeParse({
-  schema_version: 2,
-  id: "ch-005",
-  title: "Prediction missing eval bundle",
-  domain: "omics",
-  type: "prediction",
-  description: "Prediction challenge without a scoreable bundle.",
-  scoring: {
-    container: "ghcr.io/andymolecule/regression-scorer:v1",
-    metric: "rmse",
-  },
-  submission_contract: csvContract({
-    requiredColumns: ["id", "prediction"],
-    idColumn: "id",
-    valueColumn: "prediction",
-  }),
-  reward: {
-    total: 10,
-    distribution: "winner_take_all",
-  },
-  deadline: "2026-03-04T23:59:59Z",
-  dispute_window_hours: 168,
-});
-if (predictionMissingEvalBundle.success) {
-  console.error(
-    "prediction spec should require evaluation_bundle, hidden_labels, or dataset.test",
-  );
-  process.exit(1);
-}
-
-const predictionMatchingEvalBundle = challengeSpecSchema.safeParse({
-  schema_version: 2,
-  id: "ch-006",
-  title: "Prediction matching hidden labels and eval bundle",
-  domain: "omics",
-  type: "prediction",
-  description: "Prediction challenge with matching aliases.",
-  dataset: {
-    hidden_labels: "ipfs://QmSharedBundle",
-    test: "ipfs://QmLegacyTest",
-  },
-  eval_spec: {
-    engine_id: "regression_v1",
-    evaluation_bundle: "ipfs://QmSharedBundle",
-  },
-  scoring: {
-    container: "ghcr.io/andymolecule/regression-scorer:v1",
-    metric: "rmse",
-  },
-  submission_contract: csvContract({
-    requiredColumns: ["id", "prediction"],
-    idColumn: "id",
-    valueColumn: "prediction",
-  }),
-  reward: {
-    total: 10,
-    distribution: "winner_take_all",
-  },
-  deadline: "2026-03-04T23:59:59Z",
-  dispute_window_hours: 168,
-});
-if (!predictionMatchingEvalBundle.success) {
-  console.error(
-    "matching prediction eval bundle aliases should pass validation",
-  );
-  process.exit(1);
-}
-
-const resolvedPredictionEvalBundle = resolveEvalSpec(
-  predictionMatchingEvalBundle.data,
-);
-if (
-  resolvedPredictionEvalBundle.evaluationBundleCid !== "ipfs://QmSharedBundle"
-) {
-  console.error(
-    "resolveEvalSpec should prefer eval_spec.evaluation_bundle for prediction specs",
-  );
-  process.exit(1);
-}
-
-const predictionMismatchedEvalBundle = challengeSpecSchema.safeParse({
-  schema_version: 2,
-  id: "ch-007",
-  title: "Prediction mismatched hidden labels and eval bundle",
-  domain: "omics",
-  type: "prediction",
-  description: "Prediction challenge with conflicting aliases.",
-  dataset: {
-    hidden_labels: "ipfs://QmHiddenLabelsOnly",
-  },
-  eval_spec: {
-    engine_id: "regression_v1",
-    evaluation_bundle: "ipfs://QmDifferentBundle",
-  },
-  scoring: {
-    container: "ghcr.io/andymolecule/regression-scorer:v1",
-    metric: "rmse",
-  },
-  submission_contract: csvContract({
-    requiredColumns: ["id", "prediction"],
-    idColumn: "id",
-    valueColumn: "prediction",
-  }),
-  reward: {
-    total: 10,
-    distribution: "winner_take_all",
-  },
-  deadline: "2026-03-04T23:59:59Z",
-  dispute_window_hours: 168,
-});
-if (predictionMismatchedEvalBundle.success) {
-  console.error(
-    "prediction spec should reject mismatched hidden_labels and eval_spec.evaluation_bundle",
-  );
-  process.exit(1);
-}
-
-const reproducibilityMissingBundle = challengeSpecSchema.parse({
-  schema_version: 2,
-  id: "ch-008",
-  title: "Reproducibility missing bundle",
-  domain: "longevity",
-  type: "reproducibility",
-  description: "Repro challenge without an evaluation bundle.",
-  scoring: {
-    container: "ghcr.io/andymolecule/repro-scorer:v1",
-    metric: "custom",
-  },
-  submission_contract: csvContract({
-    requiredColumns: ["sample_id", "normalized_signal", "condition"],
-    idColumn: "sample_id",
-    valueColumn: "normalized_signal",
-  }),
-  reward: {
-    total: 10,
-    distribution: "winner_take_all",
-  },
-  deadline: "2026-03-04T23:59:59Z",
-  dispute_window_hours: 168,
-});
-const reproducibilityScoreability = validateChallengeScoreability(
-  reproducibilityMissingBundle,
-);
-if (reproducibilityScoreability.ok) {
-  console.error(
-    "validateChallengeScoreability should reject reproducibility challenges without an evaluation bundle",
-  );
-  process.exit(1);
-}
-if (
-  reproducibilityScoreability.errors[0] !==
-  "Reproducibility challenges require an evaluation bundle."
-) {
-  console.error(
-    "validateChallengeScoreability should return a clear reproducibility error",
-    reproducibilityScoreability.errors,
-  );
-  process.exit(1);
-}
-
-const customPinnedScoreability = validateChallengeScoreability(
-  challengeSpecSchema.parse({
-    schema_version: 2,
-    id: "ch-009",
-    title: "Custom pinned scorer",
-    domain: "other",
-    type: "custom",
-    description: "Custom challenge with pinned scorer image.",
-    scoring: {
-      container: `ghcr.io/acme/custom-scorer@sha256:${"a".repeat(64)}`,
-      metric: "custom",
-    },
-    submission_contract: opaqueContract({ extension: ".json" }),
-    reward: {
-      total: 10,
-      distribution: "winner_take_all",
-    },
-    deadline: "2026-03-04T23:59:59Z",
-    dispute_window_hours: 168,
-  }),
-);
-if (!customPinnedScoreability.ok) {
-  console.error(
-    "validateChallengeScoreability should accept custom challenges with a pinned scorer image",
-    customPinnedScoreability.errors,
-  );
-  process.exit(1);
-}
-
-const optimizationScoreability = validateChallengeScoreability(
-  challengeSpecSchema.parse({
-    schema_version: 2,
-    id: "ch-010",
-    title: "Optimization scoreable",
-    domain: "drug_discovery",
-    type: "optimization",
-    description: "Optimization challenge with scorer image.",
-    dataset: {
-      train: "ipfs://QmOptimizationBundle",
-    },
-    scoring: {
-      container: `ghcr.io/acme/optimization-scorer@sha256:${"b".repeat(64)}`,
-      metric: "custom",
-    },
-    submission_contract: opaqueContract({ extension: ".json" }),
-    reward: {
-      total: 10,
-      distribution: "winner_take_all",
-    },
-    deadline: "2026-03-04T23:59:59Z",
-    dispute_window_hours: 168,
-  }),
-);
-if (!optimizationScoreability.ok) {
-  console.error(
-    "validateChallengeScoreability should accept optimization challenges with a scorer image",
-    optimizationScoreability.errors,
-  );
-  process.exit(1);
-}
-
-const dockingMissingBundle = validateChallengeScoreability(
-  challengeSpecSchema.parse({
-    schema_version: 2,
-    id: "ch-011",
-    title: "Docking missing bundle",
-    domain: "drug_discovery",
-    type: "docking",
-    description: "Docking challenge without evaluation bundle.",
-    scoring: {
-      container: "ghcr.io/andymolecule/docking-scorer:v1",
-      metric: "spearman",
-    },
-    submission_contract: csvContract({
-      requiredColumns: ["ligand_id", "docking_score"],
-      idColumn: "ligand_id",
-      valueColumn: "docking_score",
-    }),
-    reward: {
-      total: 10,
-      distribution: "winner_take_all",
-    },
-    deadline: "2026-03-04T23:59:59Z",
-    dispute_window_hours: 168,
-  }),
-);
-if (dockingMissingBundle.ok) {
-  console.error(
-    "validateChallengeScoreability should reject docking challenges without an evaluation bundle",
-  );
-  process.exit(1);
-}
-if (
-  dockingMissingBundle.errors[0] !==
-  "Docking challenges require an evaluation bundle."
-) {
-  console.error(
-    "validateChallengeScoreability should return a clear docking bundle error",
-    dockingMissingBundle.errors,
-  );
-  process.exit(1);
-}
-
-{
-  const invalidMetricSpec = {
-    schema_version: 2,
-    id: "ch-012",
-    title: "Docking blank metric",
-    domain: "drug_discovery",
-    type: "docking",
-    description: "Docking challenge with blank metric in scoreability check.",
-    dataset: {
-      test: "ipfs://QmDockingEvalBundle",
-    },
-    scoring: {
-      container: "ghcr.io/andymolecule/docking-scorer:v1",
-      metric: "spearman",
-    },
-    submission_contract: csvContract({
-      requiredColumns: ["ligand_id", "docking_score"],
-      idColumn: "ligand_id",
-      valueColumn: "docking_score",
-    }),
-    reward: {
-      total: 10,
-      distribution: "winner_take_all",
-    },
-    deadline: "2026-03-04T23:59:59Z",
-    dispute_window_hours: 168,
-  };
-  const parsedDockingMetric = challengeSpecSchema.parse(invalidMetricSpec);
-  const mutated = {
-    ...parsedDockingMetric,
-    scoring: {
-      ...parsedDockingMetric.scoring,
-      metric: "" as typeof parsedDockingMetric.scoring.metric,
-    },
-  };
-  const metricCheck = validateChallengeScoreability(mutated);
-  if (metricCheck.ok) {
-    console.error(
-      "validateChallengeScoreability should reject docking challenges without a scoring metric",
-    );
-    process.exit(1);
-  }
-  if (
-    metricCheck.errors[0] !== "Docking challenges require a scoring metric."
-  ) {
-    console.error(
-      "validateChallengeScoreability should return a clear docking metric error",
-      metricCheck.errors,
-    );
-    process.exit(1);
-  }
-}
-
-const redTeamScoreability = validateChallengeScoreability(
-  challengeSpecSchema.parse({
-    schema_version: 2,
-    id: "ch-013",
-    title: "Red team scoreable",
-    domain: "other",
-    type: "red_team",
-    description: "Red team challenge with custom scorer image.",
-    dataset: {
-      train: "ipfs://QmBaselineData",
-    },
-    scoring: {
-      container: `ghcr.io/acme/red-team-scorer@sha256:${"c".repeat(64)}`,
-      metric: "custom",
-    },
-    submission_contract: opaqueContract(),
-    reward: {
-      total: 10,
-      distribution: "winner_take_all",
-    },
-    deadline: "2026-03-04T23:59:59Z",
-    dispute_window_hours: 168,
-  }),
-);
-if (!redTeamScoreability.ok) {
-  console.error(
-    "validateChallengeScoreability should accept red team challenges with a scorer image",
-    redTeamScoreability.errors,
-  );
-  process.exit(1);
-}
-
-{
-  const parsedRedTeam = challengeSpecSchema.parse({
-    schema_version: 2,
-    id: "ch-014",
-    title: "Red team missing image",
-    domain: "other",
-    type: "red_team",
-    description: "Red team challenge without a scoring image.",
-    scoring: {
-      container: `ghcr.io/acme/red-team-scorer@sha256:${"d".repeat(64)}`,
-      metric: "custom",
-    },
-    submission_contract: opaqueContract(),
-    reward: {
-      total: 10,
-      distribution: "winner_take_all",
-    },
-    deadline: "2026-03-04T23:59:59Z",
-    dispute_window_hours: 168,
-  });
-  const mutated = {
-    ...parsedRedTeam,
-    scoring: {
-      ...parsedRedTeam.scoring,
-      container: "",
-    },
-  };
-  const imageCheck = validateChallengeScoreability(mutated);
-  if (imageCheck.ok) {
-    console.error(
-      "validateChallengeScoreability should reject red team challenges without a scoring image",
-    );
-    process.exit(1);
-  }
-  if (
-    imageCheck.errors[0] !== "Red team challenges require a scoring container."
-  ) {
-    console.error(
-      "validateChallengeScoreability should return a clear red team image error",
-      imageCheck.errors,
-    );
-    process.exit(1);
-  }
-}
-
-for (const challengeType of CHALLENGE_TYPES) {
-  const profile = getChallengeTypeScoreabilityProfile(challengeType);
-  if (!profile) {
-    console.error(
-      `Missing scoreability profile for challenge type: ${challengeType}`,
-    );
-    process.exit(1);
-  }
-  if (CHALLENGE_TYPE_SCOREABILITY[challengeType] !== profile) {
-    console.error(
-      `Scoreability profile lookup mismatch for challenge type: ${challengeType}`,
-    );
-    process.exit(1);
-  }
-}
-
-{
-  const canonicalized = await canonicalizeChallengeSpec(
-    challengeSpecSchema.parse({
-      schema_version: 2,
-      id: "ch-015",
-      preset_id: "regression_v1",
-      title: "Canonicalize official scorer",
-      domain: "omics",
-      type: "prediction",
-      description: "Prediction challenge with an official mutable scorer ref.",
-      dataset: {
-        hidden_labels: "ipfs://QmCanonicalHidden",
-      },
-      scoring: {
-        container: "ghcr.io/andymolecule/regression-scorer:v1",
-        metric: "rmse",
-      },
-      submission_contract: csvContract({
-        requiredColumns: ["id", "prediction"],
-        idColumn: "id",
-        valueColumn: "prediction",
-      }),
-      reward: {
-        total: 10,
-        distribution: "winner_take_all",
-      },
-      deadline: "2026-03-04T23:59:59Z",
-      dispute_window_hours: 168,
-    }),
-    {
-      resolveOfficialPresetDigests: true,
-      fetchImpl: (async () =>
-        new Response(null, {
-          status: 200,
-          headers: {
-            "docker-content-digest": `sha256:${"c".repeat(64)}`,
-          },
-        })) as typeof fetch,
-    },
-  );
-
-  const expectedDigest = `ghcr.io/andymolecule/regression-scorer@sha256:${"c".repeat(64)}`;
-  if (canonicalized.scoring.container !== expectedDigest) {
-    console.error(
-      "canonicalizeChallengeSpec should rewrite official scorer refs to immutable digests",
-      canonicalized.scoring.container,
-    );
-    process.exit(1);
-  }
-  if (canonicalized.eval_spec?.engine_digest !== expectedDigest) {
-    console.error(
-      "canonicalizeChallengeSpec should align eval_spec.engine_digest with the resolved scorer digest",
-      canonicalized.eval_spec,
-    );
-    process.exit(1);
-  }
-  if (canonicalized.eval_spec?.engine_id !== "regression_v1") {
-    console.error(
-      "canonicalizeChallengeSpec should preserve or infer the managed engine id",
-      canonicalized.eval_spec,
-    );
-    process.exit(1);
-  }
-}
 
 console.log("challengeSpecSchema validation passed");

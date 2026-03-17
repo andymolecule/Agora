@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { resolvePresetRuntimeDefaults } from "../presets.js";
+import { resolveRuntimeFamilyRuntimeDefaults } from "../runtime-families.js";
 import {
   SCORER_RUNTIME_CONFIG_FILE_NAME,
   buildScorerRuntimeConfig,
@@ -8,36 +8,40 @@ import { createCsvTableSubmissionContract } from "../schemas/submission-contract
 
 assert.equal(SCORER_RUNTIME_CONFIG_FILE_NAME, "agora-runtime.json");
 
-const regressionDefaults = resolvePresetRuntimeDefaults("regression_v1");
-assert.ok(regressionDefaults, "regression_v1 should define runtime defaults");
+const regressionDefaults =
+  resolveRuntimeFamilyRuntimeDefaults("tabular_regression");
+assert.ok(
+  regressionDefaults,
+  "tabular_regression should define runtime defaults",
+);
 assert.equal(
   regressionDefaults?.evaluationContract?.columns.id,
   "id",
-  "regression_v1 should expose evaluation id column defaults",
+  "tabular_regression should expose evaluation id column defaults",
 );
 assert.equal(
   regressionDefaults?.evaluationContract?.columns.value,
   "label",
-  "regression_v1 should expose evaluation target column defaults",
+  "tabular_regression should expose evaluation target column defaults",
 );
 assert.equal(
   regressionDefaults?.policies?.coverage_policy,
   "reject",
-  "regression_v1 should reject partial coverage",
+  "tabular_regression should reject partial coverage",
 );
 assert.equal(
   regressionDefaults?.policies?.duplicate_id_policy,
   "reject",
-  "regression_v1 should reject duplicate prediction ids",
+  "tabular_regression should reject duplicate prediction ids",
 );
 assert.equal(
   regressionDefaults?.policies?.invalid_value_policy,
   "reject",
-  "regression_v1 should reject invalid numeric prediction rows",
+  "tabular_regression should reject invalid numeric prediction rows",
 );
 
 const runtime = buildScorerRuntimeConfig({
-  presetId: "regression_v1",
+  runtimeFamily: "tabular_regression",
   metric: "r2",
   mount: {
     evaluationBundleName: "ground_truth.csv",

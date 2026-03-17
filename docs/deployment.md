@@ -58,7 +58,7 @@ Notes:
 
 - `pnpm scorers:verify` requires a running Docker daemon.
 - It verifies the production invariant, not just digest resolution: official scorer images must be anonymously resolvable from GHCR and anonymously pullable with Docker.
-- The shipped official preset catalog is intentionally narrow: `csv_comparison_v1`, `regression_v1`, and `docking_v1`. Placeholder presets should not be reintroduced unless a real published scorer artifact exists for them.
+- The shipped official runtime-family catalog is intentionally narrow: `reproducibility`, `tabular_regression`, `tabular_classification`, `docking`, and `ranking`. Placeholder families should not be reintroduced unless a real published scorer artifact exists for them.
 
 Railway deployment checks before production cutover:
 
@@ -182,7 +182,7 @@ This section covers non-code work for deployment across hosted systems.
 - Make official scorer packages public in GHCR so solvers and verifiers can inspect and pull them without credentials.
 - If you cannot make the package public yet, provide `AGORA_GHCR_TOKEN` for any API or worker environment that resolves official image digests, and configure Docker auth on the worker host separately. Public packages are still the preferred steady state.
 - Publish stable release tags (for example `:v1`) and resolve them to pinned `@sha256:` digests before challenge persistence. Do not use `:latest`.
-- Verify tags/digests referenced by presets are available.
+- Verify tags/digests referenced by runtime families are available.
 - Do not bake hidden labels, hidden test sets, or other evaluation-only data into the image. Put that material in the evaluation bundle or mounted dataset CIDs instead.
 - After the first publish, confirm package visibility in the GitHub Packages UI. The workflow pushes images, but package visibility is still an org-level/package-level setting.
 

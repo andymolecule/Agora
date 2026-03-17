@@ -1,57 +1,31 @@
-import { lookupPreset } from "../presets.js";
+import {
+  EXPERT_RUNTIME_FAMILY_ID,
+  resolveManagedScorerImage,
+} from "../runtime-families.js";
 import {
   type SubmissionContractOutput,
   createCsvTableSubmissionContract,
   createOpaqueFileSubmissionContract,
 } from "../schemas/submission-contract.js";
 import type {
-  ChallengeDataset,
+  ChallengeArtifact,
   ChallengeDomain,
-  ChallengeReward,
-  ChallengeScoring,
   ChallengeSpec,
   ChallengeType,
 } from "../types/challenge.js";
-
-function requirePreset(presetId: string) {
-  const preset = lookupPreset(presetId);
-  if (!preset) {
-    throw new Error(
-      `Challenge template is missing official preset "${presetId}". Next step: register the preset in PRESET_REGISTRY and retry.`,
-    );
-  }
-  return preset;
-}
-
-const reproducibilityPreset = requirePreset("csv_comparison_v1");
-const predictionPreset = requirePreset("regression_v1");
-const dockingPreset = requirePreset("docking_v1");
-
-const DEFAULT_PRESET_ID_BY_CHALLENGE_TYPE: Record<ChallengeType, string> = {
-  prediction: predictionPreset.id,
-  optimization: "custom",
-  reproducibility: reproducibilityPreset.id,
-  docking: dockingPreset.id,
-  red_team: "custom",
-  custom: "custom",
-};
 
 export interface ChallengeTypeTemplate {
   type: ChallengeType;
   label: string;
   description: string;
   defaultDomain: ChallengeDomain;
-  defaultMetric: ChallengeScoring["metric"];
-  defaultContainer: string;
+  defaultMetric: string;
+  defaultRuntimeFamily: string;
+  defaultScorerImage: string;
   defaultMinimumScore: number;
-  defaultPresetId: string;
-  scoringTemplate: string;
 }
 
-export const CHALLENGE_TYPE_TEMPLATE_REGISTRY: Record<
-  ChallengeType,
-  ChallengeTypeTemplate
-> = {
+const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
   prediction: {
     type: "prediction",
     label: "Prediction",
@@ -59,22 +33,10 @@ export const CHALLENGE_TYPE_TEMPLATE_REGISTRY: Record<
       "Solvers predict held-out outcomes from a labeled training dataset.",
     defaultDomain: "omics",
     defaultMetric: "r2",
-    defaultContainer: predictionPreset.container,
-    defaultMinimumScore: predictionPreset.defaultMinimumScore,
-    defaultPresetId: predictionPreset.id,
-    scoringTemplate: predictionPreset.scoringDescription,
-  },
-  optimization: {
-    type: "optimization",
-    label: "Optimization",
-    description:
-      "Solvers submit parameters while your scorer runs the simulation.",
-    defaultDomain: "drug_discovery",
-    defaultMetric: "custom",
-    defaultContainer: "",
+    defaultRuntimeFamily: "tabular_regression",
+    defaultScorerImage:
+      resolveManagedScorerImage("tabular_regression") ?? "",
     defaultMinimumScore: 0,
-    defaultPresetId: "custom",
-    scoringTemplate: "",
   },
   reproducibility: {
     type: "reproducibility",
@@ -82,80 +44,71 @@ export const CHALLENGE_TYPE_TEMPLATE_REGISTRY: Record<
     description:
       "Solvers reproduce a posted reference artifact from shared source data.",
     defaultDomain: "other",
-    defaultMetric: "custom",
-    defaultContainer: reproducibilityPreset.container,
-    defaultMinimumScore: reproducibilityPreset.defaultMinimumScore,
-    defaultPresetId: reproducibilityPreset.id,
-    scoringTemplate: reproducibilityPreset.scoringDescription,
+    defaultMetric: "exact_match",
+    defaultRuntimeFamily: "reproducibility",
+    defaultScorerImage:
+      resolveManagedScorerImage("reproducibility") ?? "",
+    defaultMinimumScore: 0,
   },
   docking: {
     type: "docking",
     label: "Docking",
-    description:
-      "Solvers rank molecules by docking score against a protein target.",
+    description: "Solvers rank candidates against a target-specific benchmark.",
     defaultDomain: "drug_discovery",
     defaultMetric: "spearman",
-    defaultContainer: dockingPreset.container,
-    defaultMinimumScore: dockingPreset.defaultMinimumScore,
-    defaultPresetId: dockingPreset.id,
-    scoringTemplate: dockingPreset.scoringDescription,
+    defaultRuntimeFamily: "docking",
+    defaultScorerImage: resolveManagedScorerImage("docking") ?? "",
+    defaultMinimumScore: 0,
+  },
+  optimization: {
+    type: "optimization",
+    label: "Optimization",
+    description: "Solvers search a space while Agora scores the result.",
+    defaultDomain: "drug_discovery",
+    defaultMetric: "custom",
+    defaultRuntimeFamily: EXPERT_RUNTIME_FAMILY_ID,
+    defaultScorerImage: "",
+    defaultMinimumScore: 0,
   },
   red_team: {
     type: "red_team",
     label: "Red Team",
     description:
-      "Solvers find adversarial inputs that break a model or scientific claim.",
+      "Solvers submit adversarial inputs against a target model or claim.",
     defaultDomain: "other",
     defaultMetric: "custom",
-    defaultContainer: "",
+    defaultRuntimeFamily: EXPERT_RUNTIME_FAMILY_ID,
+    defaultScorerImage: "",
     defaultMinimumScore: 0,
-    defaultPresetId: "custom",
-    scoringTemplate: "",
   },
   custom: {
     type: "custom",
     label: "Custom",
-    description: "Bring your own scorer image, rules, and submission format.",
+    description: "Bring your own scorer image, rules, and artifact contract.",
     defaultDomain: "other",
     defaultMetric: "custom",
-    defaultContainer: "",
+    defaultRuntimeFamily: EXPERT_RUNTIME_FAMILY_ID,
+    defaultScorerImage: "",
     defaultMinimumScore: 0,
-    defaultPresetId: "custom",
-    scoringTemplate: "",
   },
 };
 
 export function getChallengeTypeTemplate(
   challengeType: ChallengeType,
 ): ChallengeTypeTemplate {
-  return CHALLENGE_TYPE_TEMPLATE_REGISTRY[challengeType];
+  return TYPE_TEMPLATE_REGISTRY[challengeType];
 }
 
-export function resolveChallengePresetId(input: {
-  type: ChallengeType;
-  presetId?: string | null;
-}): string {
-  const explicitPresetId =
-    typeof input.presetId === "string" && input.presetId.trim().length > 0
-      ? input.presetId.trim()
-      : undefined;
-  return (
-    explicitPresetId ?? defaultPresetIdForChallengeType(input.type) ?? "custom"
-  );
-}
-
-export function defaultPresetIdForChallengeType(
+export function defaultRuntimeFamilyForChallengeType(
   challengeType: ChallengeType,
-): string | null {
-  return DEFAULT_PRESET_ID_BY_CHALLENGE_TYPE[challengeType] ?? null;
+): string {
+  return TYPE_TEMPLATE_REGISTRY[challengeType].defaultRuntimeFamily;
 }
 
 export function defaultMinimumScoreForChallengeType(
   challengeType: ChallengeType,
 ): number {
-  return (
-    CHALLENGE_TYPE_TEMPLATE_REGISTRY[challengeType]?.defaultMinimumScore ?? 0
-  );
+  return TYPE_TEMPLATE_REGISTRY[challengeType].defaultMinimumScore;
 }
 
 export type ChallengeSubmissionContractDraftInput =
@@ -207,97 +160,72 @@ export function buildSubmissionContractForChallengeType(
   }
 }
 
-function normalizeDataset(
-  dataset?: ChallengeDataset,
-): ChallengeDataset | undefined {
-  if (!dataset) {
-    return undefined;
-  }
-  const train = dataset.train?.trim();
-  const test = dataset.test?.trim();
-  const hiddenLabels = dataset.hidden_labels?.trim();
-  if (!train && !test && !hiddenLabels) {
-    return undefined;
-  }
-  return {
-    ...(train ? { train } : {}),
-    ...(test ? { test } : {}),
-    ...(hiddenLabels ? { hidden_labels: hiddenLabels } : {}),
-  };
-}
-
 export interface ChallengeSpecDraftInput {
   id: string;
   title: string;
   domain: ChallengeDomain;
   type: ChallengeType;
   description: string;
-  referenceUrl?: string;
-  dataset?: ChallengeDataset;
-  scoring: ChallengeScoring;
-  reward: ChallengeReward;
+  artifacts: ChallengeArtifact[];
+  runtimeFamily?: string;
+  scorerImage?: string;
+  metric?: string;
+  reward: {
+    total: string;
+    distribution: ChallengeSpec["reward"]["distribution"];
+  };
   deadline: string;
   submission: ChallengeSubmissionContractDraftInput;
   minimumScore?: number;
   disputeWindowHours?: number;
-  evaluation?: ChallengeSpec["evaluation"];
   tags?: string[];
   labTba?: string;
-  presetId?: string | null;
+  evaluationBundle?: string;
 }
 
 export function buildChallengeSpecDraft(
   input: ChallengeSpecDraftInput,
 ): ChallengeSpec {
-  const dataset = normalizeDataset(input.dataset);
-  const referenceUrl = input.referenceUrl?.trim();
-  const minimumScore =
-    typeof input.minimumScore === "number" ? input.minimumScore : undefined;
-  const disputeWindowHours =
-    typeof input.disputeWindowHours === "number"
-      ? input.disputeWindowHours
-      : undefined;
-  const tags =
-    input.tags?.map((tag) => tag.trim()).filter((tag) => tag.length > 0) ?? [];
-  const evaluation = input.evaluation
-    ? {
-        ...(input.evaluation.criteria?.trim()
-          ? { criteria: input.evaluation.criteria.trim() }
-          : {}),
-        ...(input.evaluation.success_definition?.trim()
-          ? { success_definition: input.evaluation.success_definition.trim() }
-          : {}),
-        ...(input.evaluation.tolerance?.trim()
-          ? { tolerance: input.evaluation.tolerance.trim() }
-          : {}),
-      }
-    : undefined;
+  const template = getChallengeTypeTemplate(input.type);
+  const runtimeFamily =
+    input.runtimeFamily?.trim() || template.defaultRuntimeFamily;
+  const scorerImage =
+    input.scorerImage?.trim() ||
+    (runtimeFamily === EXPERT_RUNTIME_FAMILY_ID
+      ? ""
+      : (resolveManagedScorerImage(runtimeFamily) ?? template.defaultScorerImage));
 
   return {
-    schema_version: 2,
+    schema_version: 3,
     id: input.id,
-    preset_id: resolveChallengePresetId({
-      type: input.type,
-      presetId: input.presetId,
-    }),
     title: input.title,
     domain: input.domain,
     type: input.type,
     description: input.description,
-    ...(referenceUrl ? { reference_url: referenceUrl } : {}),
-    ...(dataset ? { dataset } : {}),
-    scoring: input.scoring,
+    evaluation: {
+      runtime_family: runtimeFamily,
+      metric: input.metric?.trim() || template.defaultMetric,
+      scorer_image: scorerImage,
+      ...(input.evaluationBundle
+        ? { evaluation_bundle: input.evaluationBundle }
+        : {}),
+    },
+    artifacts: input.artifacts,
     submission_contract: buildSubmissionContractForChallengeType(
       input.submission,
     ),
-    reward: input.reward,
+    reward: {
+      total: input.reward.total,
+      distribution: input.reward.distribution,
+    },
     deadline: input.deadline,
-    ...(minimumScore !== undefined ? { minimum_score: minimumScore } : {}),
-    ...(disputeWindowHours !== undefined
-      ? { dispute_window_hours: disputeWindowHours }
+    ...(typeof input.minimumScore === "number"
+      ? { minimum_score: input.minimumScore }
       : {}),
-    ...(evaluation && Object.keys(evaluation).length > 0 ? { evaluation } : {}),
-    ...(tags.length > 0 ? { tags } : {}),
+    ...(typeof input.disputeWindowHours === "number"
+      ? { dispute_window_hours: input.disputeWindowHours }
+      : {}),
+    ...(input.tags && input.tags.length > 0 ? { tags: input.tags } : {}),
     ...(input.labTba ? { lab_tba: input.labTba } : {}),
   };
 }

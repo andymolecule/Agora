@@ -646,7 +646,7 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
 
         <Step number={2} title="Download challenge assets">
           <p className="text-sm text-warm-700">
-            Fetch the challenge spec and datasets into a local workspace before
+            Fetch the challenge spec and public artifacts into a local workspace before
             you build anything.
           </p>
           <CodeBlock title="Terminal">
@@ -971,7 +971,7 @@ agora finalize <challenge-id> --format json`}
                       ],
                       [
                         "agora-get-challenge",
-                        "Fetch one challenge and its datasets",
+                        "Fetch one challenge and its public artifacts",
                       ],
                       ["agora-get-leaderboard", "Read current ranked results"],
                       ["agora-get-submission-status", "Track one submission"],
@@ -1202,7 +1202,7 @@ agora finalize <challenge-id> --format json`}
                   ["agora list", "Discover challenges", false],
                   [
                     "agora get <id>",
-                    "Fetch challenge details and datasets",
+                    "Fetch challenge details and public artifacts",
                     false,
                   ],
                   [

@@ -115,12 +115,32 @@ title: "${E2E_TITLE}"
 domain: longevity
 type: reproducibility
 description: "Automated end-to-end validation challenge."
-dataset:
-  train: "${TMP_DIR}/ground_truth.csv"
-  test: "${TMP_DIR}/ground_truth.csv"
-scoring:
-  container: "${E2E_SCORER_IMAGE}"
-  metric: rmse
+evaluation:
+  runtime_family: reproducibility
+  metric: exact_match
+  scorer_image: "${E2E_SCORER_IMAGE}"
+  evaluation_bundle: "${TMP_DIR}/ground_truth.csv"
+artifacts:
+  - role: source_data
+    visibility: public
+    uri: "${TMP_DIR}/ground_truth.csv"
+    file_name: ground_truth.csv
+  - role: reference_output
+    visibility: public
+    uri: "${TMP_DIR}/ground_truth.csv"
+    file_name: ground_truth.csv
+submission_contract:
+  version: v1
+  kind: csv_table
+  file:
+    extension: .csv
+    mime: text/csv
+    max_bytes: 10485760
+  columns:
+    required: [id, value]
+    id: id
+    value: value
+    allow_extra: false
 reward:
   total: 5
   distribution: winner_take_all

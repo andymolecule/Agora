@@ -20,12 +20,12 @@ This doc is authoritative for: system topology, component responsibilities, pack
 
 - Monorepo with 5 apps (CLI, API, Executor, MCP, Web) and 8 packages (common, contracts, chain, db, ipfs, scorer-runtime, scorer, agent-runtime)
 - On-chain: USDC escrow, status machine, submission hashes, scores, proof hashes, payouts
-- Off-chain: specs, datasets, submissions, scoring compute, search indexes
-- `submission_contract` in the challenge spec is the single source of truth for solver artifact shape; `expected_columns` in Supabase is only a derived cache for CSV-table challenges
-- Scoring extension lives in two places only: challenge-family defaults in `packages/common/src/challenges/*`, and scorer runtime config in `packages/common/src/presets.ts`
+- Off-chain: specs, artifacts, submissions, scoring compute, search indexes
+- `submission_contract` in the challenge spec is the single source of truth for solver artifact shape
+- Scoring extension lives in two places only: challenge-family defaults in `packages/common/src/challenges/*`, and managed runtime config in `packages/common/src/runtime-families.ts`
 - Challenge type and domain catalogs stay centralized in `packages/common/src/types/challenge.ts`
 - One active contract generation at a time; @agora/chain owns ABI/event details
-- Docker scorer: no network, read-only, non-root; official presets run with 1–20 min timeouts, base runner fallback is 30 min
+- Docker scorer: no network, read-only, non-root; official managed runtimes run with 1–20 min timeouts, base runner fallback is 30 min
 - API is the canonical remote agent surface; CLI is the canonical local execution surface
 - MCP is optional and remains a thin adapter: stdio for local agents, HTTP read-only for remote discovery/status
 - Historical malformed specs are intentionally unsupported and are not reconstructed at read time
@@ -45,7 +45,7 @@ Agora is an on-chain science bounty protocol. The system is split into **on-chai
 ### Navigation By Extension Point
 
 - New challenge-family defaults: `packages/common/src/challenges/*`
-- New official scorer preset runtime config: `packages/common/src/presets.ts`
+- New official scorer runtime config: `packages/common/src/runtime-families.ts`
 - Challenge spec parsing and scoreability validation: `packages/common/src/schemas/challenge-spec.ts`
 - Submission artifact contracts: `packages/common/src/schemas/submission-contract.ts`
 - Runtime scorer staging and Docker execution: `packages/scorer/src/pipeline.ts`
@@ -158,7 +158,7 @@ flowchart LR
 | Scores (WAD 1e18) | On-chain | Verifiable payout input |
 | Proof bundle hashes | On-chain | Audit trail |
 | Challenge YAML specs | IPFS + Supabase | Immutable + searchable |
-| Raw datasets | IPFS / external URL | Large files stay off-chain |
+| Raw artifacts | IPFS / external URL | Large files stay off-chain |
 | Full proof bundles | IPFS | Reproducibility evidence |
 | Search indexes | Supabase | Fast agent discovery |
 
@@ -263,7 +263,7 @@ Current privacy boundary:
 - Submission metadata is pre-registered as a `submission_intent` before the on-chain submit. If the best-effort post-submit API call fails, the indexer can still reconcile the on-chain submission to the stored CID later.
 - `sealed_submission_v2` authenticates `challengeId`, `solverAddress`, `fileName`, and `mimeType` as AES-GCM additional data, so those fields cannot be tampered with without breaking decryption.
 - This is anti-copy privacy, not full metadata opacity. Wallet address and transaction remain on-chain. After scoring begins, replay artifacts may be published for public verification.
-- Official scorer code and images should stay public for reproducibility, but hidden evaluation material belongs in mounted datasets or evaluation bundles, not inside the image itself.
+- Official scorer code and images should stay public for reproducibility, but hidden evaluation material belongs in mounted artifacts or evaluation bundles, not inside the image itself.
 
 ### USDC Flow
 
@@ -286,7 +286,7 @@ sequenceDiagram
 
     Poster->>CLI/Web: Provide challenge YAML
     CLI/Web->>CLI/Web: Validate (Zod schema)
-    CLI/Web->>IPFS: Pin spec + datasets → specCid
+    CLI/Web->>IPFS: Pin spec + public artifacts → specCid
     CLI/Web->>Chain: USDC.approve(Factory, amount)
     CLI/Web->>Chain: Factory.createChallenge(specCid, ...)
     Chain->>Chain: Deploy AgoraChallenge
@@ -315,7 +315,7 @@ sequenceDiagram
 
     Agent->>API/CLI: get challenge(id)
     API/CLI->>API: GET /api/challenges/:id
-    API/CLI->>IPFS: Download datasets
+    API/CLI->>IPFS: Download public artifacts
     API-->>Agent: Full challenge data
 
     Note over Agent: Agent runs analysis pipeline
@@ -513,10 +513,10 @@ Key properties:
 - **No network access** — container cannot exfiltrate data
 - **Read-only filesystem** — only `/output` is writable
 - **Non-root user** — runs as UID 65532
-- **Mount layout is preset-driven** — the official presets currently use the default `ground_truth.csv` + `submission.csv` layout, but the runtime now reads that from `packages/common/src/presets.ts`
-- **Resource limits are per-preset** — official presets currently span 128MB–4GB memory, 0.5–2 CPUs, 32–64 PIDs, and 1–20 minute timeouts
+- **Mount layout is runtime-family-driven** — official managed runtimes currently use the default `ground_truth.csv` + `submission.csv` layout, and the runtime reads that from `packages/common/src/runtime-families.ts`
+- **Resource limits are per runtime family** — official managed runtimes currently span 128MB–4GB memory, 0.5–2 CPUs, 32–64 PIDs, and 1–20 minute timeouts
 - **Deterministic** — same input → same score, every time
-- **Fallback timeout** — 30 minutes when no preset override applies
+- **Fallback timeout** — 30 minutes when no runtime-family override applies
 
 ---
 
@@ -544,13 +544,9 @@ erDiagram
         timestamp deadline
         int dispute_window_hours
         string spec_cid
-        string dataset_train_cid
-        string dataset_test_cid
-        string eval_image
-        string eval_metric
-        string runner_preset_id
-        string eval_bundle_cid
-        string[] expected_columns
+        string runtime_family
+        jsonb evaluation_json
+        jsonb artifacts_json
         int winning_on_chain_sub_id
         string winner_solver_address
         string tx_hash
@@ -628,6 +624,7 @@ erDiagram
 | `GET` | `/api/stats` | — | — | Aggregate counts |
 | `GET` | `/api/indexer-health` | — | — | Indexer lag monitoring |
 | `GET` | `/api/worker-health` | — | — | Worker readiness + runtime alignment |
+| `GET` | `/api/posting/health` | — | — | Managed authoring backlog + review SLA health |
 | `GET` | `/api/analytics` | — | — | Platform analytics with freshness/indexer status |
 | `GET` | `/api/submissions/public-key` | — | — | Active submission sealing public key |
 | `GET` | `/api/submissions/:id/status` | — | — | Submission status lookup |
@@ -635,6 +632,7 @@ erDiagram
 | `POST` | `/api/submissions` | Rate limit | — | Confirm submission after on-chain tx |
 | `GET` | `/api/pin-spec` | — | — | Pin-spec auth nonce |
 | `POST` | `/api/pin-spec` | Signed auth | — | Pin challenge spec to IPFS |
+| `POST` | `/api/posting/review/sweep-expired` | Review token | — | Purge expired managed-authoring sessions |
 | `POST` | `/api/verify` | Rate limit | Paid | Re-run scorer verification |
 
 > **Note:** MCP sessions are handled by the separate MCP server on port 3001, not the API.
@@ -747,7 +745,7 @@ Projection rules:
 | **Smart Contract** | Stuck escrow | 30-day `timeoutRefund()` on unresolved disputes |
 | **Smart Contract** | Score manipulation | Proof bundle hash on-chain; anyone can verify |
 | **Scoring** | Container escape | `--network=none`, `--read-only`, `--cap-drop=ALL`, non-root |
-| **Scoring** | Resource exhaustion | Per-preset limits (128MB–4GB memory, 0.5–2 CPUs, 1–20 minute timeouts), 30-minute fallback when no preset override applies |
+| **Scoring** | Resource exhaustion | Per-runtime-family limits (128MB–4GB memory, 0.5–2 CPUs, 1–20 minute timeouts), 30-minute fallback when no runtime-family override applies |
 | **API** | Spam / abuse | Rate limiting (per wallet + per IP) |
 | **API** | Oversized payloads | 1MB JSON body limit |
 | **MCP** | Private key over HTTP | Blocked by default; requires `AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true` |

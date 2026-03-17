@@ -8,6 +8,7 @@ create table challenges (
   chain_id integer not null,
   contract_version integer not null,
   spec_schema_version integer not null,
+  factory_challenge_id bigint,
   contract_address text not null,
   factory_address text not null,
   poster_address text not null,
@@ -15,14 +16,12 @@ create table challenges (
   description text not null,
   domain text not null,
   challenge_type text not null,
+  runtime_family text not null,
   spec_cid text not null,
-  dataset_train_cid text,
-  dataset_test_cid text,
-  eval_image text not null,
-  eval_metric text not null,
-  runner_preset_id text not null,
-  eval_bundle_cid text,
-  expected_columns text[] default null,
+  evaluation_json jsonb not null,
+  artifacts_json jsonb not null default '[]'::jsonb,
+  submission_contract_json jsonb default null,
+  scoring_env_json jsonb default null,
   minimum_score numeric,
   max_submissions_total integer,
   max_submissions_per_solver integer,
@@ -64,12 +63,8 @@ create table challenges (
     check (
       winner_solver_address is null or winner_solver_address = lower(winner_solver_address)
     ),
-  constraint challenges_eval_image_check
-    check (length(btrim(eval_image)) > 0),
-  constraint challenges_eval_metric_check
-    check (length(btrim(eval_metric)) > 0),
-  constraint challenges_runner_preset_id_check
-    check (length(btrim(runner_preset_id)) > 0),
+  constraint challenges_runtime_family_check
+    check (length(btrim(runtime_family)) > 0),
   constraint challenges_reward_amount_check
     check (reward_amount > 0),
   constraint challenges_max_submissions_total_check
@@ -100,6 +95,9 @@ create index idx_challenges_deadline
 
 create index idx_challenges_poster
   on challenges(poster_address);
+
+create index idx_challenges_runtime_family
+  on challenges(runtime_family);
 
 create table submissions (
   id uuid primary key default gen_random_uuid(),

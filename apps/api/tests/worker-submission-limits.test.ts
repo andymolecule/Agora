@@ -34,10 +34,13 @@ test("worker scoring skips submissions that exceed configured limits", async () 
   const challenge: ChallengeRow = {
     id: "challenge-1",
     contract_address: "0x0000000000000000000000000000000000000001",
-    eval_image: "ghcr.io/andymolecule/repro-scorer:v1",
-    eval_metric: "custom",
-    runner_preset_id: "csv_comparison_v1",
-    eval_bundle_cid: "bafybeigdyrzt3",
+    runtime_family: "reproducibility",
+    evaluation_json: {
+      runtime_family: "reproducibility",
+      metric: "exact_match",
+      scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
+      evaluation_bundle: "ipfs://bafybeigdyrzt3",
+    },
     max_submissions_total: 1,
     max_submissions_per_solver: 1,
   };

@@ -3,11 +3,12 @@ import os from "node:os";
 import { pathToFileURL } from "node:url";
 import {
   CHALLENGE_STATUS,
+  EXPERT_RUNTIME_FAMILY_ID,
   getAgoraRuntimeIdentity,
   getAgoraRuntimeVersion,
   hasSubmissionSealPublicConfig,
   hasSubmissionSealWorkerConfig,
-  isOfficialContainer,
+  isOfficialScorerImage,
   loadConfig,
   readWorkerTimingConfig,
   resolveRuntimePrivateKey,
@@ -185,7 +186,7 @@ async function preflightOfficialScoringImagesForWorker(
 ) {
   const { data, error } = await db
     .from("challenges")
-    .select("eval_image, runner_preset_id")
+    .select("runtime_family, evaluation_json")
     .eq("status", CHALLENGE_STATUS.scoring);
 
   if (error) {
@@ -197,13 +198,20 @@ async function preflightOfficialScoringImagesForWorker(
   const images = Array.from(
     new Set(
       (data ?? [])
-        .filter((row) => row.runner_preset_id !== "custom")
-        .map((row) => row.eval_image)
+        .filter((row) => row.runtime_family !== EXPERT_RUNTIME_FAMILY_ID)
+        .map((row) =>
+          row.evaluation_json &&
+          typeof row.evaluation_json === "object" &&
+          "scorer_image" in row.evaluation_json &&
+          typeof row.evaluation_json.scorer_image === "string"
+            ? row.evaluation_json.scorer_image
+            : null,
+        )
         .filter(
           (value): value is string =>
             typeof value === "string" &&
             value.trim().length > 0 &&
-            isOfficialContainer(value),
+            isOfficialScorerImage(value),
         ),
     ),
   );

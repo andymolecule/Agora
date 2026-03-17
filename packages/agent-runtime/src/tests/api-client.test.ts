@@ -453,7 +453,7 @@ test("challenge registration parses the canonical API response", async () => {
   }
 });
 
-test("challenge detail parsing requires the canonical datasets block", async () => {
+test("challenge detail parsing requires the canonical artifacts block", async () => {
   const originalFetch = global.fetch;
   global.fetch = async () =>
     new Response(
@@ -462,7 +462,7 @@ test("challenge detail parsing requires the canonical datasets block", async () 
           challenge: {
             id: "11111111-1111-4111-8111-111111111111",
             title: "Legacy challenge",
-            description: "Pinned before datasets were exposed",
+            description: "Pinned before artifacts were exposed",
             domain: "other",
             challenge_type: "reproducibility",
             reward_amount: 100,
@@ -472,6 +472,11 @@ test("challenge detail parsing requires the canonical datasets block", async () 
             contract_address: "0x0000000000000000000000000000000000000001",
             factory_address: "0x0000000000000000000000000000000000000002",
             factory_challenge_id: 7,
+            evaluation: {
+              runtime_family: "reproducibility",
+              metric: "exact_match",
+              scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
+            },
             refs: {
               challengeId: "11111111-1111-4111-8111-111111111111",
               challengeAddress: "0x0000000000000000000000000000000000000001",
@@ -493,7 +498,7 @@ test("challenge detail parsing requires the canonical datasets block", async () 
           "11111111-1111-4111-8111-111111111111",
           "https://api.example",
         ),
-      /datasets/,
+      /artifacts/,
     );
   } finally {
     global.fetch = originalFetch;
@@ -523,6 +528,11 @@ test("API client supports protocol-ref challenge and submission lookups", async 
               contract_address: "0x0000000000000000000000000000000000000001",
               factory_address: "0x0000000000000000000000000000000000000002",
               factory_challenge_id: 7,
+              evaluation: {
+                runtime_family: "reproducibility",
+                metric: "exact_match",
+                scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
+              },
               refs: {
                 challengeId: "11111111-1111-4111-8111-111111111111",
                 challengeAddress: "0x0000000000000000000000000000000000000001",
@@ -530,13 +540,9 @@ test("API client supports protocol-ref challenge and submission lookups", async 
                 factoryChallengeId: 7,
               },
             },
-            datasets: {
-              train_cid: null,
-              train_file_name: null,
-              train_url: null,
-              test_cid: null,
-              test_file_name: null,
-              test_url: null,
+            artifacts: {
+              public: [],
+              private: [],
               spec_cid: null,
               spec_url: null,
             },

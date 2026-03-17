@@ -1,5 +1,29 @@
 import type { ChallengeStatus } from "@agora/common";
 
+export type ChallengeEvaluation = {
+  runtime_family: string;
+  metric: string;
+  scorer_image: string;
+};
+
+export type PublicChallengeArtifact = {
+  role: string;
+  visibility: "public";
+  uri: string;
+  file_name?: string | null;
+  mime_type?: string | null;
+  description?: string | null;
+  url: string | null;
+};
+
+export type PrivateChallengeArtifact = {
+  role: string;
+  visibility: "private";
+  file_name?: string | null;
+  mime_type?: string | null;
+  description?: string | null;
+};
+
 export type Challenge = {
   id: string;
   title: string;
@@ -14,16 +38,12 @@ export type Challenge = {
   factory_address?: string | null;
   factory_challenge_id?: number | null;
   submissions_count?: number;
-  dataset_train_cid?: string | null;
-  dataset_test_cid?: string | null;
-  eval_metric?: string | null;
-  eval_image?: string | null;
+  evaluation?: ChallengeEvaluation | null;
   distribution_type?: string | null;
   dispute_window_hours?: number | null;
   minimum_score?: number | string | null;
   max_submissions_total?: number | null;
   max_submissions_per_solver?: number | null;
-  expected_columns?: string[] | null;
   submission_contract?: unknown | null;
   created_at?: string;
   refs?: {
@@ -46,11 +66,9 @@ export type Submission = {
 
 export type ChallengeDetails = {
   challenge: Challenge;
-  datasets: {
-    train_cid: string | null;
-    train_url: string | null;
-    test_cid: string | null;
-    test_url: string | null;
+  artifacts: {
+    public: PublicChallengeArtifact[];
+    private: PrivateChallengeArtifact[];
     spec_cid: string | null;
     spec_url: string | null;
   };

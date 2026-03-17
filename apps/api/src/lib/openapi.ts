@@ -814,8 +814,6 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             deadline: isoDateTimeSchema(),
             status: { type: "string" },
             spec_cid: { type: "string", nullable: true },
-            dataset_train_cid: { type: "string", nullable: true },
-            dataset_test_cid: { type: "string", nullable: true },
             contract_address: addressSchema(),
             factory_address: { ...addressSchema(), nullable: true },
             factory_challenge_id: {
@@ -840,6 +838,55 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             "refs",
           ],
         },
+        ChallengeEvaluation: {
+          type: "object",
+          properties: {
+            runtime_family: { type: "string" },
+            metric: { type: "string" },
+            scorer_image: { type: "string" },
+          },
+          required: ["runtime_family", "metric", "scorer_image"],
+        },
+        PublicChallengeArtifact: {
+          type: "object",
+          properties: {
+            role: { type: "string" },
+            visibility: { type: "string", enum: ["public"] },
+            uri: { type: "string" },
+            file_name: { type: "string", nullable: true },
+            mime_type: { type: "string", nullable: true },
+            description: { type: "string", nullable: true },
+            url: { type: "string", nullable: true },
+          },
+          required: ["role", "visibility", "uri", "url"],
+        },
+        PrivateChallengeArtifact: {
+          type: "object",
+          properties: {
+            role: { type: "string" },
+            visibility: { type: "string", enum: ["private"] },
+            file_name: { type: "string", nullable: true },
+            mime_type: { type: "string", nullable: true },
+            description: { type: "string", nullable: true },
+          },
+          required: ["role", "visibility"],
+        },
+        ChallengeArtifacts: {
+          type: "object",
+          properties: {
+            public: {
+              type: "array",
+              items: { $ref: "#/components/schemas/PublicChallengeArtifact" },
+            },
+            private: {
+              type: "array",
+              items: { $ref: "#/components/schemas/PrivateChallengeArtifact" },
+            },
+            spec_cid: { type: "string", nullable: true },
+            spec_url: { type: "string", nullable: true },
+          },
+          required: ["public", "private", "spec_cid", "spec_url"],
+        },
         ChallengeDetail: {
           allOf: [
             { $ref: "#/components/schemas/ChallengeSummary" },
@@ -847,8 +894,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               type: "object",
               properties: {
                 poster_address: addressSchema(),
-                eval_metric: { type: "string", nullable: true },
-                eval_image: { type: "string", nullable: true },
+                evaluation: {
+                  $ref: "#/components/schemas/ChallengeEvaluation",
+                },
                 distribution_type: {
                   type: "string",
                   enum: ["winner_take_all", "top_3", "proportional"],
@@ -870,40 +918,12 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   minimum: 1,
                   nullable: true,
                 },
-                expected_columns: {
-                  type: "array",
-                  items: { type: "string" },
-                  nullable: true,
-                },
                 submission_contract: {
                   type: "object",
                   nullable: true,
                 },
               },
             },
-          ],
-        },
-        ChallengeDatasets: {
-          type: "object",
-          properties: {
-            train_cid: { type: "string", nullable: true },
-            train_file_name: { type: "string", nullable: true },
-            train_url: { type: "string", nullable: true },
-            test_cid: { type: "string", nullable: true },
-            test_file_name: { type: "string", nullable: true },
-            test_url: { type: "string", nullable: true },
-            spec_cid: { type: "string", nullable: true },
-            spec_url: { type: "string", nullable: true },
-          },
-          required: [
-            "train_cid",
-            "train_file_name",
-            "train_url",
-            "test_cid",
-            "test_file_name",
-            "test_url",
-            "spec_cid",
-            "spec_url",
           ],
         },
         ChallengeLeaderboardEntry: {
@@ -952,7 +972,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               type: "object",
               properties: {
                 challenge: { $ref: "#/components/schemas/ChallengeDetail" },
-                datasets: { $ref: "#/components/schemas/ChallengeDatasets" },
+                artifacts: { $ref: "#/components/schemas/ChallengeArtifacts" },
                 submissions: {
                   type: "array",
                   items: {
@@ -966,7 +986,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   },
                 },
               },
-              required: ["challenge", "datasets", "submissions", "leaderboard"],
+              required: ["challenge", "artifacts", "submissions", "leaderboard"],
             },
           },
           required: ["data"],

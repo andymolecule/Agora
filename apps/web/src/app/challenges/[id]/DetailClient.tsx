@@ -35,7 +35,11 @@ import {
 import { getChallengeBadgeLabel } from "../../../lib/challenge-status-copy";
 import { formatUsdc } from "../../../lib/format";
 import { getScorerPackageUrl } from "../../../lib/scorer-links";
-import type { SubmissionVerification } from "../../../lib/types";
+import type {
+  ChallengeDetails,
+  PublicChallengeArtifact,
+  SubmissionVerification,
+} from "../../../lib/types";
 import {
   canShowChallengeResults,
   getChallengeLeaderboardEntries,
@@ -150,6 +154,10 @@ function titleCase(value: string) {
   return formatLabel(value).replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function formatArtifactRole(value: string) {
+  return titleCase(value);
+}
+
 function getMetricPresentation(
   challengeType: string,
   evalMetric?: string | null,
@@ -158,9 +166,10 @@ function getMetricPresentation(
   if (challengeType === "reproducibility") {
     return {
       label: "Row match score",
-      helper: spec?.evaluation?.tolerance
-        ? "Score = matched rows / total rows after applying the configured drift tolerance."
-        : "Score = matched rows / total rows from deterministic comparison against the posted reference output.",
+      helper:
+        spec?.evaluation?.metric === "tolerant_match"
+          ? "Score = matched rows / total rows after applying deterministic tolerant matching."
+          : "Score = matched rows / total rows from deterministic comparison against the posted reference output.",
     };
   }
 
@@ -359,9 +368,9 @@ function getScorerTransparencyInfo(
     return {
       label: "Agora Docking Scorer",
       summary:
-        "Reserved for the official docking scorer image family, but the current implementation is still a placeholder.",
+        "Official managed scorer for docking-style ligand ranking challenges.",
       details: [
-        "The container reference is public, but the docking scoring logic in this repo is not yet a full solver-facing implementation.",
+        "The container reference is public and the scoring logic is available for solver-side inspection and dry-run previews.",
       ],
       sourceLinks: [
         {
@@ -402,13 +411,9 @@ function LinkedValue({
 }
 
 function TechnicalDetailsSection({
-  challenge,
+  artifacts,
 }: {
-  challenge: {
-    spec_cid?: string | null;
-    dataset_train_cid?: string | null;
-    dataset_test_cid?: string | null;
-  };
+  artifacts: ChallengeDetails["artifacts"];
 }) {
   return (
     <section className="rounded-lg border border-[var(--border-default)] bg-[var(--surface-inset)] p-6">
@@ -420,10 +425,10 @@ function TechnicalDetailsSection({
         <InfoRow
           label="Challenge spec"
           value={
-            challenge.spec_cid ? (
+            artifacts.spec_cid ? (
               <LinkedValue
-                href={cidHref(challenge.spec_cid)}
-                value={challenge.spec_cid}
+                href={artifacts.spec_url}
+                value={artifacts.spec_cid}
               />
             ) : (
               "—"
@@ -432,36 +437,24 @@ function TechnicalDetailsSection({
           mono
           icon={FileText}
         />
-        <InfoRow
-          label="Dataset (train)"
-          value={
-            challenge.dataset_train_cid ? (
-              <LinkedValue
-                href={cidHref(challenge.dataset_train_cid)}
-                value={challenge.dataset_train_cid}
-              />
-            ) : (
-              "—"
-            )
-          }
-          mono
-          icon={Database}
-        />
-        <InfoRow
-          label="Dataset (test)"
-          value={
-            challenge.dataset_test_cid ? (
-              <LinkedValue
-                href={cidHref(challenge.dataset_test_cid)}
-                value={challenge.dataset_test_cid}
-              />
-            ) : (
-              "—"
-            )
-          }
-          mono
-          icon={Database}
-        />
+        {artifacts.public.length > 0 ? (
+          artifacts.public.map((artifact: PublicChallengeArtifact) => (
+            <InfoRow
+              key={`${artifact.role}:${artifact.uri}`}
+              label={formatArtifactRole(artifact.role)}
+              value={
+                <LinkedValue
+                  href={artifact.url}
+                  value={artifact.uri}
+                />
+              }
+              mono
+              icon={Database}
+            />
+          ))
+        ) : (
+          <InfoRow label="Public artifacts" value="—" icon={Database} />
+        )}
       </div>
     </section>
   );
@@ -525,7 +518,7 @@ export function DetailClient({ id }: { id: string }) {
     );
   }
 
-  const { challenge, submissions } = detailQuery.data;
+  const { challenge, submissions, artifacts } = detailQuery.data;
   const spec = specQuery.data;
   const submissionContract = spec?.submission_contract ?? null;
   const submissionArtifact = submissionContract
@@ -543,10 +536,10 @@ export function DetailClient({ id }: { id: string }) {
     challenge.distribution_type ?? "winner_take_all",
   );
   const successDefinition =
-    spec?.evaluation?.success_definition ??
-    "Submissions are ranked by score after the evaluation pipeline runs on the hidden test bundle.";
+    (spec?.type ?? challenge.evaluation?.runtime_family) === "reproducibility"
+      ? "Submissions are compared against the reference output bundle using deterministic row matching."
+      : "Submissions are ranked by score after the managed evaluation pipeline runs on the hidden evaluation bundle.";
   const evaluationCriteria =
-    spec?.evaluation?.criteria ??
     "Submit a valid solution in the expected format. Higher-ranked valid scores receive the reward distribution for this challenge.";
   const technicalSpecsLoading =
     Boolean(challenge.spec_cid) && specQuery.isLoading;
@@ -556,11 +549,13 @@ export function DetailClient({ id }: { id: string }) {
     hasPublicVerificationArtifacts && verification
       ? `agora verify-public ${challenge.id} --sub ${verification.submissionId}`
       : null;
-  const scorerInfo = getScorerTransparencyInfo(challenge.eval_image);
-  const scorerPackageUrl = getScorerPackageUrl(challenge.eval_image);
+  const scorerInfo = getScorerTransparencyInfo(challenge.evaluation?.scorer_image);
+  const scorerPackageUrl = getScorerPackageUrl(
+    challenge.evaluation?.scorer_image,
+  );
   const metricPresentation = getMetricPresentation(
     challenge.challenge_type,
-    challenge.eval_metric,
+    challenge.evaluation?.metric,
     spec,
   );
   const eligibilityThreshold = getEligibilityThresholdPresentation(
@@ -696,16 +691,11 @@ export function DetailClient({ id }: { id: string }) {
                       <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
                         {successDefinition}
                       </p>
-                      {spec?.evaluation?.criteria && (
-                        <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
-                          {spec.evaluation.criteria}
-                        </p>
-                      )}
-                      {spec?.evaluation?.tolerance && (
+                      {spec?.evaluation?.metric === "tolerant_match" && (
                         <p className="mt-3 text-sm font-medium text-[var(--text-secondary)]">
-                          Comparison tolerance:{" "}
+                          Matching mode:{" "}
                           <span className="font-mono font-bold text-[var(--color-warm-900)]">
-                            {spec.evaluation.tolerance}
+                            tolerant_match
                           </span>
                         </p>
                       )}
@@ -866,7 +856,7 @@ export function DetailClient({ id }: { id: string }) {
               submissionUnavailableReason={submissionUnavailableReason}
             />
 
-            <TechnicalDetailsSection challenge={challenge} />
+            <TechnicalDetailsSection artifacts={artifacts} />
 
             {resultsVisible && verificationSubmission && (
               <Section

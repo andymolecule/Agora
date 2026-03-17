@@ -44,9 +44,12 @@ def main() -> None:
 
     if comparable_rows == 0 and total_rows == 0:
         payload = {
+            "ok": True,
             "details": {
                 "comparable_rows": 0,
                 "mismatched_row_penalty": 0,
+                "selected_metric": "exact_match",
+                "selected_metric_value": 1.0,
                 "tolerance": tolerance,
             },
             "matched_rows": 0,
@@ -85,9 +88,12 @@ def main() -> None:
     score = max(matched_rows - mismatched_row_penalty, 0) / denominator
 
     payload = {
+        "ok": True,
         "details": {
             "comparable_rows": comparable_rows,
             "mismatched_row_penalty": mismatched_row_penalty,
+            "selected_metric": "exact_match",
+            "selected_metric_value": float(round(score, 12)),
             "tolerance": tolerance,
         },
         "matched_rows": matched_rows,

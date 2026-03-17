@@ -74,7 +74,7 @@ High-level package map for common engineering tasks:
 | I want to change... | Start here |
 |---|---|
 | Challenge posting defaults and shared challenge-family policy | `packages/common/src/challenges/` |
-| Official scorer runtime config (image, limits, mount, format) | `packages/common/src/presets.ts` |
+| Official scorer runtime config (image, limits, mount, format) | `packages/common/src/runtime-families.ts` |
 | Challenge spec validation and eval-spec resolution | `packages/common/src/schemas/challenge-spec.ts` |
 | Submission artifact rules | `packages/common/src/schemas/submission-contract.ts` |
 | Runtime scorer staging and Docker execution | `packages/scorer/src/pipeline.ts` |

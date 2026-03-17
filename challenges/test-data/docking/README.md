@@ -8,13 +8,13 @@ This folder is useful for:
 - validating submission-format expectations for solvers
 
 Important current limitation:
-- the official docking preset exists
-- but `containers/docking-scorer/score.py` is still a placeholder in the current repo
-- so this folder is a realistic posting kit, not yet a meaningful executable scoring benchmark
+- the official docking runtime family exists
+- and `containers/docking-scorer/score.py` now evaluates CSV docking predictions against hidden reference scores
+- so this folder can be used as a realistic managed-authoring benchmark as long as the challenge fits the built-in CSV docking contract
 
 This folder is still aligned to the new model:
-- the official `docking_v1` preset is the runtime config surface
-- the current example assumes the preset's default mount layout until a real docking scorer is published
+- the official `docking` runtime family is the runtime config surface
+- the current example assumes the built-in CSV docking contract with `ligand_id` and `docking_score`
 
 ## Files
 
@@ -53,7 +53,7 @@ Use these values in `/post`:
 - Ligand set: `ligand_set.csv`
 
 ### Section 3: Evaluation
-- Keep the official docking preset selected
+- Keep the official docking runtime family selected
 - Metric: `Spearman`
 - Submission format: `CSV with columns: ligand_id, docking_score`
 - Scoring description:
@@ -63,7 +63,7 @@ Use these values in `/post`:
 
 1. Does the UI clearly communicate that the target and ligand set are different artifacts?
 2. Does the solver-output format preview match what a cheminformatics poster would expect?
-3. Does the challenge still feel coherent even though the built-in docking scorer is not implemented yet?
+3. Does the confirmation contract match what a cheminformatics poster expects to publish?
 
 ## Current Gap Exposed By This Folder
 
@@ -73,4 +73,4 @@ A truly executable docking challenge needs a real evaluation bundle, typically c
 - reference docking scores or labels
 - any scorer-specific config
 
-The current UI path only gives you two uploads here, and the runtime docking scorer is still a placeholder.
+The current managed path expects a target structure, ligand set, and hidden reference score file.

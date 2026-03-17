@@ -73,11 +73,11 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
       "Apply migration 012_add_factory_challenge_id.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
-    id: "challenge_dataset_file_name_columns",
+    id: "challenge_runtime_v3_columns",
     table: "challenges",
-    select: "dataset_train_file_name,dataset_test_file_name",
+    select: "runtime_family,evaluation_json,artifacts_json",
     nextStep:
-      "Apply migration 014_add_challenge_dataset_file_names.sql, then reload the PostgREST schema cache before restarting services.",
+      "Reset the database to the latest baseline schema, then reload the PostgREST schema cache before restarting services.",
   },
   {
     id: "worker_runtime_control_columns",
@@ -85,6 +85,14 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     select: "worker_type,active_runtime_version",
     nextStep:
       "Apply migration 008_add_worker_runtime_control.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
+    id: "posting_sessions_table",
+    table: "posting_sessions",
+    select:
+      "state,intent_json,uploaded_artifacts_json,compilation_json,clarification_questions_json,review_summary_json,approved_confirmation_json,published_spec_json,published_spec_cid,expires_at",
+    nextStep:
+      "Apply migrations 015_managed_authoring_v3.sql and 016_posting_review_queue.sql, then reload the PostgREST schema cache before restarting services.",
   },
 ];
 

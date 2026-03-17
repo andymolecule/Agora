@@ -1,19 +1,24 @@
 import { z } from "zod";
-import { defaultPresetIdForChallengeType } from "../challenges/templates.js";
 import { CHALLENGE_LIMITS } from "../constants.js";
 import { getDisputeWindowMinHours } from "../dispute-policy.js";
 import {
-  type ScoringMountConfig,
-  getPresetExpectedSubmissionKind,
-  inferPresetIdByContainer,
-  isOfficialContainer,
+  EXPERT_RUNTIME_FAMILY_ID,
+  isManagedRuntimeFamily,
+  resolveManagedScorerImage,
   resolveOfficialImageToDigest,
-  resolvePresetMount,
-} from "../presets.js";
+  resolveRuntimeFamilyLimits,
+  resolveRuntimeFamilyMount,
+  resolveRuntimeFamilyRuntimeDefaults,
+  validateExpertScorerImage,
+  validateRuntimeMetric,
+  validateScorerImage,
+} from "../runtime-families.js";
 import {
+  CHALLENGE_ARTIFACT_VISIBILITIES,
   CHALLENGE_DOMAINS,
   CHALLENGE_TYPES,
-  type ChallengeType,
+  type ChallengeArtifact,
+  type ChallengeSpec,
 } from "../types/challenge.js";
 import {
   type SubmissionContractOutput,
@@ -21,158 +26,95 @@ import {
 } from "./submission-contract.js";
 
 const domainEnum = z.enum(CHALLENGE_DOMAINS);
-
 const typeEnum = z.enum(CHALLENGE_TYPES);
-
+const artifactVisibilityEnum = z.enum(CHALLENGE_ARTIFACT_VISIBILITIES);
 const rewardDistributionEnum = z.enum([
   "winner_take_all",
   "top_3",
   "proportional",
 ]);
 
-const scoringMetricEnum = z.enum([
-  "rmse",
-  "mae",
-  "r2",
-  "pearson",
-  "spearman",
-  "custom",
-]);
-
-const datasetSource = z
+const ipfsOrHttpsUriSchema = z
   .string()
+  .trim()
   .min(1)
   .refine(
     (value) => value.startsWith("ipfs://") || value.startsWith("https://"),
-    "dataset source must start with ipfs:// or https://",
+    "value must start with ipfs:// or https://",
   );
 
-const datasetFileNameSchema = z.string().trim().min(1);
+const decimalStringPattern = /^\d+(?:\.\d{1,6})?$/;
 
-const rewardTotal = z
-  .preprocess((value) => {
-    if (typeof value === "string") {
-      const parsed = Number(value);
-      return Number.isNaN(parsed) ? value : parsed;
-    }
-    return value;
-  }, z
-    .number()
-    .min(CHALLENGE_LIMITS.rewardMinUsdc)
-    .max(CHALLENGE_LIMITS.rewardMaxUsdc))
+function normalizeRewardTotal(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toString();
+  }
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  return value;
+}
+
+const rewardTotalSchema = z
+  .preprocess(normalizeRewardTotal, z.string().min(1))
   .refine(
-    (value) => Number.isInteger(value * 10 ** CHALLENGE_LIMITS.rewardDecimals),
-    `reward.total must have at most ${CHALLENGE_LIMITS.rewardDecimals} decimal places`,
-  );
+    (value) => decimalStringPattern.test(value),
+    `reward.total must be a decimal string with at most ${CHALLENGE_LIMITS.rewardDecimals} decimal places`,
+  )
+  .refine((value) => {
+    const parsed = Number(value);
+    return (
+      Number.isFinite(parsed) &&
+      parsed >= CHALLENGE_LIMITS.rewardMinUsdc &&
+      parsed <= CHALLENGE_LIMITS.rewardMaxUsdc
+    );
+  }, `reward.total must be between ${CHALLENGE_LIMITS.rewardMinUsdc} and ${CHALLENGE_LIMITS.rewardMaxUsdc}`);
 
-// ---------------------------------------------------------------------------
-// Eval Spec — the lean 3-field evaluation specification
-// ---------------------------------------------------------------------------
-
-/**
- * EvalSpec: how a submission is evaluated.
- *
- * - engine_id:          optional descriptive metadata for the scoring family
- * - engine_digest:      pinned container digest (@sha256:...), required in production
- * - evaluation_bundle:  CID pointing to everything the engine needs
- *                        (ground truth, config, schema — engine-specific)
- */
-const evalSpecSchema = z.object({
-  engine_id: z.string().min(1).optional(),
-  engine_digest: z.string().min(1).optional(),
-  evaluation_bundle: datasetSource.optional(),
+export const challengeArtifactSchema = z.object({
+  role: z.string().trim().min(1),
+  visibility: artifactVisibilityEnum,
+  uri: ipfsOrHttpsUriSchema,
+  file_name: z.string().trim().min(1).optional(),
+  mime_type: z.string().trim().min(1).optional(),
+  description: z.string().trim().min(1).optional(),
 });
 
-export { evalSpecSchema };
-export type EvalSpec = z.infer<typeof evalSpecSchema>;
+export const challengeEvaluationSchema = z.object({
+  runtime_family: z.string().trim().min(1),
+  metric: z.string().trim().min(1),
+  scorer_image: z.string().trim().min(1),
+  evaluation_bundle: ipfsOrHttpsUriSchema.optional(),
+});
 
-function normalizePresetId(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : undefined;
-}
-
-/**
- * Resolve the effective preset id for validation and runtime defaults.
- *
- * This intentionally mirrors challengeSpecSchema.superRefine so runtime and
- * authoring helpers cannot drift from canonical validation rules.
- */
-function resolveSubmissionContractPolicyPresetId(input: {
-  type: ChallengeType;
-  preset_id?: string | null;
-  scoring?: { container?: string | null } | null;
-}): string | null {
-  const explicitPresetId = normalizePresetId(input.preset_id);
-  if (explicitPresetId) {
-    return explicitPresetId;
-  }
-
-  const scoringContainer = input.scoring?.container;
-  if (
-    typeof scoringContainer === "string" &&
-    scoringContainer.trim().length > 0
-  ) {
-    const inferredPresetId = inferPresetIdByContainer(scoringContainer.trim());
-    if (inferredPresetId) {
-      return inferredPresetId;
+function hasDuplicateArtifacts(artifacts: ChallengeArtifact[]) {
+  const seen = new Set<string>();
+  for (const artifact of artifacts) {
+    const key = `${artifact.role}|${artifact.visibility}|${artifact.uri}`;
+    if (seen.has(key)) {
+      return true;
     }
+    seen.add(key);
   }
-
-  return defaultPresetIdForChallengeType(input.type);
+  return false;
 }
 
-function resolveSpecEvaluationBundle(
-  spec: Pick<ChallengeSpecOutput, "type" | "dataset" | "eval_spec">,
-): string | undefined {
-  if (spec.eval_spec?.evaluation_bundle) {
-    return spec.eval_spec.evaluation_bundle;
-  }
-  if (spec.type === "prediction" && spec.dataset?.hidden_labels) {
-    return spec.dataset.hidden_labels;
-  }
-  return spec.dataset?.test;
-}
-
-// Shared challenge spec shape. dispute_window_hours is range-validated only;
-// callers decide which UI options to offer.
 const _baseSpecShape = z
   .object({
-    schema_version: z.literal(2),
-    id: z.string().min(1),
-    preset_id: z.string().min(1).optional(),
-    title: z.string().min(1),
+    schema_version: z.literal(3),
+    id: z.string().trim().min(1),
+    title: z.string().trim().min(1),
     domain: domainEnum,
     type: typeEnum,
-    description: z.string().min(1),
-    reference_url: z.string().url().optional(),
-    dataset: z
-      .object({
-        train: datasetSource.optional(),
-        test: datasetSource.optional(),
-        // Prediction: ground truth labels for scoring (separate from test inputs)
-        hidden_labels: datasetSource.optional(),
-        train_file_name: datasetFileNameSchema.optional(),
-        test_file_name: datasetFileNameSchema.optional(),
-        hidden_labels_file_name: datasetFileNameSchema.optional(),
-      })
-      .optional(),
-    // Author-facing scoring section. When eval_spec is omitted, the runtime
-    // resolves the canonical evaluation plan from this block plus dataset.test.
-    scoring: z.object({
-      container: z.string().min(1),
-      metric: scoringMetricEnum,
-    }),
-    // New: structured evaluation spec (optional; when absent, derived from scoring + dataset.test)
-    eval_spec: evalSpecSchema.optional(),
-    // Canonical submission artifact contract consumed by web/API/worker.
+    description: z.string().trim().min(1),
+    evaluation: challengeEvaluationSchema,
+    artifacts: z.array(challengeArtifactSchema).min(1),
     submission_contract: submissionContractSchema,
     reward: z.object({
-      total: rewardTotal,
+      total: rewardTotalSchema,
       distribution: rewardDistributionEnum,
     }),
     deadline: z.string().datetime({ offset: true }),
-    tags: z.array(z.string().min(1)).optional(),
+    tags: z.array(z.string().trim().min(1)).optional(),
     minimum_score: z.number().optional(),
     max_submissions_total: z.number().int().min(1).max(10000).optional(),
     max_submissions_per_solver: z.number().int().min(1).max(1000).optional(),
@@ -182,56 +124,12 @@ const _baseSpecShape = z
       .min(0)
       .max(CHALLENGE_LIMITS.disputeWindowMaxHours)
       .optional(),
-    evaluation: z
-      .object({
-        criteria: z.string().min(1).optional(),
-        success_definition: z.string().min(1).optional(),
-        // Reproducibility: numeric tolerance for comparison (e.g. "1e-4")
-        tolerance: z.string().min(1).optional(),
-      })
-      .optional(),
     lab_tba: z
       .string()
       .regex(/^0x[a-fA-F0-9]{40}$/, "lab_tba must be a valid EVM address")
       .optional(),
   })
   .superRefine((value, ctx) => {
-    if (
-      value.dataset?.train_file_name &&
-      typeof value.dataset.train !== "string"
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["dataset", "train_file_name"],
-        message:
-          "dataset.train_file_name requires dataset.train. Next step: provide the train dataset source or remove the file name.",
-      });
-    }
-
-    if (
-      value.dataset?.test_file_name &&
-      typeof value.dataset.test !== "string"
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["dataset", "test_file_name"],
-        message:
-          "dataset.test_file_name requires dataset.test. Next step: provide the test dataset source or remove the file name.",
-      });
-    }
-
-    if (
-      value.dataset?.hidden_labels_file_name &&
-      typeof value.dataset.hidden_labels !== "string"
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["dataset", "hidden_labels_file_name"],
-        message:
-          "dataset.hidden_labels_file_name requires dataset.hidden_labels. Next step: provide the hidden_labels source or remove the file name.",
-      });
-    }
-
     if (
       typeof value.max_submissions_total === "number" &&
       typeof value.max_submissions_per_solver === "number" &&
@@ -245,108 +143,110 @@ const _baseSpecShape = z
       });
     }
 
-    if (value.type !== "prediction") {
-      const inferredPresetId = resolveSubmissionContractPolicyPresetId({
-        type: value.type,
-        preset_id: value.preset_id,
-        scoring: value.scoring,
+    if (hasDuplicateArtifacts(value.artifacts)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["artifacts"],
+        message:
+          "Duplicate artifacts are not allowed. Next step: remove duplicated role/visibility/uri entries and retry.",
       });
-      const expectedSubmissionKind =
-        getPresetExpectedSubmissionKind(inferredPresetId);
+    }
 
-      if (
-        expectedSubmissionKind &&
-        value.submission_contract.kind !== expectedSubmissionKind
-      ) {
+    const runtimeFamilyId = value.evaluation.runtime_family;
+    const scorerImage = value.evaluation.scorer_image;
+
+    if (runtimeFamilyId === EXPERT_RUNTIME_FAMILY_ID) {
+      const imageError = validateExpertScorerImage(scorerImage);
+      if (imageError) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["submission_contract"],
-          message: `Preset ${inferredPresetId} requires a ${expectedSubmissionKind} submission_contract.`,
+          path: ["evaluation", "scorer_image"],
+          message: imageError,
         });
       }
       return;
     }
 
-    if (value.submission_contract.kind !== "csv_table") {
+    if (!isManagedRuntimeFamily(runtimeFamilyId)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["submission_contract"],
-        message:
-          "Prediction challenges require a csv_table submission_contract.",
+        path: ["evaluation", "runtime_family"],
+        message: `Unknown runtime family: ${runtimeFamilyId}`,
       });
       return;
     }
 
-    if (!value.submission_contract.columns.id) {
+    const metricError = validateRuntimeMetric(
+      runtimeFamilyId,
+      value.evaluation.metric,
+    );
+    if (metricError) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["submission_contract", "columns", "id"],
-        message:
-          "Prediction challenges require submission_contract.columns.id so submissions can be matched to evaluation rows.",
+        path: ["evaluation", "metric"],
+        message: metricError,
       });
     }
 
-    if (!value.submission_contract.columns.value) {
+    const imageError = validateScorerImage(scorerImage);
+    if (imageError) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["submission_contract", "columns", "value"],
-        message:
-          "Prediction challenges require submission_contract.columns.value so submitted prediction values can be scored.",
+        path: ["evaluation", "scorer_image"],
+        message: imageError,
       });
     }
 
-    const evaluationBundle = value.eval_spec?.evaluation_bundle;
-    const hiddenLabels = value.dataset?.hidden_labels;
-    const testDataset = value.dataset?.test;
-    const inferredPresetId = resolveSubmissionContractPolicyPresetId({
-      type: value.type,
-      preset_id: value.preset_id,
-      scoring: value.scoring,
-    });
+    const family = resolveRuntimeFamilyLimits(runtimeFamilyId);
+    if (!family) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["evaluation", "runtime_family"],
+        message: `Runtime family ${runtimeFamilyId} is missing runner limits.`,
+      });
+    }
 
+    const managedImage = resolveManagedScorerImage(runtimeFamilyId);
+    if (!managedImage) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["evaluation", "runtime_family"],
+        message: `Runtime family ${runtimeFamilyId} is missing a scorer image.`,
+      });
+    }
+
+    const defaults = resolveRuntimeFamilyRuntimeDefaults(runtimeFamilyId);
     if (
-      inferredPresetId === "regression_v1" &&
-      !evaluationBundle &&
-      !hiddenLabels
+      defaults?.evaluationContract &&
+      value.submission_contract.kind !== "csv_table"
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["dataset"],
-        message:
-          "Prediction challenges using regression_v1 require dataset.hidden_labels or eval_spec.evaluation_bundle. dataset.test alone is not scoreable for the official regression scorer.",
-      });
-    } else if (!evaluationBundle && !hiddenLabels && !testDataset) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["dataset"],
-        message:
-          "Prediction challenges require eval_spec.evaluation_bundle, dataset.hidden_labels, or dataset.test.",
+        path: ["submission_contract"],
+        message: `Runtime family ${runtimeFamilyId} requires a csv_table submission contract.`,
       });
     }
 
     if (
-      typeof evaluationBundle === "string" &&
-      typeof hiddenLabels === "string" &&
-      evaluationBundle !== hiddenLabels
+      runtimeFamilyId !== EXPERT_RUNTIME_FAMILY_ID &&
+      !value.evaluation.evaluation_bundle
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["dataset", "hidden_labels"],
-        message:
-          "Prediction challenges must use the same CID for dataset.hidden_labels and eval_spec.evaluation_bundle when both are provided.",
+        path: ["evaluation", "evaluation_bundle"],
+        message: `Runtime family ${runtimeFamilyId} requires an evaluation bundle.`,
       });
     }
   });
 
-/** Adds a dispute-window minimum refinement to the base shape. */
-function _withDisputeMin(minHours: number) {
+function withDisputeMin(minHours: number) {
   if (minHours <= 0) {
     return _baseSpecShape;
   }
-  return _baseSpecShape.superRefine((val, ctx) => {
+  return _baseSpecShape.superRefine((value, ctx) => {
     if (
-      val.dispute_window_hours !== undefined &&
-      val.dispute_window_hours < minHours
+      value.dispute_window_hours !== undefined &&
+      value.dispute_window_hours < minHours
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.too_small,
@@ -360,39 +260,38 @@ function _withDisputeMin(minHours: number) {
   });
 }
 
-/**
- * Default schema — validates the shared challenge contract without imposing a
- * product policy minimum on dispute_window_hours.
- */
 export const challengeSpecSchema = _baseSpecShape;
-
 export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;
 export type ChallengeSpecOutput = z.output<typeof challengeSpecSchema>;
 
+export interface ChallengeEvaluationCacheRow {
+  runtime_family: string;
+  metric: string;
+  scorer_image: string;
+  evaluation_bundle?: string | null;
+}
+
 export interface ChallengeEvalRow {
-  eval_image: string;
-  eval_metric: string;
-  eval_bundle_cid?: string | null;
-  runner_preset_id?: string | null;
+  evaluation_json?: ChallengeEvaluationCacheRow | null;
+  artifacts_json?: ChallengeArtifact[] | null;
   submission_contract_json?: SubmissionContractOutput | null;
-  scoring_env_json?: Record<string, string> | null;
 }
 
-/**
- * Chain-aware schema hook. Currently the parser uses the same range-based
- * validation across chains; the active UI determines which dispute-window
- * options are available.
- */
+export interface ResolvedChallengeEvaluation {
+  runtimeFamily: string;
+  image: string;
+  metric: string;
+  evaluationBundleCid?: string;
+  mount: {
+    evaluationBundleName?: string;
+    submissionFileName: string;
+  };
+}
+
 export function challengeSpecSchemaForChain(chainId: number) {
-  return _withDisputeMin(getDisputeWindowMinHours(chainId));
+  return withDisputeMin(getDisputeWindowMinHours(chainId));
 }
 
-/**
- * Single validation entry point for all app-layer consumers.
- * Returns a Zod SafeParseReturnType — callers decide whether to throw or return errors.
- *
- * Prefer this over importing schemas directly to prevent policy drift.
- */
 export function validateChallengeSpec(raw: unknown, chainId: number) {
   return challengeSpecSchemaForChain(chainId).safeParse(raw);
 }
@@ -405,74 +304,72 @@ export async function canonicalizeChallengeSpec(
     resolveOfficialPresetDigests?: boolean;
   } = {},
 ): Promise<ChallengeSpecOutput> {
-  const scoringContainer = spec.scoring.container.trim();
-  const explicitPresetId =
-    typeof spec.preset_id === "string" && spec.preset_id.trim().length > 0
-      ? spec.preset_id.trim()
-      : undefined;
-  const usesCustomScorer =
-    spec.type === "custom" || spec.type === "optimization";
-  const inferredPresetId =
-    explicitPresetId ??
-    (usesCustomScorer
-      ? "custom"
-      : (inferPresetIdByContainer(scoringContainer) ?? undefined));
+  const runtimeFamilyId = spec.evaluation.runtime_family;
+  let scorerImage = spec.evaluation.scorer_image.trim();
 
-  let resolvedImage = spec.eval_spec?.engine_digest?.trim() || scoringContainer;
-  if (
-    options.resolveOfficialPresetDigests === true &&
-    inferredPresetId &&
-    inferredPresetId !== "custom" &&
-    isOfficialContainer(scoringContainer) &&
-    !scoringContainer.includes("@sha256:")
-  ) {
-    resolvedImage = await resolveOfficialImageToDigest(
-      scoringContainer,
-      options,
-    );
-  } else if (scoringContainer.includes("@sha256:")) {
-    resolvedImage = scoringContainer;
+  if (runtimeFamilyId !== EXPERT_RUNTIME_FAMILY_ID) {
+    const managedImage = resolveManagedScorerImage(runtimeFamilyId);
+    if (!managedImage) {
+      throw new Error(
+        `Unknown runtime family ${runtimeFamilyId}. Next step: choose a registered runtime family and retry.`,
+      );
+    }
+    scorerImage = managedImage;
   }
 
-  const resolvedEngineId =
-    spec.eval_spec?.engine_id?.trim() || inferredPresetId;
-  const nextEvalSpec = resolvedEngineId
-    ? {
-        ...(spec.eval_spec ?? {}),
-        engine_id: resolvedEngineId,
-        ...(resolvedImage.includes("@sha256:")
-          ? { engine_digest: resolvedImage }
-          : {}),
-      }
-    : spec.eval_spec
-      ? {
-          ...spec.eval_spec,
-          ...(resolvedImage.includes("@sha256:")
-            ? { engine_digest: resolvedImage }
-            : {}),
-        }
-      : undefined;
+  if (options.resolveOfficialPresetDigests === true) {
+    scorerImage = await resolveOfficialImageToDigest(scorerImage, options);
+  }
 
   return {
     ...spec,
-    ...(explicitPresetId ? { preset_id: explicitPresetId } : {}),
-    scoring: {
-      ...spec.scoring,
-      container: resolvedImage,
+    evaluation: {
+      ...spec.evaluation,
+      scorer_image: scorerImage,
     },
-    ...(nextEvalSpec ? { eval_spec: nextEvalSpec } : {}),
   };
 }
 
-// ---------------------------------------------------------------------------
-// Resolve effective scoring runtime config from a parsed challenge spec
-// ---------------------------------------------------------------------------
+export function resolveChallengeEvaluation(
+  spec: ChallengeSpecOutput | ChallengeEvalRow,
+): ResolvedChallengeEvaluation {
+  if ("evaluation" in spec) {
+    return {
+      runtimeFamily: spec.evaluation.runtime_family,
+      image: spec.evaluation.scorer_image,
+      metric: spec.evaluation.metric,
+      evaluationBundleCid: spec.evaluation.evaluation_bundle,
+      mount: resolveRuntimeFamilyMount(spec.evaluation.runtime_family),
+    };
+  }
 
-export interface ResolvedEvalSpec {
-  image: string;
-  evaluationBundleCid?: string;
-  metric: string;
-  mount: ScoringMountConfig;
+  const evaluation = spec.evaluation_json;
+  if (!evaluation) {
+    throw new Error(
+      "Challenge is missing evaluation_json. Next step: rebuild the challenge projection and retry.",
+    );
+  }
+
+  return {
+    runtimeFamily: evaluation.runtime_family,
+    image: evaluation.scorer_image,
+    metric: evaluation.metric,
+    evaluationBundleCid: evaluation.evaluation_bundle ?? undefined,
+    mount: resolveRuntimeFamilyMount(evaluation.runtime_family),
+  };
+}
+
+export function resolveScoringEnvironmentFromSpec(
+  spec: ChallengeSpecOutput | null | undefined,
+): Record<string, string> | undefined {
+  if (!spec) {
+    return undefined;
+  }
+
+  return (
+    resolveRuntimeFamilyRuntimeDefaults(spec.evaluation.runtime_family)?.env ??
+    undefined
+  );
 }
 
 export interface ChallengeScoreabilityValidation {
@@ -480,152 +377,27 @@ export interface ChallengeScoreabilityValidation {
   errors: string[];
 }
 
-export interface ChallengeTypeScoreabilityProfile {
-  requiresScoringImage: boolean;
-  requiresEvaluationBundle: boolean;
-  requiresMetric: boolean;
-  missingImageMessage: string;
-  missingEvaluationBundleMessage: string;
-  missingMetricMessage: string;
-}
-
-export const CHALLENGE_TYPE_SCOREABILITY = {
-  prediction: {
-    requiresScoringImage: false,
-    requiresEvaluationBundle: true,
-    requiresMetric: true,
-    missingImageMessage: "Prediction challenges require a scoring container.",
-    missingEvaluationBundleMessage:
-      "Prediction challenges require an evaluation bundle or hidden labels.",
-    missingMetricMessage: "Prediction challenges require a scoring metric.",
-  },
-  reproducibility: {
-    requiresScoringImage: true,
-    requiresEvaluationBundle: true,
-    requiresMetric: false,
-    missingImageMessage:
-      "Reproducibility challenges require a scoring container.",
-    missingEvaluationBundleMessage:
-      "Reproducibility challenges require an evaluation bundle.",
-    missingMetricMessage:
-      "Reproducibility challenges require a scoring metric.",
-  },
-  optimization: {
-    requiresScoringImage: true,
-    requiresEvaluationBundle: false,
-    requiresMetric: false,
-    missingImageMessage: "Optimization challenges require a scoring container.",
-    missingEvaluationBundleMessage:
-      "Optimization challenges require an evaluation bundle.",
-    missingMetricMessage: "Optimization challenges require a scoring metric.",
-  },
-  docking: {
-    requiresScoringImage: true,
-    requiresEvaluationBundle: true,
-    requiresMetric: true,
-    missingImageMessage: "Docking challenges require a scoring container.",
-    missingEvaluationBundleMessage:
-      "Docking challenges require an evaluation bundle.",
-    missingMetricMessage: "Docking challenges require a scoring metric.",
-  },
-  red_team: {
-    requiresScoringImage: true,
-    requiresEvaluationBundle: false,
-    requiresMetric: false,
-    missingImageMessage: "Red team challenges require a scoring container.",
-    missingEvaluationBundleMessage:
-      "Red team challenges require an evaluation bundle.",
-    missingMetricMessage: "Red team challenges require a scoring metric.",
-  },
-  custom: {
-    requiresScoringImage: true,
-    requiresEvaluationBundle: false,
-    requiresMetric: false,
-    missingImageMessage: "Custom challenges require a scoring container.",
-    missingEvaluationBundleMessage:
-      "Custom challenges require an evaluation bundle.",
-    missingMetricMessage: "Custom challenges require a scoring metric.",
-  },
-} satisfies Record<ChallengeType, ChallengeTypeScoreabilityProfile>;
-
-export function getChallengeTypeScoreabilityProfile(type: ChallengeType) {
-  return CHALLENGE_TYPE_SCOREABILITY[type];
-}
-
-/**
- * Resolve the effective evaluation spec from a challenge spec or stored challenge row.
- */
-export function resolveEvalSpec(spec: ChallengeSpecOutput): ResolvedEvalSpec;
-export function resolveEvalSpec(spec: ChallengeEvalRow): ResolvedEvalSpec;
-export function resolveEvalSpec(
-  spec: ChallengeSpecOutput | ChallengeEvalRow,
-): ResolvedEvalSpec;
-export function resolveEvalSpec(
-  spec: ChallengeSpecOutput | ChallengeEvalRow,
-): ResolvedEvalSpec {
-  if ("scoring" in spec) {
-    const presetId = resolveSubmissionContractPolicyPresetId({
-      type: spec.type,
-      preset_id: spec.preset_id,
-      scoring: spec.scoring,
-    });
-    return {
-      image: spec.eval_spec?.engine_digest ?? spec.scoring.container,
-      evaluationBundleCid: resolveSpecEvaluationBundle(spec),
-      metric: spec.scoring.metric,
-      mount: resolvePresetMount(presetId),
-    };
-  }
-
-  const presetId =
-    (typeof spec.runner_preset_id === "string" && spec.runner_preset_id) ||
-    inferPresetIdByContainer(spec.eval_image);
-  return {
-    image: spec.eval_image,
-    evaluationBundleCid: spec.eval_bundle_cid ?? undefined,
-    metric: spec.eval_metric,
-    mount: resolvePresetMount(presetId),
-  };
-}
-
-export function resolveScoringEnvironmentFromSpec(
-  spec:
-    | { evaluation?: { tolerance?: string | null } | null }
-    | null
-    | undefined,
-): Record<string, string> | undefined {
-  const tolerance = spec?.evaluation?.tolerance?.trim();
-  if (!tolerance) {
-    return undefined;
-  }
-  return { AGORA_TOLERANCE: tolerance };
-}
-
 export function validateChallengeScoreability(
   spec: ChallengeSpecOutput,
 ): ChallengeScoreabilityValidation {
-  const resolved = resolveEvalSpec(spec);
   const errors: string[] = [];
-  const profile = getChallengeTypeScoreabilityProfile(spec.type);
+  const runtimeFamilyId = spec.evaluation.runtime_family;
 
-  const hasEvaluationBundle =
-    typeof resolved.evaluationBundleCid === "string" &&
-    resolved.evaluationBundleCid.trim().length > 0;
-  const hasScoringImage =
-    typeof resolved.image === "string" && resolved.image.trim().length > 0;
-  const hasScoringMetric =
-    typeof resolved.metric === "string" && resolved.metric.trim().length > 0;
-
-  if (profile.requiresEvaluationBundle && !hasEvaluationBundle) {
-    errors.push(profile.missingEvaluationBundleMessage);
+  if (!spec.evaluation.scorer_image.trim()) {
+    errors.push("Challenge requires a scorer image.");
   }
 
-  if (profile.requiresScoringImage && !hasScoringImage) {
-    errors.push(profile.missingImageMessage);
+  if (!spec.evaluation.metric.trim()) {
+    errors.push("Challenge requires a metric.");
   }
 
-  if (profile.requiresMetric && !hasScoringMetric) {
-    errors.push(profile.missingMetricMessage);
+  if (
+    runtimeFamilyId !== EXPERT_RUNTIME_FAMILY_ID &&
+    !spec.evaluation.evaluation_bundle
+  ) {
+    errors.push(
+      `Runtime family ${runtimeFamilyId} requires an evaluation bundle.`,
+    );
   }
 
   return {

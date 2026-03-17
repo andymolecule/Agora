@@ -1,8 +1,10 @@
 import {
   CHALLENGE_STATUS,
+  EXPERT_RUNTIME_FAMILY_ID,
   isMetadataBlockedScoreJobError,
   isTerminalScoreJobError,
-  validatePresetIntegrity,
+  validateExpertScorerImage,
+  validateScorerImage,
 } from "@agora/common";
 import { markScoreJobSkipped } from "@agora/db";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
@@ -32,8 +34,12 @@ interface FailedJobWithContext {
     id: string;
     title: string | null;
     status: string;
-    runner_preset_id: string;
-    eval_image: string | null;
+    runtime_family: string;
+    evaluation_json:
+      | {
+          scorer_image?: string | null;
+        }
+      | null;
   } | null;
 }
 
@@ -67,18 +73,18 @@ function classifyFailedJob(
   }
 
   if (
-    job.challenges?.runner_preset_id &&
-    job.challenges.eval_image &&
-    job.challenges.runner_preset_id.trim().length > 0
+    job.challenges?.runtime_family &&
+    job.challenges.runtime_family.trim().length > 0
   ) {
-    const integrityError = validatePresetIntegrity(
-      job.challenges.runner_preset_id,
-      job.challenges.eval_image,
-    );
-    if (integrityError) {
+    const scorerImage = job.challenges.evaluation_json?.scorer_image;
+    const integrityError =
+      job.challenges.runtime_family === EXPERT_RUNTIME_FAMILY_ID
+        ? validateExpertScorerImage(scorerImage ?? "")
+        : validateScorerImage(scorerImage ?? "");
+    if (scorerImage && integrityError) {
       return {
         action: "skip",
-        reason: `Invalid scoring preset configuration: ${integrityError}`,
+        reason: `Invalid runtime-family scoring configuration: ${integrityError}`,
         note: "challenge scoring config is invalid",
       };
     }
@@ -141,7 +147,7 @@ export function buildCleanFailedJobsCommand() {
         let query = db
           .from("score_jobs")
           .select(
-            "id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at, submissions(id, result_cid, solver_address), challenges(id, title, status, runner_preset_id, eval_image)",
+            "id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at, submissions(id, result_cid, solver_address), challenges(id, title, status, runtime_family, evaluation_json)",
           )
           .eq("status", "failed")
           .order("updated_at", { ascending: false });

@@ -1,5 +1,5 @@
 """
-Agora Regression Scorer
+Agora Tabular Scorer
 
 Scores a CSV submission against a CSV evaluation bundle using a runtime config
 mounted by the orchestrator at /input/agora-runtime.json.
@@ -23,6 +23,9 @@ RUNTIME_CONFIG_PATH = INPUT_DIR / "agora-runtime.json"
 GROUND_TRUTH_PATH = INPUT_DIR / "ground_truth.csv"
 SUBMISSION_PATH = INPUT_DIR / "submission.csv"
 OUTPUT_PATH = OUTPUT_DIR / "score.json"
+
+NUMERIC_METRICS = {"r2", "rmse", "mae", "pearson", "spearman"}
+CLASSIFICATION_METRICS = {"accuracy", "f1"}
 
 LEGACY_RUNTIME_CONFIG = {
     "metric": "r2",
@@ -69,7 +72,6 @@ def reject_submission(message: str, details: dict | None = None) -> None:
 
 
 def parse_csv(path: Path) -> list[dict[str, str]]:
-    """Minimal CSV parser — no external dependencies beyond stdlib."""
     text = path.read_text(encoding="utf-8").strip()
     if not text:
         return []
@@ -225,9 +227,13 @@ def validate_header(
             raise SystemExit(0)
 
 
-def build_truth_map(truth_rows: list[dict[str, str]], contract: dict) -> tuple[list[str], dict[str, float]]:
+def build_truth_map(
+    truth_rows: list[dict[str, str]],
+    contract: dict,
+    numeric_values: bool,
+) -> tuple[list[str], dict[str, float | str]]:
     truth_ids: list[str] = []
-    truth_map: dict[str, float] = {}
+    truth_map: dict[str, float | str] = {}
     id_col = contract["id"]
     value_col = contract["value"]
 
@@ -237,10 +243,19 @@ def build_truth_map(truth_rows: list[dict[str, str]], contract: dict) -> tuple[l
             fail_runtime("ground_truth.csv contains an empty evaluation id.")
         if row_id in truth_map:
             fail_runtime("ground_truth.csv contains duplicate evaluation ids.")
-        try:
-            truth_value = float(row[value_col])
-        except (ValueError, KeyError):
-            fail_runtime("ground_truth.csv contains a non-numeric target value.")
+
+        raw_value = row.get(value_col, "")
+        if not raw_value:
+            fail_runtime("ground_truth.csv contains an empty target value.")
+
+        if numeric_values:
+            try:
+                truth_value: float | str = float(raw_value)
+            except ValueError:
+                fail_runtime("ground_truth.csv contains a non-numeric target value.")
+        else:
+            truth_value = str(raw_value)
+
         truth_ids.append(row_id)
         truth_map[row_id] = truth_value
 
@@ -250,13 +265,14 @@ def build_truth_map(truth_rows: list[dict[str, str]], contract: dict) -> tuple[l
 def summarize_submission(
     sub_rows: list[dict[str, str]],
     submission_contract: dict,
-    truth_map: dict[str, float],
+    truth_map: dict[str, float | str],
     policies: dict,
-) -> tuple[dict[str, float], dict]:
+    numeric_values: bool,
+) -> tuple[dict[str, float | str], dict]:
     id_col = submission_contract["id"]
     value_col = submission_contract["value"]
 
-    valid_predictions: dict[str, float] = {}
+    valid_predictions: dict[str, float | str] = {}
     seen_ids: set[str] = set()
     duplicate_ids: list[str] = []
     invalid_value_ids: list[str] = []
@@ -279,14 +295,22 @@ def summarize_submission(
             unexpected_ids.append(row_id)
             continue
 
-        try:
-            pred_val = float(row[value_col])
-        except (ValueError, KeyError):
+        raw_value = row.get(value_col, "")
+        if not raw_value:
             invalid_value_ids.append(row_id)
             continue
 
+        if numeric_values:
+            try:
+                prediction_value: float | str = float(raw_value)
+            except ValueError:
+                invalid_value_ids.append(row_id)
+                continue
+        else:
+            prediction_value = str(raw_value)
+
         if row_id not in valid_predictions:
-            valid_predictions[row_id] = pred_val
+            valid_predictions[row_id] = prediction_value
 
     missing_truth_ids = [row_id for row_id in truth_map if row_id not in valid_predictions]
 
@@ -308,16 +332,18 @@ def summarize_submission(
         raise SystemExit(0)
 
     if invalid_value_ids and policies["invalid_value_policy"] == "reject":
-        reject_submission(
-            "Submission contains non-numeric prediction values. Next step: upload a CSV with numeric predictions only.",
-            details,
+        invalid_message = (
+            "Submission contains non-numeric prediction values. Next step: upload a CSV with numeric predictions only."
+            if numeric_values
+            else "Submission contains empty or invalid label predictions. Next step: upload a CSV with one non-empty prediction for every evaluation id."
         )
+        reject_submission(invalid_message, details)
         raise SystemExit(0)
 
     coverage_policy = policies["coverage_policy"]
     if coverage_policy == "penalize":
         fail_runtime(
-            "coverage_policy=penalize is not supported by regression_v1. Next step: use reject or ignore."
+            "coverage_policy=penalize is not supported by tabular_v1. Next step: use reject or ignore."
         )
     if coverage_policy == "reject" and (missing_truth_ids or unexpected_ids):
         reject_submission(
@@ -351,8 +377,57 @@ def rankdata(values: list[float]) -> list[float]:
     return ranks
 
 
+def normalize_score(metric: str, value: float) -> float:
+    if metric == "r2":
+        return max(value, 0.0)
+    if metric in ("rmse", "mae"):
+        return 1.0 / (1.0 + value)
+    if metric in ("pearson", "spearman"):
+        return max(0.0, min(1.0, (value + 1.0) / 2.0))
+    if metric in CLASSIFICATION_METRICS:
+        return max(0.0, min(1.0, value))
+    fail_runtime(f"Unsupported metric {metric}.")
+
+
+def compute_macro_f1(y_true: list[str], y_pred: list[str]) -> float:
+    labels = sorted(set(y_true) | set(y_pred))
+    if not labels:
+        return 0.0
+
+    f1_scores: list[float] = []
+    for label in labels:
+        tp = sum(
+            1
+            for truth, pred in zip(y_true, y_pred)
+            if truth == label and pred == label
+        )
+        fp = sum(
+            1
+            for truth, pred in zip(y_true, y_pred)
+            if truth != label and pred == label
+        )
+        fn = sum(
+            1
+            for truth, pred in zip(y_true, y_pred)
+            if truth == label and pred != label
+        )
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        if precision + recall == 0:
+            f1_scores.append(0.0)
+        else:
+            f1_scores.append((2 * precision * recall) / (precision + recall))
+
+    return sum(f1_scores) / len(f1_scores)
+
+
 def main() -> None:
     runtime_config = load_runtime_config()
+    metric = str(runtime_config.get("metric") or "r2")
+    if metric not in NUMERIC_METRICS | CLASSIFICATION_METRICS:
+        fail_runtime(
+            f"Unsupported metric {metric}. Next step: choose one of {','.join(sorted(NUMERIC_METRICS | CLASSIFICATION_METRICS))}."
+        )
 
     if not GROUND_TRUTH_PATH.exists():
         fail_runtime("Missing required file: /input/ground_truth.csv")
@@ -375,21 +450,66 @@ def main() -> None:
         runtime_error=False,
     )
 
-    truth_ids, truth_map = build_truth_map(truth_rows, runtime_config["evaluation"])
+    numeric_values = metric in NUMERIC_METRICS
+    truth_ids, truth_map = build_truth_map(
+        truth_rows,
+        runtime_config["evaluation"],
+        numeric_values=numeric_values,
+    )
     valid_predictions, summary = summarize_submission(
         sub_rows,
         runtime_config["submission"],
         truth_map,
         runtime_config["policies"],
+        numeric_values=numeric_values,
     )
+
+    if metric in CLASSIFICATION_METRICS:
+        y_true: list[str] = []
+        y_pred: list[str] = []
+        for row_id in truth_ids:
+            if row_id not in valid_predictions:
+                continue
+            y_true.append(str(truth_map[row_id]))
+            y_pred.append(str(valid_predictions[row_id]))
+
+        n = len(y_true)
+        if n == 0:
+            reject_submission(
+                "No valid prediction rows matched the evaluation bundle.",
+                summary,
+            )
+            return
+
+        accuracy = sum(1 for truth, pred in zip(y_true, y_pred) if truth == pred) / n
+        f1 = compute_macro_f1(y_true, y_pred)
+        selected_metric_value = accuracy if metric == "accuracy" else f1
+        leaderboard_score = normalize_score(metric, selected_metric_value)
+
+        write_result(
+            {
+                "ok": True,
+                "score": float(round(leaderboard_score, 12)),
+                "details": {
+                    **summary,
+                    "matched_rows": n,
+                    "accuracy": float(round(accuracy, 12)),
+                    "f1": float(round(f1, 12)),
+                    "selected_metric": metric,
+                    "selected_metric_value": float(round(selected_metric_value, 12)),
+                    "leaderboard_score": float(round(leaderboard_score, 12)),
+                },
+            }
+        )
+        return
 
     y_true: list[float] = []
     y_pred: list[float] = []
     for row_id in truth_ids:
         if row_id not in valid_predictions:
             continue
-        y_true.append(truth_map[row_id])
-        y_pred.append(valid_predictions[row_id])
+        y_true.append(float(truth_map[row_id]))
+        y_pred.append(float(valid_predictions[row_id]))
 
     n = len(y_true)
     if n == 0:
@@ -434,22 +554,35 @@ def main() -> None:
     else:
         spearman = 0.0
 
-    score = float(round(r2_clamped, 12))
-    payload = {
-        "ok": True,
-        "score": score,
-        "details": {
-            **summary,
-            "matched_rows": n,
-            "r2": float(round(r2, 12)),
-            "r2_clamped": float(round(r2_clamped, 12)),
-            "rmse": float(round(rmse, 12)),
-            "mae": float(round(mae, 12)),
-            "pearson": float(round(pearson, 12)),
-            "spearman": float(round(spearman, 12)),
-        },
+    metric_values = {
+        "r2": float(round(r2, 12)),
+        "rmse": float(round(rmse, 12)),
+        "mae": float(round(mae, 12)),
+        "pearson": float(round(pearson, 12)),
+        "spearman": float(round(spearman, 12)),
     }
-    write_result(payload)
+    selected_metric_value = metric_values[metric]
+    leaderboard_score = normalize_score(metric, selected_metric_value)
+
+    write_result(
+        {
+            "ok": True,
+            "score": float(round(leaderboard_score, 12)),
+            "details": {
+                **summary,
+                "matched_rows": n,
+                "r2": metric_values["r2"],
+                "r2_clamped": float(round(r2_clamped, 12)),
+                "rmse": metric_values["rmse"],
+                "mae": metric_values["mae"],
+                "pearson": metric_values["pearson"],
+                "spearman": metric_values["spearman"],
+                "selected_metric": metric,
+                "selected_metric_value": float(round(selected_metric_value, 12)),
+                "leaderboard_score": float(round(leaderboard_score, 12)),
+            },
+        }
+    )
 
 
 if __name__ == "__main__":

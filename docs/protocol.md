@@ -202,15 +202,14 @@ The authoritative schema for challenge specification files.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | integer | Must be `2` for the active contract generation. |
+| `schema_version` | integer | Must be `3` for the active managed-authoring model. |
 | `id` | string | Unique challenge identifier (e.g., `ch-001`). |
 | `title` | string | Human-readable challenge title. |
 | `domain` | enum | One of: `longevity`, `drug_discovery`, `protein_design`, `omics`, `neuroscience`, `other`. |
 | `type` | enum | One of: `reproducibility`, `prediction`, `docking`, `optimization`, `red_team`, `custom`. |
 | `description` | string | Full challenge description. |
-| `dataset` | object | Dataset configuration object. All sub-fields (`train`, `test`, `hidden_labels`) are optional. |
-| `scoring.container` | string | Docker image reference for scoring. Official Agora scorers use stable public version tags in authored YAML and are resolved to pinned digests before persistence; custom scorers must already use a pinned digest. |
-| `scoring.metric` | enum | One of: `rmse`, `mae`, `r2`, `pearson`, `spearman`, `custom`. |
+| `evaluation` | object | Runtime-backed scoring config. Managed challenges set `runtime_family`, `metric`, and a registry-sourced `scorer_image`. |
+| `artifacts` | array | Normalized artifact list. Each artifact includes a `role`, `visibility`, and `uri`. |
 | `submission_contract` | object | Canonical machine-readable submission artifact contract. This is the only source of truth for what solvers must upload. |
 | `reward.total` | decimal | USDC amount, up to 6 decimal places. |
 | `reward.distribution` | enum | One of: `winner_take_all`, `top_3`, `proportional`. |
@@ -220,39 +219,50 @@ The authoritative schema for challenge specification files.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `dataset.train` | string | Training data URL. Accepts `ipfs://` or `https://`. |
-| `dataset.train_file_name` | string | Optional canonical file name for the training dataset when the source URL/CID has no basename. |
-| `dataset.test` | string | Test data URL. Accepts `ipfs://` or `https://`. |
-| `dataset.test_file_name` | string | Optional canonical file name for the test dataset when the source URL/CID has no basename. |
-| `dataset.hidden_labels` | string | Hidden labels URL. Accepts `ipfs://` or `https://`. |
-| `dataset.hidden_labels_file_name` | string | Optional canonical file name for hidden labels when the source URL/CID has no basename. |
+| `evaluation.runtime_family` | string | Managed runtime family ID (for example `reproducibility`, `tabular_regression`, `tabular_classification`, `docking`, or `ranking`). |
+| `evaluation.metric` | string | Metric ID validated by the chosen runtime family (for example `r2`, `rmse`, `accuracy`, `spearman`, or `ndcg`). |
+| `evaluation.scorer_image` | string | Pinned scorer image digest used for deterministic execution. Managed publish copies this from the runtime registry; Expert Mode accepts poster input directly. |
+| `evaluation.evaluation_bundle` | string | Optional private evaluation bundle URI (`ipfs://` or `https://`) used by managed runtimes for hidden labels or reference outputs. |
+| `artifacts[].role` | string | Artifact role understood by the chosen runtime family (for example `training_data`, `target_structure`, or `reference_scores`). |
+| `artifacts[].visibility` | enum | One of: `public`, `private`. |
+| `artifacts[].uri` | string | Artifact URI. Accepts `ipfs://` or `https://`. |
+| `artifacts[].file_name` | string | Optional canonical file name when the source URI has no basename. |
+| `artifacts[].mime_type` | string | Optional MIME type metadata. |
+| `artifacts[].description` | string | Optional human-facing artifact description. |
 | `tags` | string[] | Freeform tags for discovery. |
 | `minimum_score` | decimal | Minimum score threshold for payout eligibility. |
 | `dispute_window_hours` | integer | Dispute window in hours (0–2160 on testnet; 168–2160 before mainnet). |
 | `lab_tba` | address | Optional Molecule Protocol lab TBA address. |
 | `max_submissions_total` | integer | Maximum submissions per challenge (1–10000). |
 | `max_submissions_per_solver` | integer | Maximum submissions per solver per challenge (1–1000). |
-| `preset_id` | string | Scorer preset ID (e.g. `csv_comparison_v1`, `regression_v1`). |
-| `eval_spec` | object | Structured evaluation spec with `engine_digest` and `evaluation_bundle`. The optional `engine_id` field is descriptive metadata for scoring family provenance — it is not used for runtime dispatch. |
-| `evaluation` | object | Optional human-facing scoring notes such as `criteria`, `success_definition`, and numeric `tolerance`. It is not the submission artifact contract. |
 
 ### Example
 
 ```yaml
-schema_version: 2
+schema_version: 3
 id: ch-001
-title: "Reproduce Figure 3 from Gladyshev 2024 longevity clock"
-domain: longevity
-type: reproducibility
-description: "..."
-dataset:
-  train: ipfs://Qm...
-  train_file_name: train.csv
-  test: ipfs://Qm...
-  test_file_name: test.csv
-scoring:
-  container: ghcr.io/andymolecule/repro-scorer:v1
-  metric: custom
+title: "Rank ligands for KRAS binding affinity"
+domain: drug_discovery
+type: docking
+description: "Predict docking scores for the supplied ligand set against the target structure."
+evaluation:
+  runtime_family: docking
+  metric: spearman
+  scorer_image: ghcr.io/andymolecule/docking-scorer:v1@sha256:...
+  evaluation_bundle: ipfs://QmReferenceScores
+artifacts:
+  - role: target_structure
+    visibility: public
+    uri: ipfs://QmTarget
+    file_name: kras_target.pdb
+  - role: ligand_library
+    visibility: public
+    uri: ipfs://QmLigands
+    file_name: ligands.csv
+  - role: reference_scores
+    visibility: private
+    uri: ipfs://QmReferenceScores
+    file_name: hidden_scores.csv
 submission_contract:
   version: v1
   kind: csv_table
@@ -262,11 +272,10 @@ submission_contract:
     max_bytes: 26214400
   columns:
     required:
-      - sample_id
-      - normalized_signal
-      - condition
-    id: sample_id
-    value: normalized_signal
+      - ligand_id
+      - docking_score
+    id: ligand_id
+    value: docking_score
     allow_extra: true
 reward:
   total: 500 USDC
@@ -297,7 +306,7 @@ deadline: "2026-03-04T23:59:59Z"
   - `--read-only` — only `/output` is writable
   - `--cap-drop=ALL` — no Linux capabilities
   - Base runner fallback: 256 MB memory, 0.5 CPUs, 32 PIDs, 30-minute timeout
-  - Official preset range today: 128 MB – 4 GB memory, 0.5 – 2 CPUs, 32 – 64 PIDs, 1 – 20 minute timeouts
+  - Official managed runtime range today: 128 MB – 4 GB memory, 0.5 – 2 CPUs, 32 – 64 PIDs, 1 – 20 minute timeouts
   - `--user 65532:65532` — non-root execution
   - `--security-opt=no-new-privileges` — no privilege escalation
 - **`score-local` is preview-only:** Free and unlimited. Does not affect on-chain state.

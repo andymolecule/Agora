@@ -37,4 +37,5 @@ export * from "./queries/worker-runtime.js";
 export * from "./queries/analytics.js";
 export * from "./queries/leaderboard.js";
 export * from "./queries/auth.js";
+export * from "./queries/posting-sessions.js";
 export * from "./schema-compatibility.js";

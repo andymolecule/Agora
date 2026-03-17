@@ -4,21 +4,30 @@ import { hydrateChallengeSpec } from "../src/lib/api";
 
 test("hydrateChallengeSpec accepts current specs", () => {
   const spec = hydrateChallengeSpec({
-    schema_version: 2,
+    schema_version: 3,
     id: "current-1",
-    preset_id: "csv_comparison_v1",
     title: "Current spec",
     domain: "other",
     type: "reproducibility",
     description: "Pinned with the current schema",
-    dataset: {
-      train: "ipfs://train",
-      test: "ipfs://test",
+    evaluation: {
+      runtime_family: "reproducibility",
+      metric: "exact_match",
+      scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
+      evaluation_bundle: "ipfs://test",
     },
-    scoring: {
-      container: "ghcr.io/andymolecule/repro-scorer:v1",
-      metric: "custom",
-    },
+    artifacts: [
+      {
+        role: "source_data",
+        visibility: "public",
+        uri: "ipfs://train",
+      },
+      {
+        role: "reference_output",
+        visibility: "public",
+        uri: "ipfs://test",
+      },
+    ],
     submission_contract: {
       version: "v1",
       kind: "csv_table",
@@ -33,13 +42,10 @@ test("hydrateChallengeSpec accepts current specs", () => {
       },
     },
     reward: {
-      total: 21,
+      total: "21",
       distribution: "winner_take_all",
     },
     deadline: "2026-03-20T00:00:00.000Z",
-    eval_spec: {
-      engine_id: "csv_comparison_v1",
-    },
   });
 
   assert.equal(spec.submission_contract.kind, "csv_table");

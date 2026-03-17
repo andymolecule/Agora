@@ -40,9 +40,9 @@ Quick reference for key terms used across Agora documentation and code.
 
 | Term | Definition |
 |------|-----------|
-| **Preset** (`ScorerPresetV2`) | Pre-packaged scoring runtime config in `presets.ts`: container image, resource limits, mount layout, and expected submission kind. |
-| **Template** (`ChallengeTypeTemplate`) | Authoring defaults for a challenge family in `templates.ts`: domain, metric, default container, and preset ID. Used by the posting UI. |
-| **Mount config** (`ScoringMountConfig`) | Filenames for Docker `/input` directory (evaluation bundle name + submission file name). Driven by preset. |
+| **Runtime family** (`ManagedRuntimeFamily`) | Managed scoring runtime config in `runtime-families.ts`: container image, resource limits, mount layout, supported metrics, and expected submission kind. |
+| **Template** (`ChallengeTypeTemplate`) | Authoring defaults for a challenge family in `templates.ts`: domain, runtime family, metric, and posting defaults. Used by the posting UI. |
+| **Mount config** (`ScoringMountConfig`) | Filenames for Docker `/input` directory (evaluation bundle name + submission file name). Driven by runtime family. |
 | **`score-local`** | Free, unlimited preview scoring. Runs the Docker scorer locally. No chain writes, no proof bundle, no payout effect. |
 | **Official scoring** | Canonical scoring path after the deadline. Worker runs scorer, pins proof bundle, posts score on-chain. `agora oracle-score` is the manual operator fallback. |
 | **Evaluation bundle** | Hidden labels or reference data mounted into the scorer container at runtime. Stored as an IPFS CID, not inside the scorer image. |
@@ -76,7 +76,7 @@ Quick reference for key terms used across Agora documentation and code.
 | **Result CID** | IPFS content identifier for a submission file (or sealed envelope). |
 | **Proof bundle CID** | IPFS content identifier for the scoring proof bundle. |
 | **DB cache columns** | `submission_contract_json` and `scoring_env_json` JSONB columns on the challenges table. Populated at challenge creation to avoid IPFS re-fetch during scoring. |
-| **`expected_columns`** | Derived cache column in Supabase for CSV-table challenges. Not the source of truth — `submission_contract` in the YAML is. |
+| **`artifacts_json`** | Supabase cache of the canonical public and private challenge artifacts. Not the public API contract by itself — the pinned challenge spec is. |
 
 ## Interfaces
 

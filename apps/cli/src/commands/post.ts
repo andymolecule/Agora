@@ -46,7 +46,7 @@ function formatZodError(error: z.ZodError) {
     .join("\n");
 }
 
-function toDatasetFileName(value: string, baseDir: string) {
+function toPinnedFileName(value: string, baseDir: string) {
   if (value.startsWith("ipfs://")) {
     return null;
   }
@@ -65,24 +65,35 @@ function toDatasetFileName(value: string, baseDir: string) {
   return path.basename(resolvedPath);
 }
 
-async function maybePinDataset(value: string, label: string, baseDir: string) {
+async function maybePinLocalRef(
+  value: string,
+  label: string,
+  baseDir: string,
+  cache: Map<string, { source: string; fileName: string | null }>,
+) {
   if (value.startsWith("ipfs://") || value.startsWith("https://")) {
     return {
       source: value,
-      fileName: toDatasetFileName(value, baseDir),
+      fileName: toPinnedFileName(value, baseDir),
     };
   }
   const resolvedPath = path.isAbsolute(value)
     ? value
     : path.resolve(baseDir, value);
+  const cached = cache.get(resolvedPath);
+  if (cached) {
+    return cached;
+  }
   const spinner = createSpinner(`Pinning ${label} to IPFS...`);
   try {
     const cid = await pinFile(resolvedPath, path.basename(resolvedPath));
     spinner.succeed(`Pinned ${label}: ${cid}`);
-    return {
+    const result = {
       source: cid,
       fileName: path.basename(resolvedPath),
     };
+    cache.set(resolvedPath, result);
+    return result;
   } catch (error) {
     spinner.fail(`Failed to pin ${label}`);
     throw error;
@@ -184,31 +195,48 @@ export function buildPostCommand() {
             total: deposit,
           };
         }
+        const specBaseDir = path.dirname(path.resolve(process.cwd(), file));
+        const pinnedRefs = new Map<
+          string,
+          { source: string; fileName: string | null }
+        >();
 
-        if (parsed.dataset && typeof parsed.dataset === "object") {
-          const dataset = parsed.dataset as {
-            train?: string;
-            test?: string;
-            train_file_name?: string;
-            test_file_name?: string;
-          };
-          if (dataset.train) {
-            const pinnedTrain = await maybePinDataset(
-              dataset.train,
-              "train dataset",
-              path.dirname(path.resolve(process.cwd(), file)),
+        if (Array.isArray(parsed.artifacts)) {
+          for (const [index, artifact] of parsed.artifacts.entries()) {
+            if (!artifact || typeof artifact !== "object") {
+              continue;
+            }
+            const candidate = artifact as {
+              role?: string;
+              uri?: unknown;
+              file_name?: string;
+            };
+            if (typeof candidate.uri !== "string") {
+              continue;
+            }
+            const pinned = await maybePinLocalRef(
+              candidate.uri,
+              candidate.role?.trim() || `artifact ${index + 1}`,
+              specBaseDir,
+              pinnedRefs,
             );
-            dataset.train = pinnedTrain.source;
-            dataset.train_file_name ??= pinnedTrain.fileName ?? undefined;
+            candidate.uri = pinned.source;
+            candidate.file_name ??= pinned.fileName ?? undefined;
           }
-          if (dataset.test) {
-            const pinnedTest = await maybePinDataset(
-              dataset.test,
-              "test dataset",
-              path.dirname(path.resolve(process.cwd(), file)),
+        }
+
+        if (parsed.evaluation && typeof parsed.evaluation === "object") {
+          const evaluation = parsed.evaluation as {
+            evaluation_bundle?: unknown;
+          };
+          if (typeof evaluation.evaluation_bundle === "string") {
+            const pinnedBundle = await maybePinLocalRef(
+              evaluation.evaluation_bundle,
+              "evaluation bundle",
+              specBaseDir,
+              pinnedRefs,
             );
-            dataset.test = pinnedTest.source;
-            dataset.test_file_name ??= pinnedTest.fileName ?? undefined;
+            evaluation.evaluation_bundle = pinnedBundle.source;
           }
         }
 

@@ -56,9 +56,16 @@ const checks: RuntimeSchemaCheck[] = [
     nextStep: "apply migration",
   },
   {
-    id: "challenge_dataset_file_name_columns",
+    id: "challenge_runtime_v3_columns",
     table: "challenges",
-    select: "dataset_train_file_name,dataset_test_file_name",
+    select: "runtime_family,evaluation_json,artifacts_json",
+    nextStep: "apply migration",
+  },
+  {
+    id: "posting_sessions_table",
+    table: "posting_sessions",
+    select:
+      "state,intent_json,uploaded_artifacts_json,compilation_json,clarification_questions_json,review_summary_json,approved_confirmation_json,published_spec_json,published_spec_cid,expires_at",
     nextStep: "apply migration",
   },
 ];

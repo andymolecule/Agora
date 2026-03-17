@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   DEFAULT_CHAIN_ID,
   type SubmissionContractOutput,
-  resolveEvalSpec,
+  resolveChallengeEvaluation,
   resolveScoringEnvironmentFromSpec,
   validateChallengeSpec,
 } from "@agora/common";
@@ -94,10 +94,10 @@ export function buildValidateCommand() {
       }
 
       // 2. Docker dry-run
-      const container = parsed.data.scoring?.container;
+      const container = parsed.data.evaluation.scorer_image;
       if (!container) {
         printWarning(
-          "No scoring.container in spec — cannot run Docker dry-run.",
+          "No evaluation.scorer_image in spec — cannot run Docker dry-run.",
         );
         printSuccess("Schema validation passed.");
         return;
@@ -107,7 +107,7 @@ export function buildValidateCommand() {
         `Pulling and testing scorer container: ${container}`,
       );
       try {
-        const evalPlan = resolveEvalSpec(parsed.data);
+        const evalPlan = resolveChallengeEvaluation(parsed.data);
         const dryRunInputs = buildDryRunInputs({
           type: parsed.data.type,
           submissionContract: parsed.data.submission_contract,
@@ -119,6 +119,7 @@ export function buildValidateCommand() {
           submission: dryRunInputs.submission,
           submissionContract: dryRunInputs.submissionContract,
           metric: evalPlan.metric,
+          runtimeFamily: evalPlan.runtimeFamily,
           env: resolveScoringEnvironmentFromSpec(parsed.data),
           timeoutMs: 5 * 60 * 1000, // 5 min for dry-run
         });

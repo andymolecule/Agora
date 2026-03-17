@@ -60,43 +60,41 @@ export function getEffectiveChallengeStatus(
 
 export type RewardDistribution = "winner_take_all" | "top_3" | "proportional";
 
-export interface ChallengeDataset {
-  train?: string;
-  test?: string;
-  hidden_labels?: string;
-  train_file_name?: string;
-  test_file_name?: string;
-  hidden_labels_file_name?: string;
+export const CHALLENGE_ARTIFACT_VISIBILITIES = ["public", "private"] as const;
+
+export type ChallengeArtifactVisibility =
+  (typeof CHALLENGE_ARTIFACT_VISIBILITIES)[number];
+
+export interface ChallengeArtifact {
+  role: string;
+  visibility: ChallengeArtifactVisibility;
+  uri: string;
+  file_name?: string;
+  mime_type?: string;
+  description?: string;
 }
 
-export interface ChallengeScoring {
-  container: string;
-  metric: "rmse" | "mae" | "r2" | "pearson" | "spearman" | "custom";
-}
-
-export interface ChallengeReward {
-  total: number;
-  distribution: RewardDistribution;
-}
-
-export interface ChallengeEvalSpec {
-  engine_id?: string;
-  engine_digest?: string;
+export interface ChallengeEvaluation {
+  runtime_family: string;
+  metric: string;
+  scorer_image: string;
   evaluation_bundle?: string;
 }
 
+export interface ChallengeReward {
+  total: string;
+  distribution: RewardDistribution;
+}
+
 export interface ChallengeSpec {
-  schema_version: 2;
+  schema_version: 3;
   id: string;
-  preset_id?: string;
   title: string;
   domain: ChallengeDomain;
   type: ChallengeType;
   description: string;
-  reference_url?: string;
-  dataset?: ChallengeDataset;
-  scoring: ChallengeScoring;
-  eval_spec?: ChallengeEvalSpec;
+  evaluation: ChallengeEvaluation;
+  artifacts: ChallengeArtifact[];
   submission_contract: SubmissionContractOutput;
   reward: ChallengeReward;
   deadline: string;
@@ -105,10 +103,5 @@ export interface ChallengeSpec {
   max_submissions_total?: number;
   max_submissions_per_solver?: number;
   dispute_window_hours?: number;
-  evaluation?: {
-    criteria?: string;
-    success_definition?: string;
-    tolerance?: string;
-  };
   lab_tba?: string;
 }

@@ -1,6 +1,8 @@
 import { getChallengeLifecycleState } from "@agora/chain";
 import {
   CHALLENGE_STATUS,
+  type ChallengeArtifact,
+  type ChallengeEvaluation,
   type ChallengeStatus,
   DEFAULT_IPFS_GATEWAY,
   SUBMISSION_RESULT_FORMAT,
@@ -145,14 +147,56 @@ function toOptionalNumber(value: unknown) {
   return null;
 }
 
-function toOptionalStringArray(value: unknown) {
-  if (!Array.isArray(value)) {
-    return null;
+function cidToGatewayUrl(cid: string | null | undefined) {
+  if (!cid) return null;
+  if (cid.startsWith("https://")) {
+    return cid;
   }
-  const normalized = value.filter(
-    (entry): entry is string => typeof entry === "string" && entry.length > 0,
+  return `${DEFAULT_IPFS_GATEWAY}${cid.replace("ipfs://", "")}`;
+}
+
+function toChallengeEvaluation(
+  row: ChallengeRow | ChallengeListRow,
+): Pick<ChallengeEvaluation, "runtime_family" | "metric" | "scorer_image"> {
+  const evaluation = (
+    row as { evaluation_json?: ChallengeEvaluation | null }
+  ).evaluation_json;
+  if (
+    !evaluation ||
+    typeof evaluation.runtime_family !== "string" ||
+    typeof evaluation.metric !== "string" ||
+    typeof evaluation.scorer_image !== "string"
+  ) {
+    throw new Error(
+      "Challenge projection is missing evaluation_json. Next step: rebuild the challenge projection and retry.",
+    );
+  }
+
+  return {
+    runtime_family: evaluation.runtime_family,
+    metric: evaluation.metric,
+    scorer_image: evaluation.scorer_image,
+  };
+}
+
+function normalizeChallengeArtifacts(
+  row: ChallengeRow | ChallengeListRow,
+): ChallengeArtifact[] {
+  const raw = (row as { artifacts_json?: unknown }).artifacts_json;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.filter(
+    (artifact): artifact is ChallengeArtifact =>
+      Boolean(
+        artifact &&
+          typeof artifact === "object" &&
+          typeof (artifact as ChallengeArtifact).role === "string" &&
+          typeof (artifact as ChallengeArtifact).visibility === "string" &&
+          typeof (artifact as ChallengeArtifact).uri === "string",
+      ),
   );
-  return normalized.length > 0 ? normalized : [];
 }
 
 export function toChallengeRefs(
@@ -181,8 +225,6 @@ export function toChallengeSummary(row: ChallengeRow | ChallengeListRow) {
     deadline: row.deadline,
     status: row.status,
     spec_cid: row.spec_cid ?? null,
-    dataset_train_cid: row.dataset_train_cid ?? null,
-    dataset_test_cid: row.dataset_test_cid ?? null,
     contract_address: row.contract_address,
     factory_address: row.factory_address ?? null,
     factory_challenge_id: toOptionalInteger(
@@ -206,14 +248,7 @@ export function toChallengeDetail(row: ChallengeRow | ChallengeListRow) {
       "poster_address" in row && typeof row.poster_address === "string"
         ? row.poster_address
         : undefined,
-    eval_metric:
-      "eval_metric" in row && typeof row.eval_metric === "string"
-        ? row.eval_metric
-        : null,
-    eval_image:
-      "eval_image" in row && typeof row.eval_image === "string"
-        ? row.eval_image
-        : null,
+    evaluation: toChallengeEvaluation(row),
     distribution_type:
       "distribution_type" in row && typeof row.distribution_type === "string"
         ? row.distribution_type
@@ -231,10 +266,6 @@ export function toChallengeDetail(row: ChallengeRow | ChallengeListRow) {
     max_submissions_per_solver:
       "max_submissions_per_solver" in row
         ? toOptionalInteger(row.max_submissions_per_solver)
-        : null,
-    expected_columns:
-      "expected_columns" in row
-        ? toOptionalStringArray(row.expected_columns)
         : null,
     submission_contract:
       "submission_contract_json" in row
@@ -348,34 +379,33 @@ export function getChallengeListMeta(rows: Array<Record<string, unknown>>) {
   };
 }
 
-function cidToGatewayUrl(cid: string | null | undefined) {
-  if (!cid) return null;
-  return `${DEFAULT_IPFS_GATEWAY}${cid.replace("ipfs://", "")}`;
-}
-
 function toChallengeDetailResponse(input: {
   challenge: ChallengeRow | ChallengeListRow;
   submissions: ReturnType<typeof toPublicSubmission>[];
   leaderboard: ReturnType<typeof toPublicSubmission>[];
 }) {
   const challenge = toChallengeDetail(input.challenge);
+  const artifacts = normalizeChallengeArtifacts(input.challenge);
+
   return {
     challenge,
-    datasets: {
-      train_cid: input.challenge.dataset_train_cid ?? null,
-      train_file_name:
-        "dataset_train_file_name" in input.challenge &&
-        typeof input.challenge.dataset_train_file_name === "string"
-          ? input.challenge.dataset_train_file_name
-          : null,
-      train_url: cidToGatewayUrl(input.challenge.dataset_train_cid),
-      test_cid: input.challenge.dataset_test_cid ?? null,
-      test_file_name:
-        "dataset_test_file_name" in input.challenge &&
-        typeof input.challenge.dataset_test_file_name === "string"
-          ? input.challenge.dataset_test_file_name
-          : null,
-      test_url: cidToGatewayUrl(input.challenge.dataset_test_cid),
+    artifacts: {
+      public: artifacts
+        .filter((artifact) => artifact.visibility === "public")
+        .map((artifact) => ({
+          ...artifact,
+          visibility: "public" as const,
+          url: cidToGatewayUrl(artifact.uri),
+        })),
+      private: artifacts
+        .filter((artifact) => artifact.visibility === "private")
+        .map((artifact) => ({
+          role: artifact.role,
+          visibility: "private" as const,
+          file_name: artifact.file_name ?? null,
+          mime_type: artifact.mime_type ?? null,
+          description: artifact.description ?? null,
+        })),
       spec_cid: input.challenge.spec_cid ?? null,
       spec_url: cidToGatewayUrl(input.challenge.spec_cid),
     },

@@ -25,7 +25,7 @@ import {
   importSubmissionSealPublicKey,
   loadConfig,
   readApiClientRuntimeConfig,
-  resolveEvalSpec,
+  resolveChallengeEvaluation,
   resolveSubmissionOpenPrivateKeys,
   sealSubmission,
   serializeSealedSubmissionEnvelope,
@@ -588,7 +588,7 @@ export async function scoreLocal(input: {
 async function resolveLocalScoringConfigFromDb(challengeId: string) {
   const db = createSupabaseClient(false);
   const challenge = await getChallengeById(db, challengeId);
-  const evalPlan = resolveEvalSpec(challenge);
+  const evalPlan = resolveChallengeEvaluation(challenge);
   if (!evalPlan.evaluationBundleCid) {
     throw new Error(
       "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
@@ -613,7 +613,7 @@ async function resolveLocalScoringConfigFromApi(input: {
 }) {
   const response = await getChallengeFromApi(input.challengeId, input.apiUrl);
   const challenge = response.data.challenge;
-  const specCid = challenge.spec_cid ?? response.data.datasets.spec_cid ?? null;
+  const specCid = challenge.spec_cid ?? response.data.artifacts.spec_cid ?? null;
   if (!specCid) {
     throw new Error(
       "Challenge detail is missing spec_cid. Next step: retry against the canonical Agora API or choose a current-schema challenge.",
@@ -621,7 +621,7 @@ async function resolveLocalScoringConfigFromApi(input: {
   }
 
   const spec = challengeSpecSchema.parse(await getJSON(specCid));
-  const evalPlan = resolveEvalSpec(spec);
+  const evalPlan = resolveChallengeEvaluation(spec);
   if (!evalPlan.evaluationBundleCid) {
     throw new Error(
       "Challenge spec is missing an evaluation bundle CID. Next step: inspect the pinned spec and retry against a scoreable challenge.",
@@ -706,7 +706,7 @@ export async function verifySubmission(input: {
       );
     }
 
-    const evalPlan = resolveEvalSpec(challenge);
+    const evalPlan = resolveChallengeEvaluation(challenge);
     if (!evalPlan.evaluationBundleCid) {
       throw new Error(
         "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",

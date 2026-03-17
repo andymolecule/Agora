@@ -38,7 +38,7 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 | Scores (WAD 1e18) | On-chain | Verifiable payout input |
 | Proof bundle hashes | On-chain | Audit trail |
 | Challenge YAML specs | IPFS + Supabase | Immutable + searchable |
-| Raw datasets | IPFS / external URL | Large files stay off-chain |
+| Raw artifacts | IPFS / external URL | Large files stay off-chain |
 | Full proof bundles | IPFS | Reproducibility evidence |
 | Search indexes | Supabase | Fast agent discovery |
 
@@ -82,13 +82,9 @@ erDiagram
         timestamp deadline
         int dispute_window_hours
         string spec_cid
-        string dataset_train_cid
-        string dataset_test_cid
-        string eval_image
-        string eval_metric
-        string runner_preset_id
-        string eval_bundle_cid
-        string[] expected_columns
+        string runtime_family
+        jsonb evaluation_json
+        jsonb artifacts_json
         jsonb submission_contract_json
         jsonb scoring_env_json
         int winning_on_chain_sub_id
@@ -238,7 +234,7 @@ erDiagram
 
 ### Table Descriptions
 
-- **challenges** — Projected from `ChallengeCreated` events + IPFS spec parsing. Key fields: `contract_address` (unique on-chain identity), `status` (projected lifecycle state), `reward_amount` (USDC, 6 decimals), `deadline` (UTC timestamp), `spec_cid` (IPFS pointer to challenge YAML), `eval_image` (Docker scorer image reference). Additional columns: `contract_version` (on-chain contract version for generation tracking), `spec_schema_version` (YAML schema version), `dataset_train_cid` and `dataset_test_cid` (IPFS CIDs for training/test data), `expected_columns` (denormalized cache derived from `submission_contract.columns.required` for CSV-table challenges), `distribution_type` (payout distribution: `winner_take_all`, `top_3`, or `proportional`), `runner_preset_id` (scorer runner preset), `eval_bundle_cid` (IPFS CID for evaluation bundle), `submission_contract_json` (cached artifact contract for scoring), and `scoring_env_json` (cached resolved scoring env such as tolerance).
+- **challenges** — Projected from `ChallengeCreated` events + IPFS spec parsing. Key fields: `contract_address` (unique on-chain identity), `status` (projected lifecycle state), `reward_amount` (USDC, 6 decimals), `deadline` (UTC timestamp), `spec_cid` (IPFS pointer to challenge YAML), `runtime_family` (managed runtime selection), `evaluation_json` (resolved scorer image + metric metadata), `artifacts_json` (public/private artifact cache), `submission_contract_json` (cached solver artifact contract), and `scoring_env_json` (cached resolved scoring env such as tolerance).
 
 - **submissions** — Projected from `Submitted` + `Scored` events. Key fields: `on_chain_sub_id` (contract-level submission index), `result_hash` (keccak256 of result CID, anchored on-chain), `result_cid` (IPFS pointer to submission file once metadata is reconciled), `score` (WAD-scaled score string), `scored` (boolean, set true when `Scored` event is indexed). Additional columns: `result_format` (enum: `plain_v0` for direct/public payloads or `sealed_submission_v2` for sealed envelopes), `proof_bundle_cid` (IPFS CID of the proof bundle), `proof_bundle_hash` (on-chain hash of the proof bundle), `scored_at` (timestamp when the score was posted). For `sealed_submission_v2`, `result_cid` points to the sealed envelope, not the plaintext replay artifact.
 
@@ -254,6 +250,7 @@ erDiagram
 
 - **worker_runtime_state** — Worker heartbeat and readiness table. Each scoring worker publishes `worker_id`, `host`, `runtime_version`, scorer-backend readiness, sealing readiness, and `last_error`. The `executor_ready` column means “the configured scorer execution backend is ready,” regardless of whether that backend is local Docker in dev or the remote executor in production. The API reads this table for `/api/worker-health` and runtime-mismatch detection.
 - **worker_runtime_control** — Active scoring-runtime control row. The API upserts the active runtime version on startup, and score-job claims are fenced against it so older workers cannot keep claiming jobs after a deploy.
+- **posting_sessions** — Managed-authoring drafts and review state. Stores poster intent, uploaded artifact metadata, compiled challenge contracts, clarification prompts, review summaries, approved confirmation copy, and expiry timestamps. The API reads this table for `/api/posting/health`, the internal review queue, and expired-session sweeps.
 
 - **verifications** — Records independent re-runs of the scorer. Links a proof_bundle to a verifier address, the computed score, whether it matches the original, and an optional log CID. Created by `agora verify`. `agora verify-public` is read-only and does not insert verification rows.
 

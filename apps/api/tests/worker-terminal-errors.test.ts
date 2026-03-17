@@ -15,10 +15,13 @@ import type {
 const challenge: ChallengeRow = {
   id: "challenge-1",
   contract_address: "0x0000000000000000000000000000000000000001",
-  eval_image: "ghcr.io/andymolecule/repro-scorer:v1",
-  eval_metric: "custom",
-  eval_bundle_cid: "ipfs://bundle",
-  runner_preset_id: "csv_comparison_v1",
+  runtime_family: "reproducibility",
+  evaluation_json: {
+    runtime_family: "reproducibility",
+    metric: "exact_match",
+    scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
+    evaluation_bundle: "ipfs://bundle",
+  },
 };
 
 const baseSubmission: SubmissionRow = {
@@ -122,7 +125,7 @@ test("invalid submission outcomes are skipped instead of failed", async () => {
   );
 });
 
-test("terminal preset configuration errors are skipped in the catch path", async () => {
+test("terminal runtime-family configuration errors are skipped in the catch path", async () => {
   let skippedReason: string | undefined;
 
   await processJob({} as never, job, log, {
@@ -138,7 +141,7 @@ test("terminal preset configuration errors are skipped in the catch path", async
     handlePreviouslyPostedScoreTx: async () => false,
     scoreSubmissionAndBuildProof: async () => {
       throw new Error(
-        "Invalid scoring preset configuration: Container mismatch for preset csv_comparison_v1: expected ghcr.io/agora-science/repro-scorer:latest, got ghcr.io/andymolecule/repro-scorer@sha256:deadbeef",
+        "Invalid runtime family configuration: scorer image must be a pinned digest for expert runtimes.",
       );
     },
     markScoreJobSkipped: async (_db, _payload, reason) => {
@@ -147,10 +150,10 @@ test("terminal preset configuration errors are skipped in the catch path", async
     },
     failJob: async () => {
       throw new Error(
-        "failJob should not be called for terminal preset errors",
+        "failJob should not be called for terminal runtime-family errors",
       );
     },
   });
 
-  assert.match(skippedReason ?? "", /^Invalid scoring preset configuration:/);
+  assert.match(skippedReason ?? "", /^Invalid runtime family configuration:/);
 });
