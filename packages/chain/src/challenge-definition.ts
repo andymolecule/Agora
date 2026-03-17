@@ -2,6 +2,7 @@ import {
   ACTIVE_CONTRACT_VERSION,
   type ChallengeSpecOutput,
   isValidPinnedSpecCid,
+  parseChallengeSpecDocument,
   validateChallengeSpec,
 } from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
@@ -9,7 +10,6 @@ import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
 };
 import { getText } from "@agora/ipfs";
 import type { Abi } from "viem";
-import yaml from "yaml";
 import { getPublicClient } from "./client.js";
 import { readImmutableContractWithLatestFallback } from "./contract-read.js";
 
@@ -42,10 +42,7 @@ export async function fetchValidatedChallengeSpec(
   }
 
   const rawSpec = await getText(specCid);
-  const parsedSpec = yaml.parse(rawSpec) as Record<string, unknown>;
-  if (parsedSpec.deadline instanceof Date) {
-    parsedSpec.deadline = parsedSpec.deadline.toISOString();
-  }
+  const parsedSpec = parseChallengeSpecDocument(rawSpec);
 
   const specResult = validateChallengeSpec(parsedSpec, chainId);
   if (!specResult.success) {

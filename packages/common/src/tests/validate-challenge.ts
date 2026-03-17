@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   canonicalizeChallengeSpec,
   challengeSpecSchema,
+  parseChallengeSpecDocument,
   resolveChallengeEvaluation,
   validateChallengeScoreability,
   validateChallengeSpec,
@@ -108,7 +109,11 @@ const expertSpec = challengeSpecSchema.safeParse({
     scorer_image: "ghcr.io/acme/expert@sha256:1234",
   },
 });
-assert.equal(expertSpec.success, true, "expert spec should accept pinned digests");
+assert.equal(
+  expertSpec.success,
+  true,
+  "expert spec should accept pinned digests",
+);
 
 const missingBundleParse = challengeSpecSchema.safeParse({
   ...sample,
@@ -121,6 +126,48 @@ assert.equal(
   missingBundleParse.success,
   false,
   "managed runtime families should require an evaluation bundle",
+);
+
+const yamlDocument = `
+schema_version: 3
+id: ch-yaml
+title: YAML challenge
+domain: omics
+type: prediction
+description: Parse from pinned YAML
+evaluation:
+  runtime_family: tabular_regression
+  metric: r2
+  scorer_image: ghcr.io/placeholder/will-be-overridden:v1
+  evaluation_bundle: ipfs://QmHiddenLabels
+artifacts:
+  - role: training_data
+    visibility: public
+    uri: ipfs://QmTrain
+submission_contract:
+  version: v1
+  kind: csv_table
+  file:
+    extension: .csv
+    mime: text/csv
+    max_bytes: 10485760
+  columns:
+    required: [id, prediction]
+    id: id
+    value: prediction
+    allow_extra: true
+reward:
+  total: "5"
+  distribution: winner_take_all
+deadline: 2026-03-20T00:00:00Z
+`;
+const parsedYaml = challengeSpecSchema.safeParse(
+  parseChallengeSpecDocument(yamlDocument),
+);
+assert.equal(
+  parsedYaml.success,
+  true,
+  "pinned YAML specs should parse through the canonical schema",
 );
 
 console.log("challengeSpecSchema validation passed");

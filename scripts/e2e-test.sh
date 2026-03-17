@@ -110,6 +110,7 @@ PY
 )"
 
 cat >"$TMP_DIR/challenge.yaml" <<YAML
+schema_version: 3
 id: e2e-$(date +%s)
 title: "${E2E_TITLE}"
 domain: longevity
@@ -162,7 +163,8 @@ poll_find_challenge() {
   list_json="$("${AGORA_CMD[@]}" list --format json)" || return 1
   challenge_id="$(printf "%s" "$list_json" | node --input-type=module -e '
 let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
-  const rows = JSON.parse(raw);
+  const parsed = JSON.parse(raw);
+  const rows = Array.isArray(parsed) ? parsed : parsed.data;
   const title = process.argv[1];
   const found = rows.find((r) => r.title === title);
   if (found?.id) process.stdout.write(String(found.id));

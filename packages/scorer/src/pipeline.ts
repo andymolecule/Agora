@@ -3,21 +3,18 @@ import path from "node:path";
 import {
   DEFAULT_SCORER_MOUNT,
   SCORER_RUNTIME_CONFIG_FILE_NAME,
-  buildScorerRuntimeConfig,
   type ScoringMountConfig,
   type SubmissionContractOutput,
+  buildScorerRuntimeConfig,
   challengeSpecSchema,
-  resolveScoringEnvironmentFromSpec,
+  parseChallengeSpecDocument,
   resolveRuntimeFamilyRuntimeDefaults,
+  resolveScoringEnvironmentFromSpec,
   validateSubmissionBytesAgainstContract,
 } from "@agora/common";
-import { downloadToPath } from "@agora/ipfs";
-import { getJSON } from "@agora/ipfs";
-import {
-  type RunScorerInput,
-  type RunnerScoreResult,
-} from "./runner.js";
+import { downloadToPath, getText } from "@agora/ipfs";
 import { executeScorer } from "./execution.js";
+import type { RunScorerInput, RunnerScoreResult } from "./runner.js";
 import { cleanupWorkspace, createScoringWorkspace } from "./staging.js";
 
 export interface ScoringInputSource {
@@ -110,7 +107,9 @@ export async function resolveScoringSpecRuntimeConfigFromSpecCid(
     return {};
   }
   try {
-    const spec = challengeSpecSchema.parse(await getJSON(specCid));
+    const spec = challengeSpecSchema.parse(
+      parseChallengeSpecDocument(await getText(specCid)),
+    );
     return {
       env: resolveScoringEnvironmentFromSpec(spec),
       submissionContract: spec.submission_contract,
@@ -219,10 +218,7 @@ export async function executeScoringPipeline(
 
   try {
     const { evaluationBundlePath, submissionPath, runtimeConfigPath } =
-      await runObservedPhase(
-      input.phaseObserver,
-      "fetch_inputs",
-      async () => {
+      await runObservedPhase(input.phaseObserver, "fetch_inputs", async () => {
         const stagingPlan = buildScoringMountPlan(
           input.mount ?? DEFAULT_SCORER_MOUNT,
           workspace.inputDir,
@@ -257,8 +253,7 @@ export async function executeScoringPipeline(
           submissionPath: stagingPlan.submissionPath,
           runtimeConfigPath: stagingPlan.runtimeConfigPath,
         };
-      },
-    );
+      });
 
     if (input.submissionContract) {
       const submissionBytes = await fs.readFile(submissionPath);
@@ -284,10 +279,11 @@ export async function executeScoringPipeline(
           evaluationBundlePath,
           submissionPath,
           runtimeConfigPath,
-          inputPaths: [evaluationBundlePath, submissionPath, runtimeConfigPath]
-            .filter(
-            (value): value is string => typeof value === "string",
-          ),
+          inputPaths: [
+            evaluationBundlePath,
+            submissionPath,
+            runtimeConfigPath,
+          ].filter((value): value is string => typeof value === "string"),
           cleanup,
         };
 
@@ -320,10 +316,11 @@ export async function executeScoringPipeline(
       evaluationBundlePath,
       submissionPath,
       runtimeConfigPath,
-      inputPaths: [evaluationBundlePath, submissionPath, runtimeConfigPath]
-        .filter(
-        (value): value is string => typeof value === "string",
-      ),
+      inputPaths: [
+        evaluationBundlePath,
+        submissionPath,
+        runtimeConfigPath,
+      ].filter((value): value is string => typeof value === "string"),
       cleanup,
     };
 

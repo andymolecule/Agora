@@ -3,15 +3,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  OFFICIAL_IMAGES,
+  OFFICIAL_SCORER_IMAGES,
   resolveOfficialImageToDigest,
 } from "../packages/common/dist/index.js";
 
-const images = Object.values(OFFICIAL_IMAGES);
+const images = Object.values(OFFICIAL_SCORER_IMAGES);
 
 if (images.length === 0) {
   throw new Error(
-    "No official scorer images configured. Next step: define OFFICIAL_IMAGES before running release verification.",
+    "No official scorer images configured. Next step: define OFFICIAL_SCORER_IMAGES before running release verification.",
   );
 }
 

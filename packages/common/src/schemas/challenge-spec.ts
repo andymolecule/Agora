@@ -1,3 +1,4 @@
+import yaml from "yaml";
 import { z } from "zod";
 import { CHALLENGE_LIMITS } from "../constants.js";
 import { getDisputeWindowMinHours } from "../dispute-policy.js";
@@ -294,6 +295,19 @@ export function challengeSpecSchemaForChain(chainId: number) {
 
 export function validateChallengeSpec(raw: unknown, chainId: number) {
   return challengeSpecSchemaForChain(chainId).safeParse(raw);
+}
+
+export function parseChallengeSpecDocument(raw: string): unknown {
+  const parsed = yaml.parse(raw) as unknown;
+  if (!parsed || typeof parsed !== "object") {
+    return parsed;
+  }
+
+  const normalized = { ...(parsed as Record<string, unknown>) };
+  if (normalized.deadline instanceof Date) {
+    normalized.deadline = normalized.deadline.toISOString();
+  }
+  return normalized;
 }
 
 export async function canonicalizeChallengeSpec(

@@ -24,6 +24,7 @@ import {
   challengeSpecSchema,
   importSubmissionSealPublicKey,
   loadConfig,
+  parseChallengeSpecDocument,
   readApiClientRuntimeConfig,
   resolveChallengeEvaluation,
   resolveSubmissionOpenPrivateKeys,
@@ -38,7 +39,7 @@ import {
   getProofBundleBySubmissionId,
   getSubmissionById,
 } from "@agora/db";
-import { getJSON } from "@agora/ipfs";
+import { getJSON, getText } from "@agora/ipfs";
 import {
   executeScoringPipeline,
   resolveScoringRuntimeConfig,
@@ -613,14 +614,17 @@ async function resolveLocalScoringConfigFromApi(input: {
 }) {
   const response = await getChallengeFromApi(input.challengeId, input.apiUrl);
   const challenge = response.data.challenge;
-  const specCid = challenge.spec_cid ?? response.data.artifacts.spec_cid ?? null;
+  const specCid =
+    challenge.spec_cid ?? response.data.artifacts.spec_cid ?? null;
   if (!specCid) {
     throw new Error(
       "Challenge detail is missing spec_cid. Next step: retry against the canonical Agora API or choose a current-schema challenge.",
     );
   }
 
-  const spec = challengeSpecSchema.parse(await getJSON(specCid));
+  const spec = challengeSpecSchema.parse(
+    parseChallengeSpecDocument(await getText(specCid)),
+  );
   const evalPlan = resolveChallengeEvaluation(spec);
   if (!evalPlan.evaluationBundleCid) {
     throw new Error(

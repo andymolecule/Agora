@@ -5,8 +5,8 @@ import test from "node:test";
 import {
   DEFAULT_SCORER_MOUNT,
   SCORER_RUNTIME_CONFIG_FILE_NAME,
-  scorerRuntimeConfigSchema,
   createCsvTableSubmissionContract,
+  scorerRuntimeConfigSchema,
 } from "@agora/common";
 import {
   executeScoringPipeline,
@@ -60,4 +60,65 @@ test("resolveScoringRuntimeConfig prefers cached DB values", async () => {
 
   assert.deepEqual(runtime.env, { AGORA_TOLERANCE: "0.01" });
   assert.equal(runtime.submissionContract?.kind, "csv_table");
+});
+
+test("resolveScoringRuntimeConfig loads submission contract from pinned YAML specs", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async (input) => {
+    assert.equal(
+      String(input),
+      "https://gateway.pinata.cloud/ipfs/bafkreiabcdef",
+    );
+    return new Response(
+      `schema_version: 3
+id: yaml-spec
+title: YAML spec
+domain: longevity
+type: reproducibility
+description: yaml
+evaluation:
+  runtime_family: reproducibility
+  metric: exact_match
+  scorer_image: ghcr.io/andymolecule/repro-scorer:v1
+  evaluation_bundle: ipfs://bafkreieval
+artifacts:
+  - role: source_data
+    visibility: public
+    uri: ipfs://bafkreiinput
+submission_contract:
+  version: v1
+  kind: csv_table
+  file:
+    extension: .csv
+    mime: text/csv
+    max_bytes: 10485760
+  columns:
+    required: [id, value]
+    id: id
+    value: value
+    allow_extra: false
+reward:
+  total: "5"
+  distribution: winner_take_all
+deadline: 2026-03-20T00:00:00Z
+`,
+      { status: 200, headers: { "content-type": "text/yaml" } },
+    );
+  };
+
+  try {
+    const runtime = await resolveScoringRuntimeConfig({
+      specCid: "ipfs://bafkreiabcdef",
+    });
+    assert.equal(runtime.submissionContract?.kind, "csv_table");
+    if (runtime.submissionContract?.kind !== "csv_table") {
+      throw new Error("Expected csv_table submission contract from YAML spec");
+    }
+    assert.deepEqual(runtime.submissionContract.columns.required, [
+      "id",
+      "value",
+    ]);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
