@@ -2,7 +2,7 @@ import { erc20Abi } from "@agora/common";
 import { useEffect, useState } from "react";
 import { parseUnits } from "viem";
 import type { usePublicClient } from "wagmi";
-import { formatUsdc } from "../../lib/format";
+import { formatUsdcUnits } from "../../lib/format";
 
 export const DEFAULT_PERMIT_VERSION = "1";
 export const APPROVAL_REFRESH_ATTEMPTS = 6;
@@ -126,7 +126,7 @@ export async function loadPostingFundingState({
           : DEFAULT_PERMIT_VERSION,
       allowance,
       balance,
-      message: `Wallet needs ${formatUsdc(Number(rewardUnits - balance) / 1e6)} more USDC.`,
+      message: `Wallet needs ${formatUsdcUnits(rewardUnits - balance)} more USDC.`,
     };
   }
 

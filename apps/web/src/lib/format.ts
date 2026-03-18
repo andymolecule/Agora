@@ -1,4 +1,5 @@
 import { PROTOCOL_FEE_BPS } from "@agora/common";
+import { formatUnits } from "viem";
 
 /** Compute protocol fee using the same integer math as AgoraChallenge.sol */
 export function computeProtocolFee(rewardUsdc: number) {
@@ -17,6 +18,10 @@ export function formatUsdc(value: number | string) {
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 2,
   }).format(n);
+}
+
+export function formatUsdcUnits(value: bigint) {
+  return formatUsdc(formatUnits(value, 6));
 }
 
 export function formatWadToScore(wad: string | number | null | undefined) {

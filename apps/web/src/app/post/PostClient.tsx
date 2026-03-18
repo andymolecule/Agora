@@ -9,7 +9,6 @@ import { useChainModal, useConnectModal } from "@rainbow-me/rainbowkit";
 import {
   ArrowRight,
   Check,
-  CircleAlert,
   Coins,
   Eye,
   EyeOff,
@@ -19,11 +18,17 @@ import {
   Shield,
   Sparkles,
   TerminalSquare,
-  UploadCloud,
   Wallet,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   useAccount,
   usePublicClient,
@@ -42,6 +47,7 @@ import {
   isUserRejectedError,
   waitForTransactionReceiptWithTimeout,
 } from "../../lib/wallet/tx";
+import { GuidedComposer } from "./GuidedComposer";
 import {
   approveUsdc,
   assertFactoryIsSupported,
@@ -52,39 +58,31 @@ import {
   signRewardPermit,
 } from "./managed-post-flow";
 import {
+  buildManagedIntentFromGuidedState,
+  buildPostingArtifactsFromGuidedState,
+  clarificationTargetFromQuestions,
+  clearGuidedDraft,
+  createInitialGuidedState,
+  guidedComposerReducer,
+  isReadyToCompile,
+  listReadinessIssues,
+  loadGuidedDraft,
+  saveGuidedDraft,
+  type GuidedCompileState,
+  type GuidedFieldKey,
+  type ManagedIntentState,
+  type UploadedArtifact,
+} from "./guided-state";
+import {
   getFundingSummaryMessage,
   getRewardUnitsFromInput,
   isPermitUnsupportedError,
   usePostFunding,
 } from "./post-funding";
+import { cx } from "./post-ui";
+import { SummaryRail } from "./SummaryRail";
 
 type Step = 1 | 2 | 3;
-type UploadStatus = "uploading" | "ready" | "error";
-
-type UploadedArtifact = {
-  id: string;
-  uri?: string;
-  file_name: string;
-  mime_type?: string;
-  size_bytes?: number;
-  detected_columns?: string[];
-  status: UploadStatus;
-  error?: string;
-};
-
-type IntentState = {
-  title: string;
-  description: string;
-  payoutCondition: string;
-  rewardTotal: string;
-  distribution: "winner_take_all" | "top_3" | "proportional";
-  deadline: string;
-  domain: string;
-  tags: string;
-  solverInstructions: string;
-  timezone: string;
-};
-
 type NoticeTone = "info" | "success" | "error" | "warning";
 
 const STEP_COPY: Record<
@@ -93,15 +91,15 @@ const STEP_COPY: Record<
 > = {
   1: {
     label: "Describe",
-    title: "Write the bounty like a listing",
+    title: "Answer a few focused questions",
     description:
-      "Tell Agora what the problem is, what files belong to it, and what a correct answer should look like.",
+      "Tell Agora what problem to solve, upload the files, and lock the managed draft one answer at a time.",
   },
   2: {
-    label: "Review",
-    title: "Approve Agora's interpretation",
+    label: "Confirm",
+    title: "Review the generated contract",
     description:
-      "Check the scoring contract, visibility rules, and dry-run result before you commit money.",
+      "Approve the scoring, visibility, and payout contract before you commit money.",
   },
   3: {
     label: "Publish",
@@ -110,38 +108,6 @@ const STEP_COPY: Record<
       "Once the contract looks right, approve funds if needed and publish the challenge.",
   },
 };
-
-const FILE_NAME_HINTS = [
-  "train.csv",
-  "hidden_labels.csv",
-  "evaluation_features.csv",
-  "reference_output.csv",
-];
-
-function cx(...values: Array<string | false | null | undefined>) {
-  return values.filter(Boolean).join(" ");
-}
-
-function defaultDeadline() {
-  const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  nextWeek.setMinutes(nextWeek.getMinutes() - nextWeek.getTimezoneOffset());
-  return nextWeek.toISOString().slice(0, 16);
-}
-
-function buildInitialIntent(): IntentState {
-  return {
-    title: "",
-    description: "",
-    payoutCondition: "",
-    rewardTotal: "500",
-    distribution: "winner_take_all",
-    deadline: defaultDeadline(),
-    domain: "other",
-    tags: "",
-    solverInstructions: "",
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-  };
-}
 
 function toIsoWithOffset(localValue: string) {
   if (!localValue) {
@@ -162,13 +128,7 @@ function parseApiErrorMessage(text: string) {
   return text || "Request failed.";
 }
 
-function isReadyUpload(
-  artifact: UploadedArtifact,
-): artifact is UploadedArtifact & { uri: string } {
-  return artifact.status === "ready" && typeof artifact.uri === "string";
-}
-
-function buildPostingIntent(intent: IntentState) {
+function buildPostingIntent(intent: ManagedIntentState) {
   return {
     title: intent.title,
     description: intent.description,
@@ -186,72 +146,11 @@ function buildPostingIntent(intent: IntentState) {
   };
 }
 
-function buildPostingArtifacts(uploads: UploadedArtifact[]) {
-  return uploads.filter(isReadyUpload).map((artifact) => ({
-    id: artifact.id,
-    uri: artifact.uri,
-    file_name: artifact.file_name,
-    mime_type: artifact.mime_type,
-    size_bytes: artifact.size_bytes,
-    detected_columns: artifact.detected_columns,
-  }));
-}
-
-function formatVisibility(visibility: string) {
-  return visibility === "private" ? "Hidden for evaluation" : "Visible to solvers";
-}
-
-function formatDistributionLabel(
-  distribution: IntentState["distribution"] | string,
-) {
-  switch (distribution) {
-    case "winner_take_all":
-      return "Winner takes all";
-    case "top_3":
-      return "Top 3 split";
-    case "proportional":
-      return "Proportional";
-    default:
-      return distribution;
-  }
-}
-
 function formatRuntimeLabel(value: string) {
   return value
     .split("_")
     .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
     .join(" ");
-}
-
-function buildDraftIssues(input: {
-  intent: IntentState;
-  uploads: UploadedArtifact[];
-}) {
-  const issues: string[] = [];
-  if (!input.intent.title.trim()) {
-    issues.push("Add a title for the bounty.");
-  }
-  if (!input.intent.description.trim()) {
-    issues.push("Describe the scientific problem and what the files mean.");
-  }
-  if (!input.intent.payoutCondition.trim()) {
-    issues.push("State what a winning answer looks like.");
-  }
-  const reward = Number(input.intent.rewardTotal);
-  if (!Number.isFinite(reward) || reward <= 0) {
-    issues.push("Set a positive USDC reward.");
-  }
-  if (!input.intent.deadline.trim() || Number.isNaN(Date.parse(input.intent.deadline))) {
-    issues.push("Choose a valid deadline.");
-  }
-  const readyUploads = input.uploads.filter(isReadyUpload);
-  if (readyUploads.length === 0) {
-    issues.push("Upload at least one data file.");
-  }
-  if (input.uploads.some((artifact) => artifact.status === "uploading")) {
-    issues.push("Wait for uploads to finish before compiling.");
-  }
-  return issues;
 }
 
 async function pinDataFile(file: File) {
@@ -269,7 +168,7 @@ async function pinDataFile(file: File) {
 
 async function createPostingSession(input: {
   posterAddress?: `0x${string}`;
-  intent: IntentState;
+  intent: ManagedIntentState;
   uploads: UploadedArtifact[];
 }) {
   const response = await fetch("/api/posting/sessions", {
@@ -278,7 +177,7 @@ async function createPostingSession(input: {
     body: JSON.stringify({
       poster_address: input.posterAddress,
       intent: buildPostingIntent(input.intent),
-      uploaded_artifacts: buildPostingArtifacts(input.uploads),
+      uploaded_artifacts: buildPostingArtifactsFromGuidedState(input.uploads),
     }),
   });
 
@@ -295,7 +194,7 @@ async function createPostingSession(input: {
 async function compilePostingSession(input: {
   sessionId: string;
   posterAddress?: `0x${string}`;
-  intent: IntentState;
+  intent: ManagedIntentState;
   uploads: UploadedArtifact[];
 }) {
   const response = await fetch(`/api/posting/sessions/${input.sessionId}/compile`, {
@@ -304,7 +203,7 @@ async function compilePostingSession(input: {
     body: JSON.stringify({
       poster_address: input.posterAddress,
       intent: buildPostingIntent(input.intent),
-      uploaded_artifacts: buildPostingArtifacts(input.uploads),
+      uploaded_artifacts: buildPostingArtifactsFromGuidedState(input.uploads),
     }),
   });
 
@@ -392,23 +291,6 @@ function SurfaceCard({
   );
 }
 
-function Label({
-  children,
-  optional,
-}: {
-  children: ReactNode;
-  optional?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-2 text-sm font-medium text-warm-800">
-      <span>{children}</span>
-      {optional ? (
-        <span className="text-xs font-normal text-warm-500">Optional</span>
-      ) : null}
-    </div>
-  );
-}
-
 function StepRail({ step }: { step: Step }) {
   return (
     <div className="grid gap-3 rounded-[24px] border border-warm-300 bg-white/85 p-3 md:grid-cols-3">
@@ -420,7 +302,7 @@ function StepRail({ step }: { step: Step }) {
           <div
             key={key}
             className={cx(
-              "rounded-[20px] border px-4 py-4 transition",
+              "rounded-[20px] border px-4 py-4 transition motion-reduce:transition-none",
               active
                 ? "border-warm-900 bg-warm-900 text-white"
                 : complete
@@ -461,92 +343,6 @@ function StepRail({ step }: { step: Step }) {
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function KeyBullet({
-  ready,
-  children,
-}: {
-  ready: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex items-start gap-3 rounded-[18px] border border-warm-200 bg-warm-50 px-4 py-3">
-      <div
-        className={cx(
-          "mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border",
-          ready
-            ? "border-emerald-500 bg-emerald-500 text-white"
-            : "border-warm-300 bg-white text-warm-400",
-        )}
-      >
-        {ready ? <Check className="h-3 w-3" /> : <CircleAlert className="h-3 w-3" />}
-      </div>
-      <div className="text-sm leading-6 text-warm-700">{children}</div>
-    </div>
-  );
-}
-
-function UploadCard({
-  artifact,
-  onRemove,
-}: {
-  artifact: UploadedArtifact;
-  onRemove: (id: string) => void;
-}) {
-  return (
-    <div className="rounded-[20px] border border-warm-300 bg-white px-4 py-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-warm-900">
-            {artifact.file_name}
-          </div>
-          <div className="mt-1 break-all font-mono text-[11px] text-warm-500">
-            {artifact.uri ?? artifact.error ?? "Uploading to IPFS..."}
-          </div>
-          {artifact.detected_columns?.length ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {artifact.detected_columns.slice(0, 6).map((column) => (
-                <span
-                  key={column}
-                  className="rounded-full border border-warm-200 bg-warm-50 px-2.5 py-1 font-mono text-[11px] text-warm-700"
-                >
-                  {column}
-                </span>
-              ))}
-              {artifact.detected_columns.length > 6 ? (
-                <span className="rounded-full border border-warm-200 bg-warm-50 px-2.5 py-1 font-mono text-[11px] text-warm-700">
-                  +{artifact.detected_columns.length - 6} more
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span
-            className={cx(
-              "rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]",
-              artifact.status === "ready" &&
-                "bg-emerald-100 text-emerald-800",
-              artifact.status === "uploading" &&
-                "bg-accent-50 text-accent-700",
-              artifact.status === "error" && "bg-red-50 text-red-700",
-            )}
-          >
-            {artifact.status}
-          </span>
-          <button
-            type="button"
-            onClick={() => onRemove(artifact.id)}
-            className="text-xs font-medium text-warm-500 transition hover:text-warm-900"
-          >
-            Remove
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -632,10 +428,30 @@ function ArtifactVisibilityGroup({
   );
 }
 
+function clearCompiledSessionData(
+  current: PostingSessionOutput | null,
+): PostingSessionOutput | null {
+  if (!current) {
+    return current;
+  }
+
+  return {
+    ...current,
+    state: "draft",
+    compilation: null,
+    clarification_questions: [],
+    review_summary: null,
+    failure_message: null,
+  };
+}
+
 export function PostClient() {
   const [step, setStep] = useState<Step>(1);
-  const [intent, setIntent] = useState<IntentState>(buildInitialIntent);
-  const [uploads, setUploads] = useState<UploadedArtifact[]>([]);
+  const [guidedState, dispatch] = useReducer(
+    guidedComposerReducer,
+    undefined,
+    () => createInitialGuidedState(),
+  );
   const [session, setSession] = useState<PostingSessionOutput | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -645,6 +461,11 @@ export function PostClient() {
   const [postedChallengeId, setPostedChallengeId] = useState<string | null>(null);
   const [expertMode, setExpertMode] = useState(false);
 
+  const guidedStateRef = useRef(guidedState);
+  useEffect(() => {
+    guidedStateRef.current = guidedState;
+  }, [guidedState]);
+
   const { isConnected, chainId, address } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
@@ -652,20 +473,24 @@ export function PostClient() {
   const { openConnectModal } = useConnectModal();
   const { openChainModal } = useChainModal();
 
+  const managedIntent = useMemo(
+    () => buildManagedIntentFromGuidedState(guidedState),
+    [guidedState],
+  );
+  const compileReady = useMemo(
+    () => isReadyToCompile(guidedState),
+    [guidedState],
+  );
+  const draftIssues = useMemo(
+    () => listReadinessIssues(guidedState),
+    [guidedState],
+  );
+
   const compilation = getCompilation(session);
   const clarificationQuestions = session?.clarification_questions ?? [];
   const reviewSummary = session?.review_summary ?? null;
   const isReviewQueued = session?.state === "needs_review";
-  const needsClarification = session?.state === "needs_clarification";
-  const readyUploads = useMemo(
-    () => uploads.filter(isReadyUpload),
-    [uploads],
-  );
-  const draftIssues = useMemo(
-    () => buildDraftIssues({ intent, uploads }),
-    [intent, uploads],
-  );
-  const rewardInput = compilation?.challenge_spec.reward.total ?? intent.rewardTotal;
+  const rewardInput = compilation?.challenge_spec.reward.total ?? managedIntent.rewardTotal;
   const { feeUsdc, payoutUsdc } = computeProtocolFee(Number(rewardInput || 0));
   const isWrongChain = isConnected && isWrongWalletChain(chainId);
   const publicArtifacts =
@@ -697,6 +522,56 @@ export function PostClient() {
   });
 
   useEffect(() => {
+    const restored = loadGuidedDraft();
+    if (restored) {
+      dispatch({ type: "hydrate", state: restored });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (expertMode) {
+      return;
+    }
+    saveGuidedDraft(guidedState);
+  }, [expertMode, guidedState]);
+
+  useEffect(() => {
+    if (!guidedState.sessionId || session) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void getPostingSession(guidedState.sessionId)
+      .then((restoredSession) => {
+        if (cancelled) {
+          return;
+        }
+        setSession(restoredSession);
+        if (restoredSession.state === "ready") {
+          dispatch({ type: "set_compile_state", compileState: "ready" });
+          setStep(2);
+        } else if (restoredSession.state === "needs_review") {
+          dispatch({ type: "set_compile_state", compileState: "needs_review" });
+          setStep(2);
+        } else if (restoredSession.state === "needs_clarification") {
+          dispatch({
+            type: "apply_clarification",
+            field: clarificationTargetFromQuestions(
+              restoredSession.clarification_questions ?? [],
+            ),
+          });
+          setStep(1);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [guidedState.sessionId, session]);
+
+  useEffect(() => {
     if (!session?.id || session.state !== "needs_review") {
       return;
     }
@@ -712,6 +587,7 @@ export function PostClient() {
         setSession(refreshedSession);
 
         if (refreshedSession.state === "ready") {
+          dispatch({ type: "set_compile_state", compileState: "ready" });
           setStatusMessage(
             "Operator review approved this draft. You can continue to publish now.",
           );
@@ -721,6 +597,12 @@ export function PostClient() {
         }
 
         if (refreshedSession.state === "needs_clarification") {
+          dispatch({
+            type: "apply_clarification",
+            field: clarificationTargetFromQuestions(
+              refreshedSession.clarification_questions ?? [],
+            ),
+          });
           setStatusMessage(
             "Agora needs a little more context before it can lock the challenge contract.",
           );
@@ -730,6 +612,10 @@ export function PostClient() {
         }
 
         if (refreshedSession.state === "failed") {
+          dispatch({
+            type: "set_compile_state",
+            compileState: compileReady ? "ready_to_compile" : "idle",
+          });
           setStatusMessage(null);
           setErrorMessage(
             refreshedSession.failure_message ??
@@ -744,7 +630,50 @@ export function PostClient() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [session?.id, session?.state]);
+  }, [compileReady, session?.id, session?.state]);
+
+  function resetInterviewForEdit() {
+    setStep(1);
+    setStatusMessage(null);
+    setErrorMessage(null);
+    setSession((current) => clearCompiledSessionData(current));
+  }
+
+  function dispatchCompileState(compileState: GuidedCompileState) {
+    dispatch({ type: "set_compile_state", compileState });
+  }
+
+  function handlePromptAnswer(
+    field: Exclude<GuidedFieldKey, "title" | "uploads">,
+    value: string,
+  ) {
+    if (value.trim().length === 0) {
+      return;
+    }
+
+    resetInterviewForEdit();
+    dispatch({ type: "answer_prompt", field, value });
+  }
+
+  function handleSkipOptionalPrompt(field: "solverInstructions") {
+    resetInterviewForEdit();
+    dispatch({ type: "skip_optional_prompt", field });
+  }
+
+  function handleEditPrompt(field: Exclude<GuidedFieldKey, "title">) {
+    resetInterviewForEdit();
+    dispatch({ type: "edit_prompt", field });
+  }
+
+  function handleTitleChange(value: string) {
+    resetInterviewForEdit();
+    dispatch({ type: "set_title", value });
+  }
+
+  function updateUploads(nextUploads: UploadedArtifact[]) {
+    resetInterviewForEdit();
+    dispatch({ type: "set_uploads", uploads: nextUploads });
+  }
 
   async function handleFilesSelected(files: FileList | null) {
     if (!files || files.length === 0) {
@@ -754,8 +683,8 @@ export function PostClient() {
     const list = Array.from(files);
     for (const file of list) {
       const localId = crypto.randomUUID();
-      setUploads((current) => [
-        ...current,
+      updateUploads([
+        ...guidedStateRef.current.uploads,
         {
           id: localId,
           file_name: file.name,
@@ -775,8 +704,8 @@ export function PostClient() {
                 .then((text) => parseCsvHeaders(text))
             : Promise.resolve([]),
         ]);
-        setUploads((current) =>
-          current.map((artifact) =>
+        updateUploads(
+          guidedStateRef.current.uploads.map((artifact) =>
             artifact.id === localId
               ? {
                   ...artifact,
@@ -787,12 +716,10 @@ export function PostClient() {
               : artifact,
           ),
         );
-        setStep(1);
         setStatusMessage(`Uploaded ${file.name}. Agora can use it during compile.`);
-        setErrorMessage(null);
       } catch (error) {
-        setUploads((current) =>
-          current.map((artifact) =>
+        updateUploads(
+          guidedStateRef.current.uploads.map((artifact) =>
             artifact.id === localId
               ? {
                   ...artifact,
@@ -803,25 +730,28 @@ export function PostClient() {
               : artifact,
           ),
         );
-        setErrorMessage(
-          error instanceof Error ? error.message : "Upload failed.",
-        );
+        setErrorMessage(error instanceof Error ? error.message : "Upload failed.");
       }
     }
   }
 
-  function updateIntent<K extends keyof IntentState>(key: K, value: IntentState[K]) {
-    setIntent((current) => ({ ...current, [key]: value }));
-    if (step !== 1) {
-      setStep(1);
-    }
+  function handleRenameUpload(id: string, fileName: string) {
+    updateUploads(
+      guidedStateRef.current.uploads.map((artifact) =>
+        artifact.id === id ? { ...artifact, file_name: fileName } : artifact,
+      ),
+    );
   }
 
-  function removeUpload(id: string) {
-    setUploads((current) => current.filter((artifact) => artifact.id !== id));
-    if (step !== 1) {
-      setStep(1);
-    }
+  function handleRemoveUpload(id: string) {
+    updateUploads(
+      guidedStateRef.current.uploads.filter((artifact) => artifact.id !== id),
+    );
+  }
+
+  function handleConfirmUploads() {
+    resetInterviewForEdit();
+    dispatch({ type: "confirm_uploads" });
   }
 
   async function handleCompile() {
@@ -832,7 +762,7 @@ export function PostClient() {
       return;
     }
 
-    if (draftIssues.length > 0) {
+    if (!compileReady) {
       setErrorMessage(
         `This draft is not ready to compile yet. Next step: ${draftIssues[0]}`,
       );
@@ -842,41 +772,58 @@ export function PostClient() {
 
     try {
       setIsCompiling(true);
+      dispatchCompileState("compiling");
       setErrorMessage(null);
       setStatusMessage(
         "Compiling your challenge into a deterministic scoring contract...",
       );
-      const existingSession =
-        session ??
-        (await createPostingSession({
+
+      let existingSessionId = guidedStateRef.current.sessionId;
+      if (!existingSessionId) {
+        const createdSession = await createPostingSession({
           posterAddress: address as `0x${string}` | undefined,
-          intent,
-          uploads,
-        }));
+          intent: managedIntent,
+          uploads: guidedStateRef.current.uploads,
+        });
+        existingSessionId = createdSession.id;
+        dispatch({ type: "set_session_id", sessionId: createdSession.id });
+      }
+
       const compiledSession = await compilePostingSession({
-        sessionId: existingSession.id,
+        sessionId: existingSessionId,
         posterAddress: address as `0x${string}` | undefined,
-        intent,
-        uploads,
+        intent: managedIntent,
+        uploads: guidedStateRef.current.uploads,
       });
       setSession(compiledSession);
+      dispatch({ type: "set_session_id", sessionId: compiledSession.id });
+
       if (compiledSession.state === "needs_clarification") {
+        dispatch({
+          type: "apply_clarification",
+          field: clarificationTargetFromQuestions(
+            compiledSession.clarification_questions ?? [],
+          ),
+        });
         setStep(1);
         setStatusMessage(
           "Agora needs a little more context before it can lock the challenge contract.",
         );
       } else if (compiledSession.state === "needs_review") {
+        dispatchCompileState("needs_review");
         setStep(2);
         setStatusMessage(
           "Agora compiled a contract and queued it for operator review before publish.",
         );
       } else {
+        dispatchCompileState("ready");
         setStep(2);
         setStatusMessage(
           "Agora mapped your files, chose a managed runtime, and prepared a review contract.",
         );
       }
     } catch (error) {
+      dispatchCompileState(compileReady ? "ready_to_compile" : "idle");
       setErrorMessage(error instanceof Error ? error.message : "Compile failed.");
       setStatusMessage(null);
     } finally {
@@ -1027,6 +974,7 @@ export function PostClient() {
         createTx,
         publicClient,
       });
+      clearGuidedDraft();
       setPostedChallengeId(registration.challengeId);
       setStatusMessage("Challenge published successfully.");
     } catch (error) {
@@ -1058,33 +1006,46 @@ export function PostClient() {
     }
   }
 
+  function handleToggleExpertMode() {
+    setExpertMode((current) => {
+      const next = !current;
+      setStatusMessage(null);
+      setErrorMessage(null);
+      setSession(null);
+      setStep(1);
+      clearGuidedDraft();
+      dispatch({ type: "reset" });
+      return next;
+    });
+  }
+
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 pb-20">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 pb-28 lg:pb-20">
       <section className="overflow-hidden rounded-[32px] border border-warm-300 bg-[radial-gradient(circle_at_top_left,rgba(47,79,127,0.14),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(217,119,6,0.12),transparent_30%),linear-gradient(135deg,#fffefb,#f5f3ee)] px-6 py-8 shadow-[0_24px_80px_rgba(30,27,24,0.08)] sm:px-8 sm:py-10">
         <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-warm-300 bg-white/85 px-4 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-warm-600">
               <Sparkles className="h-3.5 w-3.5 text-accent-600" />
-              Managed Authoring
+              Guided Authoring
             </div>
             <h1 className="mt-5 max-w-4xl font-display text-[2.9rem] font-semibold leading-[0.92] tracking-[-0.055em] text-warm-900 sm:text-[4.2rem]">
-              Post a science bounty in under five minutes.
+              Post a science bounty through a guided interview.
             </h1>
             <p className="mt-5 max-w-2xl text-base leading-7 text-warm-700 sm:text-lg">
-              Tell Agora what the problem is, attach the data, and approve the
-              scoring contract it generates for you. The Docker, bundle, and
-              scoring machinery stay behind the curtain.
+              Answer one focused question at a time, attach the data, and review
+              the scoring contract Agora generates for you. The Docker, bundle,
+              and scoring machinery stay behind the curtain.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
               <span className="rounded-full border border-warm-300 bg-white/90 px-4 py-2 text-sm text-warm-700">
-                Describe the problem
+                One answer at a time
               </span>
               <span className="rounded-full border border-warm-300 bg-white/90 px-4 py-2 text-sm text-warm-700">
                 Upload the files
               </span>
               <span className="rounded-full border border-warm-300 bg-white/90 px-4 py-2 text-sm text-warm-700">
-                Approve the payout rules
+                Approve the contract
               </span>
             </div>
           </div>
@@ -1093,7 +1054,7 @@ export function PostClient() {
             {!expertMode ? (
               <>
                 <div className="text-[11px] font-mono font-semibold uppercase tracking-[0.24em] text-warm-500">
-                  Example listing
+                  Example flow
                 </div>
                 <div className="mt-3 rounded-[22px] border border-warm-200 bg-warm-50 p-5">
                   <div className="text-xl font-semibold text-warm-900">
@@ -1112,9 +1073,9 @@ export function PostClient() {
                   </div>
                 </div>
                 <div className="mt-4 text-sm leading-6 text-warm-600">
-                  Agora compiles this into a deterministic challenge contract,
-                  then shows you exactly what solvers will see, submit, and get
-                  paid on.
+                  Agora turns the answers and files into a deterministic managed
+                  contract, then shows you exactly what solvers will see, submit,
+                  and get paid on.
                 </div>
               </>
             ) : (
@@ -1150,19 +1111,15 @@ export function PostClient() {
         <div>
           <div className="text-sm font-semibold text-warm-900">Challenge mode</div>
           <div className="text-sm text-warm-600">
-            Use managed mode for the 5-minute path. Switch to expert mode only
-            if you need a custom scorer runtime.
+            Use managed mode for the guided path. Switch to expert mode only if
+            you need a custom scorer runtime.
           </div>
         </div>
         <button
           type="button"
-          onClick={() => {
-            setExpertMode((current) => !current);
-            setErrorMessage(null);
-            setStatusMessage(null);
-          }}
+          onClick={handleToggleExpertMode}
           className={cx(
-            "rounded-full px-4 py-2.5 text-sm font-medium transition",
+            "rounded-full px-4 py-2.5 text-sm font-medium transition motion-reduce:transition-none",
             expertMode
               ? "bg-warm-900 text-white"
               : "border border-warm-300 bg-white text-warm-800 hover:bg-warm-50",
@@ -1183,7 +1140,7 @@ export function PostClient() {
             </div>
             <Link
               href={`/challenges/${postedChallengeId}`}
-              className="inline-flex items-center gap-2 rounded-full border border-emerald-300 bg-white px-4 py-2 text-sm font-medium text-emerald-800 transition hover:bg-emerald-50"
+              className="inline-flex items-center gap-2 rounded-full border border-emerald-300 bg-white px-4 py-2 text-sm font-medium text-emerald-800 transition hover:bg-emerald-50 motion-reduce:transition-none"
             >
               View challenge
               <ArrowRight className="h-4 w-4" />
@@ -1217,10 +1174,10 @@ export function PostClient() {
                 agora post ./challenge.yaml --format json
               </div>
               <p className="mt-4 text-sm leading-6 text-warm-700">
-                  The managed web flow is still the recommended path for
-                  reproducibility, tabular prediction, docking, and ranking-style
-                  challenges.
-                </p>
+                The managed web flow is still the recommended path for
+                reproducibility, tabular prediction, docking, and ranking-style
+                challenges.
+              </p>
             </div>
           </div>
         </SurfaceCard>
@@ -1229,272 +1186,27 @@ export function PostClient() {
           <StepRail step={step} />
 
           {step === 1 ? (
-            <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-              <SurfaceCard
-                eyebrow="Step 1"
-                title={STEP_COPY[1].title}
-              >
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="grid gap-2 md:col-span-2">
-                    <Label>Title</Label>
-                    <input
-                      value={intent.title}
-                      onChange={(event) =>
-                        updateIntent("title", event.target.value)
-                      }
-                      className="rounded-[18px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500"
-                      placeholder="Predict treatment response from these assay files"
-                    />
-                  </label>
-
-                  <label className="grid gap-2 md:col-span-2">
-                    <Label>Problem description</Label>
-                    <textarea
-                      value={intent.description}
-                      onChange={(event) =>
-                        updateIntent("description", event.target.value)
-                      }
-                      rows={5}
-                      className="rounded-[18px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500"
-                      placeholder="Explain what solvers are trying to predict or reproduce, what the files mean, and what scientific context they need."
-                    />
-                  </label>
-
-                  <label className="grid gap-2 md:col-span-2">
-                    <Label>What counts as a correct answer?</Label>
-                    <input
-                      value={intent.payoutCondition}
-                      onChange={(event) =>
-                        updateIntent("payoutCondition", event.target.value)
-                      }
-                      className="rounded-[18px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500"
-                      placeholder="Example: Pay if R² > 0.9 on the hidden labels"
-                    />
-                  </label>
-
-                  <label className="grid gap-2">
-                    <Label>Reward (USDC)</Label>
-                    <input
-                      value={intent.rewardTotal}
-                      onChange={(event) =>
-                        updateIntent("rewardTotal", event.target.value)
-                      }
-                      className="rounded-[18px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500"
-                      inputMode="decimal"
-                    />
-                  </label>
-
-                  <label className="grid gap-2">
-                    <Label>Payout shape</Label>
-                    <select
-                      value={intent.distribution}
-                      onChange={(event) =>
-                        updateIntent(
-                          "distribution",
-                          event.target.value as IntentState["distribution"],
-                        )
-                      }
-                      className="rounded-[18px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500"
-                    >
-                      <option value="winner_take_all">Winner takes all</option>
-                      <option value="top_3">Top 3 split</option>
-                      <option value="proportional">Proportional</option>
-                    </select>
-                  </label>
-
-                  <label className="grid gap-2">
-                    <Label>Deadline</Label>
-                    <input
-                      type="datetime-local"
-                      value={intent.deadline}
-                      onChange={(event) =>
-                        updateIntent("deadline", event.target.value)
-                      }
-                      className="rounded-[18px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500"
-                    />
-                  </label>
-
-                  <label className="grid gap-2">
-                    <Label>Domain</Label>
-                    <select
-                      value={intent.domain}
-                      onChange={(event) =>
-                        updateIntent("domain", event.target.value)
-                      }
-                      className="rounded-[18px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500"
-                    >
-                      <option value="other">Other</option>
-                      <option value="drug_discovery">Drug discovery</option>
-                      <option value="omics">Omics</option>
-                      <option value="neuroscience">Neuroscience</option>
-                      <option value="protein_design">Protein design</option>
-                      <option value="longevity">Longevity</option>
-                    </select>
-                  </label>
-
-                  <label className="grid gap-2 md:col-span-2">
-                    <Label optional>Solver instructions</Label>
-                    <textarea
-                      value={intent.solverInstructions}
-                      onChange={(event) =>
-                        updateIntent("solverInstructions", event.target.value)
-                      }
-                      rows={4}
-                      className="rounded-[18px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500"
-                      placeholder="Optional: add scientific caveats, format expectations, or allowed assumptions."
-                    />
-                  </label>
-
-                  <label className="grid gap-2">
-                    <Label>Poster timezone</Label>
-                    <input
-                      value={intent.timezone}
-                      onChange={(event) =>
-                        updateIntent("timezone", event.target.value)
-                      }
-                      className="rounded-[18px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500"
-                      placeholder="Asia/Singapore"
-                    />
-                  </label>
-
-                  <label className="grid gap-2">
-                    <Label optional>Tags</Label>
-                    <input
-                      value={intent.tags}
-                      onChange={(event) =>
-                        updateIntent("tags", event.target.value)
-                      }
-                      className="rounded-[18px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500"
-                      placeholder="cell-lines, regression, biomarkers"
-                    />
-                  </label>
-                </div>
+            <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+              <SurfaceCard eyebrow="Step 1" title={STEP_COPY[1].title}>
+                <GuidedComposer
+                  state={guidedState}
+                  clarificationQuestions={clarificationQuestions}
+                  isCompiling={isCompiling}
+                  onEditPrompt={handleEditPrompt}
+                  onAnswerPrompt={handlePromptAnswer}
+                  onSkipOptionalPrompt={handleSkipOptionalPrompt}
+                  onFilesSelected={handleFilesSelected}
+                  onRenameUpload={handleRenameUpload}
+                  onRemoveUpload={handleRemoveUpload}
+                  onConfirmUploads={handleConfirmUploads}
+                />
               </SurfaceCard>
 
-              <div className="space-y-6">
-                <SurfaceCard eyebrow="Files" title="Attach the challenge data">
-                  <label className="flex cursor-pointer flex-col items-center justify-center rounded-[24px] border border-dashed border-warm-300 bg-warm-50 px-6 py-10 text-center transition hover:border-accent-400 hover:bg-white">
-                    <UploadCloud className="h-11 w-11 text-warm-500" />
-                    <div className="mt-4 text-lg font-semibold text-warm-900">
-                      Drop data files here or click to upload
-                    </div>
-                    <div className="mt-2 max-w-sm text-sm leading-6 text-warm-600">
-                      Upload the training data, hidden labels, reference
-                      outputs, or whatever the challenge needs. Agora will infer
-                      file roles during compile.
-                    </div>
-                    <input
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={(event) => {
-                        void handleFilesSelected(event.target.files);
-                        event.target.value = "";
-                      }}
-                    />
-                  </label>
-
-                  <div className="mt-5 space-y-3">
-                    {uploads.length === 0 ? (
-                      <div className="rounded-[20px] border border-warm-200 bg-warm-50 px-4 py-4 text-sm text-warm-600">
-                        No files uploaded yet.
-                      </div>
-                    ) : (
-                      uploads.map((artifact) => (
-                        <UploadCard
-                          key={artifact.id}
-                          artifact={artifact}
-                          onRemove={removeUpload}
-                        />
-                      ))
-                    )}
-                  </div>
-
-                  <div className="mt-5 rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
-                    Managed authoring works best when file names describe their
-                    roles. Good examples:{" "}
-                    {FILE_NAME_HINTS.map((hint, index) => (
-                      <span key={hint}>
-                        <span className="font-mono">{hint}</span>
-                        {index < FILE_NAME_HINTS.length - 1 ? ", " : "."}
-                      </span>
-                    ))}
-                  </div>
-                </SurfaceCard>
-
-                <SurfaceCard eyebrow="Readiness" title="What Agora needs before compile">
-                  <div className="space-y-3">
-                    <KeyBullet ready={intent.title.trim().length > 0}>
-                      A clear bounty title
-                    </KeyBullet>
-                    <KeyBullet ready={intent.description.trim().length > 0}>
-                      A description of the scientific task
-                    </KeyBullet>
-                    <KeyBullet ready={intent.payoutCondition.trim().length > 0}>
-                      A plain-language winning condition
-                    </KeyBullet>
-                    <KeyBullet ready={readyUploads.length > 0}>
-                      At least one uploaded file pinned to IPFS
-                    </KeyBullet>
-                  </div>
-
-                  <div className="mt-5 rounded-[20px] border border-warm-200 bg-warm-50 px-4 py-2">
-                    <SummaryRow
-                      label="Ready uploads"
-                      value={`${readyUploads.length} of ${uploads.length}`}
-                    />
-                    <SummaryRow
-                      label="Payout shape"
-                      value={formatDistributionLabel(intent.distribution)}
-                    />
-                    <SummaryRow
-                      label="Poster timezone"
-                      value={intent.timezone || "UTC"}
-                    />
-                  </div>
-
-                  {draftIssues.length > 0 ? (
-                    <div className="mt-5 space-y-2">
-                      {draftIssues.map((issue) => (
-                        <div
-                          key={issue}
-                          className="flex items-start gap-3 rounded-[18px] border border-warm-200 bg-white px-4 py-3 text-sm text-warm-700"
-                        >
-                          <CircleAlert className="mt-0.5 h-4 w-4 text-amber-700" />
-                          <span>{issue}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <Notice tone="success">
-                      This draft is ready to compile into a managed challenge.
-                    </Notice>
-                  )}
-                </SurfaceCard>
-
-                {needsClarification && clarificationQuestions.length > 0 ? (
-                  <SurfaceCard
-                    eyebrow="Clarification"
-                    title="Agora needs a little more context"
-                  >
-                    <div className="space-y-3">
-                      {clarificationQuestions.map((question) => (
-                        <div
-                          key={question.id}
-                          className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-4"
-                        >
-                          <div className="text-sm font-semibold text-warm-900">
-                            {question.prompt}
-                          </div>
-                          <div className="mt-3 text-sm leading-6 text-warm-700">
-                            {question.next_step}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </SurfaceCard>
-                ) : null}
-              </div>
+              <SummaryRail
+                state={guidedState}
+                onEditPrompt={handleEditPrompt}
+                onSetTitle={handleTitleChange}
+              />
             </div>
           ) : null}
 
@@ -1746,7 +1458,7 @@ export function PostClient() {
                               void handleApprove();
                             }}
                             disabled={isApproving}
-                            className="inline-flex items-center gap-2 rounded-full border border-warm-300 bg-white px-5 py-3 text-sm font-medium text-warm-900 transition hover:bg-warm-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="inline-flex items-center gap-2 rounded-full border border-warm-300 bg-white px-5 py-3 text-sm font-medium text-warm-900 transition hover:bg-warm-50 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
                           >
                             {isApproving ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1823,7 +1535,7 @@ export function PostClient() {
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-warm-300 bg-white/85 px-5 py-4">
             <div className="text-sm leading-6 text-warm-600">
               {step === 1
-                ? "Describe the challenge and upload the files Agora should compile."
+                ? "Answer the interview and lock each required answer before Agora compiles the managed contract."
                 : step === 2
                   ? isReviewQueued
                     ? "Agora compiled the contract, but an operator must review it before you can fund and publish."
@@ -1836,7 +1548,7 @@ export function PostClient() {
                 <button
                   type="button"
                   onClick={() => setStep((current) => (current === 3 ? 2 : 1))}
-                  className="rounded-full border border-warm-300 bg-white px-5 py-3 text-sm font-medium text-warm-900 transition hover:bg-warm-50"
+                  className="rounded-full border border-warm-300 bg-white px-5 py-3 text-sm font-medium text-warm-900 transition hover:bg-warm-50 motion-reduce:transition-none"
                 >
                   Back
                 </button>
@@ -1852,7 +1564,7 @@ export function PostClient() {
                     onClick={() => {
                       void handleContinue();
                     }}
-                    disabled={isCompiling || (step === 1 && draftIssues.length > 0)}
+                    disabled={isCompiling || (step === 1 && !compileReady)}
                     className="inline-flex items-center gap-2 rounded-full bg-warm-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isCompiling ? (
