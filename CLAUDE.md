@@ -26,7 +26,7 @@ These apply to every line of code and every design decision:
 - @docs/operations.md — Running, deploying, monitoring, incident response
 - @docs/design/design-system/DESIGN-SYSTEM.md — Canonical frontend visual identity
 - @docs/contributing/agent-guide.md — Agent getting-started guide
-- @.claude/skills/frontend-design/SKILL.md — Frontend component skill
+- @.claude/skills/agora-design-system/SKILL.md — Frontend design system skill
 
 ## Tech Stack
 

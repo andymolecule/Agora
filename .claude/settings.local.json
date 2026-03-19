@@ -7,7 +7,13 @@
       "WebFetch(domain:sepolia.basescan.org)",
       "WebFetch(domain:agora-market.vercel.app)",
       "WebFetch(domain:x.com)",
-      "WebFetch(domain:claude.com)"
+      "WebFetch(domain:claude.com)",
+      "Skill(architecture-review)",
+      "Skill(update-config)",
+      "WebFetch(domain:beach.science)",
+      "Skill(eli5)",
+      "WebFetch(domain:stitch.withgoogle.com)",
+      "mcp__mcp-registry__search_mcp_registry"
     ]
   },
   "enableAllProjectMcpServers": true,

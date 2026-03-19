@@ -1,6 +1,6 @@
 ---
-name: frontend-design
-description: "Agora frontend design system and component guidelines. Use when building or modifying any frontend component in apps/web, styling UI, or reviewing frontend code for design consistency."
+name: agora-design-system
+description: "Agora frontend design system and component guidelines. Use when building or modifying any frontend component in apps/web, styling UI, or reviewing frontend code for design consistency. Canonical spec: docs/design/design-system/DESIGN-SYSTEM.md."
 allowed-tools: Read, Grep, Glob
 ---
 

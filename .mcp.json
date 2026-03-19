@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "agora": {
-      "command": "bash",
-      "args": ["-c", "set -a && source .env && set +a && exec node apps/mcp-server/dist/index.js --stdio"]
-    }
-  }
-}
