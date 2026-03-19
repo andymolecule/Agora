@@ -3,6 +3,8 @@ import {
   createAuthoringDraft,
   createSupabaseClient,
   getAuthoringDraftViewById,
+  getAuthoringSourceLink,
+  upsertAuthoringSourceLink,
 } from "@agora/db";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
@@ -32,6 +34,8 @@ export function createBeachIntegrationsRouter(dependencies?: {
   createSupabaseClient?: typeof createSupabaseClient;
   createAuthoringDraft?: typeof createAuthoringDraft;
   getAuthoringDraftViewById?: typeof getAuthoringDraftViewById;
+  getAuthoringSourceLink?: typeof getAuthoringSourceLink;
+  upsertAuthoringSourceLink?: typeof upsertAuthoringSourceLink;
   normalizeExternalArtifactsForDraft?: typeof normalizeExternalArtifactsForDraft;
   readAuthoringPartnerRuntimeConfig?: typeof readAuthoringPartnerRuntimeConfig;
   consumeWriteQuota?: typeof consumeWriteQuota;
@@ -43,6 +47,10 @@ export function createBeachIntegrationsRouter(dependencies?: {
     dependencies?.createAuthoringDraft ?? createAuthoringDraft;
   const getAuthoringDraftViewByIdImpl =
     dependencies?.getAuthoringDraftViewById ?? getAuthoringDraftViewById;
+  const getAuthoringSourceLinkImpl =
+    dependencies?.getAuthoringSourceLink ?? getAuthoringSourceLink;
+  const upsertAuthoringSourceLinkImpl =
+    dependencies?.upsertAuthoringSourceLink ?? upsertAuthoringSourceLink;
   const normalizeExternalArtifactsForDraftImpl =
     dependencies?.normalizeExternalArtifactsForDraft ??
     normalizeExternalArtifactsForDraft;
@@ -105,6 +113,8 @@ export function createBeachIntegrationsRouter(dependencies?: {
           createSupabaseClientImpl,
           createAuthoringDraftImpl,
           getAuthoringDraftViewByIdImpl,
+          getAuthoringSourceLinkImpl,
+          upsertAuthoringSourceLinkImpl,
           normalizeExternalArtifactsForDraftImpl,
           logger: getRequestLogger(c),
         });

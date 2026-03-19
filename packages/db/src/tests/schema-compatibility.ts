@@ -62,6 +62,13 @@ const checks: RuntimeSchemaCheck[] = [
     nextStep: "apply migration",
   },
   {
+    id: "challenge_source_attribution_columns",
+    table: "challenges",
+    select:
+      "source_provider,source_external_id,source_external_url,source_agent_handle",
+    nextStep: "apply migration",
+  },
+  {
     id: "authoring_drafts_table",
     table: "authoring_drafts",
     select:
@@ -72,6 +79,12 @@ const checks: RuntimeSchemaCheck[] = [
     id: "authoring_callback_targets_table",
     table: "authoring_callback_targets",
     select: "draft_id,callback_url,registered_at",
+    nextStep: "apply migration",
+  },
+  {
+    id: "authoring_source_links_table",
+    table: "authoring_source_links",
+    select: "provider,external_id,draft_id,external_url",
     nextStep: "apply migration",
   },
   {

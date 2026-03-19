@@ -1,5 +1,5 @@
 import type {
-  AuthoringDraftLifecycleEventOutput,
+  AuthoringCallbackEventOutput,
   AuthoringPartnerProviderOutput,
 } from "@agora/common";
 import type { AgoraDbClient } from "../index";
@@ -21,8 +21,8 @@ export interface AuthoringCallbackDeliveryInsert {
   draft_id: string;
   provider: AuthoringPartnerProviderOutput;
   callback_url: string;
-  event: AuthoringDraftLifecycleEventOutput["event"];
-  payload_json: AuthoringDraftLifecycleEventOutput;
+  event: AuthoringCallbackEventOutput["event"];
+  payload_json: AuthoringCallbackEventOutput;
   status?: AuthoringCallbackDeliveryStatus;
   attempts?: number;
   max_attempts?: number;
@@ -37,8 +37,8 @@ export interface AuthoringCallbackDeliveryRow {
   draft_id: string;
   provider: AuthoringPartnerProviderOutput;
   callback_url: string;
-  event: AuthoringDraftLifecycleEventOutput["event"];
-  payload_json: AuthoringDraftLifecycleEventOutput;
+  event: AuthoringCallbackEventOutput["event"];
+  payload_json: AuthoringCallbackEventOutput;
   status: AuthoringCallbackDeliveryStatus;
   attempts: number;
   max_attempts: number;

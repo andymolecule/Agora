@@ -88,6 +88,13 @@ export interface ChallengeReward {
   distribution: RewardDistribution;
 }
 
+export interface ChallengeSource {
+  provider: string;
+  external_id?: string | null;
+  external_url?: string | null;
+  agent_handle?: string | null;
+}
+
 export interface ChallengeSpec {
   schema_version: 3;
   id: string;
@@ -106,4 +113,5 @@ export interface ChallengeSpec {
   max_submissions_per_solver?: number;
   dispute_window_hours?: number;
   lab_tba?: string;
+  source?: ChallengeSource;
 }

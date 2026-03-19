@@ -24,6 +24,10 @@ import {
   type ChallengeSpec,
 } from "../types/challenge.js";
 import {
+  externalSourceProviderSchema,
+  safePublicHttpsUrlSchema,
+} from "./authoring-source.js";
+import {
   resolveSemiCustomExecutionPlan,
   semiCustomEvaluatorContractSchema,
 } from "./evaluator-contract.js";
@@ -108,6 +112,13 @@ export const challengeEvaluationSchema = z.object({
   evaluator_contract: semiCustomEvaluatorContractSchema.optional(),
 });
 
+export const challengeSourceSchema = z.object({
+  provider: externalSourceProviderSchema,
+  external_id: z.string().trim().min(1).nullable().optional(),
+  external_url: safePublicHttpsUrlSchema.nullable().optional(),
+  agent_handle: z.string().trim().min(1).nullable().optional(),
+});
+
 function hasDuplicateArtifacts(artifacts: ChallengeArtifact[]) {
   const seen = new Set<string>();
   for (const artifact of artifacts) {
@@ -150,6 +161,7 @@ const _baseSpecShape = z
       .string()
       .regex(/^0x[a-fA-F0-9]{40}$/, "lab_tba must be a valid EVM address")
       .optional(),
+    source: challengeSourceSchema.optional(),
   })
   .superRefine((value, ctx) => {
     if (

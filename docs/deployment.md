@@ -60,7 +60,7 @@ Notes:
 - `pnpm scorers:verify` requires a running Docker daemon.
 - It verifies the production invariant, not just digest resolution: official scorer images must be anonymously resolvable from GHCR and anonymously pullable with Docker.
 - The shipped official runtime-family catalog is intentionally narrow: `reproducibility`, `tabular_regression`, `tabular_classification`, `docking`, and `ranking`. Placeholder families should not be reintroduced unless a real published scorer artifact exists for them.
-- If you are upgrading an existing environment onto the latest authoring and strict submission model instead of resetting from scratch, follow [Authoring Rollout](authoring-rollout.md) for the `017` through `022` migration window before redeploying services.
+- If you are upgrading an existing environment onto the latest authoring and strict submission model instead of resetting from scratch, follow [Authoring Rollout](authoring-rollout.md) for the `017` through `027` migration window before redeploying services.
 
 Railway deployment checks before production cutover:
 

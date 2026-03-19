@@ -61,6 +61,7 @@ function createSession(
     authoring_ir_json: authoringIr,
     uploaded_artifacts_json: uploadedArtifacts,
     compilation_json: overrides.compilation_json ?? null,
+    published_challenge_id: overrides.published_challenge_id ?? null,
     published_spec_json: overrides.published_spec_json ?? null,
     published_spec_cid: overrides.published_spec_cid ?? null,
     source_callback_url: overrides.source_callback_url ?? null,
@@ -109,6 +110,16 @@ test("beach integration imports a thread into a beach-owned authoring draft", as
       return storedSession as never;
     },
     getAuthoringDraftViewById: async () => storedSession as never,
+    getAuthoringSourceLink: async () => null as never,
+    upsertAuthoringSourceLink: async (_db, payload) =>
+      ({
+        provider: payload.provider,
+        external_id: payload.external_id,
+        draft_id: payload.draft_id,
+        external_url: payload.external_url ?? null,
+        created_at: "2026-03-18T00:05:00.000Z",
+        updated_at: "2026-03-18T00:05:00.000Z",
+      }) as never,
     normalizeExternalArtifactsForDraft: async ({ artifacts }) =>
       artifacts.map((artifact) =>
         buildStubArtifactFromSourceUrl(artifact.source_url),
@@ -177,6 +188,10 @@ test("beach integration imports a thread into a beach-owned authoring draft", as
   assert.equal(authoringIr?.origin?.provider, "beach_science");
   assert.equal(authoringIr?.origin?.external_id, "thread-42");
   assert.equal(authoringIr?.origin?.raw_context?.revision, "rev-7");
+  assert.equal(
+    authoringIr?.origin?.raw_context?.source_agent_handle,
+    "lab-alpha",
+  );
   assert.equal(
     authoringIr?.origin?.raw_context?.beach_poster_agent_handle,
     "lab-alpha",

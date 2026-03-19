@@ -26,10 +26,11 @@ Operators and engineers deploying Agora after the phase-1 to phase-7 authoring r
 ## Summary
 
 - Fresh environments: apply all migrations.
-- Existing environments: the important migration window is `017` through `023`.
+- Existing environments: the important migration window is `017` through `027`.
 - `020_strict_submission_intents.sql` is destructive on old data without a matching intent. Preflight it first.
 - API, indexer, and worker orchestrator should be redeployed together after env + schema changes.
-- Beach integration is Agora-hosted on the backend: Beach only needs a bearer token and optional webhook endpoint.
+- Beach/OpenClaw integration is Agora-hosted on the backend: Beach/OpenClaw only need a bearer token and optional webhook endpoint; Agora owns the sponsor signer for the MVP publish path.
+- For the Beach/OpenClaw MVP, the server-to-server external draft flow is the primary path. Browser-hosted `/post` is only the human-assist fallback.
 
 ---
 
@@ -57,6 +58,8 @@ This rollout introduced four operationally relevant changes:
 - callback secrets
 - allowed return origins
 - internal review token for sweep/review operations
+- internal sponsor signer for agent-native external publish
+- optional per-partner sponsor budget caps
 
 ---
 
@@ -77,6 +80,9 @@ Existing environment already running Agora:
   - `022_restrict_submission_intent_fk.sql`
   - `023_drop_submission_intent_match_backrefs.sql`
   - `024_move_authoring_callback_targets.sql`
+  - `025_create_authoring_source_links.sql`
+  - `026_add_challenge_source_attribution.sql`
+  - `027_extend_authoring_callback_events.sql`
 
 ### Migration Notes
 
@@ -115,6 +121,18 @@ Existing environment already running Agora:
 - creates `authoring_callback_targets`
 - copies callback registration metadata out of `authoring_drafts`
 - drops callback registration columns from `authoring_drafts`
+
+`025_create_authoring_source_links.sql`
+- creates `authoring_source_links`
+- establishes canonical `(provider, external_id)` identity for repeated external imports
+
+`026_add_challenge_source_attribution.sql`
+- adds `source_provider`, `source_external_id`, `source_external_url`, and `source_agent_handle` to `challenges`
+- backfills challenge attribution from `published_challenge_links.published_spec_json.source`
+
+`027_extend_authoring_callback_events.sql`
+- extends the callback outbox event constraint
+- allows `challenge_created` and `challenge_finalized` in addition to the existing `draft_*` events
 
 ---
 
@@ -177,8 +195,11 @@ Recommended order for existing environments:
 8. apply `022`
 9. apply `023`
 10. apply `024`
-11. reload PostgREST schema cache
-12. run `pnpm schema:verify`
+11. apply `025`
+12. apply `026`
+13. apply `027`
+14. reload PostgREST schema cache
+15. run `pnpm schema:verify`
 
 If your deployment path relies on Supabase-managed PostgREST metadata, reload schema visibility before restarting API/worker services.
 
@@ -255,6 +276,8 @@ AGORA_AUTHORING_REVIEW_TOKEN=
 AGORA_AUTHORING_PARTNER_KEYS='beach_science:...'
 AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS='beach_science:...'
 AGORA_AUTHORING_PARTNER_RETURN_ORIGINS='beach_science:https://beach.science'
+AGORA_AUTHORING_SPONSOR_PRIVATE_KEY='0x...'
+AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS='beach_science:500'
 ```
 
 Formatting rules:
@@ -267,6 +290,13 @@ Formatting rules:
   - comma-separated `provider:https://origin1|https://origin2`
   - HTTPS only
   - public origins only
+- `AGORA_AUTHORING_SPONSOR_PRIVATE_KEY`
+  - 32-byte hex private key
+  - Agora-side only
+  - used for the internal sponsor wallet in the agent-native external publish path
+- `AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS`
+  - optional comma-separated `provider:amount` pairs
+  - enforced before Agora sponsor-publishes an external draft
 
 Example:
 
@@ -275,6 +305,8 @@ AGORA_AUTHORING_PARTNER_KEYS='beach_science:beach-prod-bearer'
 AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS='beach_science:beach-prod-callback-secret'
 AGORA_AUTHORING_PARTNER_RETURN_ORIGINS='beach_science:https://beach.science|https://staging.beach.science'
 AGORA_AUTHORING_REVIEW_TOKEN='internal-review-token'
+AGORA_AUTHORING_SPONSOR_PRIVATE_KEY='0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS='beach_science:500'
 ```
 
 ### Web
@@ -354,13 +386,13 @@ Beach needs:
 
 - a bearer token matching `AGORA_AUTHORING_PARTNER_KEYS`
 - optionally a callback endpoint
-- optionally an allowlisted return origin
+- optionally an allowlisted return origin for human redirect flows
 
 Beach does not need:
 
 - Supabase credentials
 - scorer runtime access
-- chain deploy access just to create drafts
+- chain deploy access for the MVP sponsor-backed flow
 
 ### Backend Entry Points
 
@@ -373,7 +405,10 @@ Then use generic partner draft lifecycle:
 - `GET /api/authoring/external/drafts/:id`
 - `POST /api/authoring/external/drafts/:id/clarify`
 - `POST /api/authoring/external/drafts/:id/compile`
+- `POST /api/authoring/external/drafts/:id/publish`
 - `POST /api/authoring/external/drafts/:id/webhook`
+
+Compile responses now include a structured `assessment` object so OpenClaw can tell whether the draft is feasible, immediately publishable, review-gated, or still missing deterministic inputs.
 
 ### Callback Sweep
 
@@ -412,9 +447,12 @@ Authoring-specific checks:
 3. import a Beach draft through `/api/integrations/beach/drafts/import`
 4. clarify it through `/api/authoring/external/drafts/:id/clarify`
 5. compile it through `/api/authoring/external/drafts/:id/compile`
-6. register a webhook through `/api/authoring/external/drafts/:id/webhook`
-7. publish a hosted draft and confirm return-to behavior
-8. run callback sweep and confirm pending deliveries drain
+6. confirm the compile response `assessment` is sensible for the draft state
+7. publish it through `/api/authoring/external/drafts/:id/publish`
+8. register a webhook through `/api/authoring/external/drafts/:id/webhook`
+9. confirm `challenge_created` callbacks or polling-visible challenge refs after publish
+10. publish a hosted draft and confirm return-to behavior if humans are in the loop
+11. run callback sweep and confirm pending deliveries drain, including `challenge_finalized` when applicable
 
 Useful local regression command:
 
@@ -443,7 +481,7 @@ node --import tsx --test \
 
 If you are deploying the latest code to an existing environment, the minimum safe cutover set is:
 
-1. apply `017` through `024`
+1. apply `017` through `027`
 2. set the new authoring env vars
 3. redeploy API + indexer + worker orchestrator together
 4. run `pnpm schema:verify`

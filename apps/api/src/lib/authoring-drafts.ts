@@ -1,14 +1,19 @@
 import { createHash, createHmac } from "node:crypto";
 import type {
+  AuthoringCallbackChallengeOutput,
+  AuthoringCallbackEventOutput,
   AuthoringDraftCardOutput,
   AuthoringDraftLifecycleEventOutput,
   AuthoringDraftState,
+  ChallengeLifecycleEventOutput,
   ExternalSourceProviderOutput,
 } from "@agora/common";
 import {
   type AgoraAuthoringPartnerRuntimeConfig,
+  authoringCallbackEventSchema,
   authoringDraftCardSchema,
   authoringDraftLifecycleEventSchema,
+  challengeLifecycleEventSchema,
   readAuthoringPartnerRuntimeConfig,
 } from "@agora/common";
 import type { AgoraLogger } from "@agora/common/server-observability";
@@ -22,6 +27,7 @@ import {
   updateAuthoringCallbackDelivery,
 } from "@agora/db";
 import {
+  buildAuthoringDraftAssessment,
   getAuthoringDraftClarificationQuestions,
   getAuthoringDraftReviewSummary,
   toAuthoringDraftPayload,
@@ -49,15 +55,15 @@ function computeAuthoringCallbackSignature(input: {
 }
 
 function computeAuthoringCallbackEventId(
-  payload: AuthoringDraftLifecycleEventOutput,
+  payload: AuthoringCallbackEventOutput,
 ) {
   return createHash("sha256")
     .update(`${payload.draft_id}:${payload.event}:${payload.occurred_at}`)
     .digest("hex");
 }
 
-async function sendAuthoringDraftLifecycleEventAttempt(input: {
-  payload: AuthoringDraftLifecycleEventOutput;
+async function sendAuthoringCallbackEventAttempt(input: {
+  payload: AuthoringCallbackEventOutput;
   callbackUrl: string;
   timestamp: string;
   callbackSecret?: string;
@@ -96,7 +102,7 @@ async function sendAuthoringDraftLifecycleEventAttempt(input: {
         eventType: input.payload.event,
         status: response.status,
       },
-      "Authoring draft callback endpoint returned a non-success status",
+      "Authoring callback endpoint returned a non-success status",
     );
     return {
       ok: false,
@@ -112,7 +118,7 @@ async function sendAuthoringDraftLifecycleEventAttempt(input: {
       callbackUrl: input.callbackUrl,
       eventType: input.payload.event,
     },
-    "Delivered authoring draft callback event",
+    "Delivered authoring callback event",
   );
   return { ok: true };
 }
@@ -131,8 +137,22 @@ function buildAuthoringDraftLifecyclePayload(input: {
   });
 }
 
-async function queueAuthoringDraftLifecycleEventRetry(input: {
-  payload: AuthoringDraftLifecycleEventOutput;
+function buildChallengeLifecyclePayload(input: {
+  event: ChallengeLifecycleEventOutput["event"];
+  session: AuthoringDraftViewRow;
+  challenge: AuthoringCallbackChallengeOutput;
+}) {
+  return challengeLifecycleEventSchema.parse({
+    event: input.event,
+    occurred_at: new Date().toISOString(),
+    draft_id: input.session.id,
+    provider: draftProvider(input.session),
+    challenge: input.challenge,
+  });
+}
+
+async function queueAuthoringCallbackEventRetry(input: {
+  payload: AuthoringCallbackEventOutput;
   callbackUrl: string;
   provider: Exclude<ExternalSourceProviderOutput, "direct">;
   lastError: string;
@@ -171,8 +191,116 @@ async function queueAuthoringDraftLifecycleEventRetry(input: {
       eventType: input.payload.event,
       nextAttemptAt,
     },
-    "Enqueued authoring draft callback for durable retry",
+    "Enqueued authoring callback for durable retry",
   );
+}
+
+async function deliverAuthoringCallbackEvent(input: {
+  payload: AuthoringCallbackEventOutput;
+  session: AuthoringDraftViewRow;
+  fetchImpl?: typeof fetch;
+  logger?: AgoraLogger;
+  retryDelayMs?: number;
+  readAuthoringPartnerRuntimeConfigImpl?: typeof readAuthoringPartnerRuntimeConfig;
+  createSupabaseClientImpl?: typeof createSupabaseClient;
+  createAuthoringCallbackDeliveryImpl?: typeof createAuthoringCallbackDelivery;
+}) {
+  const callbackUrl = input.session.source_callback_url?.trim();
+  if (!callbackUrl) {
+    return false;
+  }
+  const provider = draftProvider(input.session);
+  if (provider === "direct") {
+    input.logger?.warn(
+      {
+        event: "authoring.callback.direct_provider_ignored",
+        draftId: input.session.id,
+        callbackUrl,
+        eventType: input.payload.event,
+      },
+      "Ignoring callback delivery for a direct authoring draft",
+    );
+    return false;
+  }
+
+  try {
+    const payload = authoringCallbackEventSchema.parse(input.payload);
+    const runtime = (
+      input.readAuthoringPartnerRuntimeConfigImpl ??
+      readAuthoringPartnerRuntimeConfig
+    )();
+    const callbackSecret = runtime.callbackSecrets[provider];
+    const timestamp = new Date().toISOString();
+    const firstAttemptSucceeded = await sendAuthoringCallbackEventAttempt({
+      payload,
+      callbackUrl,
+      timestamp,
+      callbackSecret,
+      fetchImpl: input.fetchImpl,
+      logger: input.logger,
+    });
+    if (firstAttemptSucceeded.ok) {
+      return true;
+    }
+
+    await queueAuthoringCallbackEventRetry({
+      payload,
+      callbackUrl,
+      provider,
+      lastError: firstAttemptSucceeded.errorMessage,
+      retryDelayMs: input.retryDelayMs,
+      createSupabaseClientImpl: input.createSupabaseClientImpl,
+      createAuthoringCallbackDeliveryImpl:
+        input.createAuthoringCallbackDeliveryImpl,
+      logger: input.logger,
+    });
+    return false;
+  } catch (error) {
+    try {
+      await queueAuthoringCallbackEventRetry({
+        payload: input.payload,
+        callbackUrl,
+        provider,
+        lastError:
+          error instanceof Error
+            ? `${error.message}. Next step: retry the authoring callback delivery sweep after the network recovers.`
+            : "Callback delivery failed. Next step: retry the authoring callback delivery sweep after the network recovers.",
+        retryDelayMs: input.retryDelayMs,
+        createSupabaseClientImpl: input.createSupabaseClientImpl,
+        createAuthoringCallbackDeliveryImpl:
+          input.createAuthoringCallbackDeliveryImpl,
+        logger: input.logger,
+      });
+    } catch (queueError) {
+      input.logger?.warn(
+        {
+          event: "authoring.callback.enqueue_failed",
+          draftId: input.payload.draft_id,
+          provider,
+          callbackUrl,
+          eventType: input.payload.event,
+          message:
+            queueError instanceof Error
+              ? queueError.message
+              : String(queueError),
+        },
+        "Failed to enqueue authoring callback retry",
+      );
+    }
+
+    input.logger?.warn(
+      {
+        event: "authoring.callback.delivery_failed",
+        draftId: input.session.id,
+        provider,
+        callbackUrl,
+        eventType: input.payload.event,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      "Failed to deliver authoring callback event",
+    );
+    return false;
+  }
 }
 
 function firstPosterMessage(
@@ -339,6 +467,7 @@ export function buildAuthoringDraftCard(
     clarification_count: clarificationQuestions.length,
     next_question: clarificationQuestions[0] ?? null,
     review_recommended_action: reviewSummary?.recommended_action ?? null,
+    published_challenge_id: session.published_challenge_id ?? null,
     published_spec_cid: session.published_spec_cid ?? null,
     callback_registered:
       provider !== "direct" &&
@@ -353,6 +482,7 @@ export function buildAuthoringDraftResponse(session: AuthoringDraftViewRow) {
   return {
     draft: toAuthoringDraftPayload(session),
     card: buildAuthoringDraftCard(session),
+    assessment: buildAuthoringDraftAssessment(session),
   };
 }
 
@@ -366,110 +496,50 @@ export async function deliverAuthoringDraftLifecycleEvent(input: {
   createSupabaseClientImpl?: typeof createSupabaseClient;
   createAuthoringCallbackDeliveryImpl?: typeof createAuthoringCallbackDelivery;
 }) {
-  const callbackUrl = input.session.source_callback_url?.trim();
-  if (!callbackUrl) {
-    return false;
-  }
-  const provider = draftProvider(input.session);
-  if (provider === "direct") {
-    input.logger?.warn(
-      {
-        event: "authoring.callback.direct_provider_ignored",
-        draftId: input.session.id,
-        callbackUrl,
-        eventType: input.event,
-      },
-      "Ignoring callback delivery for a direct authoring draft",
-    );
-    return false;
-  }
-
-  let payload: AuthoringDraftLifecycleEventOutput | null = null;
-  try {
-    payload = buildAuthoringDraftLifecyclePayload({
+  return deliverAuthoringCallbackEvent({
+    payload: buildAuthoringDraftLifecyclePayload({
       event: input.event,
       session: input.session,
-    });
-    const runtime = (
-      input.readAuthoringPartnerRuntimeConfigImpl ??
-      readAuthoringPartnerRuntimeConfig
-    )();
-    const callbackSecret = runtime.callbackSecrets[provider];
-    const timestamp = new Date().toISOString();
-    const firstAttemptSucceeded = await sendAuthoringDraftLifecycleEventAttempt(
-      {
-        payload,
-        callbackUrl,
-        timestamp,
-        callbackSecret,
-        fetchImpl: input.fetchImpl,
-        logger: input.logger,
-      },
-    );
-    if (firstAttemptSucceeded.ok) {
-      return true;
-    }
+    }),
+    session: input.session,
+    fetchImpl: input.fetchImpl,
+    logger: input.logger,
+    retryDelayMs: input.retryDelayMs,
+    readAuthoringPartnerRuntimeConfigImpl:
+      input.readAuthoringPartnerRuntimeConfigImpl,
+    createSupabaseClientImpl: input.createSupabaseClientImpl,
+    createAuthoringCallbackDeliveryImpl:
+      input.createAuthoringCallbackDeliveryImpl,
+  });
+}
 
-    await queueAuthoringDraftLifecycleEventRetry({
-      payload,
-      callbackUrl,
-      provider,
-      lastError: firstAttemptSucceeded.errorMessage,
-      retryDelayMs: input.retryDelayMs,
-      createSupabaseClientImpl: input.createSupabaseClientImpl,
-      createAuthoringCallbackDeliveryImpl:
-        input.createAuthoringCallbackDeliveryImpl,
-      logger: input.logger,
-    });
-    return false;
-  } catch (error) {
-    if (payload) {
-      try {
-        await queueAuthoringDraftLifecycleEventRetry({
-          payload,
-          callbackUrl,
-          provider,
-          lastError:
-            error instanceof Error
-              ? `${error.message}. Next step: retry the authoring callback delivery sweep after the network recovers.`
-              : "Callback delivery failed. Next step: retry the authoring callback delivery sweep after the network recovers.",
-          retryDelayMs: input.retryDelayMs,
-          createSupabaseClientImpl: input.createSupabaseClientImpl,
-          createAuthoringCallbackDeliveryImpl:
-            input.createAuthoringCallbackDeliveryImpl,
-          logger: input.logger,
-        });
-      } catch (queueError) {
-        input.logger?.warn(
-          {
-            event: "authoring.callback.enqueue_failed",
-            draftId: payload.draft_id,
-            provider: payload.provider,
-            callbackUrl,
-            eventType: payload.event,
-            message:
-              queueError instanceof Error
-                ? queueError.message
-                : String(queueError),
-          },
-          "Failed to enqueue authoring draft callback retry",
-        );
-      }
-    }
-
-    input.logger?.warn(
-      {
-        event: "authoring.callback.delivery_failed",
-        draftId: input.session.id,
-        provider: draftProvider(input.session),
-        callbackUrl,
-        eventType: input.event,
-        message: error instanceof Error ? error.message : String(error),
-      },
-      "Failed to deliver authoring draft callback event",
-    );
-    return false;
-  }
+export async function deliverChallengeLifecycleEvent(input: {
+  event: ChallengeLifecycleEventOutput["event"];
+  session: AuthoringDraftViewRow;
+  challenge: AuthoringCallbackChallengeOutput;
+  fetchImpl?: typeof fetch;
+  logger?: AgoraLogger;
+  retryDelayMs?: number;
+  readAuthoringPartnerRuntimeConfigImpl?: typeof readAuthoringPartnerRuntimeConfig;
+  createSupabaseClientImpl?: typeof createSupabaseClient;
+  createAuthoringCallbackDeliveryImpl?: typeof createAuthoringCallbackDelivery;
+}) {
+  return deliverAuthoringCallbackEvent({
+    payload: buildChallengeLifecyclePayload({
+      event: input.event,
+      session: input.session,
+      challenge: input.challenge,
+    }),
+    session: input.session,
+    fetchImpl: input.fetchImpl,
+    logger: input.logger,
+    retryDelayMs: input.retryDelayMs,
+    readAuthoringPartnerRuntimeConfigImpl:
+      input.readAuthoringPartnerRuntimeConfigImpl,
+    createSupabaseClientImpl: input.createSupabaseClientImpl,
+    createAuthoringCallbackDeliveryImpl:
+      input.createAuthoringCallbackDeliveryImpl,
+  });
 }
 
 export async function sweepPendingAuthoringDraftLifecycleEvents(input?: {
@@ -533,7 +603,7 @@ export async function sweepPendingAuthoringDraftLifecycleEvents(input?: {
     const callbackSecret = runtime.callbackSecrets[claimedDelivery.provider];
     let attemptResult: CallbackAttemptResult;
     try {
-      attemptResult = await sendAuthoringDraftLifecycleEventAttempt({
+      attemptResult = await sendAuthoringCallbackEventAttempt({
         payload: claimedDelivery.payload_json,
         callbackUrl: claimedDelivery.callback_url,
         timestamp: attemptedAt,

@@ -213,7 +213,7 @@ Existing testnet DBs:
 - Existing environments should also apply `005_add_submission_intents.sql` so pre-registered submission metadata exists before the later strict intent-first migration window.
 - Existing environments should also apply `006_add_worker_runtime_version.sql` so worker/runtime alignment is visible in health checks.
 - Existing environments should also apply `011_rename_worker_runtime_executor_ready.sql` so worker readiness reflects the new orchestrator/executor naming in runtime checks.
-- Existing environments rolling onto the latest authoring and strict-submission model should also follow [Authoring Rollout](authoring-rollout.md) and apply the `017` through `022` migration window in order.
+- Existing environments rolling onto the latest authoring and strict-submission model should also follow [Authoring Rollout](authoring-rollout.md) and apply the `017` through `027` migration window in order.
 
 Operational privacy boundary:
 

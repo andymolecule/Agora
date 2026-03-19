@@ -117,6 +117,7 @@ export function normalizeBeachDraftImportRequest(
     beach_thread_url: input.thread.url,
     ...(input.thread.poster_agent_handle
       ? {
+          source_agent_handle: input.thread.poster_agent_handle,
           beach_poster_agent_handle: input.thread.poster_agent_handle,
         }
       : {}),

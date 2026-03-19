@@ -139,6 +139,7 @@ function createReadySession(
       },
       challenge_spec: challengeSpec,
     },
+    published_challenge_id: overrides.published_challenge_id ?? null,
     published_spec_json: overrides.published_spec_json ?? null,
     published_spec_cid: overrides.published_spec_cid ?? null,
     source_callback_url: overrides.source_callback_url ?? null,

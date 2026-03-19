@@ -27,6 +27,11 @@ const authoringPartnerRuntimeConfigSchema = configSchema.pick({
   AGORA_AUTHORING_PARTNER_RETURN_ORIGINS: true,
 });
 
+const authoringSponsorRuntimeConfigSchema = configSchema.pick({
+  AGORA_AUTHORING_SPONSOR_PRIVATE_KEY: true,
+  AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: true,
+});
+
 export interface AgoraManagedAuthoringRuntimeConfig {
   compilerBackend: "heuristic" | "openai_compatible";
   model?: string;
@@ -44,6 +49,11 @@ export interface AgoraAuthoringPartnerRuntimeConfig {
   partnerKeys: Partial<Record<AuthoringPartnerProviderOutput, string>>;
   callbackSecrets: Partial<Record<AuthoringPartnerProviderOutput, string>>;
   returnOrigins: Partial<Record<AuthoringPartnerProviderOutput, string[]>>;
+}
+
+export interface AgoraAuthoringSponsorRuntimeConfig {
+  privateKey?: `0x${string}`;
+  monthlyBudgetsUsdc: Partial<Record<AuthoringPartnerProviderOutput, number>>;
 }
 
 function parseAuthoringPartnerKeys(
@@ -230,5 +240,61 @@ export function readAuthoringPartnerRuntimeConfig(
       ...callbackSecrets,
     },
     returnOrigins,
+  };
+}
+
+export function readAuthoringSponsorRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraAuthoringSponsorRuntimeConfig {
+  function parseMonthlyBudgets(
+    raw?: string,
+  ): Partial<Record<AuthoringPartnerProviderOutput, number>> {
+    if (!raw || raw.trim().length === 0) {
+      return {};
+    }
+
+    const budgets: Partial<Record<AuthoringPartnerProviderOutput, number>> = {};
+    for (const entry of raw.split(",")) {
+      const trimmed = entry.trim();
+      if (trimmed.length === 0) {
+        continue;
+      }
+      const delimiterIndex = trimmed.indexOf(":");
+      if (delimiterIndex <= 0 || delimiterIndex === trimmed.length - 1) {
+        throw new Error(
+          "Invalid AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS entry. Next step: use provider:amount pairs such as beach_science:500.",
+        );
+      }
+      const provider = trimmed.slice(0, delimiterIndex).trim();
+      const rawAmount = trimmed.slice(delimiterIndex + 1).trim();
+      if (!AUTHORING_PARTNER_PROVIDER_VALUES.includes(provider as never)) {
+        throw new Error(
+          `Invalid AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS provider "${provider}". Next step: use one of ${AUTHORING_PARTNER_PROVIDER_VALUES.join(", ")}.`,
+        );
+      }
+      const amount = Number(rawAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error(
+          `Invalid AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS amount "${rawAmount}" for ${provider}. Next step: provide a positive USDC budget such as 500.`,
+        );
+      }
+      budgets[provider as AuthoringPartnerProviderOutput] = amount;
+    }
+    return budgets;
+  }
+
+  const parsed = parseConfigSection(
+    authoringSponsorRuntimeConfigSchema,
+    unsetBlankStringValues(env, [
+      "AGORA_AUTHORING_SPONSOR_PRIVATE_KEY",
+      "AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS",
+    ]),
+  );
+
+  return {
+    privateKey: parsed.AGORA_AUTHORING_SPONSOR_PRIVATE_KEY,
+    monthlyBudgetsUsdc: parseMonthlyBudgets(
+      parsed.AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS,
+    ),
   };
 }

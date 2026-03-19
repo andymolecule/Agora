@@ -7,6 +7,7 @@ import type {
 } from "@agora/db";
 import {
   deliverAuthoringDraftLifecycleEvent,
+  deliverChallengeLifecycleEvent,
   resolveAuthoringDraftReturnUrl,
   sweepPendingAuthoringDraftLifecycleEvents,
 } from "../src/lib/authoring-drafts.js";
@@ -52,6 +53,7 @@ function createSession(
       }),
     uploaded_artifacts_json: uploadedArtifacts,
     compilation_json: overrides.compilation_json ?? null,
+    published_challenge_id: overrides.published_challenge_id ?? null,
     published_spec_json: overrides.published_spec_json ?? null,
     published_spec_cid: overrides.published_spec_cid ?? null,
     source_callback_url:
@@ -124,6 +126,69 @@ test("deliverAuthoringDraftLifecycleEvent signs callback payloads with the partn
     .update(`${capturedTimestamp}.${capturedBody}`)
     .digest("hex")}`;
   assert.equal(capturedSignature, expectedSignature);
+});
+
+test("deliverChallengeLifecycleEvent signs challenge lifecycle payloads with the partner callback secret", async () => {
+  const session = createSession();
+  let capturedBody: string | null = null;
+  let capturedSignature: string | null = null;
+  let capturedTimestamp: string | null = null;
+
+  const delivered = await deliverChallengeLifecycleEvent({
+    event: "challenge_created",
+    session,
+    challenge: {
+      challenge_id: "7e6d7395-bec8-44b6-9d3e-5dd4518ab201",
+      contract_address: "0x2222222222222222222222222222222222222222",
+      factory_challenge_id: 7,
+      status: "open",
+      deadline: "2026-03-25T00:00:00.000Z",
+      reward_total: "10",
+      tx_hash:
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      winner_solver_address: null,
+    },
+    fetchImpl: async (_input, init) => {
+      capturedBody = String(init?.body ?? "");
+      capturedTimestamp = String(
+        (init?.headers as Record<string, string>)["x-agora-timestamp"],
+      );
+      capturedSignature = String(
+        (init?.headers as Record<string, string>)["x-agora-signature"],
+      );
+      return new Response(null, { status: 200 });
+    },
+    readAuthoringPartnerRuntimeConfigImpl: () => ({
+      partnerKeys: {
+        beach_science: "partner-key",
+      },
+      callbackSecrets: {
+        beach_science: "callback-secret",
+      },
+      returnOrigins: {
+        beach_science: ["https://beach.science"],
+      },
+    }),
+  });
+
+  assert.equal(delivered, true);
+  assert.ok(capturedBody);
+  assert.ok(capturedTimestamp);
+  assert.ok(capturedSignature);
+  const expectedSignature = `sha256=${createHmac("sha256", "callback-secret")
+    .update(`${capturedTimestamp}.${capturedBody}`)
+    .digest("hex")}`;
+  assert.equal(capturedSignature, expectedSignature);
+  const parsedBody = JSON.parse(capturedBody) as {
+    event: string;
+    challenge: { challenge_id: string; status: string };
+  };
+  assert.equal(parsedBody.event, "challenge_created");
+  assert.equal(
+    parsedBody.challenge.challenge_id,
+    "7e6d7395-bec8-44b6-9d3e-5dd4518ab201",
+  );
+  assert.equal(parsedBody.challenge.status, "open");
 });
 
 test("deliverAuthoringDraftLifecycleEvent ignores callback urls on direct drafts", async () => {

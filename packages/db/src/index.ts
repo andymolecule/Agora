@@ -40,6 +40,7 @@ export * from "./queries/auth.js";
 export * from "./queries/authoring-drafts.js";
 export * from "./queries/authoring-draft-views.js";
 export * from "./queries/authoring-callback-targets.js";
+export * from "./queries/authoring-source-links.js";
 export * from "./queries/published-challenge-links.js";
 export * from "./queries/authoring-callback-deliveries.js";
 export * from "./schema-compatibility.js";

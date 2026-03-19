@@ -1,11 +1,18 @@
 import { erc20Abi, loadConfig } from "@agora/common";
 import { parseUnits } from "viem";
-import { getPublicClient, getWalletClient } from "./client.js";
+import {
+  type AgoraWalletClient,
+  getPublicClient,
+  getWalletClient,
+} from "./client.js";
 import { readContractStrict } from "./contract-read.js";
 
-export async function approve(spender: `0x${string}`, amount: number) {
+export async function approve(
+  spender: `0x${string}`,
+  amount: number,
+  walletClient: AgoraWalletClient = getWalletClient(),
+) {
   const config = loadConfig();
-  const walletClient = getWalletClient();
   const usdc = config.AGORA_USDC_ADDRESS;
   const value = parseUnits(amount.toString(), 6);
 

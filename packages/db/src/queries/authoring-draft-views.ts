@@ -18,6 +18,7 @@ import {
 export interface AuthoringDraftViewRow extends AuthoringDraftRow {
   source_callback_url: string | null;
   source_callback_registered_at: string | null;
+  published_challenge_id: string | null;
   published_spec_json: ChallengeSpecOutput | null;
   published_spec_cid: string | null;
 }
@@ -29,6 +30,7 @@ function mergeAuthoringDraftView(
     registered_at: string;
   } | null,
   published?: {
+    challenge_id: string | null;
     published_spec_json: ChallengeSpecOutput;
     published_spec_cid: string;
   } | null,
@@ -37,6 +39,7 @@ function mergeAuthoringDraftView(
     ...draft,
     source_callback_url: callbackTarget?.callback_url ?? null,
     source_callback_registered_at: callbackTarget?.registered_at ?? null,
+    published_challenge_id: published?.challenge_id ?? null,
     published_spec_json: published?.published_spec_json ?? null,
     published_spec_cid: published?.published_spec_cid ?? null,
   };

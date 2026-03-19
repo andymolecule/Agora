@@ -2,12 +2,16 @@ import {
   AgoraError,
   type AuthoringArtifactOutput,
   type AuthoringPartnerProviderOutput,
+  canonicalizeChallengeSpec,
   clarifyAuthoringDraftRequestSchema,
   compileAuthoringDraftRequestSchema,
   createAuthoringSourceDraftRequestSchema,
+  publishExternalAuthoringDraftRequestSchema,
   readAuthoringPartnerRuntimeConfig,
   readAuthoringReviewRuntimeConfig,
+  readAuthoringSponsorRuntimeConfig,
   registerAuthoringDraftWebhookRequestSchema,
+  validateChallengeScoreability,
 } from "@agora/common";
 import {
   type AuthoringDraftViewRow,
@@ -15,9 +19,13 @@ import {
   createAuthoringDraft,
   createSupabaseClient,
   getAuthoringDraftViewById,
+  getAuthoringSourceLink,
+  getPublishedChallengeLinkByDraftId,
   updateAuthoringDraft,
   upsertAuthoringCallbackTarget,
+  upsertAuthoringSourceLink,
 } from "@agora/db";
+import { pinJSON } from "@agora/ipfs";
 import { zValidator } from "@hono/zod-validator";
 import { type Context, Hono } from "hono";
 import { jsonError, toApiErrorResponse } from "../lib/api-error.js";
@@ -40,11 +48,18 @@ import {
   buildDraftUpdatedState,
   buildExpiredDraftError,
   deliverAuthoringDraftLifecycleEvent,
+  deliverChallengeLifecycleEvent,
   draftBelongsToProvider,
+  resolveAuthoringDraftReturnUrl,
   sweepPendingAuthoringDraftLifecycleEvents,
 } from "../lib/authoring-drafts.js";
+import {
+  getAuthoringDraftSourceAttribution,
+  withAuthoringDraftSourceAttribution,
+} from "../lib/authoring-source-attribution.js";
 import { resolveProviderFromBearerToken } from "../lib/authoring-source-auth.js";
 import { createExternalAuthoringDraft } from "../lib/authoring-source-import.js";
+import { sponsorAndPublishAuthoringDraft } from "../lib/authoring-sponsored-publish.js";
 import { buildManagedAuthoringIr } from "../lib/managed-authoring-ir.js";
 import { compileManagedAuthoringDraftOutcome } from "../lib/managed-authoring.js";
 import { getRequestLogger } from "../lib/observability.js";
@@ -217,19 +232,48 @@ async function safelyDeliverDraftLifecycleEvent(
   }
 }
 
+async function safelyDeliverChallengeLifecycleEvent(
+  input: Parameters<typeof deliverChallengeLifecycleEvent>[0],
+  deliverImpl: typeof deliverChallengeLifecycleEvent = deliverChallengeLifecycleEvent,
+) {
+  try {
+    return await deliverImpl(input);
+  } catch (error) {
+    input.logger?.warn(
+      {
+        event: "authoring.callback.delivery_failed",
+        draftId: input.session.id,
+        provider: input.session.authoring_ir_json?.origin.provider ?? "direct",
+        eventType: input.event,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      "Challenge lifecycle delivery threw unexpectedly",
+    );
+    return false;
+  }
+}
+
 type AuthoringSourcesRouteDependencies = {
   createSupabaseClient?: typeof createSupabaseClient;
   createAuthoringDraft?: typeof createAuthoringDraft;
   getAuthoringDraftViewById?: typeof getAuthoringDraftViewById;
+  getAuthoringSourceLink?: typeof getAuthoringSourceLink;
+  getPublishedChallengeLinkByDraftId?: typeof getPublishedChallengeLinkByDraftId;
   updateAuthoringDraft?: typeof updateAuthoringDraft;
+  upsertAuthoringSourceLink?: typeof upsertAuthoringSourceLink;
   compileManagedAuthoringDraftOutcome?: typeof compileManagedAuthoringDraftOutcome;
   normalizeExternalArtifactsForDraft?: typeof normalizeExternalArtifactsForDraft;
+  pinJSON?: typeof pinJSON;
+  canonicalizeChallengeSpec?: typeof canonicalizeChallengeSpec;
   readAuthoringPartnerRuntimeConfig?: typeof readAuthoringPartnerRuntimeConfig;
   readAuthoringReviewRuntimeConfig?: typeof readAuthoringReviewRuntimeConfig;
+  readAuthoringSponsorRuntimeConfig?: typeof readAuthoringSponsorRuntimeConfig;
   consumeWriteQuota?: typeof consumeWriteQuota;
   upsertAuthoringCallbackTarget?: typeof upsertAuthoringCallbackTarget;
   deliverAuthoringDraftLifecycleEvent?: typeof deliverAuthoringDraftLifecycleEvent;
   sweepPendingAuthoringDraftLifecycleEvents?: typeof sweepPendingAuthoringDraftLifecycleEvents;
+  sponsorAndPublishAuthoringDraft?: typeof sponsorAndPublishAuthoringDraft;
+  deliverChallengeLifecycleEvent?: typeof deliverChallengeLifecycleEvent;
 };
 
 export function createAuthoringSourcesRouter(
@@ -240,31 +284,47 @@ export function createAuthoringSourcesRouter(
     createSupabaseClient: createSupabaseClientImpl,
     createAuthoringDraft: createAuthoringDraftImpl,
     getAuthoringDraftViewById: getAuthoringDraftViewByIdImpl,
+    getAuthoringSourceLink: getAuthoringSourceLinkImpl,
+    getPublishedChallengeLinkByDraftId: getPublishedChallengeLinkByDraftIdImpl,
     updateAuthoringDraft: updateAuthoringDraftImpl,
+    upsertAuthoringSourceLink: upsertAuthoringSourceLinkImpl,
     compileManagedAuthoringDraftOutcome:
       compileManagedAuthoringDraftOutcomeImpl,
     normalizeExternalArtifactsForDraft: normalizeExternalArtifactsForDraftImpl,
+    pinJSON: pinJSONImpl,
+    canonicalizeChallengeSpec: canonicalizeChallengeSpecImpl,
     readAuthoringPartnerRuntimeConfig: readAuthoringPartnerRuntimeConfigImpl,
     readAuthoringReviewRuntimeConfig: readAuthoringReviewRuntimeConfigImpl,
+    readAuthoringSponsorRuntimeConfig: readAuthoringSponsorRuntimeConfigImpl,
     consumeWriteQuota: consumeWriteQuotaImpl,
     upsertAuthoringCallbackTarget: upsertAuthoringCallbackTargetImpl,
     deliverAuthoringDraftLifecycleEvent:
       deliverAuthoringDraftLifecycleEventImpl,
     sweepPendingAuthoringDraftLifecycleEvents:
       sweepPendingAuthoringDraftLifecycleEventsImpl,
+    sponsorAndPublishAuthoringDraft: sponsorAndPublishAuthoringDraftImpl,
+    deliverChallengeLifecycleEvent: deliverChallengeLifecycleEventImpl,
   } = {
     createSupabaseClient,
     createAuthoringDraft,
     getAuthoringDraftViewById,
+    getAuthoringSourceLink,
+    getPublishedChallengeLinkByDraftId,
     updateAuthoringDraft,
+    upsertAuthoringSourceLink,
     compileManagedAuthoringDraftOutcome,
     normalizeExternalArtifactsForDraft,
+    pinJSON,
+    canonicalizeChallengeSpec,
     readAuthoringPartnerRuntimeConfig,
     readAuthoringReviewRuntimeConfig,
+    readAuthoringSponsorRuntimeConfig,
     consumeWriteQuota,
     upsertAuthoringCallbackTarget,
     deliverAuthoringDraftLifecycleEvent,
     sweepPendingAuthoringDraftLifecycleEvents,
+    sponsorAndPublishAuthoringDraft,
+    deliverChallengeLifecycleEvent,
     ...dependencies,
   };
 
@@ -359,6 +419,9 @@ export function createAuthoringSourcesRouter(
           createSupabaseClientImpl,
           createAuthoringDraftImpl,
           getAuthoringDraftViewByIdImpl,
+          getAuthoringSourceLinkImpl,
+          updateAuthoringDraftImpl,
+          upsertAuthoringSourceLinkImpl,
           normalizeExternalArtifactsForDraftImpl,
           logger: getRequestLogger(c),
         });
@@ -713,6 +776,178 @@ export function createAuthoringSourcesRouter(
           message,
         });
       }
+    },
+  );
+
+  router.post(
+    "/external/drafts/:id/publish",
+    zValidator("json", publishExternalAuthoringDraftRequestSchema),
+    async (c) => {
+      const provider = c.get("authoringSourceProvider");
+      if (!provider) {
+        throw new Error(
+          "Authoring source provider missing from request context. Next step: retry the request after re-authenticating the integration partner.",
+        );
+      }
+
+      const rateLimitError = partnerWriteRateLimitError(
+        c,
+        provider,
+        "/api/authoring/external/drafts/publish",
+        consumeWriteQuotaImpl,
+      );
+      if (rateLimitError) {
+        return rateLimitError;
+      }
+
+      const db = createSupabaseClientImpl(true);
+      const result = await readPartnerDraft({
+        id: c.req.param("id"),
+        provider,
+        getAuthoringDraftViewByIdImpl,
+        createSupabaseClientImpl,
+      });
+      if (!result.session) {
+        return draftLookupErrorResponse(c, result.error);
+      }
+
+      const body = c.req.valid("json");
+      const returnTo = resolveAuthoringDraftReturnUrl({
+        session: result.session,
+        requestedReturnTo: body.return_to,
+        runtimeConfig: readAuthoringPartnerRuntimeConfigImpl(),
+      });
+      if (!returnTo.ok) {
+        return jsonError(c, returnTo.error);
+      }
+
+      if (
+        result.session.state === "published" &&
+        result.session.published_spec_cid
+      ) {
+        const publishedLink = await getPublishedChallengeLinkByDraftIdImpl(
+          db,
+          result.session.id,
+        );
+        return c.json({
+          data: {
+            ...buildAuthoringDraftResponse({
+              ...result.session,
+              published_challenge_id: publishedLink?.challenge_id ?? null,
+            }),
+            specCid: result.session.published_spec_cid,
+            spec:
+              result.session.published_spec_json ??
+              result.session.compilation_json?.challenge_spec,
+            returnTo: publishedLink?.return_to ?? returnTo.returnTo,
+            challenge:
+              publishedLink?.challenge_id == null
+                ? null
+                : { challengeId: publishedLink.challenge_id },
+          },
+        });
+      }
+
+      if (
+        result.session.state !== "ready" ||
+        !result.session.compilation_json
+      ) {
+        return jsonError(c, {
+          status: 409,
+          code: "AUTHORING_DRAFT_NOT_READY",
+          message:
+            "Authoring draft is not ready to publish. Next step: compile the draft successfully before publishing.",
+        });
+      }
+
+      const sponsorRuntime = readAuthoringSponsorRuntimeConfigImpl();
+      if (!sponsorRuntime.privateKey) {
+        return jsonError(c, {
+          status: 503,
+          code: "AUTHORING_SPONSOR_DISABLED",
+          message:
+            "Sponsored external publishing is not configured. Next step: set AGORA_AUTHORING_SPONSOR_PRIVATE_KEY on the API and retry.",
+        });
+      }
+
+      const canonicalSpec = withAuthoringDraftSourceAttribution(
+        await canonicalizeChallengeSpecImpl(
+          result.session.compilation_json.challenge_spec,
+          {
+            resolveOfficialPresetDigests: true,
+          },
+        ),
+        getAuthoringDraftSourceAttribution(result.session),
+      );
+      const scoreability = validateChallengeScoreability(canonicalSpec);
+      if (!scoreability.ok) {
+        return jsonError(c, {
+          status: 409,
+          code: "AUTHORING_DRAFT_NOT_SCOREABLE",
+          message: `Authoring draft cannot publish because the compiled challenge spec is not scoreable yet. ${scoreability.errors.join(" ")} Next step: keep it in review or switch to Expert Mode.`,
+        });
+      }
+
+      const specCid = await pinJSONImpl(
+        `challenge-${result.session.id}`,
+        canonicalSpec,
+      );
+      const published = await sponsorAndPublishAuthoringDraftImpl({
+        db,
+        draft: result.session,
+        spec: canonicalSpec,
+        specCid,
+        sponsorPrivateKey: sponsorRuntime.privateKey,
+        sponsorMonthlyBudgetUsdc:
+          sponsorRuntime.monthlyBudgetsUsdc?.[provider] ?? null,
+        returnTo: returnTo.returnTo,
+        expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
+        updateAuthoringDraftImpl,
+        getAuthoringDraftViewByIdImpl,
+      });
+
+      await safelyDeliverDraftLifecycleEvent(
+        {
+          event: "draft_published",
+          session: published.draft,
+          logger: getRequestLogger(c),
+        },
+        deliverAuthoringDraftLifecycleEventImpl,
+      );
+      await safelyDeliverChallengeLifecycleEvent(
+        {
+          event: "challenge_created",
+          session: published.draft,
+          challenge: {
+            challenge_id: published.challenge.challengeId,
+            contract_address: published.challenge.challengeAddress,
+            factory_challenge_id: published.challenge.factoryChallengeId,
+            status: "open",
+            deadline: canonicalSpec.deadline,
+            reward_total: canonicalSpec.reward.total,
+            tx_hash: published.txHash,
+            winner_solver_address: null,
+          },
+          logger: getRequestLogger(c),
+        },
+        deliverChallengeLifecycleEventImpl,
+      );
+
+      return c.json({
+        data: {
+          ...buildAuthoringDraftResponse({
+            ...published.draft,
+            published_challenge_id: published.challenge.challengeId,
+          }),
+          specCid,
+          spec: canonicalSpec,
+          returnTo: returnTo.returnTo,
+          returnToSource: returnTo.source,
+          txHash: published.txHash,
+          sponsorAddress: published.sponsorAddress,
+          challenge: published.challenge,
+        },
+      });
     },
   );
 

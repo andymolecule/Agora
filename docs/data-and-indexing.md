@@ -26,7 +26,8 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 - Fairness-sensitive visibility checks use chain `status()` rather than projected status
 - Public leaderboard, win rate, and earned USDC derive from finalized `challenge_payouts` rows
 - Worker scoring reads cached `submission_contract_json` and `scoring_env_json` from the DB first; IPFS spec fetch is legacy fallback only
-- Authoring state is now split by concern: `authoring_drafts` for canonical draft state, `authoring_callback_targets` for registered host callback URLs, `published_challenge_links` for publish outcome, and `authoring_callback_deliveries` for callback retry
+- Authoring state is now split by concern: `authoring_drafts` for canonical draft state, `authoring_source_links` for stable external source identity, `authoring_callback_targets` for registered host callback URLs, `published_challenge_links` for publish outcome, and `authoring_callback_deliveries` for callback retry
+- Published challenges can now carry external-source attribution (`source_provider`, `source_external_id`, `source_external_url`, `source_agent_handle`) for Beach/OpenClaw lineage and sponsor-budget accounting
 
 ---
 
@@ -92,6 +93,10 @@ erDiagram
         int winning_on_chain_sub_id
         string winner_solver_address
         string tx_hash
+        string source_provider
+        string source_external_id
+        string source_external_url
+        string source_agent_handle
     }
 
     submissions {
@@ -229,6 +234,15 @@ erDiagram
         timestamp updated_at
     }
 
+    authoring_source_links {
+        string provider PK
+        string external_id PK
+        uuid draft_id FK
+        string external_url
+        timestamp created_at
+        timestamp updated_at
+    }
+
     published_challenge_links {
         uuid draft_id PK
         uuid challenge_id FK
@@ -278,6 +292,7 @@ erDiagram
     challenges ||--o{ score_jobs : has
     challenges ||--o{ submission_intents : stages
     submission_intents ||--o| submissions : registers
+    authoring_drafts ||--o| authoring_source_links : linked_from
     authoring_drafts ||--o| authoring_callback_targets : notifies_via
     authoring_drafts ||--o| published_challenge_links : publishes_as
     authoring_drafts ||--o{ authoring_callback_deliveries : retries
@@ -303,9 +318,11 @@ erDiagram
 - **worker_runtime_state** — Worker heartbeat and readiness table. Each scoring worker publishes `worker_id`, `host`, `runtime_version`, scorer-backend readiness, sealing readiness, and `last_error`. The `executor_ready` column means “the configured scorer execution backend is ready,” regardless of whether that backend is local Docker in dev or the remote executor in production. The API reads this table for `/api/worker-health` and runtime-mismatch detection.
 - **worker_runtime_control** — Active scoring-runtime control row. The API upserts the active runtime version on startup, and score-job claims are fenced against it so older workers cannot keep claiming jobs after a deploy.
 - **authoring_drafts** — Canonical draft aggregate for guided posting and external source imports. Stores poster/provider identity, raw `intent_json`, interpreted `authoring_ir_json`, normalized artifact metadata, current compilation state, failure state, and expiry timestamps.
+- **authoring_source_links** — Canonical source-identity index for external imports. Maps `(provider, external_id)` to the current draft so repeated Beach/OpenClaw imports refresh the same draft instead of creating duplicates.
 - **authoring_callback_targets** — Registered callback target per external authoring draft. Stores the latest host callback URL and registration timestamp without pushing that transport metadata onto the draft row itself.
 - **published_challenge_links** — Publish outcome attached to an authoring draft. Stores the published challenge id, final pinned spec, approved `return_to`, and publish timestamp without pushing publish-only state back onto the draft row.
 - **authoring_callback_deliveries** — Durable callback outbox for external authoring hosts. Stores signed payloads, retry timing, attempt counts, terminal delivery timestamp, and last error for sweep-based retries.
+- **challenges.source_* columns** — Optional attribution copied from the published challenge spec. These fields preserve the originating external host/provider identity and agent handle for reporting, callback correlation, and sponsor-budget enforcement.
 
 - **verifications** — Records independent re-runs of the scorer. Links a proof_bundle to a verifier address, the computed score, whether it matches the original, and an optional log CID. Created by `agora verify`. `agora verify-public` is read-only and does not insert verification rows.
 

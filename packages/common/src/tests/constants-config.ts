@@ -16,6 +16,7 @@ import {
   readApiServerRuntimeConfig,
   readAuthoringPartnerRuntimeConfig,
   readAuthoringReviewRuntimeConfig,
+  readAuthoringSponsorRuntimeConfig,
   readCliRuntimeConfig,
   readExecutorServerRuntimeConfig,
   readFeaturePolicy,
@@ -337,6 +338,25 @@ try {
           "beach_science:http://beach.science",
       }),
     /valid HTTPS origins/i,
+  );
+
+  const authoringSponsorRuntime = readAuthoringSponsorRuntimeConfig({
+    AGORA_AUTHORING_SPONSOR_PRIVATE_KEY:
+      "0x1111111111111111111111111111111111111111111111111111111111111111",
+    AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: "beach_science:500,github:125",
+  });
+  assert.equal(
+    authoringSponsorRuntime.privateKey,
+    "0x1111111111111111111111111111111111111111111111111111111111111111",
+  );
+  assert.equal(authoringSponsorRuntime.monthlyBudgetsUsdc.beach_science, 500);
+  assert.equal(authoringSponsorRuntime.monthlyBudgetsUsdc.github, 125);
+  assert.throws(
+    () =>
+      readAuthoringSponsorRuntimeConfig({
+        AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: "beach_science:not-a-number",
+      }),
+    /positive USDC budget/i,
   );
 
   const blankCliRuntime = readCliRuntimeConfig({

@@ -36,6 +36,17 @@ export function createAgoraWalletClient() {
   return createWalletClient({ chain, transport, account });
 }
 
+export type AgoraWalletClient = ReturnType<typeof createAgoraWalletClient>;
+
+export function createAgoraWalletClientForPrivateKey(
+  privateKey: `0x${string}`,
+): AgoraWalletClient {
+  const chain = resolveChain();
+  const transport = http(loadConfig().AGORA_RPC_URL);
+  const account = privateKeyToAccount(privateKey);
+  return createWalletClient({ chain, transport, account });
+}
+
 let cachedPublicClient: ReturnType<typeof createAgoraPublicClient> | null =
   null;
 let cachedWalletClient: ReturnType<typeof createAgoraWalletClient> | null =

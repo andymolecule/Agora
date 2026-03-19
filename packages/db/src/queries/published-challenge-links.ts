@@ -40,6 +40,25 @@ export async function getPublishedChallengeLinkByDraftId(
   return (data as PublishedChallengeLinkRow | null) ?? null;
 }
 
+export async function getPublishedChallengeLinkByChallengeId(
+  db: AgoraDbClient,
+  challengeId: string,
+): Promise<PublishedChallengeLinkRow | null> {
+  const { data, error } = await db
+    .from("published_challenge_links")
+    .select("*")
+    .eq("challenge_id", challengeId)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(
+      `Failed to read published challenge link by challenge id: ${error.message}`,
+    );
+  }
+
+  return (data as PublishedChallengeLinkRow | null) ?? null;
+}
+
 export async function listPublishedChallengeLinksByDraftIds(
   db: AgoraDbClient,
   draftIds: string[],

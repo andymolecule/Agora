@@ -4,6 +4,7 @@ import {
   CHALLENGE_STATUS,
   SUBMISSION_RESULT_FORMAT,
   buildChallengeCursorKey,
+  challengeLifecycleEventSchema,
 } from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
@@ -11,11 +12,15 @@ import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
 import {
   buildChallengeInsert,
   clearChallengeSettlement,
+  createAuthoringCallbackDelivery,
   type createSupabaseClient,
   deleteChallengeById,
   deleteSubmissionsFromOnChainSubId,
-  getSubmissionByChainId,
+  getAuthoringDraftViewById,
+  getChallengeById,
   getIndexerCursor,
+  getPublishedChallengeLinkByChallengeId,
+  getSubmissionByChainId,
   isEventIndexed,
   markChallengePayoutClaimed,
   markEventIndexed,
@@ -162,6 +167,82 @@ function payoutAmountUsdc(amount: bigint) {
 
 function payoutAmountMicros(amount: string | number) {
   return BigInt(Math.round(Number(amount) * 1_000_000));
+}
+
+export async function enqueueChallengeFinalizedCallback(input: {
+  db: DbClient;
+  challengeId: string;
+  contractAddress: string;
+  getPublishedChallengeLinkByChallengeIdImpl?: typeof getPublishedChallengeLinkByChallengeId;
+  getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
+  getChallengeByIdImpl?: typeof getChallengeById;
+  createAuthoringCallbackDeliveryImpl?: typeof createAuthoringCallbackDelivery;
+}) {
+  const link = await (
+    input.getPublishedChallengeLinkByChallengeIdImpl ??
+    getPublishedChallengeLinkByChallengeId
+  )(input.db, input.challengeId);
+  if (!link?.draft_id) {
+    return;
+  }
+
+  const draft = await (
+    input.getAuthoringDraftViewByIdImpl ?? getAuthoringDraftViewById
+  )(input.db, link.draft_id);
+  if (!draft?.source_callback_url) {
+    return;
+  }
+
+  const provider = draft.authoring_ir_json?.origin.provider ?? "direct";
+  if (provider === "direct") {
+    return;
+  }
+
+  const challenge = await (input.getChallengeByIdImpl ?? getChallengeById)(
+    input.db,
+    input.challengeId,
+  );
+  const payload = challengeLifecycleEventSchema.parse({
+    event: "challenge_finalized",
+    occurred_at: new Date().toISOString(),
+    draft_id: draft.id,
+    provider,
+    challenge: {
+      challenge_id: challenge.id,
+      contract_address: input.contractAddress,
+      factory_challenge_id:
+        typeof challenge.factory_challenge_id === "number"
+          ? challenge.factory_challenge_id
+          : challenge.factory_challenge_id == null
+            ? null
+            : Number(challenge.factory_challenge_id),
+      status: challenge.status,
+      deadline: challenge.deadline,
+      reward_total: String(challenge.reward_amount),
+      tx_hash:
+        typeof challenge.tx_hash === "string" &&
+        /^0x[a-fA-F0-9]{64}$/.test(challenge.tx_hash)
+          ? challenge.tx_hash
+          : null,
+      winner_solver_address: challenge.winner_solver_address ?? null,
+    },
+  });
+
+  await (
+    input.createAuthoringCallbackDeliveryImpl ?? createAuthoringCallbackDelivery
+  )(input.db, {
+    draft_id: draft.id,
+    provider,
+    callback_url: draft.source_callback_url,
+    event: payload.event,
+    payload_json: payload,
+    status: "pending",
+    attempts: 0,
+    max_attempts: 5,
+    next_attempt_at: new Date().toISOString(),
+    delivered_at: null,
+    last_error: null,
+  });
 }
 
 type CanonicalChallengePayoutRow = {
@@ -457,7 +538,10 @@ export async function reconcileChallengeProjection(input: {
       challenge.id,
       subIndex,
     );
-    if (!existingSubmission?.submission_intent_id || !existingSubmission.result_cid) {
+    if (
+      !existingSubmission?.submission_intent_id ||
+      !existingSubmission.result_cid
+    ) {
       indexerLogger.warn(
         {
           event: "indexer.submission.unregistered",
@@ -477,8 +561,7 @@ export async function reconcileChallengeProjection(input: {
       result_hash: submission.resultHash,
       result_cid: existingSubmission.result_cid,
       result_format:
-        existingSubmission.result_format ??
-        SUBMISSION_RESULT_FORMAT.plainV0,
+        existingSubmission.result_format ?? SUBMISSION_RESULT_FORMAT.plainV0,
       proof_bundle_hash: submission.proofBundleHash,
       score: submission.scored ? submission.score.toString() : null,
       scored: submission.scored,
@@ -771,7 +854,10 @@ export async function processChallengeLog(input: {
         challenge.id,
         Number(submissionId),
       );
-      if (!existingSubmission?.submission_intent_id || !existingSubmission.result_cid) {
+      if (
+        !existingSubmission?.submission_intent_id ||
+        !existingSubmission.result_cid
+      ) {
         indexerLogger.warn(
           {
             event: "indexer.submission.unregistered",
@@ -834,7 +920,10 @@ export async function processChallengeLog(input: {
         challenge.id,
         Number(submissionId),
       );
-      if (!existingSubmission?.submission_intent_id || !existingSubmission.result_cid) {
+      if (
+        !existingSubmission?.submission_intent_id ||
+        !existingSubmission.result_cid
+      ) {
         indexerLogger.warn(
           {
             event: "indexer.submission.scored_without_registration",
@@ -899,6 +988,11 @@ export async function processChallengeLog(input: {
         Number(winningSubmissionId),
         winnerSolver,
       );
+      await enqueueChallengeFinalizedCallback({
+        db,
+        challengeId: challenge.id,
+        contractAddress: challenge.contract_address,
+      });
     }
 
     if (log.eventName === "PayoutAllocated") {

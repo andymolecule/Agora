@@ -221,6 +221,7 @@ export async function publishDraft(input: {
   compilationJson: CompilationResultOutput;
   publishedSpecJson: ChallengeSpecOutput;
   publishedSpecCid: string;
+  challengeId?: string | null;
   returnTo?: string | null;
   expiresInMs: number;
   updateAuthoringDraftImpl?: typeof updateAuthoringDraft;
@@ -240,6 +241,7 @@ export async function publishDraft(input: {
     input.upsertPublishedChallengeLinkImpl ?? upsertPublishedChallengeLink
   )(input.db, {
     draft_id: input.session.id,
+    challenge_id: input.challengeId ?? null,
     published_spec_json: input.publishedSpecJson,
     published_spec_cid: input.publishedSpecCid,
     return_to: input.returnTo ?? null,

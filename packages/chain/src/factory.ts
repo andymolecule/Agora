@@ -3,16 +3,22 @@ import {
   SUBMISSION_LIMITS,
   loadConfig,
 } from "@agora/common";
-import type { DecodedChainLog } from "./challenge.js";
-import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with { type: "json" };
+import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
+  type: "json",
+};
 import {
   type Abi,
+  type TransactionReceipt,
   decodeFunctionData,
   parseEventLogs,
   parseUnits,
-  type TransactionReceipt,
 } from "viem";
-import { getPublicClient, getWalletClient } from "./client.js";
+import type { DecodedChainLog } from "./challenge.js";
+import {
+  type AgoraWalletClient,
+  getPublicClient,
+  getWalletClient,
+} from "./client.js";
 import { readImmutableContractWithLatestFallback } from "./contract-read.js";
 
 const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
@@ -54,9 +60,11 @@ export interface ParsedChallengeCreationCall {
   maxSubmissionsPerSolver: bigint;
 }
 
-export async function createChallenge(params: CreateChallengeParams) {
+export async function createChallenge(
+  params: CreateChallengeParams,
+  walletClient: AgoraWalletClient = getWalletClient(),
+) {
   const config = loadConfig();
-  const walletClient = getWalletClient();
   const factoryAddress = config.AGORA_FACTORY_ADDRESS;
   const factoryVersion = await getFactoryContractVersion(factoryAddress);
   if (factoryVersion !== ACTIVE_CONTRACT_VERSION) {

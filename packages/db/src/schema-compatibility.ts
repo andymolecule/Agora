@@ -80,6 +80,14 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
       "Reset the database to the latest baseline schema, then reload the PostgREST schema cache before restarting services.",
   },
   {
+    id: "challenge_source_attribution_columns",
+    table: "challenges",
+    select:
+      "source_provider,source_external_id,source_external_url,source_agent_handle",
+    nextStep:
+      "Apply migration 026_add_challenge_source_attribution.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
     id: "worker_runtime_control_columns",
     table: "worker_runtime_control",
     select: "worker_type,active_runtime_version",
@@ -100,6 +108,13 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     select: "draft_id,callback_url,registered_at",
     nextStep:
       "Apply migration 024_move_authoring_callback_targets.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
+    id: "authoring_source_links_table",
+    table: "authoring_source_links",
+    select: "provider,external_id,draft_id,external_url",
+    nextStep:
+      "Apply migration 025_create_authoring_source_links.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
     id: "published_challenge_links_table",

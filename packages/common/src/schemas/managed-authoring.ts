@@ -365,6 +365,26 @@ export const registerAuthoringDraftWebhookRequestSchema = z.object({
   callback_url: safePublicHttpsUrlSchema,
 });
 
+export const publishExternalAuthoringDraftRequestSchema = z.object({
+  return_to: safePublicHttpsUrlSchema.optional(),
+});
+
+export const authoringDraftAssessmentSchema = z.object({
+  feasible: z.boolean(),
+  publishable: z.boolean(),
+  requires_review: z.boolean(),
+  confidence: z.enum(["high", "medium", "low"]),
+  confidence_score: z.number().min(0).max(1),
+  runtime_family: z.string().trim().min(1).nullable(),
+  metric: z.string().trim().min(1).nullable(),
+  evaluator_archetype: z.string().trim().min(1).nullable(),
+  reason_codes: z.array(z.string().trim().min(1)).default([]),
+  missing: z.array(z.string().trim().min(1)).default([]),
+  suggestions: z.array(z.string().trim().min(1)).default([]),
+  proposed_reward: z.string().trim().min(1).nullable(),
+  proposed_deadline: z.string().datetime({ offset: true }).nullable(),
+});
+
 export const authoringReviewSummarySchema = z.object({
   summary: z.string().trim().min(1),
   reason_codes: z.array(z.string().trim().min(1)).default([]),
@@ -419,6 +439,7 @@ export const authoringDraftCardSchema = z.object({
   next_question: clarificationQuestionSchema.nullable(),
   review_recommended_action:
     authoringReviewSummarySchema.shape.recommended_action.nullable(),
+  published_challenge_id: z.string().uuid().nullable(),
   published_spec_cid: z.string().trim().min(1).nullable(),
   callback_registered: z.boolean(),
   expires_at: z.string().datetime({ offset: true }),
@@ -440,6 +461,41 @@ export const authoringDraftLifecycleEventSchema = z.object({
   state: authoringDraftStateSchema,
   card: authoringDraftCardSchema,
 });
+
+const challengeLifecycleEventTypeSchema = z.enum([
+  "challenge_created",
+  "challenge_finalized",
+]);
+
+export const authoringCallbackChallengeSchema = z.object({
+  challenge_id: z.string().uuid(),
+  contract_address: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+  factory_challenge_id: z.number().int().nonnegative().nullable(),
+  status: z.string().trim().min(1),
+  deadline: z.string().datetime({ offset: true }),
+  reward_total: z.string().trim().min(1),
+  tx_hash: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{64}$/)
+    .nullable(),
+  winner_solver_address: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/)
+    .nullable(),
+});
+
+export const challengeLifecycleEventSchema = z.object({
+  event: challengeLifecycleEventTypeSchema,
+  occurred_at: z.string().datetime({ offset: true }),
+  draft_id: z.string().uuid(),
+  provider: externalSourceProviderSchema,
+  challenge: authoringCallbackChallengeSchema,
+});
+
+export const authoringCallbackEventSchema = z.union([
+  authoringDraftLifecycleEventSchema,
+  challengeLifecycleEventSchema,
+]);
 
 export const authoringDraftStateCountsSchema = z.object({
   draft: z.number().int().nonnegative(),
@@ -491,6 +547,7 @@ export const authoringDraftSchema = z
     clarification_questions: z.array(clarificationQuestionSchema).default([]),
     review_summary: authoringReviewSummarySchema.nullable().optional(),
     approved_confirmation: confirmationContractSchema.nullable().optional(),
+    published_challenge_id: z.string().uuid().nullable().optional(),
     published_spec_cid: z.string().trim().min(1).nullable().optional(),
     published_spec: challengeSpecSchema.nullable().optional(),
     failure_message: z.string().trim().min(1).nullable().optional(),
@@ -632,11 +689,29 @@ export type RegisterAuthoringDraftWebhookRequestInput = z.input<
 export type RegisterAuthoringDraftWebhookRequestOutput = z.output<
   typeof registerAuthoringDraftWebhookRequestSchema
 >;
+export type PublishExternalAuthoringDraftRequestInput = z.input<
+  typeof publishExternalAuthoringDraftRequestSchema
+>;
+export type PublishExternalAuthoringDraftRequestOutput = z.output<
+  typeof publishExternalAuthoringDraftRequestSchema
+>;
+export type AuthoringDraftAssessmentOutput = z.output<
+  typeof authoringDraftAssessmentSchema
+>;
 export type AuthoringDraftCardOutput = z.output<
   typeof authoringDraftCardSchema
 >;
 export type AuthoringDraftLifecycleEventOutput = z.output<
   typeof authoringDraftLifecycleEventSchema
+>;
+export type ChallengeLifecycleEventOutput = z.output<
+  typeof challengeLifecycleEventSchema
+>;
+export type AuthoringCallbackChallengeOutput = z.output<
+  typeof authoringCallbackChallengeSchema
+>;
+export type AuthoringCallbackEventOutput = z.output<
+  typeof authoringCallbackEventSchema
 >;
 export type AuthoringDraftState = z.output<typeof authoringDraftStateSchema>;
 export type AuthoringDraftStateCountsOutput = z.output<

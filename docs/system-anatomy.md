@@ -38,6 +38,7 @@ Before the layers, it helps to anchor the nouns that recur everywhere:
 | Thing | Meaning | Typical identifier |
 |-------|---------|--------------------|
 | Authoring draft | Pre-publish challenge authoring state | `authoring_drafts.id` |
+| Authoring source link | Stable external source identity for idempotent partner imports | `(provider, external_id)` |
 | Challenge spec | Canonical posted challenge contract document | `spec_cid` |
 | Evaluation bundle | Hidden or reference scorer input | `evaluationBundleCid` |
 | Submission intent | Reserved `(challenge, solver, resultHash, resultCid)` registration | `submission_intents.id` |
@@ -700,6 +701,9 @@ authoring_drafts
   uploaded_artifacts_json
   compilation_json
 
+authoring_source_links
+  provider + external_id -> draft_id
+
 published_challenge_links
   draft_id -> challenge_id / spec cid / published spec / return_to
 
@@ -742,6 +746,7 @@ Example:
 
 ```text
 authoring_drafts
+  + authoring_source_links
   + authoring_callback_targets
   + published_challenge_links
         │
@@ -761,6 +766,7 @@ That means not every field visible in an API draft payload lives on the same tab
 | challenge spec | IPFS spec CID | cache + query convenience |
 | scorer image / evaluation plan | challenge spec + runtime family / evaluator contract | cache + query convenience |
 | draft state | `authoring_drafts` | canonical |
+| external source identity | `authoring_source_links` | canonical |
 | publish outcome | `published_challenge_links` | canonical |
 | callback target registration | `authoring_callback_targets` | canonical |
 | callback retry queue | `authoring_callback_deliveries` | canonical |
@@ -861,6 +867,7 @@ External authoring / partner integration:
   GET  /api/authoring/external/drafts/:id/card
   POST /api/authoring/external/drafts/:id/clarify
   POST /api/authoring/external/drafts/:id/compile
+  POST /api/authoring/external/drafts/:id/publish
   POST /api/authoring/external/drafts/:id/webhook
   POST /api/authoring/callbacks/sweep
   POST /api/integrations/beach/drafts/import
@@ -891,13 +898,14 @@ Sealed submission privacy is an anti-copy boundary while the challenge is open, 
 ### Two entry points, same destination
 
 ```text
-Direct web authoring
-  /post UI
-  └── POST /api/authoring/drafts
-
-External partner authoring
+External partner or agent authoring
   /api/authoring/external/sources
   /api/integrations/beach/drafts/import
+  /api/authoring/external/drafts/:id/publish
+
+Direct web authoring (secondary for Beach/OpenClaw)
+  /post UI
+  └── POST /api/authoring/drafts
 
 Both converge into:
   intent_json
@@ -921,6 +929,11 @@ Both converge into:
       - ready
       - needs_review
       - needs_clarification
+    assessment:
+      - feasible
+      - publishable
+      - requires_review
+      - missing and suggestions
         │
         ▼
   persisted draft state:
@@ -957,7 +970,7 @@ flowchart TD
     Draft["authoring_drafts row"]
     Compile["compileManagedAuthoringDraftOutcome(...)"]
     Review["Internal review queue"]
-    Publish["publish -> pin spec -> create challenge"]
+    Publish["publish -> pin spec -> sponsor approve -> create challenge"]
     Link["published_challenge_links"]
     Callback["callback target + outbox"]
 
@@ -978,6 +991,8 @@ Important distinction:
 - `routing.mode` is the IR’s interpretation of what kind of evaluator path the draft needs
 - `outcome.state` is the compile/review result
 - `authoring_drafts.state` is the persisted workflow state in the database
+- for Beach/OpenClaw, the partner route is now the primary publish path; it does not need to bounce back out to a browser wallet because Agora can use its internal sponsor signer for the MVP agent-native flow
+- the browser-based direct authoring path still exists, but it is now the exception path for human intervention rather than the core external integration model
 
 ### How routing works (3 layers)
 
@@ -1078,6 +1093,8 @@ success   failure
 | `draft_compiled` | compile succeeded |
 | `draft_compile_failed` | compile failed |
 | `draft_published` | publish completed |
+| `challenge_created` | sponsor-backed publish created an on-chain challenge |
+| `challenge_finalized` | indexer observed final settlement and enqueued a host callback |
 
 The durable outbox is important here: callback delivery is not coupled to the request/response lifetime of the originating draft mutation.
 
@@ -1285,7 +1302,7 @@ That single path touches almost every layer described above:
 
 2. **Submission registration is now strict.** A scoreable submission must have a registered `submission_intent` and a strict FK-backed link into `submissions`. The old reconcile-later model is gone from the live architecture.
 
-3. **The draft aggregate is cleaner than before.** Draft state, callback targets, callback deliveries, and publish outcomes are no longer stuffed into one thick all-purpose draft row. The split into `authoring_drafts`, `authoring_callback_targets`, `authoring_callback_deliveries`, and `published_challenge_links` materially reduced structural entropy.
+3. **The draft aggregate is cleaner than before.** Draft state, source identity, callback targets, callback deliveries, and publish outcomes are no longer stuffed into one thick all-purpose draft row. The split into `authoring_drafts`, `authoring_source_links`, `authoring_callback_targets`, `authoring_callback_deliveries`, and `published_challenge_links` materially reduced structural entropy.
 
 4. **The authoring layer is broader without jumping straight to arbitrary code.** Managed runtimes, executable semi-custom templates, and typed-but-non-executable semi-custom archetypes are distinct concepts now.
 

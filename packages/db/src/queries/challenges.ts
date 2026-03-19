@@ -41,6 +41,10 @@ export interface ChallengeInsert {
   dispute_window_hours: number;
   status: ChallengeStatus;
   tx_hash: string;
+  source_provider?: string | null;
+  source_external_id?: string | null;
+  source_external_url?: string | null;
+  source_agent_handle?: string | null;
 }
 
 export interface BuildChallengeInsertInput {
@@ -120,6 +124,10 @@ export async function buildChallengeInsert(
     dispute_window_hours: input.disputeWindowHours,
     status: CHALLENGE_STATUS.open,
     tx_hash: input.txHash,
+    source_provider: canonicalSpec.source?.provider ?? null,
+    source_external_id: canonicalSpec.source?.external_id ?? null,
+    source_external_url: canonicalSpec.source?.external_url ?? null,
+    source_agent_handle: canonicalSpec.source?.agent_handle ?? null,
   };
 }
 
@@ -358,4 +366,34 @@ export async function deleteChallengeById(
   if (error) {
     throw new Error(`Failed to delete challenge: ${error.message}`);
   }
+}
+
+export async function sumRewardAmountForSourceProvider(
+  db: AgoraDbClient,
+  input: {
+    provider: string;
+    createdAtGte: string;
+    createdAtLt: string;
+  },
+) {
+  const { data, error } = await db
+    .from("challenges")
+    .select("reward_amount")
+    .eq("source_provider", input.provider)
+    .gte("created_at", input.createdAtGte)
+    .lt("created_at", input.createdAtLt);
+
+  if (error) {
+    throw new Error(
+      `Failed to sum source-provider challenge rewards: ${error.message}`,
+    );
+  }
+
+  return (data ?? []).reduce((sum, row) => {
+    const amount =
+      typeof row.reward_amount === "number"
+        ? row.reward_amount
+        : Number(row.reward_amount);
+    return Number.isFinite(amount) ? sum + amount : sum;
+  }, 0);
 }

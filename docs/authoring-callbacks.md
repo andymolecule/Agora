@@ -38,16 +38,25 @@ Agora currently emits these lifecycle events:
 - `draft_compiled`
 - `draft_compile_failed`
 - `draft_published`
+- `challenge_created`
+- `challenge_finalized`
 
-The callback body is a JSON object shaped like `AuthoringDraftLifecycleEvent`.
+The callback body is a JSON object shaped like `AuthoringCallbackEvent`.
 
-It includes:
+Draft lifecycle events include:
 - `event`
 - `occurred_at`
 - `draft_id`
 - `provider`
 - `state`
 - `card`
+
+Challenge lifecycle events include:
+- `event`
+- `occurred_at`
+- `draft_id`
+- `provider`
+- `challenge`
 
 Important: retries resend the original event payload. They do not mutate to the latest draft state.
 

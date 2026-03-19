@@ -79,6 +79,7 @@ function createSession(
     authoring_ir_json: authoringIr,
     uploaded_artifacts_json: uploadedArtifacts,
     compilation_json: overrides.compilation_json ?? null,
+    published_challenge_id: overrides.published_challenge_id ?? null,
     published_spec_json: overrides.published_spec_json ?? null,
     published_spec_cid: overrides.published_spec_cid ?? null,
     source_callback_url: overrides.source_callback_url ?? null,
@@ -116,6 +117,16 @@ function createTestRouter(
         draft_id: "68dff5c6-336a-47fa-a4de-41e6386bd2e4",
         callback_url: "https://hooks.beach.science/agora",
         registered_at: "2026-03-18T00:05:00.000Z",
+        created_at: "2026-03-18T00:05:00.000Z",
+        updated_at: "2026-03-18T00:05:00.000Z",
+      }) as never,
+    getAuthoringSourceLink: async () => null as never,
+    upsertAuthoringSourceLink: async (_db, payload) =>
+      ({
+        provider: payload.provider,
+        external_id: payload.external_id,
+        draft_id: payload.draft_id,
+        external_url: payload.external_url ?? null,
         created_at: "2026-03-18T00:05:00.000Z",
         updated_at: "2026-03-18T00:05:00.000Z",
       }) as never,
@@ -422,6 +433,84 @@ test("authoring source route creates a partner-owned draft with source context a
   assert.equal(payload.data.card.clarification_count > 0, true);
 });
 
+test("authoring source route refreshes an existing linked draft instead of creating a duplicate", async () => {
+  let storedSession = createSession({
+    state: "ready",
+    intent_json: createCompileIntent(),
+  });
+  let createCalled = false;
+
+  const router = createTestRouter({
+    createSupabaseClient: () => ({}) as never,
+    createAuthoringDraft: async () => {
+      createCalled = true;
+      return storedSession as never;
+    },
+    getAuthoringDraftViewById: async () => storedSession as never,
+    getAuthoringSourceLink: async () =>
+      ({
+        provider: "beach_science",
+        external_id: "thread-42",
+        draft_id: storedSession.id,
+        external_url: "https://beach.science/thread/42",
+      }) as never,
+    updateAuthoringDraft: async (_db, patch) => {
+      storedSession = applyUpdate(
+        storedSession,
+        patch as Record<string, unknown>,
+      );
+      return storedSession as never;
+    },
+    upsertAuthoringSourceLink: async () =>
+      ({
+        provider: "beach_science",
+        external_id: "thread-42",
+        draft_id: storedSession.id,
+        external_url: "https://beach.science/thread/42",
+        created_at: "2026-03-18T00:00:00.000Z",
+        updated_at: "2026-03-18T01:00:00.000Z",
+      }) as never,
+    readAuthoringPartnerRuntimeConfig: partnerConfig,
+    consumeWriteQuota: allowPartnerQuota() as never,
+  });
+
+  const response = await router.request(
+    new Request("http://localhost/external/sources", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer beach-secret",
+      },
+      body: JSON.stringify({
+        title: "Updated Beach thread title",
+        external_id: "thread-42",
+        external_url: "https://beach.science/thread/42",
+        messages: [
+          {
+            id: "msg-1",
+            role: "poster",
+            content: "Updated deterministic challenge framing.",
+          },
+        ],
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(createCalled, false);
+  assert.equal(storedSession.state, "draft");
+  assert.equal(
+    storedSession.authoring_ir_json?.source.poster_messages[0]?.content,
+    "Updated deterministic challenge framing.",
+  );
+
+  const payload = (await response.json()) as {
+    data: { draft: { id: string; state: string } };
+  };
+  assert.equal(payload.data.draft.id, storedSession.id);
+  assert.equal(payload.data.draft.state, "draft");
+});
+
 test("authoring source route returns artifact normalization failures without creating a draft", async () => {
   let createCalled = false;
 
@@ -549,30 +638,33 @@ test("authoring source draft clarify appends transcript context and dispatches c
   });
 
   const response = await router.request(
-    new Request(`http://localhost/external/drafts/${storedSession.id}/clarify`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer beach-secret",
+    new Request(
+      `http://localhost/external/drafts/${storedSession.id}/clarify`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer beach-secret",
+        },
+        body: JSON.stringify({
+          raw_context: { revision: "rev-8" },
+          messages: [
+            {
+              id: "msg-2",
+              role: "participant",
+              content:
+                "Reward should be 50 USDC and the winner must maximize R2.",
+            },
+          ],
+          artifacts: [
+            {
+              source_url: "https://cdn.beach.science/uploads/hidden.csv",
+              mime_type: "text/csv",
+            },
+          ],
+        }),
       },
-      body: JSON.stringify({
-        raw_context: { revision: "rev-8" },
-        messages: [
-          {
-            id: "msg-2",
-            role: "participant",
-            content:
-              "Reward should be 50 USDC and the winner must maximize R2.",
-          },
-        ],
-        artifacts: [
-          {
-            source_url: "https://cdn.beach.science/uploads/hidden.csv",
-            mime_type: "text/csv",
-          },
-        ],
-      }),
-    }),
+    ),
   );
 
   assert.equal(response.status, 200);
@@ -620,29 +712,32 @@ test("authoring source draft clarify treats duplicate message ids and artifact u
   });
 
   const response = await router.request(
-    new Request(`http://localhost/external/drafts/${storedSession.id}/clarify`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer beach-secret",
+    new Request(
+      `http://localhost/external/drafts/${storedSession.id}/clarify`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer beach-secret",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              id: "msg-1",
+              role: "poster",
+              content: "We want a deterministic challenge.",
+            },
+          ],
+          artifacts: [
+            {
+              source_url: "https://cdn.beach.science/uploads/dataset.csv",
+              suggested_filename: "renamed.csv",
+              mime_type: "text/plain",
+            },
+          ],
+        }),
       },
-      body: JSON.stringify({
-        messages: [
-          {
-            id: "msg-1",
-            role: "poster",
-            content: "We want a deterministic challenge.",
-          },
-        ],
-        artifacts: [
-          {
-            source_url: "https://cdn.beach.science/uploads/dataset.csv",
-            suggested_filename: "renamed.csv",
-            mime_type: "text/plain",
-          },
-        ],
-      }),
-    }),
+    ),
   );
 
   assert.equal(response.status, 200);
@@ -671,22 +766,25 @@ test("authoring source draft clarify returns a conflict when the draft changed c
   });
 
   const response = await router.request(
-    new Request(`http://localhost/external/drafts/${storedSession.id}/clarify`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer beach-secret",
+    new Request(
+      `http://localhost/external/drafts/${storedSession.id}/clarify`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer beach-secret",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              id: "msg-2",
+              role: "participant",
+              content: "Reward should be 50 USDC.",
+            },
+          ],
+        }),
       },
-      body: JSON.stringify({
-        messages: [
-          {
-            id: "msg-2",
-            role: "participant",
-            content: "Reward should be 50 USDC.",
-          },
-        ],
-      }),
-    }),
+    ),
   );
 
   assert.equal(response.status, 409);
@@ -720,23 +818,26 @@ test("authoring source draft clarify stays successful when callback delivery thr
   });
 
   const response = await router.request(
-    new Request(`http://localhost/external/drafts/${storedSession.id}/clarify`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer beach-secret",
+    new Request(
+      `http://localhost/external/drafts/${storedSession.id}/clarify`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer beach-secret",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              id: "msg-2",
+              role: "participant",
+              content:
+                "Reward should be 50 USDC and the winner must maximize R2.",
+            },
+          ],
+        }),
       },
-      body: JSON.stringify({
-        messages: [
-          {
-            id: "msg-2",
-            role: "participant",
-            content:
-              "Reward should be 50 USDC and the winner must maximize R2.",
-          },
-        ],
-      }),
-    }),
+    ),
   );
 
   assert.equal(response.status, 200);
@@ -778,16 +879,19 @@ test("authoring source draft compile reuses stored artifacts and dispatches comp
   });
 
   const response = await router.request(
-    new Request(`http://localhost/external/drafts/${storedSession.id}/compile`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer beach-secret",
+    new Request(
+      `http://localhost/external/drafts/${storedSession.id}/compile`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer beach-secret",
+        },
+        body: JSON.stringify({
+          intent: createCompileIntent(),
+        }),
       },
-      body: JSON.stringify({
-        intent: createCompileIntent(),
-      }),
-    }),
+    ),
   );
 
   assert.equal(response.status, 200);
@@ -805,10 +909,22 @@ test("authoring source draft compile reuses stored artifacts and dispatches comp
   const payload = (await response.json()) as {
     data: {
       card: { state: string; title: string | null };
+      assessment: {
+        feasible: boolean;
+        publishable: boolean;
+        requires_review: boolean;
+        runtime_family: string | null;
+        metric: string | null;
+      };
     };
   };
   assert.equal(payload.data.card.state, "ready");
   assert.equal(payload.data.card.title, "Drug response challenge");
+  assert.equal(payload.data.assessment.feasible, true);
+  assert.equal(payload.data.assessment.publishable, true);
+  assert.equal(payload.data.assessment.requires_review, false);
+  assert.equal(payload.data.assessment.runtime_family, "tabular_regression");
+  assert.equal(payload.data.assessment.metric, "r2");
 });
 
 test("authoring source draft compile rejects expired drafts", async () => {
@@ -824,16 +940,19 @@ test("authoring source draft compile rejects expired drafts", async () => {
   });
 
   const response = await router.request(
-    new Request(`http://localhost/external/drafts/${storedSession.id}/compile`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer beach-secret",
+    new Request(
+      `http://localhost/external/drafts/${storedSession.id}/compile`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer beach-secret",
+        },
+        body: JSON.stringify({
+          intent: createCompileIntent(),
+        }),
       },
-      body: JSON.stringify({
-        intent: createCompileIntent(),
-      }),
-    }),
+    ),
   );
 
   assert.equal(response.status, 410);
@@ -856,16 +975,19 @@ test("authoring source draft compile returns busy when a compile is already in p
   });
 
   const response = await router.request(
-    new Request(`http://localhost/external/drafts/${storedSession.id}/compile`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer beach-secret",
+    new Request(
+      `http://localhost/external/drafts/${storedSession.id}/compile`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer beach-secret",
+        },
+        body: JSON.stringify({
+          intent: createCompileIntent(),
+        }),
       },
-      body: JSON.stringify({
-        intent: createCompileIntent(),
-      }),
-    }),
+    ),
   );
 
   assert.equal(response.status, 409);
@@ -907,20 +1029,188 @@ test("authoring source draft compile stays successful when callback delivery thr
   });
 
   const response = await router.request(
-    new Request(`http://localhost/external/drafts/${storedSession.id}/compile`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer beach-secret",
+    new Request(
+      `http://localhost/external/drafts/${storedSession.id}/compile`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer beach-secret",
+        },
+        body: JSON.stringify({
+          intent: createCompileIntent(),
+        }),
       },
-      body: JSON.stringify({
-        intent: createCompileIntent(),
-      }),
-    }),
+    ),
   );
 
   assert.equal(response.status, 200);
   assert.equal(storedSession.state, "ready");
+});
+
+test("authoring source draft publish uses the internal sponsor path and returns challenge refs", async () => {
+  const intent = createCompileIntent();
+  const readyOutcome = createReadyCompileOutcome({
+    intent,
+    uploadedArtifacts: createSession().uploaded_artifacts_json,
+  });
+  let storedSession = createSession({
+    state: "ready",
+    intent_json: intent,
+    authoring_ir_json: buildManagedAuthoringIr({
+      intent,
+      uploadedArtifacts: createSession().uploaded_artifacts_json,
+      runtimeFamily: "tabular_regression",
+      metric: "r2",
+      confidenceScore: 0.92,
+      routingMode: "managed_supported",
+      sourceMessages: [
+        {
+          id: "msg-1",
+          role: "poster",
+          content: "Beach/OpenClaw found a prediction challenge.",
+          created_at: "2026-03-18T00:00:00.000Z",
+        },
+      ],
+      origin: {
+        provider: "beach_science",
+        external_id: "thread-42",
+        external_url: "https://beach.science/thread/42",
+        ingested_at: "2026-03-18T00:00:00.000Z",
+        raw_context: {
+          poster_agent_handle: "lab-alpha",
+        },
+      },
+    }),
+    compilation_json: readyOutcome.compilation,
+  });
+  const deliveredDraftEvents: string[] = [];
+  const deliveredChallengeEvents: string[] = [];
+
+  const router = createTestRouter({
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringDraftViewById: async () => storedSession as never,
+    getPublishedChallengeLinkByDraftId: async () => null as never,
+    canonicalizeChallengeSpec: async (spec) => spec as never,
+    pinJSON: async () => "ipfs://challenge-spec-42",
+    sponsorAndPublishAuthoringDraft: async ({
+      spec,
+      specCid,
+      returnTo,
+      sponsorMonthlyBudgetUsdc,
+    }) => {
+      assert.equal(specCid, "ipfs://challenge-spec-42");
+      assert.equal(returnTo, "https://beach.science/thread/42?tab=publish");
+      assert.equal(sponsorMonthlyBudgetUsdc, 500);
+      assert.equal(spec.source?.provider, "beach_science");
+      assert.equal(spec.source?.external_id, "thread-42");
+      assert.equal(spec.source?.agent_handle, "lab-alpha");
+      storedSession = createSession({
+        ...storedSession,
+        state: "published",
+        poster_address: "0x1111111111111111111111111111111111111111",
+        published_challenge_id: "7e6d7395-bec8-44b6-9d3e-5dd4518ab201",
+        published_spec_cid: specCid,
+        published_spec_json: readyOutcome.compilation.challenge_spec,
+      });
+      return {
+        draft: storedSession,
+        txHash:
+          "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        sponsorAddress: "0x1111111111111111111111111111111111111111",
+        challenge: {
+          challengeId: "7e6d7395-bec8-44b6-9d3e-5dd4518ab201",
+          challengeAddress: "0x2222222222222222222222222222222222222222",
+          factoryChallengeId: 7,
+          refs: {
+            challengeId: "7e6d7395-bec8-44b6-9d3e-5dd4518ab201",
+            challengeAddress: "0x2222222222222222222222222222222222222222",
+            factoryAddress: "0x3333333333333333333333333333333333333333",
+            factoryChallengeId: 7,
+          },
+        },
+      };
+    },
+    readAuthoringPartnerRuntimeConfig: partnerConfig,
+    readAuthoringSponsorRuntimeConfig: () => ({
+      privateKey:
+        "0x1111111111111111111111111111111111111111111111111111111111111111",
+      monthlyBudgetsUsdc: {
+        beach_science: 500,
+      },
+    }),
+    consumeWriteQuota: allowPartnerQuota() as never,
+    deliverAuthoringDraftLifecycleEvent: async ({ event }) => {
+      deliveredDraftEvents.push(event);
+      return true;
+    },
+    deliverChallengeLifecycleEvent: async ({ event }) => {
+      deliveredChallengeEvents.push(event);
+      return true;
+    },
+  });
+
+  const response = await router.request(
+    new Request(
+      `http://localhost/external/drafts/${storedSession.id}/publish`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer beach-secret",
+        },
+        body: JSON.stringify({
+          return_to: "https://beach.science/thread/42?tab=publish",
+        }),
+      },
+    ),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(deliveredDraftEvents, ["draft_published"]);
+  assert.deepEqual(deliveredChallengeEvents, ["challenge_created"]);
+
+  const payload = (await response.json()) as {
+    data: {
+      specCid: string;
+      txHash: string;
+      sponsorAddress: string;
+      challenge: {
+        challengeId: string;
+        challengeAddress: string;
+        factoryChallengeId: number;
+      };
+      draft: { state: string; published_challenge_id: string | null };
+      card: { published_challenge_id: string | null };
+    };
+  };
+  assert.equal(payload.data.specCid, "ipfs://challenge-spec-42");
+  assert.equal(
+    payload.data.txHash,
+    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  );
+  assert.equal(
+    payload.data.sponsorAddress,
+    "0x1111111111111111111111111111111111111111",
+  );
+  assert.equal(
+    payload.data.challenge.challengeId,
+    "7e6d7395-bec8-44b6-9d3e-5dd4518ab201",
+  );
+  assert.equal(
+    payload.data.draft.published_challenge_id,
+    "7e6d7395-bec8-44b6-9d3e-5dd4518ab201",
+  );
+  assert.equal(
+    payload.data.card.published_challenge_id,
+    "7e6d7395-bec8-44b6-9d3e-5dd4518ab201",
+  );
+  assert.equal(
+    payload.data.challenge.challengeAddress,
+    "0x2222222222222222222222222222222222222222",
+  );
+  assert.equal(payload.data.challenge.factoryChallengeId, 7);
+  assert.equal(payload.data.draft.state, "published");
 });
 
 test("authoring source draft webhook registration persists callback metadata", async () => {
@@ -949,16 +1239,19 @@ test("authoring source draft webhook registration persists callback metadata", a
   });
 
   const response = await router.request(
-    new Request(`http://localhost/external/drafts/${storedSession.id}/webhook`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer beach-secret",
+    new Request(
+      `http://localhost/external/drafts/${storedSession.id}/webhook`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer beach-secret",
+        },
+        body: JSON.stringify({
+          callback_url: "https://hooks.beach.science/agora",
+        }),
       },
-      body: JSON.stringify({
-        callback_url: "https://hooks.beach.science/agora",
-      }),
-    }),
+    ),
   );
 
   assert.equal(response.status, 200);
