@@ -2,91 +2,322 @@
 
 ## Purpose
 
-A reverse-engineered, bottom-up walkthrough of every layer in Agora: what each component does, what data it handles, and how it connects to the layers above and below it. Start at the Docker scorer and work up to the browser.
+A reverse-engineered, bottom-up walkthrough of Agora as it exists in the current codebase: what each layer does, what data it handles, where determinism is enforced, and how the system climbs from Docker scorers up to the browser, CLI, MCP server, and partner integrations.
+
+This document is a systems map, not the normative spec. Source-of-truth rules still live in the code and the narrower docs:
+
+- `docs/architecture.md`
+- `docs/protocol.md`
+- `docs/data-and-indexing.md`
+- `docs/submission-privacy.md`
 
 ## Audience
 
-Anyone who wants to understand exactly how Agora works end to end: engineers, auditors, partners building integrations, or operators debugging a live issue.
+Engineers, operators, auditors, and integration partners who need to understand how Agora actually works end to end.
+
+## Reading Map
+
+This document is easiest to follow if you keep four questions in mind:
+
+1. What is the canonical artifact at this layer?
+2. What process is allowed to mutate it?
+3. What process only projects or reads it?
+4. Where does determinism get enforced?
+
+If you only want the shortest orientation path, read these sections first:
+
+- Layer 7: database truth boundaries
+- Layer 8: API route map
+- Layer 9: authoring pipeline
+- Full Stack Trace
+
+## Core Artifacts and IDs
+
+Before the layers, it helps to anchor the nouns that recur everywhere:
+
+| Thing | Meaning | Typical identifier |
+|-------|---------|--------------------|
+| Authoring draft | Pre-publish challenge authoring state | `authoring_drafts.id` |
+| Challenge spec | Canonical posted challenge contract document | `spec_cid` |
+| Evaluation bundle | Hidden or reference scorer input | `evaluationBundleCid` |
+| Submission intent | Reserved `(challenge, solver, resultHash, resultCid)` registration | `submission_intents.id` |
+| Submission artifact | The solver-uploaded result payload on IPFS | `result_cid` |
+| On-chain submission | Challenge contract submission slot | `on_chain_sub_id` |
+| Score job | Worker task to evaluate one submission | `score_jobs.id` |
+| Proof bundle | Reproducibility artifact for a scored run | `proof_bundles.cid` |
+| Published challenge link | Draft-to-challenge publish outcome record | `published_challenge_links.draft_id` |
+
+## Three Primary Flows
+
+Almost everything in Agora is one of these three flows:
+
+```mermaid
+flowchart LR
+    A["Authoring\nintent -> IR -> compile -> publish"]
+    B["Submission\nresult CID -> intent -> on-chain submit -> registration"]
+    C["Scoring\nscore job -> pipeline -> proof bundle -> postScore"]
+
+    A --> D["Challenge spec + on-chain challenge"]
+    B --> E["Registered submission"]
+    D --> C
+    E --> C
+```
+
+## Deployment and Container Topology
+
+The easiest mental model is to separate Agora into:
+
+- long-running application processes
+- data and chain dependencies
+- short-lived scorer containers
+
+```mermaid
+flowchart TB
+    subgraph Clients
+        Browser["Browser (Next.js app)"]
+        CLI["CLI"]
+        Agent["Agent runtime"]
+        MCP["MCP server"]
+        Partner["Partner backend (Beach, etc.)"]
+    end
+
+    subgraph App["Agora application processes"]
+        API["API server"]
+        Worker["Worker"]
+        Indexer["Indexer"]
+        Exec["Executor service"]
+    end
+
+    subgraph Data["Shared dependencies"]
+        DB["Supabase / Postgres"]
+        IPFS["IPFS / Pinata"]
+        Base["Base contracts"]
+    end
+
+    subgraph Containers["Short-lived scorer containers"]
+        Repro["repro-scorer"]
+        Regr["regression-scorer"]
+        Dock["docking-scorer"]
+    end
+
+    Browser --> API
+    CLI --> API
+    CLI --> Base
+    CLI --> Repro
+    CLI --> Regr
+    CLI --> Dock
+    Agent --> API
+    MCP --> API
+    Partner --> API
+
+    API --> DB
+    API --> Base
+    API --> IPFS
+
+    Worker --> DB
+    Worker --> Base
+    Worker --> IPFS
+    Worker --> Exec
+
+    Indexer --> Base
+    Indexer --> DB
+    Exec --> Repro
+    Exec --> Regr
+    Exec --> Dock
+```
+
+The important separation is:
+
+- API, worker, and indexer are stateful application processes
+- scorer images are disposable compute containers
+- the executor is just the HTTP bridge to the Docker host
+
+One nuance:
+
+- the CLI usually talks to the API and chain like any other client
+- for `score-local` and some operator recovery flows, the CLI can also invoke scorer containers locally
+
+## Artifact Ladder: How Bytes Become On-Chain State
+
+One useful way to understand Agora is to follow the object that moves upward through the stack:
+
+```text
+authoring intent / source transcript
+  -> authoring IR
+  -> compiled challenge spec
+  -> pinned spec CID
+  -> on-chain challenge
+  -> submission intent
+  -> solver result CID
+  -> on-chain submission slot
+  -> score job
+  -> scorer workspace
+  -> score.json
+  -> proof bundle CID
+  -> on-chain score / payout state
+  -> indexed API payload
+  -> browser / CLI / agent response
+```
+
+Almost every module in the repo exists to either:
+
+- produce one of those artifacts
+- validate one of those artifacts
+- project one of those artifacts into a more convenient read model
 
 ---
 
-## Layer 0: The Docker Scorer (Ground Truth)
+## Layer 0: The Docker Scorers (Ground Truth Execution)
 
-This is the lowest layer and the ultimate source of truth for scoring. Everything above exists to feed data into this container and publish the result.
+This is the lowest layer where challenge evaluation actually happens. Everything above it exists to stage files, pick the right official image, and publish the result.
 
 ### What it is
 
-A single Python script (`containers/repro-scorer/score.py`) packaged as a Docker image. Pure Python stdlib — no numpy, no pandas, no external dependencies.
+Agora does not have one scorer image anymore. It has a small official scorer image set:
+
+| Image | Code | Used by |
+|-------|------|---------|
+| `ghcr.io/andymolecule/repro-scorer:v1` | `containers/repro-scorer/score.py` | `reproducibility` plus executable semi-custom `exact_artifact_match` and `structured_record_score` |
+| `ghcr.io/andymolecule/regression-scorer:v1` | `containers/regression-scorer/score.py` | `tabular_regression`, `tabular_classification`, executable semi-custom `structured_table_score` |
+| `ghcr.io/andymolecule/docking-scorer:v1` | `containers/docking-scorer/score.py` | `ranking`, `docking` |
+
+The important architectural rule is not “one scorer.” It is “one small official scorer image set with pinned digests and deterministic runtime contracts.”
+
+### Runtime-family to image mapping
+
+```mermaid
+flowchart LR
+    R1["reproducibility"] --> I1["repro-scorer"]
+    R2["exact_artifact_match"] --> I1
+    R3["structured_record_score"] --> I1
+
+    T1["tabular_regression"] --> I2["regression-scorer"]
+    T2["tabular_classification"] --> I2
+    T3["structured_table_score"] --> I2
+
+    K1["ranking"] --> I3["docking-scorer"]
+    K2["docking"] --> I3
+```
 
 ### What it receives
 
-Three files mounted into `/input/`:
+All official scorers receive a staged input directory:
 
-```
+```text
 /input/
-  agora-runtime.json          ← tells the scorer what to do
-  ground_truth.csv (or .json) ← the hidden reference answer
-  submission.csv (or .json)   ← the solver's submission
+  agora-runtime.json
+  <evaluation bundle>   # name depends on mount config
+  <submission artifact> # name depends on mount config
 ```
+
+Common mount patterns today:
+
+```text
+tabular managed / semi-custom:
+  ground_truth.csv
+  submission.csv
+
+exact-match JSON:
+  ground_truth.json
+  submission.json
+
+exact-match opaque:
+  ground_truth.bin
+  submission.bin
+```
+
+The runtime config tells the image:
+
+- which metric to use
+- how the files are mounted
+- the submission contract
+- any evaluation contract
+- scorer policies such as coverage / duplicate-id handling
 
 ### What it does
 
-Reads `agora-runtime.json`, picks one of four comparison functions, and writes `/output/score.json`:
+The three official scorer images cover different deterministic workloads:
 
+```text
+repro-scorer
+  ├── csv_table exact/tolerant row matching
+  ├── json_file deep equality
+  ├── json_record rubric validation
+  └── opaque_file byte-for-byte matching
+
+regression-scorer
+  ├── r2
+  ├── rmse
+  ├── mae
+  ├── pearson
+  ├── spearman
+  ├── accuracy
+  └── f1
+
+docking-scorer
+  ├── spearman ranking
+  └── ndcg ranking
 ```
-agora-runtime.json
-  ├── comparison_kind: "csv_table"
-  │     → Row-by-row CSV comparison with numeric tolerance
-  │     → Score = matched_rows / total_rows
-  │
-  ├── comparison_kind: "json_file"
-  │     → Parse both as JSON, deep equality (==)
-  │     → Score = 1.0 (identical) or 0.0 (any difference)
-  │
-  ├── comparison_kind: "json_record"
-  │     → Ground truth is a rubric with validation rules
-  │     → Checks: required fields, non-empty arrays, allowed values
-  │     → Score = checks_passed / checks_total
-  │
-  └── comparison_kind: "opaque_file"
-        → Byte-for-byte binary comparison
-        → Score = 1.0 (identical) or 0.0 (any difference)
-```
+
+The bottom-line rule is:
+
+- managed prediction / ranking / docking use dedicated metric scorers
+- exact-match and structured-record semi-custom paths reuse the reproducibility scorer
 
 ### What it outputs
+
+Every scorer writes `/output/score.json` with the same envelope:
 
 ```json
 {
   "ok": true,
   "score": 0.857,
   "details": {
-    "comparison_kind": "csv_table",
-    "matched_rows": 6,
-    "total_rows": 7,
-    "tolerance": 0.001
+    "selected_metric": "validation_score"
+  }
+}
+```
+
+Or, for deterministic rejection:
+
+```json
+{
+  "ok": false,
+  "score": 0.0,
+  "error": "Submission missing required columns: id,prediction",
+  "details": {
+    "missing_columns": ["prediction"]
   }
 }
 ```
 
 ### Security constraints
 
+The TypeScript runner applies a locked-down Docker invocation:
+
+```text
+--network=none
+--read-only
+--cap-drop=ALL
+--user 65532:65532
+--memory <runtime-family limit>
+--cpus <runtime-family limit>
+--pids-limit <runtime-family limit>
 ```
---network=none          No network access
---read-only             Only /output is writable
---cap-drop=ALL          No Linux capabilities
---user 65532:65532      Non-root
---memory 256m           Resource limits per runtime family
---pids-limit 32         No fork bombs
-```
+
+Production also requires the image to resolve to a registry digest. Local, digest-less custom images are rejected on the official path.
 
 ### What challenges each mode handles
 
-| Comparison Mode | Real-World Examples |
-|----------------|-------------------|
-| **csv_table** | Reproduce a data table from a paper, predict gene expression, rank molecules |
-| **json_file** | Reproduce exact config output, match API response |
-| **json_record** | Validate incident report has required fields, check protocol compliance |
-| **opaque_file** | Reproduce a PDF figure, match binary simulation output |
+| Runtime / Archetype | Execution path | Real-world examples |
+|---------------------|----------------|---------------------|
+| `reproducibility` | exact/tolerant CSV compare | reproduce a published table, replicate an analysis output |
+| `exact_artifact_match` | CSV / JSON / binary equality | exact config match, exact JSON reference, PDF/binary reproduction |
+| `structured_record_score` | JSON rubric validation | structured report validation, protocol checklist compliance |
+| `tabular_regression` | metric scorer | numeric prediction against hidden labels |
+| `tabular_classification` | metric scorer | label prediction against hidden labels |
+| `ranking` | ranking scorer | ranked candidate ordering against hidden relevance |
+| `docking` | ranking scorer | ligand ranking against hidden reference scores |
 
 ---
 
@@ -96,34 +327,58 @@ agora-runtime.json
 
 ### What it does
 
-Invokes the Docker container from TypeScript. Handles image pulling, security flag assembly, timeout enforcement, and output parsing.
+This is the bridge from TypeScript to the local Docker daemon. It:
+
+- checks Docker readiness
+- pulls / inspects official scorer images
+- enforces digest-backed image integrity
+- assembles Docker flags
+- runs the container
+- parses `/output/score.json`
 
 ### Data flow
 
-```
-RunScorerInput                              RunnerScoreResult
-{                                           {
-  image: "ghcr.io/.../repro-scorer@sha256:..."    ok: true,
-  inputDir: "/tmp/workspace/input",          score: 0.857,
-  timeoutMs: 300000,                         details: {...},
-  env: { AGORA_TOLERANCE: "0.001" },         log: "stdout+stderr",
-  limits: { memory: "256m", cpus: "0.5" }    containerImageDigest: "sha256:..."
-}                                           }
-        │                                           ▲
-        ▼                                           │
-   ┌─────────────────────────────────────────────┐
-   │  docker run                                 │
-   │    --network=none --read-only               │
-   │    --cap-drop=ALL --user 65532:65532        │
-   │    -v /input:/input:ro -v /output:/output   │
-   │    ghcr.io/.../repro-scorer@sha256:...      │
-   │    python /app/score.py                     │
-   └─────────────────────────────────────────────┘
+```text
+RunScorerInput
+{
+  image,
+  inputDir,
+  env,
+  timeoutMs,
+  limits,
+  strictPull
+}
+        │
+        ▼
+  prepareScorerImage()
+    ├── inspect local image
+    ├── require registry digest
+    └── docker pull if needed
+        │
+        ▼
+  docker run
+    --network=none
+    --read-only
+    --cap-drop=ALL
+    -v <workspace/input>:/input:ro
+    -v <workspace/output>:/output
+        │
+        ▼
+RunnerScoreResult
+{
+  ok,
+  score,
+  error?,
+  details,
+  log,
+  outputPath,
+  containerImageDigest
+}
 ```
 
 ### Key responsibility
 
-Validates the image has a pinned registry digest (no locally-built images in production). Rejects unverifiable scorer images.
+This layer enforces “official scorer image with verifiable registry provenance” before compute starts. It is the last gate before arbitrary container execution would become possible.
 
 ---
 
@@ -133,51 +388,63 @@ Validates the image has a pinned registry digest (no locally-built images in pro
 
 ### What it does
 
-Fetches inputs from IPFS, stages them into a temporary workspace, builds `agora-runtime.json`, validates the submission against the submission contract, and calls the runner.
+The scoring pipeline turns challenge metadata plus IPFS artifacts into a staged scoring workspace. It:
+
+- creates a temp workspace
+- downloads evaluation bundles and submissions from IPFS, or stages local bytes
+- builds `agora-runtime.json`
+- validates the submission against the submission contract before container execution
+- calls the Docker runner
 
 ### Data flow
 
-```
-                    ┌──────────────────────────────┐
-                    │  ExecuteScoringPipelineInput  │
-                    │                              │
-                    │  image: "ghcr.io/..."        │
-                    │  evaluationBundle: {cid}      │
-                    │  submission: {cid}            │
-                    │  submissionContract: {...}    │
-                    │  metric: "exact_match"        │
-                    │  policies: {coverage: reject} │
-                    └──────────┬───────────────────┘
-                               │
-                    Phase 1: fetch_inputs
-                               │
-                    ┌──────────▼───────────────────┐
-                    │  Download from IPFS           │
-                    │  Stage to /tmp/workspace/     │
-                    │  Build agora-runtime.json     │
-                    │  Validate submission schema   │
-                    └──────────┬───────────────────┘
-                               │
-                    Phase 2: run_scorer
-                               │
-                    ┌──────────▼───────────────────┐
-                    │  Call runner.ts               │
-                    │  Docker run (sandboxed)       │
-                    │  Parse /output/score.json     │
-                    └──────────┬───────────────────┘
-                               │
-                    ┌──────────▼───────────────────┐
-                    │  ScoringPipelineResult        │
-                    │                              │
-                    │  result: RunnerScoreResult    │
-                    │  workspaceRoot: "/tmp/..."    │
-                    │  cleanup: () => Promise<void> │
-                    └──────────────────────────────┘
+```text
+ExecuteScoringPipelineInput
+{
+  image,
+  runtimeFamily?,
+  evaluationBundle?,
+  submission,
+  mount?,
+  submissionContract?,
+  evaluationContract?,
+  metric?,
+  policies?,
+  env?
+}
+        │
+        ▼
+Phase 1: fetch_inputs
+  ├── create workspace
+  ├── stage evaluation bundle
+  ├── stage submission
+  ├── resolve runtime defaults from runtime family
+  └── write agora-runtime.json
+        │
+        ▼
+submission contract validation
+  ├── valid   → continue
+  └── invalid → deterministic scorer-style rejection without running Docker
+        │
+        ▼
+Phase 2: run_scorer
+  └── executeScorer()
+        │
+        ▼
+ScoringPipelineResult
+{
+  result,
+  workspaceRoot,
+  inputPaths,
+  cleanup()
+}
 ```
 
 ### Key responsibility
 
-Resolves scoring config from two sources: DB cache first (fast), IPFS spec fetch as fallback (slow). The pipeline doesn't know or care whether the challenge is managed, semi-custom, or expert — it just stages files and runs the container.
+This layer is where spec-derived scoring config is resolved. It prefers cached DB config on the challenge row and falls back to the IPFS spec CID only when needed.
+
+It also keeps managed, semi-custom, and expert scoring on one execution rail: once the image, mount plan, contracts, and policies are resolved, the pipeline does not care where they came from.
 
 ---
 
@@ -187,206 +454,318 @@ Resolves scoring config from two sources: DB cache first (fast), IPFS spec fetch
 
 ### What it does
 
-HTTP microservice that runs on a Docker-capable host. Receives staged files from the worker orchestrator, runs the scorer container, and returns results.
+The executor is an HTTP wrapper around the scorer runtime. It exists so the main API/worker deployment can run without Docker while a separate machine performs the actual container execution.
 
 ### Why it exists
 
-Production split: Railway runs the API/worker/indexer (no Docker), a separate host runs the executor (with Docker). This keeps Docker out of the main deployment.
+The architecture requirement is:
 
-```
-┌─────────────────────┐        ┌────────────────────┐
-│  Railway             │  HTTP  │  Executor Host     │
-│                      │───────▶│                    │
-│  Worker Orchestrator │        │  Docker Daemon     │
-│  (no Docker)         │◀───────│  Scorer Container  │
-└─────────────────────┘        └────────────────────┘
+- API / worker / indexer may live on hosts without Docker
+- scorer execution needs a Docker-capable host
+
+That can be deployed in different ways, but the logical split is always the same:
+
+```text
+API / Worker / Indexer
+        │  HTTP
+        ▼
+Executor Service
+        │
+        ▼
+Docker daemon
+        │
+        ▼
+Official scorer image
 ```
 
 ### Routes
 
 | Route | Purpose |
 |-------|---------|
-| `POST /execute` | Receive files + config, run scorer, return score |
-| `POST /preflight` | Pull official images ahead of time |
-| `GET /healthz` | Liveness + Docker readiness |
+| `GET /healthz` | executor liveness + Docker readiness |
+| `POST /preflight` | pull official images ahead of time |
+| `POST /execute` | accept staged files + run metadata, execute scorer, return score payload |
+
+The `/execute` route receives multipart form data: one JSON request part plus staged files.
 
 ---
 
 ## Layer 4: The Worker Orchestrator (Job Loop)
 
-**File:** `apps/api/src/worker/scoring.ts`
+**Files:** `apps/api/src/worker/jobs.ts`, `apps/api/src/worker/scoring.ts`
 
 ### What it does
 
-Long-running process that polls `score_jobs`, claims them, runs scoring via the pipeline (or remote executor), builds proof bundles, pins them to IPFS, and posts scores on-chain.
+The worker is the default automated oracle path. It polls `score_jobs`, claims work, resolves the challenge’s evaluation plan, runs the scorer, pins the proof bundle, and posts the score on-chain.
+
+Important nuance: the worker is the main automated holder of the oracle key, but it is not the only code path that can use it. The manual CLI command `agora oracle-score` reuses the same scoring logic for recovery and operator workflows.
 
 ### The scoring loop
 
-```
-Every 15 seconds:
+```text
+Every poll interval:
   │
-  ├── Poll score_jobs WHERE status = 'queued'
-  │     AND challenge is in Scoring status
-  │     AND worker runtime version matches active version
+  ├── claim queued score_jobs
   │
-  ├── Claim job (lease with heartbeat)
+  ├── load challenge + submission from DB
   │
-  ├── Fetch challenge + submission from DB
+  ├── reconcile previously-posted score tx if needed
   │
-  ├── Resolve scoring config
-  │     ├── DB cache: scoring_env_json, submission_contract_json
-  │     └── Fallback: fetch spec from IPFS
+  ├── ensure challenge is effectively scoreable
+  │     ├── read lifecycle from chain
+  │     ├── requeue if still open
+  │     └── skip if cancelled / finalized / otherwise not scoreable
   │
-  ├── Download evaluation bundle + submission from IPFS
-  │     (decrypt if sealed submission)
+  ├── enforce submission limits
   │
-  ├── Execute scoring pipeline
-  │     ├── local_docker: call pipeline directly
-  │     └── remote_http: POST to executor service
+  ├── resolve challenge evaluation plan
+  │     ├── runtime family
+  │     ├── scorer image
+  │     ├── evaluation bundle CID
+  │     ├── mount config
+  │     └── semi-custom runner family override if needed
   │
-  ├── Build proof bundle
-  │     { inputHash, outputHash, containerImageDigest,
-  │       replaySubmissionCid, challengeSpecCid }
+  ├── resolve submission source
+  │     ├── plain_v0 → use CID directly
+  │     └── sealed_submission_v2 → decrypt using the configured opening key
   │
-  ├── Pin proof bundle to IPFS → proofCid
+  ├── execute scoring pipeline
   │
-  ├── Hash proofCid → proofHash (keccak256)
+  ├── build proof bundle
+  │     { inputHash, outputHash, containerImageDigest, replaySubmissionCid, challengeSpecCid }
   │
-  ├── Convert score to WAD (1e18) for on-chain precision
+  ├── pin proof bundle to IPFS
   │
-  └── Post on-chain: Challenge.postScore(subId, scoreWad, proofHash)
+  ├── postScore() on-chain
+  │
+  └── persist DB projections
+        ├── submission score
+        ├── proof bundle metadata
+        └── job completion / retry state
 ```
 
 ### Key responsibility
 
-Bridges off-chain compute (Docker scoring) with on-chain settlement (posting scores). The worker is the only process that holds the oracle key.
+This is the bridge between deterministic off-chain compute and trustless on-chain settlement. It is also where public-hidden sealed submissions become plaintext scorer input once the challenge enters scoring.
+
+### Worker interaction sequence
+
+```mermaid
+sequenceDiagram
+    participant W as Worker
+    participant DB as Supabase
+    participant IPFS as IPFS
+    participant EX as Executor or local Docker
+    participant CH as AgoraChallenge
+
+    W->>DB: claim score job
+    W->>DB: load challenge and submission
+    W->>IPFS: fetch evaluation bundle and submission artifact
+    W->>W: decrypt sealed submission if needed
+    W->>EX: execute scoring pipeline
+    EX-->>W: score result + image digest
+    W->>IPFS: pin proof bundle
+    W->>CH: postScore(subId, scoreWad, proofHash)
+    W->>DB: persist score projection and proof metadata
+```
+
+### What the worker actually coordinates
+
+The worker is not "the scorer." It is the conductor for five different systems:
+
+| Component | Why the worker needs it |
+|-----------|-------------------------|
+| DB | claim jobs, load challenge/submission projections, persist results |
+| IPFS | fetch evaluation inputs, fetch submissions, pin proof bundles |
+| chain | read effective lifecycle, post scores, reconcile tx state |
+| executor / Docker | perform deterministic compute |
+| config | load opening keys, scorer endpoints, retry and timing policy |
 
 ---
 
 ## Layer 5: The Smart Contracts (On-Chain Settlement)
 
-**Files:** `packages/contracts/src/AgoraFactory.sol`, `AgoraChallenge.sol`
+**Files:** `packages/contracts/src/AgoraFactory.sol`, `packages/contracts/src/AgoraChallenge.sol`
 
 ### What they do
 
-Trustless USDC escrow and payout distribution. The factory deploys per-bounty challenge contracts. Each challenge holds USDC and enforces the lifecycle state machine.
+The contracts enforce escrow, submission hashes, oracle-posted scores, dispute windows, and payout claims.
 
 ### Contract architecture
 
-```
-AgoraFactory (one per deployment)
+```text
+AgoraFactory
   │
-  │ createChallenge(specCid, reward, deadline, ...)
-  │   → deploys new AgoraChallenge
-  │   → transfers USDC from poster → escrow
+  ├── createChallenge(...)
+  │     ├── deploy AgoraChallenge
+  │     └── move poster USDC into challenge escrow
   │
-  └── AgoraChallenge (one per bounty)
-        │
-        │ submit(resultHash)      ← solver
-        │ startScoring()          ← anyone (after deadline)
-        │ postScore(subId, score, proofHash) ← oracle only
-        │ finalize()              ← anyone (after dispute window)
-        │ claim()                 ← winner
-        │
-        └── USDC distribution:
-              90% → winners (per distribution type)
-              10% → treasury (protocol fee)
+  └── governance-owned references
+        oracle
+        treasury
+
+AgoraChallenge
+  │
+  ├── submit(resultHash)
+  ├── startScoring()
+  ├── postScore(subId, scoreWad, proofHash)      # oracle only
+  ├── finalize()
+  ├── dispute(reason)
+  ├── resolveDispute(winnerSubId)                # oracle only
+  ├── timeoutRefund()
+  └── claim()
 ```
 
 ### State machine
 
-```
-Open ──→ Scoring ──→ Finalized
-  │         │             │
-  │         ├──→ Disputed ──→ Finalized
-  │         │
-  └──→ Cancelled (poster cancel, 0 submissions)
+The important nuance is that `status()` is a read-side truth function, not just a raw storage read. Once the deadline passes, `status()` reports `Scoring` even if the persisted `_status` is still `Open`.
+
+```text
+Open
+  ├── cancel() with zero submissions ───────────────▶ Cancelled
+  ├── deadline passes ───────────────────────────────▶ status() reads as Scoring
+  └── startScoring() persists Scoring ──────────────▶ Scoring
+
+Scoring
+  ├── finalize() with valid winners ────────────────▶ Finalized
+  ├── finalize() with no qualifying winners ────────▶ Cancelled + poster refund
+  └── dispute() ────────────────────────────────────▶ Disputed
+
+Disputed
+  ├── resolveDispute() ─────────────────────────────▶ Finalized
+  └── timeoutRefund() after 30 days ────────────────▶ Cancelled
 ```
 
 ### Distribution types
 
 | Type | Split |
 |------|-------|
-| WinnerTakeAll | 1st: 100% |
-| TopThree | 1st: 60%, 2nd: 25%, 3rd: 15% |
-| Proportional | Score-weighted across all qualifying solvers |
+| `WinnerTakeAll` | 100% to first place |
+| `TopThree` | 60 / 25 / 15, with unclaimed shares consolidating onto the top scorer when there are fewer than three winners |
+| `Proportional` | score-weighted over qualifying submissions |
+
+Other important on-chain rules:
+
+- minimum score gating exists on the challenge contract
+- submission limits are enforced on-chain
+- the protocol fee is 10%
 
 ---
 
 ## Layer 6: The Chain Indexer (On-Chain → Database)
 
-**Files:** `packages/chain/src/indexer.ts`, `indexer/handlers.ts`
+**Files:** `packages/chain/src/indexer.ts`, `packages/chain/src/indexer/handlers.ts`
 
 ### What it does
 
-Polls Base blockchain every 30 seconds for contract events. Translates on-chain events into database projections.
+The indexer polls Base, parses factory and challenge events, and projects them into Supabase. It is projection logic, not truth logic.
 
 ### Event → Projection mapping
 
+```text
+On-chain event / read               │ DB effect
+────────────────────────────────────┼──────────────────────────────────────
+ChallengeCreated                    │ UPSERT challenge + fetch/validate spec CID
+Submitted                           │ UPSERT submission only if a registered intent exists
+StatusChanged                       │ UPDATE challenge status projection
+Scored                              │ UPDATE submission score / proof hash projection
+PayoutAllocated                     │ UPSERT challenge_payouts
+SettlementFinalized                 │ set finalized winner / settlement projection
+Claimed                             │ mark challenge_payouts claimed
+Cancelled                           │ mark challenge cancelled
+Disputed / DisputeResolved          │ reflected via challenge status + settlement repair
 ```
-On-Chain Event            │  Database Action
-──────────────────────────┼──────────────────────────
-ChallengeCreated          │  INSERT challenges (+ fetch spec from IPFS)
-Submitted                 │  UPSERT submissions (link to pre-registered intent)
-StatusChanged             │  UPDATE challenges.status
-Scored                    │  UPDATE submissions.score, scored=true
-PayoutAllocated           │  UPSERT challenge_payouts
-SettlementFinalized       │  UPDATE challenges (winner fields)
-Claimed                   │  UPDATE challenge_payouts.claimed_at
-Cancelled                 │  UPDATE challenges.status
-```
+
+The indexer also has settlement-repair logic: it can rebuild canonical payout state from the challenge contract logs if projections drift.
 
 ### Key invariant
 
-On-chain submissions without a pre-registered `submission_intent` are logged and skipped — they cannot become scoreable. This is the strict intent-first architecture.
+Strict intent-first submission flow is now part of the architecture. An on-chain submission without a matching registered `submission_intent` is not allowed to become scoreable later by fuzzy reconciliation.
+
+The indexer can observe it and log it, but it does not convert it into a normal scoreable submission row.
 
 ---
 
-## Layer 7: The Database (Supabase Projections)
+## Layer 7: The Database (Supabase Projections + Draft State)
 
-**Key tables:**
+### Key tables
 
+```text
+Authoring side
+──────────────
+authoring_drafts
+  canonical draft state
+  intent_json
+  authoring_ir_json
+  uploaded_artifacts_json
+  compilation_json
+
+published_challenge_links
+  draft_id -> challenge_id / spec cid / published spec / return_to
+
+authoring_callback_targets
+  draft_id -> callback_url / registered_at
+
+authoring_callback_deliveries
+  durable callback outbox / retry queue
+
+Execution side
+──────────────
+challenges
+  on-chain challenge projection + cached spec/scoring config
+
+submission_intents
+  pre-registered result hash / CID reservation
+
+submissions
+  on-chain submission projection
+  strict FK to submission_intents
+
+score_jobs
+  queued / running / failed / skipped worker jobs
+
+proof_bundles
+  reproducibility metadata + pinned proof CID
+
+challenge_payouts
+  payout allocations and claim state
 ```
-┌─────────────────────┐     ┌──────────────────────┐
-│ authoring_drafts    │     │ challenges           │
-│                     │     │                      │
-│ state machine for   │────▶│ projected from chain │
-│ posting workflow    │     │ + IPFS spec cache    │
-│ (intent, IR, comp)  │     │                      │
-└─────────────────────┘     └──────────┬───────────┘
-                                       │
-┌─────────────────────┐     ┌──────────▼───────────┐
-│ submission_intents  │────▶│ submissions          │
-│                     │     │                      │
-│ pre-registered      │     │ on-chain projection  │
-│ before wallet tx    │     │ + linked intent      │
-└─────────────────────┘     └──────────┬───────────┘
-                                       │
-                            ┌──────────▼───────────┐
-                            │ score_jobs           │
-                            │                      │
-                            │ queued → running      │
-                            │ → scored | failed     │
-                            └──────────┬───────────┘
-                                       │
-                            ┌──────────▼───────────┐
-                            │ challenge_payouts    │
-                            │                      │
-                            │ rank, amount,        │
-                            │ claimed_at           │
-                            └──────────────────────┘
+
+### Canonical rows vs merged read models
+
+One important implementation detail for new engineers:
+
+- canonical write models stay split
+- read models are sometimes merged for convenience
+
+Example:
+
+```text
+authoring_drafts
+  + authoring_callback_targets
+  + published_challenge_links
+        │
+        ▼
+AuthoringDraftViewRow
+  merged read model for API shaping
 ```
+
+That means not every field visible in an API draft payload lives on the same table.
 
 ### Source of truth rules
 
-| Data | Truth Source | DB Role |
-|------|-------------|---------|
-| Challenge lifecycle status | On-chain `status()` | Projection (may lag) |
-| Payout entitlements | On-chain `PayoutAllocated` | Projection |
-| Submission file location | `submission_intents.result_cid` | Canonical |
-| Score values | On-chain `Scored` event | Projection |
-| Draft state | `authoring_drafts` table | Canonical |
-| Leaderboard | `challenge_payouts` (finalized only) | Derived |
+| Data | Truth source | DB role |
+|------|--------------|---------|
+| lifecycle visibility | on-chain `status()` semantics | projection + cache |
+| challenge payout entitlements | on-chain events and reads | projection |
+| challenge spec | IPFS spec CID | cache + query convenience |
+| scorer image / evaluation plan | challenge spec + runtime family / evaluator contract | cache + query convenience |
+| draft state | `authoring_drafts` | canonical |
+| publish outcome | `published_challenge_links` | canonical |
+| callback target registration | `authoring_callback_targets` | canonical |
+| callback retry queue | `authoring_callback_deliveries` | canonical |
+| submission registration | strict `submission_intents -> submissions` link | canonical |
+| proof bundle replay metadata | IPFS proof bundle + `proof_bundles` row | pinned artifact + projection |
 
 ---
 
@@ -396,48 +775,114 @@ On-chain submissions without a pre-registered `submission_intent` are logged and
 
 ### What it does
 
-The canonical remote interface for agents, the web frontend, and external partners.
+The API is the main remote boundary for:
+
+- the browser frontend
+- CLI and agent-runtime clients
+- the MCP server tool layer
+- external partners like Beach
+- internal review and operations flows
+
+### Authentication surfaces
+
+Different API slices use different trust models:
+
+| Surface | Primary auth model |
+|---------|--------------------|
+| public challenge reads | none |
+| direct browser authoring / portfolio | SIWE session or wallet-bound caller data |
+| partner authoring | bearer token per provider |
+| internal authoring review | review token |
+| executor service | bearer token shared with orchestrator |
+
+### API trust boundaries at a glance
+
+```mermaid
+flowchart LR
+    Public["Public read routes\nno auth"] --> API["API"]
+    Wallet["Browser wallet / SIWE"] --> API
+    Partner["Partner bearer token"] --> API
+    Review["Authoring review token"] --> API
+    Operator["Operator-only maintenance callers"] --> API
+```
+
+This matters because "API" is not one trust zone. The server hosts:
+
+- public read surfaces
+- browser-authenticated write flows
+- partner-authenticated authoring
+- operator-only review / maintenance endpoints
 
 ### Route map (key routes)
 
-```
-Discovery:
-  GET  /api/challenges              ← list open challenges
-  GET  /api/challenges/:id          ← challenge details + claimable info
-  GET  /api/challenges/:id/leaderboard ← scores (403 while Open)
-  GET  /api/leaderboard             ← global finalized leaderboard
-  GET  /.well-known/openapi.json    ← machine-readable API contract
+```text
+Discovery / challenge reads:
+  GET  /api/challenges
+  GET  /api/challenges/:id
+  GET  /api/challenges/:id/solver-status
+  GET  /api/challenges/:id/leaderboard
+  GET  /api/challenges/:id/claimable
+  GET  /api/challenges/by-address/:address
+  GET  /api/challenges/by-address/:address/solver-status
+  GET  /api/challenges/by-address/:address/leaderboard
+  POST /api/challenges/:id/validate-submission
+  POST /api/challenges/by-address/:address/validate-submission
 
-Submission:
-  POST /api/submissions/intent      ← pre-register submission metadata
-  POST /api/submissions             ← confirm after on-chain tx
-  GET  /api/submissions/:id/status  ← poll submission state
+Challenge registration:
+  POST /api/challenges
 
-Posting (web):
-  POST /api/authoring/drafts          ← create draft
-  POST /api/authoring/drafts/:id/compile ← compile draft
-  POST /api/authoring/drafts/:id/publish ← publish on-chain
+Submission flow:
+  GET  /api/submissions/public-key
+  POST /api/submissions/upload
+  POST /api/submissions/cleanup
+  POST /api/submissions/intent
+  POST /api/submissions
+  GET  /api/submissions/:id/status
+  GET  /api/submissions/:id/wait
+  GET  /api/submissions/:id/events
+  GET  /api/submissions/:id/public
+  GET  /api/submissions/by-onchain/:challengeAddress/:subId/status
+  GET  /api/submissions/by-onchain/:challengeAddress/:subId/public
 
-Posting (external partners):
-  POST /api/authoring/external/sources       ← create draft from Beach/GitHub/etc.
-  POST /api/authoring/external/drafts/:id/clarify ← add messages/artifacts
-  POST /api/authoring/external/drafts/:id/compile ← compile
-  POST /api/authoring/external/drafts/:id/webhook ← register callback URL
+Direct authoring:
+  GET  /api/authoring/health
+  POST /api/authoring/drafts
+  POST /api/authoring/drafts/:id/compile
+  POST /api/authoring/drafts/:id/publish
 
-Health:
-  GET  /healthz                     ← API liveness
-  GET  /api/indexer-health          ← chain sync status
-  GET  /api/worker-health           ← scorer readiness
-  GET  /api/authoring/health          ← authoring backlog
+Internal review:
+  GET  /api/authoring/review/drafts
+  POST /api/authoring/review/drafts/:id/decision
+  POST /api/authoring/review/sweep-expired
+
+External authoring / partner integration:
+  POST /api/authoring/external/sources
+  GET  /api/authoring/external/drafts/:id
+  GET  /api/authoring/external/drafts/:id/card
+  POST /api/authoring/external/drafts/:id/clarify
+  POST /api/authoring/external/drafts/:id/compile
+  POST /api/authoring/external/drafts/:id/webhook
+  POST /api/authoring/callbacks/sweep
+  POST /api/integrations/beach/drafts/import
+
+Other active surfaces:
+  GET  /api/me/portfolio
+  GET  /api/analytics
+  GET  /api/indexer-health
+  GET  /api/worker-health
+  GET  /.well-known/openapi.json
+  GET  /.well-known/x402
 ```
 
 ### Fairness boundary
 
-The API enforces visibility rules based on on-chain status, not DB projection:
+The API uses lifecycle-aware visibility helpers and effective challenge status semantics for public reads:
 
-- **Open:** No leaderboard, no public verification, no score data
-- **Scoring:** Leaderboard visible, verification available
-- **Finalized:** Global reputation surfaces (win rate, earned USDC)
+- `Open`: no public verification, no public leaderboard
+- `Scoring`: public verification and leaderboard can open
+- `Finalized`: payouts and reputation surfaces become stable
+
+Sealed submission privacy is an anti-copy boundary while the challenge is open, not permanent secrecy from Agora-operated scoring infrastructure.
 
 ---
 
@@ -445,274 +890,390 @@ The API enforces visibility rules based on on-chain status, not DB projection:
 
 ### Two entry points, same destination
 
-```
-Web UI (/post)                    External Partner (Beach)
-     │                                  │
-     │ guided interview                 │ thread + artifacts
-     │ (question by question)           │ (one shot)
-     │                                  │
-     ▼                                  ▼
- intent_json                       intent_json
- + uploaded_artifacts              + uploaded_artifacts
-     │                                  │
-     └──────────────┬───────────────────┘
-                    │
-                    ▼
-          ┌─────────────────────┐
-          │  Authoring IR       │
-          │                     │
-          │  routing.mode:      │
-          │    managed_supported│
-          │    semi_custom      │
-          │    managed_unsupported
-          │                     │
-          │  archetype:         │
-          │    structured_table │
-          │    exact_artifact   │
-          │    structured_record│
-          │    bundle_or_code   │
-          │    opaque_file      │
-          └─────────┬───────────┘
-                    │
-         ┌──────────┼──────────┐
-         ▼          ▼          ▼
-    Managed    Semi-Custom   Expert
-    Runtime    Evaluator     Mode
-    Template   Contract
-         │          │          │
-         └──────────┼──────────┘
-                    │
-                    ▼
-          ┌─────────────────────┐
-          │  CompilationResult  │
-          │                     │
-          │  challenge_spec     │
-          │  submission_contract│
-          │  confirmation       │
-          │  dry_run_result     │
-          │  confidence_score   │
-          └─────────┬───────────┘
-                    │
-              ┌─────┼─────┐
-              ▼     ▼     ▼
-           ready  review  failed
-              │
-              ▼
-          Published
-          (IPFS + on-chain)
+```text
+Direct web authoring
+  /post UI
+  └── POST /api/authoring/drafts
+
+External partner authoring
+  /api/authoring/external/sources
+  /api/integrations/beach/drafts/import
+
+Both converge into:
+  intent_json
+  + uploaded_artifacts_json
+  + source/origin context
+        │
+        ▼
+  buildManagedAuthoringIr(...)
+        │
+        ▼
+  authoring_ir_json
+    routing.mode:
+      - not_ready
+      - managed_supported
+      - semi_custom
+      - expert_mode_required
+        │
+        ▼
+  compileManagedAuthoringDraftOutcome(...)
+    outcome.state:
+      - ready
+      - needs_review
+      - needs_clarification
+        │
+        ▼
+  persisted draft state:
+    draft
+      -> compiling
+      -> ready | needs_review | needs_clarification | failed
+      -> published
 ```
 
-### How classification works (3 layers)
+### Direct vs partner authoring sequence
 
-1. **Heuristic pattern matching** (always runs, no API calls)
-   - File inspection: CSV headers, JSON structure, MIME types
-   - Keyword matching on description: "reproduce" → exact_match, "predict" → regression
-   - Artifact role detection: hidden CSV → evaluation bundle
+```mermaid
+sequenceDiagram
+    participant U as User or partner
+    participant API as Authoring API
+    participant DB as authoring_drafts
+    participant IR as IR builder
+    participant CMP as compiler and dry-run
 
-2. **LLM compiler** (optional, `AGORA_MANAGED_AUTHORING_COMPILER_BACKEND=openai_compatible`)
-   - Receives description + artifact metadata + intent
-   - Returns runtime family, metric, confidence score
+    U->>API: create or update draft
+    API->>IR: buildManagedAuthoringIr(...)
+    IR-->>API: authoring_ir_json
+    API->>DB: persist draft snapshot
+    U->>API: compile draft
+    API->>CMP: compileManagedAuthoringDraftOutcome(...)
+    CMP-->>API: ready or needs_review or needs_clarification
+    API->>DB: persist compilation result and draft state
+```
 
-3. **Confidence gating** (always runs)
-   - High confidence → `ready` (auto-proceed)
-   - Medium confidence → `needs_review` (operator approval)
-   - Low confidence → `needs_clarification` or Expert Mode
+### Review and publish branch
+
+```mermaid
+flowchart TD
+    Draft["authoring_drafts row"]
+    Compile["compileManagedAuthoringDraftOutcome(...)"]
+    Review["Internal review queue"]
+    Publish["publish -> pin spec -> create challenge"]
+    Link["published_challenge_links"]
+    Callback["callback target + outbox"]
+
+    Draft --> Compile
+    Compile -->|"ready"| Publish
+    Compile -->|"needs_review"| Review
+    Compile -->|"needs_clarification"| Draft
+    Review -->|"approve"| Publish
+    Review -->|"reject / request changes"| Draft
+    Publish --> Link
+    Draft --> Callback
+    Review --> Callback
+    Publish --> Callback
+```
+
+Important distinction:
+
+- `routing.mode` is the IR’s interpretation of what kind of evaluator path the draft needs
+- `outcome.state` is the compile/review result
+- `authoring_drafts.state` is the persisted workflow state in the database
+
+### How routing works (3 layers)
+
+1. **Input and artifact inference**
+
+- inspect uploaded artifact schema hints
+- infer likely artifact roles
+- interpret intent fields and source transcript
+- decide whether the draft already looks objective / deterministic
+
+2. **Managed proposal generation**
+
+- always runs a heuristic proposal path
+- may optionally use the `openai_compatible` managed authoring compiler backend
+- proposes runtime family, metric, confidence, and reason codes
+
+3. **Scoreability and review gating**
+
+- `managed_supported` + strong confidence + successful dry-run → `ready`
+- `managed_supported` + weaker confidence → `needs_review`
+- `semi_custom` + executable official template → typed contract + dry-run + `needs_review`
+- `semi_custom` + non-executable contract → typed contract but publish-blocked
+- `expert_mode_required` → not a current managed/semi-custom execution path
+- unresolved ambiguity → `needs_clarification`
+
+Current semi-custom archetype registry:
+
+- `exact_artifact_match`
+- `structured_table_score`
+- `structured_record_score`
+- `bundle_or_code_judge`
+- `opaque_file_judge`
+
+Current executable semi-custom templates:
+
+- `official_table_metric_v1`
+- `official_exact_match_v1`
+- `official_structured_record_v1`
+
+So the architecture already distinguishes between:
+
+- typed deterministic evaluator contracts
+- executable official evaluator templates
+- expert/custom evaluator requirements
 
 ---
 
 ## Layer 10: The External Partner Callback System
 
-**Files:** `apps/api/src/lib/authoring-drafts.ts`, `packages/db/src/queries/authoring-callback-deliveries.ts`
+**Files:** `apps/api/src/lib/authoring-drafts.ts`, `packages/db/src/queries/authoring-callback-targets.ts`, `packages/db/src/queries/authoring-callback-deliveries.ts`
 
 ### What it does
 
-When a draft state changes, Agora notifies the external partner (Beach) via signed HTTPS webhook.
+Agora can notify external partners when an authoring draft changes state. This is a signed push channel layered on top of the partner draft API.
 
 ### Delivery flow
 
-```
+```text
 Draft state changes
+      │
+      ▼
+Resolve callback target
+  authoring_callback_targets
       │
       ▼
 Build event payload
   { event, draft_id, provider, state, card }
       │
       ▼
-Sign with HMAC-SHA256
-  x-agora-signature: sha256=<hmac(timestamp.body, secret)>
-  x-agora-event-id: sha256(draft_id:event:occurred_at)
+Sign with HMAC
+  x-agora-event
+  x-agora-event-id
+  x-agora-timestamp
+  x-agora-signature
       │
       ▼
-Try sending (3s timeout)
+Try HTTPS delivery
       │
-  ┌───┴───┐
-  ▼       ▼
- OK     Failed
-  │       │
-  │       ▼
-  │   Persist to authoring_callback_deliveries
-  │   status: "pending", next_attempt_at: now+5s
-  │       │
-  │       ▼
-  │   Operator/cron calls POST /api/authoring/callbacks/sweep
-  │       │
-  │   ┌───┴───┐
-  │   ▼       ▼
-  │  OK    Still failing?
-  │   │       │
-  │   │   attempts < 5 → reschedule
-  │   │   attempts >= 5 → exhausted (manual intervention)
-  │   │
-  └───┴───▶ Done
+  ┌───┴────┐
+  ▼        ▼
+success   failure
+  │         │
+  │         ▼
+  │   write authoring_callback_deliveries
+  │   next_attempt_at / attempts / status
+  │         │
+  │         ▼
+  │   POST /api/authoring/callbacks/sweep
+  │         │
+  └─────────┴──▶ eventual delivery or exhaustion
 ```
 
 ### Events delivered
 
 | Event | When |
 |-------|------|
-| `draft_updated` | Messages or artifacts added |
-| `draft_compiled` | Compilation succeeded |
-| `draft_compile_failed` | Compilation errored |
-| `draft_published` | Challenge is on-chain |
+| `draft_updated` | partner added messages or artifacts |
+| `draft_compiled` | compile succeeded |
+| `draft_compile_failed` | compile failed |
+| `draft_published` | publish completed |
+
+The durable outbox is important here: callback delivery is not coupled to the request/response lifetime of the originating draft mutation.
 
 ---
 
-## Layer 11: The Frontend (Next.js)
+## Layer 11: The Frontend (Next.js) and Top-Level Clients
 
 ### Challenge Discovery (Home)
 
-```
-┌─────────────────────────────────────────────────────┐
-│  KPI Strip: Open Challenges │ Total Rewards │ Subs  │
-├─────────────────────────────────────────────────────┤
-│  Sort: Newest │ Deadline Soon │ Highest Reward      │
-├─────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐                 │
-│  │ Challenge A   │  │ Challenge B   │                │
-│  │ Longevity     │  │ Drug Disc.    │                │
-│  │ 500 USDC      │  │ 200 USDC      │                │
-│  │ 3 days left   │  │ 12 days left  │                │
-│  │ 7 submissions │  │ 2 submissions │                │
-│  └──────────────┘  └──────────────┘                 │
-│                                                     │
-│  [Page 1] [2] [3]                                   │
-└─────────────────────────────────────────────────────┘
-         │
-         │ GET /api/challenges
-         ▼
-       Hono API → Supabase
+The current home surface is no longer a simple card wall. It is a branded landing page plus sortable market view:
+
+```text
+Hero section
+  ├── "Accelerate Science Bounties"
+  ├── KPI strip
+  └── CTA into /post
+
+Challenge browse section
+  ├── table / grid views
+  ├── sorting
+  ├── countdowns
+  └── domain / status badges
+
+Data source:
+  listChallenges() -> GET /api/challenges
 ```
 
 ### Challenge Detail
 
+Challenge detail remains status-aware:
+
+```text
+/challenges/[id]
+  ├── title / reward / deadline / distribution / status
+  ├── public artifacts
+  ├── solver-status / claimable state
+  ├── leaderboard visibility gated by challenge status
+  └── verification visibility gated by challenge status
 ```
-┌─────────────────────────────────────────────────────┐
-│  Title: "Predict aging biomarkers"                  │
-│  Domain: Longevity  │  Type: Prediction             │
-│  Reward: 500 USDC   │  Distribution: Winner Take All│
-│  Deadline: 2026-04-01 │  Status: OPEN               │
-├─────────────────────────────────────────────────────┤
-│  Description: "Given promoter sequences..."         │
-│                                                     │
-│  Public Artifacts:                                  │
-│    training_data.csv (IPFS)                         │
-│    sample_submission.csv (IPFS)                     │
-│                                                     │
-│  Scoring: RMSE via official tabular scorer          │
-│  Minimum score: 0.7                                 │
-├─────────────────────────────────────────────────────┤
-│  Leaderboard: [hidden until Scoring]                │
-│  Verification: [hidden until Scoring]               │
-├─────────────────────────────────────────────────────┤
-│  [Submit Solution]  [Finalize]  [Claim]             │
-└─────────────────────────────────────────────────────┘
-```
+
+The page combines:
+
+- `GET /api/challenges/:id`
+- `GET /api/challenges/:id/leaderboard`
+- `GET /api/challenges/:id/claimable`
+
+and only exposes verification/public replay surfaces once the challenge is no longer open.
 
 ### Posting Flow (Guided Interview)
 
+The posting UI is a guided authoring shell over the same draft backend:
+
+```text
+/post
+  ├── local guided reducer / prompt state
+  ├── create direct draft
+  ├── compile draft
+  ├── show compilation + confirmation contract
+  ├── wallet approval / pin-spec / challenge creation
+  └── optional return-to handoff for hosted partner flows
 ```
-Step 1: Describe                    Step 2: Review             Step 3: Publish
-┌──────────────────────┐     ┌──────────────────────┐   ┌──────────────────────┐
-│ What's the problem?  │     │ Compiled Spec:       │   │ USDC Approval:       │
-│ [textarea]    ✓      │     │   Title: ...         │   │   Approve 500 USDC   │
-│                      │     │   Domain: longevity  │   │   [Approve]          │
-│ Upload data files    │     │   Metric: RMSE       │   │                      │
-│ [file picker] ✓      │     │   Scorer: official   │   │ Create Challenge:    │
-│                      │     │   Artifacts: 2 pub   │   │   [Publish On-Chain] │
-│ How to judge winner? │     │                      │   │                      │
-│ [textarea]    ✓      │     │ Submission Contract: │   │ Status:              │
-│                      │     │   CSV with id, value │   │   Tx pending...      │
-│ Reward amount?       │     │                      │   │   Tx confirmed!      │
-│ [500 USDC]    ✓      │     │ Dry-Run: PASSED      │   │   Challenge live!    │
-│                      │     │   Score: 0.923       │   │                      │
-│ Distribution?        │     │                      │   │ [View Challenge →]   │
-│ [Winner Take All] ✓  │     │ [Edit] [Publish →]   │   │                      │
-│                      │     │                      │   │                      │
-│ Deadline?            │     └──────────────────────┘   └──────────────────────┘
-│ [14 days]     ✓      │
-│                      │
-│ [Compile →]          │
-└──────────────────────┘
+
+There is also an internal review surface:
+
+```text
+/authoring-review
+  ├── lists drafts in needs_review
+  ├── proxies through Next.js /api/authoring-review/*
+  ├── which forwards to API /api/authoring/review/*
+  └── uses AGORA_AUTHORING_REVIEW_TOKEN
 ```
+
+### Parallel top-layer clients
+
+The browser is not the only top-of-stack consumer anymore.
+
+```text
+Browser UI
+  └── Next.js app
+
+CLI
+  └── agora post / submit / score-local / oracle-score / verify / claim
+
+Agent runtime
+  └── typed API client around the REST API
+
+MCP server
+  └── exposes Agora tools to agent hosts
+```
+
+These are parallel clients over the same lower layers, not separate systems.
+
+### Which top-layer client to reach for
+
+```text
+Need a human-facing challenge marketplace?
+  -> Browser UI
+
+Need a deterministic scripted workflow or ops recovery?
+  -> CLI
+
+Need a typed programmatic integration in TypeScript?
+  -> agent-runtime
+
+Need tool exposure inside another agent host?
+  -> MCP server
+```
+
+### Client role matrix
+
+| Client | Best for | Talks to |
+|--------|----------|----------|
+| Browser | challenge discovery, authoring, wallet UX, review UI | API |
+| CLI | operator flows, local scoring, manual recovery, power-user posting | API, chain, local scorer |
+| Agent runtime | typed programmatic automation in TS | API |
+| MCP server | tool exposure to external agent hosts | API and local helper tooling |
 
 ---
 
 ## Full Stack Trace: End to End
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ LAYER 11: FRONTEND (Next.js on Vercel)                             │
-│  Browse challenges, post via guided interview, submit, claim       │
-└────────────────────────────────┬────────────────────────────────────┘
-                                 │ HTTP
-┌────────────────────────────────▼────────────────────────────────────┐
-│ LAYER 8+9: API + AUTHORING PIPELINE (Hono on Railway)              │
-│  REST routes, guided posting, external partner integration         │
-│  Classification: heuristics → optional LLM → confidence gating    │
-└──────────┬─────────────────────┬────────────────────────────────────┘
-           │                     │
-           │ DB reads/writes     │ Chain reads/writes
-           ▼                     ▼
-┌──────────────────┐  ┌─────────────────────────────────────────────┐
-│ LAYER 7: DB      │  │ LAYER 5: SMART CONTRACTS (Base)             │
-│ (Supabase)       │  │  Factory → Challenge → USDC escrow          │
-│                  │  │  submit() → postScore() → finalize() → claim│
-│ authoring_drafts │  └────────────────┬────────────────────────────┘
-│ challenges       │                   │ Events
-│ submissions      │  ┌────────────────▼────────────────────────────┐
-│ score_jobs       │  │ LAYER 6: INDEXER (30s poll)                  │
-│ challenge_payouts│◀─│  ChallengeCreated → challenges               │
-│                  │  │  Submitted → submissions (strict intent)     │
-└──────────────────┘  │  Scored → submissions.score                  │
-                      │  Finalized → challenge_payouts               │
-                      └──────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Browser["Browser UI (Next.js)"]
+    CLI["CLI"]
+    MCP["MCP Server / Agent Runtime"]
+    Partner["External Partner (Beach, etc.)"]
 
-┌─────────────────────────────────────────────────────────────────────┐
-│ LAYER 4: WORKER ORCHESTRATOR (Railway)                             │
-│  Poll score_jobs → claim → score → build proof → post on-chain    │
-└────────────────────────────────┬────────────────────────────────────┘
-                                 │ HTTP (production) or direct (dev)
-┌────────────────────────────────▼────────────────────────────────────┐
-│ LAYER 3: EXECUTOR SERVICE (Docker-capable host)                    │
-│  Receives staged files, runs Docker container, returns score       │
-└────────────────────────────────┬────────────────────────────────────┘
-                                 │
-┌────────────────────────────────▼────────────────────────────────────┐
-│ LAYER 2: SCORING PIPELINE                                          │
-│  Fetch from IPFS → stage workspace → build runtime config → run   │
-└────────────────────────────────┬────────────────────────────────────┘
-                                 │
-┌────────────────────────────────▼────────────────────────────────────┐
-│ LAYER 1: SCORER RUNTIME (TypeScript → Docker bridge)               │
-│  Assemble security flags → docker run → parse score.json           │
-└────────────────────────────────┬────────────────────────────────────┘
-                                 │
-┌────────────────────────────────▼────────────────────────────────────┐
-│ LAYER 0: DOCKER SCORER (Python in sandboxed container)             │
-│  Read agora-runtime.json → compare files → write score.json        │
-│  CSV exact-match │ JSON equality │ Record validation │ Binary match │
-└─────────────────────────────────────────────────────────────────────┘
+    API["API (Hono)\nREST + authoring + submissions + review"]
+    DB["Supabase\nprojections + drafts + jobs"]
+    Chain["Base contracts\nAgoraFactory + AgoraChallenge"]
+    Indexer["Chain indexer"]
+    Worker["Scoring worker"]
+    Executor["Executor service"]
+    Pipeline["Scoring pipeline"]
+    Runner["Docker runner"]
+    Scorers["Official scorer images\nrepro / tabular / ranking"]
+
+    Browser --> API
+    CLI --> API
+    MCP --> API
+    Partner --> API
+
+    API --> DB
+    API --> Chain
+
+    Chain --> Indexer
+    Indexer --> DB
+
+    Worker --> DB
+    Worker --> Chain
+    Worker --> Pipeline
+    Worker --> Executor
+
+    Executor --> Runner
+    Pipeline --> Runner
+    Runner --> Scorers
 ```
+
+## One Submission, End to End
+
+Sometimes the simplest way to understand the whole system is to follow a single submission:
+
+```mermaid
+sequenceDiagram
+    participant S as Solver
+    participant API as API
+    participant IPFS as IPFS
+    participant CH as AgoraChallenge
+    participant DB as Supabase
+    participant W as Worker
+    participant EX as Executor
+
+    S->>API: upload submission bytes
+    API->>IPFS: pin result artifact
+    API->>DB: create submission_intent
+    S->>CH: submit(resultHash)
+    API->>DB: register submission with submission_intent_id
+    W->>DB: claim score job
+    W->>EX: run official scorer
+    EX-->>W: score + image digest
+    W->>IPFS: pin proof bundle
+    W->>CH: postScore(...)
+    W->>DB: persist projections
+    API-->>S: status / leaderboard / verification views
+```
+
+That single path touches almost every layer described above:
+
+- API boundary
+- submission registration model
+- IPFS artifact storage
+- worker scoring orchestration
+- executor and Docker scorer
+- on-chain settlement
+- indexed read models
 
 ---
 
@@ -720,119 +1281,127 @@ Step 1: Describe                    Step 2: Review             Step 3: Publish
 
 ### What's solid
 
-1. **Determinism is enforced at every boundary.** The scorer is sandboxed (no network, read-only, non-root). The image is pinned by digest. The proof bundle captures input/output hashes. Anyone can re-run the scorer and get the same result.
+1. **Determinism is enforced at multiple boundaries.** Official scorer images are small and typed, image provenance is enforced through digest-backed pulls, runtime config is explicit, and proof bundles capture replay-critical hashes.
 
-2. **Strict intent-first submission flow.** No orphan submissions. No late reconciliation. One foreign key, one direction, one codepath.
+2. **Submission registration is now strict.** A scoreable submission must have a registered `submission_intent` and a strict FK-backed link into `submissions`. The old reconcile-later model is gone from the live architecture.
 
-3. **On-chain status is the fairness boundary.** Leaderboard visibility, verification access, and reputation surfaces all gate on `status()`, not the DB projection.
+3. **The draft aggregate is cleaner than before.** Draft state, callback targets, callback deliveries, and publish outcomes are no longer stuffed into one thick all-purpose draft row. The split into `authoring_drafts`, `authoring_callback_targets`, `authoring_callback_deliveries`, and `published_challenge_links` materially reduced structural entropy.
 
-4. **One Docker image handles four scoring modes.** Extension requires adding a comparison function to `score.py` and a `comparison_kind` value to `agora-runtime.json`. No new images, no new containers.
+4. **The authoring layer is broader without jumping straight to arbitrary code.** Managed runtimes, executable semi-custom templates, and typed-but-non-executable semi-custom archetypes are distinct concepts now.
 
-5. **External partner integration is clean.** Bearer token auth, Zod validation, durable callback outbox, HMAC-signed webhooks. Adding a partner is config, not code.
+5. **Public fairness boundaries are explicit.** Open challenges keep leaderboard and verification surfaces closed, and the code treats effective on-chain lifecycle semantics as the visibility boundary.
 
 ### What to watch
 
-1. **The config monolith is split but `base.ts` is still 545 lines.** The master Zod schema has to exist somewhere, but it will keep growing as features land.
+1. **Operator-blind privacy is still not a goal.** Sealed submissions protect against public copying while a challenge is open, but Agora-operated worker or manual oracle flows still decrypt on Agora-controlled infrastructure once scoring starts.
 
-2. **The authoring pipeline has 9+ modules.** Each has a clear role, but the interdependencies create high cognitive load for new contributors.
+2. **`challenge_type` still exists as a compatibility/display concept.** Runtime identity has shifted toward `runtime_family` plus evaluator contract/archetype, but some compatibility fields still remain in the data model and UI surface.
 
-3. **Proof bundle publication is not transactional.** IPFS pin can succeed while the on-chain `postScore()` tx fails. Retry logic exists but there's no three-phase commit.
+3. **The authoring subsystem is cleaner but still cognitively dense.** The routes are thinner than before, but the authoring IR, compilation, dry-run, review, partner import, and callback paths still span multiple focused modules.
 
-4. **The `AssertionError` typo in `score.py`** (lines 146, 262, 425) — should be `AssertionError`. These lines are unreachable in practice but would throw `NameError` if hit.
+4. **Proof pinning and on-chain posting are recoverable, not transactional.** The system has retry and reconciliation logic, but proof publication and score posting are still a multi-step workflow rather than a single atomic commit.
 
-5. **Semi-custom archetypes `bundle_or_code_judge` and `opaque_file_judge`** are typed but have no execution template. They exist in the schema but route to Expert Mode. This is intentional but should be documented clearly for partners.
+5. **Some semi-custom archetypes remain typed-only.** `bundle_or_code_judge` and `opaque_file_judge` are valid routing outputs, but they are not first-class executable official templates yet. Expanding them carelessly would be an easy way to reintroduce complexity.
 
 ---
 
 ## Design Thinking: When Does Deterministic Scoring Work?
 
-The Docker scorer compares a solver's submission against a reference. But not every bounty has a simple "right answer." Understanding when this model works — and when it breaks down — is critical for deciding what challenges Agora can host.
+Agora is strongest when the poster can state an objective payout condition as an explicit, typed rule. The current architecture supports a broader set of deterministic problems than it did earlier, but it still does not support every “interesting challenge.”
 
 ### The fundamental question
 
-The scorer needs two files: a ground truth and a submission. But does the poster always have the ground truth?
+Can the poster express the winner condition as a deterministic contract that the platform can execute without human judgment?
 
-The answer depends on what kind of challenge it is. There are three fundamentally different categories:
+If yes, Agora can usually support it through:
+
+- a managed runtime family
+- an executable semi-custom evaluator template
+- or expert mode with a custom scorer image
+
+If no, the challenge is not yet a fit for the current deterministic settlement model.
 
 ### Category 1: "I have the answer — can you reproduce it?"
 
-**The poster has the exact answer.** The bounty rewards independent reproduction.
+**The poster already has the reference artifact.**
 
-| Example | Ground truth | What's being tested |
-|---------|-------------|-------------------|
-| Reproduce Figure 3 from a longevity paper | The published figure's underlying data table | Can an independent agent, starting from raw data, arrive at the same result? |
-| Replicate a statistical analysis | The published p-values and effect sizes | Can the methodology be reproduced with the same dataset? |
-| Match a known API response | The exact JSON output | Can someone reverse-engineer or reconstruct the correct output? |
+| Example | Evaluation artifact | Current path |
+|---------|---------------------|--------------|
+| reproduce a published data table | hidden CSV reference | managed `reproducibility` or semi-custom `exact_artifact_match` |
+| match an exact JSON output | hidden JSON reference | executable semi-custom `exact_artifact_match` |
+| reproduce a binary document or generated file | hidden binary/PDF | executable semi-custom `exact_artifact_match` |
 
-**Why the poster still pays:** The value isn't the answer (they already have it). The value is *proof that someone else can get there independently*. This matters for scientific credibility, regulatory compliance, and trust.
+Why it works:
 
-**Scoring mode:** `csv_table` (exact match) or `json_file` (deep equality) or `opaque_file` (binary match).
+- the scorer compares the solver artifact directly against a hidden reference
+- the payout condition is explicit and deterministic
 
 ### Category 2: "I have hidden labels — can you predict them?"
 
-**The poster has a dataset with known outcomes, but hides some of them.** The bounty rewards predictive accuracy.
+**The poster has held-out truth data and wants the best predictive method.**
 
-| Example | Ground truth | What's being tested |
-|---------|-------------|-------------------|
-| Predict gene expression from promoter sequences | Hidden test-set expression values | How well can a model generalize to unseen data? |
-| Classify cell types from single-cell RNA-seq | Hidden cell-type labels for test cells | Can the solver's classifier handle new samples? |
-| Rank drug candidates by binding affinity | Hidden experimental binding scores | Does the solver's ranking match reality? |
-| Predict patient outcomes from clinical data | Hidden follow-up outcomes | Can the model forecast health trajectories? |
-
-**Why the poster still pays:** The poster has labels for the test set, but they want a *model or method* that produces those labels from the inputs alone. The labels are the evaluation tool, not the product. The product is the solver's predictive capability.
-
-**Scoring mode:** `csv_table` with ML metrics (R2, RMSE, accuracy, Spearman) via the managed tabular scorer. The solver uploads predicted values; the scorer compares them against hidden true values using a statistical metric. The score isn't binary — it's a continuous measure of how close the predictions are.
-
-**Key nuance:** The poster isn't checking "did you get the exact answer?" They're checking "how good is your method?" A solver who gets R2 = 0.95 is better than one who gets R2 = 0.80, even though neither reproduced the exact values. The metric formula (not a human judge) determines the ranking.
-
-### Category 3: "I have a rubric — does the submission meet it?"
-
-**The poster doesn't have a single right answer. They have rules that any valid answer must satisfy.** The bounty rewards completeness and correctness against a checklist.
-
-| Example | Ground truth | What's being tested |
-|---------|-------------|-------------------|
-| Write a safety incident report | A rubric: required fields, allowed severity values, non-empty timeline | Does the document meet all structural requirements? |
-| Annotate a genomic region | A rubric: required metadata fields, allowed ontology terms | Is the annotation complete and well-formed? |
-| Document a GLP experimental protocol | A rubric: required sections, allowed method references | Does the protocol meet regulatory format requirements? |
-| Produce a structured drug safety report | A rubric: required adverse event fields, allowed coding systems | Does the report pass quality checks? |
-
-**Why the poster still pays:** There are many valid submissions. The poster isn't looking for one specific document — they're looking for *any* document that satisfies all the rules. The rubric is the evaluation tool.
-
-**Scoring mode:** `json_record` (structured record validation). Score = fraction of checks passed. A submission that hits 6 out of 7 checks scores 0.857.
-
-**Key nuance:** This is the most flexible category. The rubric can express any deterministic yes/no check on a JSON field: "is this field present?", "is this value in an allowed list?", "is this array non-empty?" The solver has creative freedom within the constraints. The score reflects how many constraints are satisfied, not how "close" the answer is to a reference.
-
-### Category 4: "I don't have the answer — I need someone to find it" (NOT YET SUPPORTED)
-
-**The poster has a question, not an answer.** There is no ground truth to compare against.
-
-| Example | What would be needed | Why it's hard |
+| Example | Evaluation artifact | Current path |
 |---------|---------------------|--------------|
-| Find a molecule that binds to KRAS with high affinity | Run a docking simulation on the solver's candidate | The "scorer" would need to execute a computation, not compare files |
-| Find adversarial inputs that break a longevity model | Run the model on the solver's inputs and check if it fails | The scorer needs to execute the poster's model inside the container |
-| Optimize hyperparameters for a neural network | Train the model with the solver's config and measure loss | The scorer needs GPU compute and training data |
-| Discover a novel promoter sequence with desired expression | Run a gene expression simulator on the solver's sequence | The scorer needs a domain-specific simulation tool |
+| numeric predictions against hidden labels | hidden CSV labels | managed `tabular_regression` |
+| class labels against hidden truth | hidden CSV labels | managed `tabular_classification` |
+| ranked candidates against hidden relevance | hidden ranking CSV | managed `ranking` or `docking` |
+| table-shaped deterministic semi-custom scoring | hidden CSV + typed contract | executable semi-custom `structured_table_score` |
 
-**Why this doesn't work yet:** The current scorer is a pure comparison tool. It reads two files and checks if they match. It can't *run* anything — no simulations, no model inference, no computations beyond string/number comparison.
+Why it works:
 
-**What would be needed:** The poster would need to provide either:
-- A custom Docker scorer image that contains the evaluation logic (Expert Mode — already supported, but requires Docker expertise)
-- A "model-to-data" setup where the solver submits a model and Agora runs it on hidden data (explicitly out of scope for MVP)
-- A computational oracle service that the scorer calls (impossible — the container has no network access, by design)
+- the metric is explicit
+- the scorer compares solver output against hidden evaluation data
+- ranking of solvers is deterministic
+
+### Category 3: "I have a rubric — does the submission satisfy it?"
+
+**The poster does not have one exact answer, but does have a deterministic validation contract.**
+
+| Example | Evaluation artifact | Current path |
+|---------|---------------------|--------------|
+| incident report with required sections | hidden rubric JSON | executable semi-custom `structured_record_score` |
+| structured protocol compliance | hidden rubric JSON | executable semi-custom `structured_record_score` |
+| bundle/code package requiring custom deterministic checks | typed archetype only | `bundle_or_code_judge` (typed, not executable by official template yet) |
+
+Why it works:
+
+- the rubric can be represented as a deterministic validation contract
+- the scorer does not need a human to decide correctness
+
+### Category 4: "I don't have the answer — I need someone to find it"
+
+**The poster has a search problem or computation problem, not a reference artifact or bounded rubric.**
+
+| Example | Why it is hard | Current support |
+|---------|----------------|-----------------|
+| discover a new molecule | needs simulation or search evaluation | expert/custom scorer only |
+| run hidden model inference over submitted code | needs arbitrary execution against hidden environment | expert/custom scorer only |
+| evaluate a code bundle with a bespoke hidden test harness | needs custom judge runtime | typed archetype exists, official template not yet |
+
+This is the frontier. The current managed and semi-custom layers are intentionally constrained to avoid turning the platform into arbitrary code execution by default.
 
 ### Summary: What the scorer can and cannot evaluate
 
-```
-Poster has...           Scoring approach              Supported?
-─────────────────────── ───────────────────────────── ──────────
-The exact answer        Compare files directly         YES
-Hidden test labels      Compare predictions via metric YES
-A validation rubric     Check fields against rules     YES
-Only a question         Run computation to evaluate    EXPERT MODE ONLY
+```text
+Poster has...                     Current architecture path
+───────────────────────────────   ───────────────────────────────────────────
+Exact reference artifact          Managed or semi-custom exact match
+Hidden labels / hidden scores     Managed metric scorer or structured table score
+Deterministic rubric              Structured record score
+Custom deterministic judge        Expert mode today; limited typed archetypes exist
+Open-ended search problem         Not a first-class managed/semi-custom path
 ```
 
 ### Design implication
 
-The semi-custom scorer expansion (Phases 5-7) increased the surface area of categories 1-3 significantly. Before, only ML-shaped prediction problems (Category 2) had turnkey support. Now, reproduction (Category 1), rubric validation (Category 3), and broader exact-match patterns all work without custom Docker images.
+The current architecture is no longer “ML-only,” but it is still explicitly deterministic-first.
 
-Category 4 remains the frontier. The architectural path to supporting it is Expert Mode (poster provides a scorer image) or a future "evaluation function" primitive where the poster supplies a lightweight evaluation script that Agora wraps into a container automatically. The latter would require careful sandboxing design but could eliminate the Docker expertise barrier for computational evaluation challenges.
+The real question is not:
+
+- “Is this an ML challenge?”
+
+It is:
+
+- “Can the payout rule be typed and executed deterministically without human judgment?”
+
+That is the right mental model for Agora as of the current codebase.

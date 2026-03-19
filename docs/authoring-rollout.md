@@ -346,6 +346,8 @@ Do not roll API and worker onto different runtime expectations for long. They sh
 
 ## Beach Integration Checklist
 
+For the full host-side implementation guide, see [Beach Integration Guide](beach-integration.md).
+
 Beach does not need direct DB access.
 
 Beach needs:

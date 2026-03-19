@@ -6,14 +6,12 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Download,
   RefreshCw,
   Shield,
   SlidersHorizontal,
   Sparkles,
   TrendingUp,
   Users,
-  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -91,6 +89,8 @@ export function HomeClient() {
   const [sort, setSort] = useState<ChallengeListSort>("newest");
   const [page, setPage] = useState(1);
   const [view, setView] = useState<"table" | "grid">("table");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const query = useQuery({ queryKey: ["challenges"], queryFn: () => listChallenges({}) });
   const challenges = query.data ?? [];
@@ -100,11 +100,20 @@ export function HomeClient() {
   const totalSubs = challenges.reduce((s, c) => s + (c.submissions_count ?? 0), 0);
 
   const rows = useMemo(() => {
-    return sortChallenges([...challenges], sort);
-  }, [challenges, sort]);
+    let filtered = [...challenges];
+    if (categoryFilter !== "all") {
+      filtered = filtered.filter((c) => c.domain === categoryFilter);
+    }
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((c) => c.status?.toLowerCase() === statusFilter);
+    }
+    return sortChallenges(filtered, sort);
+  }, [challenges, sort, categoryFilter, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const paged = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const gridItems = rows.slice(0, page * PAGE_SIZE);
+  const hasMore = page * PAGE_SIZE < rows.length;
 
   return (
     <div className="space-y-10">
@@ -190,70 +199,117 @@ export function HomeClient() {
       </section>
 
       {/* ═══ MARKET ANALYTICS & OPERATIONS ═══ */}
-      <section id="analytics" className="pt-10 pb-12" style={{ backgroundColor: "#f4f3ef", borderRadius: "20px" }}>
-        <div className="px-10">
-          <h2 className="font-display font-bold mb-8" style={{ fontSize: "1.75rem", color: "#111519" }}>
-            Browse Bounty Challenges
-          </h2>
-
-          {/* Controls bar */}
-          <div className="flex items-center justify-between mb-8">
-            {/* View tabs */}
-            <div className="inline-flex overflow-hidden" style={{ backgroundColor: "#f5f4f0", border: "1px solid #e8e5df", borderRadius: "10px" }}>
-              {(["table", "grid", "timeline"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => { if (v !== "timeline") setView(v as "table" | "grid"); }}
-                  className="px-5 py-2.5 text-sm font-sans font-medium transition-colors duration-150"
-                  style={{
-                    backgroundColor: view === v ? "#ffffff" : "transparent",
-                    color: view === v ? "#111519" : "#94a3b8",
-                    boxShadow: view === v ? "0 1px 3px rgba(0,0,0,0.06)" : "none",
-                    borderRadius: "8px",
-                    margin: "3px",
-                  }}
-                >
-                  {v === "table" ? "Table View" : v === "grid" ? "Grid View" : "Timeline"}
-                </button>
-              ))}
+      <section id="analytics" className="py-20" style={{ backgroundColor: "#f0eee8", borderRadius: "20px" }}>
+        <div className="px-8">
+          {/* Section Header & Controls */}
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-12">
+            <div>
+              <h2 className="font-display text-3xl font-bold mb-4" style={{ color: "#111519" }}>
+                Browse Bounty Challenges
+              </h2>
+              <div className="flex p-1 rounded-full w-fit" style={{ backgroundColor: "#ebe8e2" }}>
+                {(["table", "grid"] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => { setView(v); setPage(1); }}
+                    className="px-6 py-2 rounded-full text-sm font-medium transition-colors duration-150"
+                    style={{
+                      backgroundColor: view === v ? "#111519" : "transparent",
+                      color: view === v ? "#ffffff" : "#45474a",
+                      boxShadow: view === v ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                    }}
+                  >
+                    {v === "table" ? "Table View" : "Grid View"}
+                  </button>
+                ))}
+              </div>
             </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Category filter */}
+              <div
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer"
+                style={{
+                  backgroundColor: categoryFilter !== "all" ? "#111519" : "#ffffff",
+                  color: categoryFilter !== "all" ? "#ffffff" : "#111519",
+                }}
+              >
+                <SlidersHorizontal className="w-4 h-4" style={{ color: categoryFilter !== "all" ? "#ffffff" : "#45474a" }} />
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+                  className="bg-transparent outline-none cursor-pointer appearance-none text-sm font-medium"
+                  style={{ color: "inherit" }}
+                >
+                  <option value="all">Category: All</option>
+                  <option value="longevity">Longevity</option>
+                  <option value="drug_discovery">Drug Discovery</option>
+                  <option value="omics">Omics</option>
+                  <option value="protein_design">Protein Design</option>
+                  <option value="neuroscience">Neuroscience</option>
+                  <option value="other">Other</option>
+                </select>
+                <ChevronDown className="w-4 h-4" style={{ color: categoryFilter !== "all" ? "#ffffff" : "#45474a" }} />
+              </div>
 
-            {/* Filters + actions */}
-            <div className="flex items-center gap-3">
-              <button type="button" className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-sans font-medium" style={{ backgroundColor: "#ffffff", border: "1px solid #e8e5df", borderRadius: "10px", color: "#111519" }}>
-                <SlidersHorizontal className="w-4 h-4" style={{ color: "#64748b" }} />
-                Category: All
-              </button>
-              <button type="button" className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-sans font-medium" style={{ backgroundColor: "#ffffff", border: "1px solid #e8e5df", borderRadius: "10px", color: "#111519" }}>
-                <Zap className="w-4 h-4" style={{ color: "#64748b" }} />
-                Status: Active
-              </button>
-              <div className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-sans font-medium" style={{ backgroundColor: "#ffffff", border: "1px solid #e8e5df", borderRadius: "10px", color: "#111519" }}>
-                <SlidersHorizontal className="w-4 h-4" style={{ color: "#64748b" }} />
+              {/* Status filter */}
+              <div
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer"
+                style={{
+                  backgroundColor: statusFilter !== "all" ? "#111519" : "#ffffff",
+                  color: statusFilter !== "all" ? "#ffffff" : "#111519",
+                }}
+              >
+                <SlidersHorizontal className="w-4 h-4" style={{ color: statusFilter !== "all" ? "#ffffff" : "#45474a" }} />
+                <select
+                  value={statusFilter}
+                  onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+                  className="bg-transparent outline-none cursor-pointer appearance-none text-sm font-medium"
+                  style={{ color: "inherit" }}
+                >
+                  <option value="all">Status: All</option>
+                  <option value="open">Active</option>
+                  <option value="scoring">Scoring</option>
+                  <option value="finalized">Finalized</option>
+                  <option value="disputed">Disputed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+                <ChevronDown className="w-4 h-4" style={{ color: statusFilter !== "all" ? "#ffffff" : "#45474a" }} />
+              </div>
+
+              {/* Sort */}
+              <div
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer"
+                style={{
+                  backgroundColor: sort !== "newest" ? "#111519" : "#ffffff",
+                  color: sort !== "newest" ? "#ffffff" : "#111519",
+                }}
+              >
+                <SlidersHorizontal className="w-4 h-4" style={{ color: sort !== "newest" ? "#ffffff" : "#45474a" }} />
                 <select
                   value={sort}
                   onChange={(e) => setSort(e.target.value as ChallengeListSort)}
-                  className="bg-transparent outline-none cursor-pointer appearance-none pr-2 text-sm font-sans font-medium"
-                  style={{ color: "#111519" }}
+                  className="bg-transparent outline-none cursor-pointer appearance-none text-sm font-medium"
+                  style={{ color: "inherit" }}
                 >
                   <option value="newest">Amount: All</option>
-                  <option value="reward">Amount: &gt;$5k</option>
+                  <option value="reward">Amount: High</option>
                   <option value="deadline">Deadline</option>
                 </select>
+                <ChevronDown className="w-4 h-4" style={{ color: sort !== "newest" ? "#ffffff" : "#45474a" }} />
               </div>
-              <button type="button" className="p-2.5 transition-colors hover:bg-white" style={{ color: "#94a3b8", borderRadius: "8px" }}>
-                <Download className="w-4 h-4" />
-              </button>
-              <button type="button" onClick={() => query.refetch()} className="p-2.5 transition-colors hover:bg-white" style={{ color: "#94a3b8", borderRadius: "8px" }}>
+
+              {/* Refresh */}
+              <button
+                type="button"
+                onClick={() => query.refetch()}
+                className="p-2 rounded-lg transition-colors hover:bg-white"
+                style={{ color: "#45474a" }}
+              >
                 <RefreshCw className="w-4 h-4" />
               </button>
             </div>
           </div>
-        </div>
-
-        {/* Table */}
-        <div className="px-10">
           {query.isLoading ? (
             <div className="bg-white p-16 text-center" style={{ borderRadius: "12px" }}>
               <div className="font-mono text-sm" style={{ color: "#94a3b8" }}>Loading challenges...</div>
@@ -364,9 +420,29 @@ export function HomeClient() {
               )}
             </>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {paged.map((row) => (<ChallengeCard key={row.id} challenge={row} />))}
-            </div>
+            <>
+              {gridItems.length === 0 ? (
+                <div className="bg-white p-16 text-center" style={{ borderRadius: "12px" }}>
+                  <div className="font-mono text-sm" style={{ color: "#8c9096" }}>No challenges found.</div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  {gridItems.map((row) => (<ChallengeCard key={row.id} challenge={row} />))}
+                </div>
+              )}
+              {hasMore && (
+                <div className="mt-16 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => p + 1)}
+                    className="px-12 py-4 font-display font-bold uppercase text-xs transition-all duration-300 border-2 border-[#111519] hover:bg-[#111519] hover:text-white"
+                    style={{ letterSpacing: "0.1em", color: "#111519" }}
+                  >
+                    Load More Bounties
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </section>

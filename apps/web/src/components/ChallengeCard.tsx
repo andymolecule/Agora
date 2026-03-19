@@ -1,14 +1,9 @@
 "use client";
 
-import { CHALLENGE_STATUS } from "@agora/common";
 import { Clock } from "lucide-react";
 import Link from "next/link";
-import {
-  getChallengeBadgeLabel,
-  getChallengeCardFooterLabel,
-} from "../lib/challenge-status-copy";
+import { getChallengeCardFooterLabel } from "../lib/challenge-status-copy";
 import { formatUsdc } from "../lib/format";
-import { getStatusStyle } from "../lib/status-styles";
 import type { Challenge } from "../lib/types";
 
 export function ChallengeCard({
@@ -17,58 +12,71 @@ export function ChallengeCard({
   challenge: Challenge;
   index?: number;
 }) {
-  const statusStyle = getStatusStyle(challenge.status);
-  const badgeLabel = getChallengeBadgeLabel(challenge.status);
   const footerLabel = getChallengeCardFooterLabel(challenge);
+  const isCancelled = challenge.status?.toLowerCase() === "cancelled";
 
   return (
     <Link
       href={`/challenges/${challenge.id}`}
-      className="group flex flex-col rounded-[2px] border border-warm-900 no-underline bg-white card-hover overflow-hidden h-full"
+      className="group flex flex-col bg-white p-8 rounded-lg no-underline overflow-hidden h-full hover:shadow-xl transition-all duration-300"
     >
-      {/* Top row: status + reward */}
-      <div className="flex items-center justify-between px-5 pt-4 pb-2">
+      {/* Top row: domain + time */}
+      <div className="flex justify-between items-start mb-6">
         <span
-          className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.5px] font-mono border"
+          className="px-3 py-1 rounded-full text-[10px] uppercase font-display"
           style={{
-            backgroundColor: statusStyle.bg,
-            borderColor: statusStyle.borderColor,
-            color: statusStyle.text,
+            letterSpacing: "0.1em",
+            backgroundColor: "#ebe8e2",
+            color: isCancelled ? "#94a3b8" : "#45474a",
           }}
         >
-          <span
-            className="h-1.5 w-1.5 rounded-full"
-            style={{ backgroundColor: statusStyle.text }}
-          />
-          {badgeLabel}
+          {challenge.domain?.replace(/_/g, " ")}
         </span>
-        <span className="inline-flex items-baseline text-xl font-display font-bold text-warm-900 tabular-nums tracking-tight">
-          ${formatUsdc(challenge.reward_amount)}
-          <span className="text-[10px] font-mono font-bold text-warm-900/40 ml-1">
-            USDC
-          </span>
+        <span
+          className="flex items-center gap-1 text-xs font-display"
+          style={{ color: isCancelled ? "#94a3b8" : "#45474a" }}
+        >
+          <Clock className="w-3.5 h-3.5" />
+          {footerLabel}
         </span>
       </div>
 
       {/* Title */}
-      <div className="px-5 py-3 flex-1">
-        <h3 className="text-lg font-display font-bold leading-snug line-clamp-2 text-warm-900 group-hover:underline decoration-2 underline-offset-4">
-          {challenge.title}
-        </h3>
-        <p className="text-xs line-clamp-2 mt-2 text-warm-900/50 font-mono">
-          {challenge.description?.slice(0, 120) ?? "No description."}
-        </p>
-      </div>
+      <h3
+        className="font-display text-2xl font-bold leading-tight mb-4 transition-colors duration-200"
+        style={{ color: isCancelled ? "#94a3b8" : "#111519" }}
+      >
+        {challenge.title}
+      </h3>
 
-      {/* Footer: domain + phase summary */}
-      <div className="flex items-center justify-between px-5 py-3 border-t border-warm-900/10">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-[0.5px] px-2 py-1 border border-warm-900 text-warm-900">
-          {challenge.domain}
-        </span>
-        <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.5px] text-warm-900/50">
-          <Clock className="w-3 h-3" />
-          {footerLabel}
-        </span>
+      {/* Description */}
+      <p
+        className="text-sm line-clamp-2 mb-8 leading-relaxed"
+        style={{ color: isCancelled ? "#cbd5e1" : "#45474a" }}
+      >
+        {challenge.description?.slice(0, 120) ?? "No description."}
+      </p>
+
+      {/* Prize section — pushed to bottom */}
+      <div className="mt-auto">
+        <p
+          className="font-display text-xs uppercase mb-1"
+          style={{ letterSpacing: "0.05em", color: "#45474a" }}
+        >
+          Prize Pool
+        </p>
+        <p
+          className="font-mono text-3xl font-bold"
+          style={{ color: isCancelled ? "#cbd5e1" : "#111519" }}
+        >
+          ${formatUsdc(challenge.reward_amount)}{" "}
+          <span
+            className="text-sm font-normal uppercase"
+            style={{ color: isCancelled ? "#cbd5e1" : "#45474a" }}
+          >
+            USDC
+          </span>
+        </p>
       </div>
     </Link>
   );
