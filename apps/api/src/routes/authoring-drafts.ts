@@ -1,14 +1,14 @@
 import { getPublicClient } from "@agora/chain";
 import {
   canonicalizeChallengeSpec,
-  compilePostingSessionRequestSchema,
+  compileManagedAuthoringDraftRequestSchema,
   computeSpecHash,
-  createPostingSessionRequestSchema,
+  createAuthoringDraftRequestSchema,
   getPinSpecAuthorizationTypedData,
-  publishPostingSessionRequestSchema,
+  publishManagedAuthoringDraftRequestSchema,
   readApiServerRuntimeConfig,
-  readPostingReviewRuntimeConfig,
-  reviewPostingSessionDecisionRequestSchema,
+  readAuthoringReviewRuntimeConfig,
+  reviewManagedAuthoringDraftDecisionRequestSchema,
   validateChallengeScoreability,
 } from "@agora/common";
 import {
@@ -45,19 +45,19 @@ import {
   resolveAuthoringDraftReturnUrl,
 } from "../lib/authoring-drafts.js";
 import { buildManagedAuthoringIr } from "../lib/managed-authoring-ir.js";
-import { compileManagedAuthoringPostingSession } from "../lib/managed-authoring.js";
+import { compileManagedAuthoringDraftOutcome } from "../lib/managed-authoring.js";
 import { getRequestLogger } from "../lib/observability.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import type { ApiEnv } from "../types.js";
+import {
+  AUTHORING_DRAFT_STALE_COMPILING_THRESHOLD_MS,
+  buildAuthoringDraftHealthResponse,
+} from "./authoring-draft-health-shared.js";
 import {
   getAuthoringDraftOwnershipError,
   normalizePosterAddress,
   resolveAuthoringDraftPosterAddress,
 } from "./authoring-draft-ownership.js";
-import {
-  POSTING_STALE_COMPILING_THRESHOLD_MS,
-  buildPostingHealthResponse,
-} from "./posting-health-shared.js";
 
 const DRAFT_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const READY_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
@@ -68,12 +68,12 @@ function formatScoreabilityMessage(errors: string[]) {
   return errors.join(" ");
 }
 
-function expiredPostingSessionError(c: Context<ApiEnv>) {
+function expiredAuthoringDraftError(c: Context<ApiEnv>) {
   return jsonError(c, {
     status: 410,
-    code: "POSTING_SESSION_EXPIRED",
+    code: "AUTHORING_DRAFT_EXPIRED",
     message:
-      "Posting session expired. Next step: start a new draft or use the published challenge spec if this draft was already posted.",
+      "Authoring draft expired. Next step: start a new draft or use the published challenge spec if this draft was already posted.",
   });
 }
 type AuthoringDraftRouteDependencies = {
@@ -91,16 +91,16 @@ type AuthoringDraftRouteDependencies = {
   consumeNonce?: typeof consumeNonce;
   deliverAuthoringDraftLifecycleEvent?: typeof deliverAuthoringDraftLifecycleEvent;
   readApiServerRuntimeConfig?: typeof readApiServerRuntimeConfig;
-  readPostingReviewRuntimeConfig?: typeof readPostingReviewRuntimeConfig;
+  readAuthoringReviewRuntimeConfig?: typeof readAuthoringReviewRuntimeConfig;
   canonicalizeChallengeSpec?: typeof canonicalizeChallengeSpec;
-  compileManagedAuthoringPostingSession?: typeof compileManagedAuthoringPostingSession;
+  compileManagedAuthoringDraftOutcome?: typeof compileManagedAuthoringDraftOutcome;
   requireWriteQuota?: typeof requireWriteQuota;
   buildManagedAuthoringIr?: typeof buildManagedAuthoringIr;
   getRequestLogger?: typeof getRequestLogger;
   resolveAuthoringDraftReturnUrl?: typeof resolveAuthoringDraftReturnUrl;
 };
 
-export function createPostingSessionRoutes(
+export function createAuthoringDraftRoutes(
   dependencies: AuthoringDraftRouteDependencies = {},
 ) {
   const router = new Hono<ApiEnv>();
@@ -120,10 +120,10 @@ export function createPostingSessionRoutes(
     deliverAuthoringDraftLifecycleEvent:
       deliverAuthoringDraftLifecycleEventImpl,
     readApiServerRuntimeConfig: readApiServerRuntimeConfigImpl,
-    readPostingReviewRuntimeConfig: readPostingReviewRuntimeConfigImpl,
+    readAuthoringReviewRuntimeConfig: readAuthoringReviewRuntimeConfigImpl,
     canonicalizeChallengeSpec: canonicalizeChallengeSpecImpl,
-    compileManagedAuthoringPostingSession:
-      compileManagedAuthoringPostingSessionImpl,
+    compileManagedAuthoringDraftOutcome:
+      compileManagedAuthoringDraftOutcomeImpl,
     requireWriteQuota: requireWriteQuotaImpl,
     buildManagedAuthoringIr: buildManagedAuthoringIrImpl,
     getRequestLogger: getRequestLoggerImpl,
@@ -143,9 +143,9 @@ export function createPostingSessionRoutes(
     consumeNonce,
     deliverAuthoringDraftLifecycleEvent,
     readApiServerRuntimeConfig,
-    readPostingReviewRuntimeConfig,
+    readAuthoringReviewRuntimeConfig,
     canonicalizeChallengeSpec,
-    compileManagedAuthoringPostingSession,
+    compileManagedAuthoringDraftOutcome,
     requireWriteQuota,
     buildManagedAuthoringIr,
     getRequestLogger,
@@ -153,14 +153,14 @@ export function createPostingSessionRoutes(
     ...dependencies,
   };
 
-  function requirePostingReviewAccessWithDeps(c: Context<ApiEnv>) {
-    const runtime = readPostingReviewRuntimeConfigImpl();
+  function requireAuthoringReviewAccessWithDeps(c: Context<ApiEnv>) {
+    const runtime = readAuthoringReviewRuntimeConfigImpl();
     if (!runtime.token) {
       return jsonError(c, {
         status: 503,
-        code: "POSTING_REVIEW_DISABLED",
+        code: "AUTHORING_REVIEW_DISABLED",
         message:
-          "Posting review access is not configured. Next step: set AGORA_POSTING_REVIEW_TOKEN on the API and web services, then retry.",
+          "Authoring review access is not configured. Next step: set AGORA_AUTHORING_REVIEW_TOKEN on the API and web services, then retry.",
       });
     }
 
@@ -168,9 +168,9 @@ export function createPostingSessionRoutes(
     if (providedToken !== runtime.token) {
       return jsonError(c, {
         status: 401,
-        code: "POSTING_REVIEW_UNAUTHORIZED",
+        code: "AUTHORING_REVIEW_UNAUTHORIZED",
         message:
-          "Posting review access denied. Next step: open the internal review surface or provide a valid review token.",
+          "Authoring review access denied. Next step: open the internal review surface or provide a valid review token.",
       });
     }
 
@@ -182,25 +182,35 @@ export function createPostingSessionRoutes(
     const checkedAt = new Date().toISOString();
     const snapshot = await readAuthoringDraftHealthSnapshotImpl(db, {
       nowIso: checkedAt,
-      staleCompilingAfterMs: POSTING_STALE_COMPILING_THRESHOLD_MS,
+      staleCompilingAfterMs: AUTHORING_DRAFT_STALE_COMPILING_THRESHOLD_MS,
     });
+    const counts = {
+      draft: snapshot.counts.draft ?? 0,
+      compiling: snapshot.counts.compiling ?? 0,
+      ready: snapshot.counts.ready ?? 0,
+      needs_clarification: snapshot.counts.needs_clarification ?? 0,
+      needs_review: snapshot.counts.needs_review ?? 0,
+      published: snapshot.counts.published ?? 0,
+      failed: snapshot.counts.failed ?? 0,
+    };
 
     return c.json({
-      data: buildPostingHealthResponse({
+      data: buildAuthoringDraftHealthResponse({
         checkedAt,
         ...snapshot,
+        counts,
       }),
     });
   });
 
   router.post(
-    "/sessions",
-    requireWriteQuotaImpl("/api/posting/sessions"),
-    zValidator("json", createPostingSessionRequestSchema),
+    "/drafts",
+    requireWriteQuotaImpl("/api/authoring/drafts"),
+    zValidator("json", createAuthoringDraftRequestSchema),
     async (c) => {
       const body = c.req.valid("json");
       const db = createSupabaseClientImpl(true);
-      const session = await createDraft({
+      const draft = await createDraft({
         db,
         posterAddress: normalizePosterAddress(body.poster_address),
         state: "draft",
@@ -217,62 +227,37 @@ export function createPostingSessionRoutes(
 
       return c.json({
         data: {
-          session: toAuthoringDraftPayload(session),
+          draft: toAuthoringDraftPayload(draft),
         },
       });
     },
   );
 
-  router.get("/sessions/:id", async (c) => {
-    const db = createSupabaseClientImpl(true);
-    const session = await getAuthoringDraftViewByIdImpl(db, c.req.param("id"));
-    if (!session) {
-      return jsonError(c, {
-        status: 404,
-        code: "POSTING_SESSION_NOT_FOUND",
-        message:
-          "Posting session not found. Next step: start a new draft and retry.",
-      });
-    }
-    if (isAuthoringDraftExpired(session)) {
-      return expiredPostingSessionError(c);
-    }
-
-    return c.json({
-      data: {
-        session: toAuthoringDraftPayload(session),
-      },
-    });
-  });
-
   router.post(
-    "/sessions/:id/compile",
-    requireWriteQuotaImpl("/api/posting/sessions/compile"),
-    zValidator("json", compilePostingSessionRequestSchema),
+    "/drafts/:id/compile",
+    requireWriteQuotaImpl("/api/authoring/drafts/compile"),
+    zValidator("json", compileManagedAuthoringDraftRequestSchema),
     async (c) => {
-      const sessionId = c.req.param("id");
+      const draftId = c.req.param("id");
       const body = c.req.valid("json");
       const db = createSupabaseClientImpl(true);
-      const existingSession = await getAuthoringDraftViewByIdImpl(
-        db,
-        sessionId,
-      );
+      const existingDraft = await getAuthoringDraftViewByIdImpl(db, draftId);
 
-      if (!existingSession) {
+      if (!existingDraft) {
         return jsonError(c, {
           status: 404,
-          code: "POSTING_SESSION_NOT_FOUND",
+          code: "AUTHORING_DRAFT_NOT_FOUND",
           message:
-            "Posting session not found. Next step: start a new draft and retry.",
+            "Authoring draft not found. Next step: start a new draft and retry.",
         });
       }
-      if (isAuthoringDraftExpired(existingSession)) {
-        return expiredPostingSessionError(c);
+      if (isAuthoringDraftExpired(existingDraft)) {
+        return expiredAuthoringDraftError(c);
       }
 
       const requesterAddress = normalizePosterAddress(body.poster_address);
       const ownershipError = getAuthoringDraftOwnershipError({
-        draftPosterAddress: existingSession.poster_address,
+        draftPosterAddress: existingDraft.poster_address,
         requesterAddress,
         action: "compile",
       });
@@ -280,22 +265,20 @@ export function createPostingSessionRoutes(
         return jsonError(c, ownershipError);
       }
 
-      const intent = body.intent ?? existingSession.intent_json;
+      const intent = body.intent ?? existingDraft.intent_json;
       if (!intent) {
         return jsonError(c, {
           status: 400,
-          code: "POSTING_INTENT_REQUIRED",
+          code: "AUTHORING_INTENT_REQUIRED",
           message:
             "Managed authoring requires a title, description, payout condition, reward, and deadline. Next step: fill in the draft and retry.",
         });
       }
 
       const uploadedArtifacts =
-        body.uploaded_artifacts ??
-        existingSession.uploaded_artifacts_json ??
-        [];
+        body.uploaded_artifacts ?? existingDraft.uploaded_artifacts_json ?? [];
       const resolvedPosterAddress = resolveAuthoringDraftPosterAddress({
-        draftPosterAddress: existingSession.poster_address,
+        draftPosterAddress: existingDraft.poster_address,
         requesterAddress,
       });
       const compilingAuthoringIr = buildManagedAuthoringIrImpl({
@@ -303,9 +286,9 @@ export function createPostingSessionRoutes(
         uploadedArtifacts,
       });
 
-      const compilingSession = await markDraftCompiling({
+      const compilingDraft = await markDraftCompiling({
         db,
-        session: existingSession,
+        session: existingDraft,
         posterAddress: resolvedPosterAddress,
         intentJson: intent,
         authoringIrJson: compilingAuthoringIr,
@@ -315,14 +298,14 @@ export function createPostingSessionRoutes(
       });
 
       try {
-        const outcome = await compileManagedAuthoringPostingSessionImpl({
+        const outcome = await compileManagedAuthoringDraftOutcomeImpl({
           intent,
           uploadedArtifacts,
         });
 
-        const updatedSession = await completeDraftCompilation({
+        const updatedDraft = await completeDraftCompilation({
           db,
-          session: compilingSession,
+          session: compilingDraft,
           state: outcome.state,
           posterAddress: resolvedPosterAddress,
           intentJson: intent,
@@ -339,14 +322,14 @@ export function createPostingSessionRoutes(
 
         return c.json({
           data: {
-            session: toAuthoringDraftPayload(updatedSession),
+            draft: toAuthoringDraftPayload(updatedDraft),
           },
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         await failDraft({
           db,
-          session: compilingSession,
+          session: compilingDraft,
           posterAddress: resolvedPosterAddress,
           intentJson: intent,
           authoringIrJson: compilingAuthoringIr,
@@ -360,7 +343,7 @@ export function createPostingSessionRoutes(
 
         return jsonError(c, {
           status: 422,
-          code: "POSTING_COMPILE_FAILED",
+          code: "AUTHORING_COMPILE_FAILED",
           message,
         });
       }
@@ -368,30 +351,30 @@ export function createPostingSessionRoutes(
   );
 
   router.post(
-    "/sessions/:id/publish",
-    requireWriteQuotaImpl("/api/posting/sessions/publish"),
-    zValidator("json", publishPostingSessionRequestSchema),
+    "/drafts/:id/publish",
+    requireWriteQuotaImpl("/api/authoring/drafts/publish"),
+    zValidator("json", publishManagedAuthoringDraftRequestSchema),
     async (c) => {
-      const sessionId = c.req.param("id");
+      const draftId = c.req.param("id");
       const body = c.req.valid("json");
       const db = createSupabaseClientImpl(true);
-      const session = await getAuthoringDraftViewByIdImpl(db, sessionId);
+      const draft = await getAuthoringDraftViewByIdImpl(db, draftId);
 
-      if (!session) {
+      if (!draft) {
         return jsonError(c, {
           status: 404,
-          code: "POSTING_SESSION_NOT_FOUND",
+          code: "AUTHORING_DRAFT_NOT_FOUND",
           message:
-            "Posting session not found. Next step: start a new draft and retry.",
+            "Authoring draft not found. Next step: start a new draft and retry.",
         });
       }
-      if (isAuthoringDraftExpired(session)) {
-        return expiredPostingSessionError(c);
+      if (isAuthoringDraftExpired(draft)) {
+        return expiredAuthoringDraftError(c);
       }
 
       const signerAddress = normalizePosterAddress(body.auth.address);
       const ownershipError = getAuthoringDraftOwnershipError({
-        draftPosterAddress: session.poster_address,
+        draftPosterAddress: draft.poster_address,
         requesterAddress: signerAddress,
         action: "publish",
       });
@@ -400,47 +383,47 @@ export function createPostingSessionRoutes(
       }
 
       const returnTo = resolveAuthoringDraftReturnUrlImpl({
-        session,
+        session: draft,
         requestedReturnTo: body.return_to,
       });
       if (!returnTo.ok) {
         return jsonError(c, returnTo.error);
       }
 
-      if (session.state === "published" && session.published_spec_cid) {
+      if (draft.state === "published" && draft.published_spec_cid) {
         const publishedLink = await getPublishedChallengeLinkByDraftIdImpl(
           db,
-          session.id,
+          draft.id,
         );
         return c.json({
           data: {
-            session: toAuthoringDraftPayload(session),
-            specCid: session.published_spec_cid,
+            draft: toAuthoringDraftPayload(draft),
+            specCid: draft.published_spec_cid,
             spec:
-              session.published_spec_json ??
-              session.compilation_json?.challenge_spec,
+              draft.published_spec_json ??
+              draft.compilation_json?.challenge_spec,
             returnTo: publishedLink?.return_to ?? returnTo.returnTo,
             returnToSource: resolvePublishedDraftReturnSource({
               publishedLink,
               originExternalUrl:
-                session.authoring_ir_json?.origin.external_url ?? null,
+                draft.authoring_ir_json?.origin.external_url ?? null,
             }),
           },
         });
       }
 
-      if (session.state !== "ready" || !session.compilation_json) {
+      if (draft.state !== "ready" || !draft.compilation_json) {
         return jsonError(c, {
           status: 409,
-          code: "POSTING_SESSION_NOT_READY",
+          code: "AUTHORING_DRAFT_NOT_READY",
           message:
-            "Posting session is not ready to publish. Next step: compile the draft successfully before publishing.",
+            "Authoring draft is not ready to publish. Next step: compile the draft successfully before publishing.",
         });
       }
 
       const runtimeConfig = readApiServerRuntimeConfigImpl();
       const canonicalSpec = await canonicalizeChallengeSpecImpl(
-        session.compilation_json.challenge_spec,
+        draft.compilation_json.challenge_spec,
         {
           resolveOfficialPresetDigests: true,
         },
@@ -449,8 +432,8 @@ export function createPostingSessionRoutes(
       if (!scoreability.ok) {
         return jsonError(c, {
           status: 409,
-          code: "POSTING_SESSION_NOT_SCOREABLE",
-          message: `Posting session cannot publish because the challenge spec is not scoreable yet. ${formatScoreabilityMessage(scoreability.errors)} Next step: return this draft to review or switch to Expert Mode.`,
+          code: "AUTHORING_DRAFT_NOT_SCOREABLE",
+          message: `Authoring draft cannot publish because the challenge spec is not scoreable yet. ${formatScoreabilityMessage(scoreability.errors)} Next step: return this draft to review or switch to Expert Mode.`,
         });
       }
       const expectedSpecHash = computeSpecHash(canonicalSpec);
@@ -500,16 +483,13 @@ export function createPostingSessionRoutes(
         });
       }
 
-      const specCid = await pinJSONImpl(
-        `challenge-${session.id}`,
-        canonicalSpec,
-      );
-      const updatedSession = await publishDraft({
+      const specCid = await pinJSONImpl(`challenge-${draft.id}`, canonicalSpec);
+      const updatedDraft = await publishDraft({
         db,
-        session,
+        session: draft,
         posterAddress: signerAddress,
         compilationJson: {
-          ...session.compilation_json,
+          ...draft.compilation_json,
           challenge_spec: canonicalSpec,
         },
         publishedSpecJson: canonicalSpec,
@@ -523,13 +503,13 @@ export function createPostingSessionRoutes(
 
       await deliverAuthoringDraftLifecycleEventImpl({
         event: "draft_published",
-        session: updatedSession,
+        session: updatedDraft,
         logger: getRequestLoggerImpl(c),
       });
 
       return c.json({
         data: {
-          session: toAuthoringDraftPayload(updatedSession),
+          draft: toAuthoringDraftPayload(updatedDraft),
           specCid,
           spec: canonicalSpec,
           returnTo: returnTo.returnTo,
@@ -539,8 +519,8 @@ export function createPostingSessionRoutes(
     },
   );
 
-  router.get("/review/sessions", async (c) => {
-    const denied = requirePostingReviewAccessWithDeps(c);
+  router.get("/review/drafts", async (c) => {
+    const denied = requireAuthoringReviewAccessWithDeps(c);
     if (denied) {
       return denied;
     }
@@ -555,7 +535,7 @@ export function createPostingSessionRoutes(
           : (["needs_review"] as const);
 
     const db = createSupabaseClientImpl(true);
-    const sessions = await listAuthoringDraftViewsByStateImpl(db, {
+    const drafts = await listAuthoringDraftViewsByStateImpl(db, {
       states: [...states],
       limit:
         Number.isFinite(limit) && limit > 0
@@ -565,13 +545,13 @@ export function createPostingSessionRoutes(
 
     return c.json({
       data: {
-        sessions: sessions.map((session) => toAuthoringDraftPayload(session)),
+        drafts: drafts.map((draft) => toAuthoringDraftPayload(draft)),
       },
     });
   });
 
   router.post("/review/sweep-expired", async (c) => {
-    const denied = requirePostingReviewAccessWithDeps(c);
+    const denied = requireAuthoringReviewAccessWithDeps(c);
     if (denied) {
       return denied;
     }
@@ -585,52 +565,49 @@ export function createPostingSessionRoutes(
   });
 
   router.post(
-    "/review/sessions/:id/decision",
-    zValidator("json", reviewPostingSessionDecisionRequestSchema),
+    "/review/drafts/:id/decision",
+    zValidator("json", reviewManagedAuthoringDraftDecisionRequestSchema),
     async (c) => {
-      const denied = requirePostingReviewAccessWithDeps(c);
+      const denied = requireAuthoringReviewAccessWithDeps(c);
       if (denied) {
         return denied;
       }
 
       const db = createSupabaseClientImpl(true);
-      const session = await getAuthoringDraftViewByIdImpl(
-        db,
-        c.req.param("id"),
-      );
-      if (!session) {
+      const draft = await getAuthoringDraftViewByIdImpl(db, c.req.param("id"));
+      if (!draft) {
         return jsonError(c, {
           status: 404,
-          code: "POSTING_SESSION_NOT_FOUND",
+          code: "AUTHORING_DRAFT_NOT_FOUND",
           message:
-            "Posting session not found. Next step: refresh the review queue and retry.",
+            "Authoring draft not found. Next step: refresh the review queue and retry.",
         });
       }
-      if (isAuthoringDraftExpired(session)) {
-        return expiredPostingSessionError(c);
+      if (isAuthoringDraftExpired(draft)) {
+        return expiredAuthoringDraftError(c);
       }
 
       const body = c.req.valid("json");
 
       if (body.action === "approve") {
-        if (session.state === "ready") {
+        if (draft.state === "ready") {
           return c.json({
             data: {
-              session: toAuthoringDraftPayload(session),
+              draft: toAuthoringDraftPayload(draft),
             },
           });
         }
-        if (session.state !== "needs_review" || !session.compilation_json) {
+        if (draft.state !== "needs_review" || !draft.compilation_json) {
           return jsonError(c, {
             status: 409,
-            code: "POSTING_REVIEW_NOT_APPROVABLE",
+            code: "AUTHORING_REVIEW_NOT_APPROVABLE",
             message:
-              "Only review-queued drafts with a compiled contract can be approved. Next step: refresh the queue and inspect the latest session state.",
+              "Only review-queued drafts with a compiled contract can be approved. Next step: refresh the queue and inspect the latest draft state.",
           });
         }
 
         const canonicalSpec = await canonicalizeChallengeSpecImpl(
-          session.compilation_json.challenge_spec,
+          draft.compilation_json.challenge_spec,
           {
             resolveOfficialPresetDigests: true,
           },
@@ -639,16 +616,16 @@ export function createPostingSessionRoutes(
         if (!scoreability.ok) {
           return jsonError(c, {
             status: 409,
-            code: "POSTING_REVIEW_NOT_SCOREABLE",
+            code: "AUTHORING_REVIEW_NOT_SCOREABLE",
             message: `Review approval cannot mark this draft ready because the compiled spec is not scoreable yet. ${formatScoreabilityMessage(scoreability.errors)} Next step: keep it in review or send it to Expert Mode.`,
           });
         }
 
-        const updated = await approveDraftForPublish({
+        const updatedDraft = await approveDraftForPublish({
           db,
-          session,
+          session: draft,
           compilationJson: {
-            ...session.compilation_json,
+            ...draft.compilation_json,
             challenge_spec: canonicalSpec,
           },
           expiresInMs: READY_EXPIRY_MS,
@@ -657,15 +634,15 @@ export function createPostingSessionRoutes(
         });
         return c.json({
           data: {
-            session: toAuthoringDraftPayload(updated),
+            draft: toAuthoringDraftPayload(updatedDraft),
           },
         });
       }
 
       if (body.action === "send_to_expert_mode") {
-        const updated = await failDraft({
+        const updatedDraft = await failDraft({
           db,
-          session,
+          session: draft,
           message:
             "Managed authoring cannot safely publish this draft as-is. Next step: switch to Expert Mode and post the scorer contract from the CLI.",
           expiresInMs: DRAFT_EXPIRY_MS,
@@ -674,14 +651,14 @@ export function createPostingSessionRoutes(
         });
         return c.json({
           data: {
-            session: toAuthoringDraftPayload(updated),
+            draft: toAuthoringDraftPayload(updatedDraft),
           },
         });
       }
 
-      const updated = await failDraft({
+      const updatedDraft = await failDraft({
         db,
-        session,
+        session: draft,
         message: body.message,
         expiresInMs: DRAFT_EXPIRY_MS,
         updateAuthoringDraftImpl,
@@ -690,7 +667,7 @@ export function createPostingSessionRoutes(
 
       return c.json({
         data: {
-          session: toAuthoringDraftPayload(updated),
+          draft: toAuthoringDraftPayload(updatedDraft),
         },
       });
     },
@@ -699,4 +676,4 @@ export function createPostingSessionRoutes(
   return router;
 }
 
-export default createPostingSessionRoutes();
+export default createAuthoringDraftRoutes();

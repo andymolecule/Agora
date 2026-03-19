@@ -60,8 +60,8 @@ export async function assertFactoryIsSupported(input: {
   });
 }
 
-export async function publishManagedPostingSession(input: {
-  sessionId: string;
+export async function publishManagedAuthoringDraft(input: {
+  draftId: string;
   spec: ChallengeSpecOutput;
   address: `0x${string}`;
   chainId: number;
@@ -90,7 +90,7 @@ export async function publishManagedPostingSession(input: {
   });
 
   const publishResponse = await fetch(
-    `/api/posting/sessions/${input.sessionId}/publish`,
+    `/api/authoring/drafts/${input.draftId}/publish`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },

@@ -30,7 +30,7 @@ This doc is authoritative for: service startup, monitoring, incident response, s
 - Browser auth/session traffic goes through the web origin's same-origin `/api` proxy; the browser should not call the backend API origin directly for SIWE/session flows
 - Indexer polls factory logs every 30s and only continuously polls active challenges; Worker polls score_jobs after challenges enter Scoring
 - Worker publishes readiness via `worker_runtime_state`, only claims jobs while `ready=true`, and uses a scorer execution backend (`local_docker` in dev, `remote_http` in production)
-- Health monitoring via /healthz, /api/indexer-health, /api/worker-health, /api/posting/health, agora doctor
+- Health monitoring via /healthz, /api/indexer-health, /api/worker-health, /api/authoring/health, agora doctor
 - API, worker, executor, and indexer emit structured JSON logs. HTTP surfaces return `x-request-id`; include that header when tracing a failed request across logs or Sentry.
 
 ---
@@ -191,7 +191,7 @@ Verification checklist:
 ```bash
 curl -sS http://localhost:3000/healthz
 curl -sS http://localhost:3000/api/worker-health
-curl -sS http://localhost:3000/api/posting/health
+curl -sS http://localhost:3000/api/authoring/health
 curl -sS http://localhost:3000/api/submissions/public-key
 pnpm schema:verify
 pnpm scorers:verify
@@ -202,7 +202,7 @@ Expected results:
 - `/healthz` returns `{"ok":true,"service":"api","runtimeVersion":"..."}` for API liveness plus deployed version.
 - API responses include `x-request-id`; if you pass one in the request header, the API preserves it for end-to-end correlation.
 - `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and `sealing.workerReady=true` for the active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
-- `/api/posting/health` returns `status: ok|warning|critical` and exposes managed-authoring backlog metrics such as expired sessions, stale compile sessions, and the oldest review wait time.
+- `/api/authoring/health` returns `status: ok|warning|critical` and exposes managed-authoring backlog metrics such as expired drafts, stale compiling drafts, and the oldest review wait time.
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"` whenever sealing is configured successfully.
 
 Existing testnet DBs:
@@ -338,7 +338,7 @@ Check every 15-30 minutes during first launch window:
 3. `indexed_events` block number continues advancing.
 4. `agora doctor` passes all required checks.
 5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version. If `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`, this also implies the executor passed the worker readiness checks.
-6. Managed authoring health: `curl <API_URL>/api/posting/health` stays `ok` during normal operation. `warning` means expired drafts need sweeping or review backlog is aging; `critical` means review SLA is breached.
+6. Managed authoring health: `curl <API_URL>/api/authoring/health` stays `ok` during normal operation. `warning` means expired drafts need sweeping or review backlog is aging; `critical` means review SLA is breached.
 7. Web proxy health: `curl <WEB_URL>/api/healthz` and `curl <WEB_URL>/api/worker-health` succeed without the `AGORA_API_URL` proxy-misconfiguration error.
 8. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
 
@@ -348,7 +348,7 @@ Health commands:
 curl -sS http://localhost:3000/healthz
 curl -sS http://localhost:3000/api/indexer-health
 curl -sS http://localhost:3000/api/worker-health
-curl -sS http://localhost:3000/api/posting/health
+curl -sS http://localhost:3000/api/authoring/health
 agora doctor
 ```
 
@@ -356,7 +356,7 @@ Expected results:
 
 - API health returns `{"ok":true,"runtimeVersion":"..."}`.
 - Indexer health is `ok` or `warning`, not `critical`.
-- Posting health is `ok` during steady state. A temporary `warning` is acceptable during active moderation, but expired sessions should be swept and long-lived review backlog should be investigated.
+- Authoring draft health is `ok` during steady state. A temporary `warning` is acceptable during active moderation, but expired drafts should be swept and long-lived review backlog should be investigated.
 - `agora doctor` passes RPC/Supabase/factory checks.
 - If sealing is enabled, `/api/submissions/public-key` returns `sealed_submission_v2` whenever the public sealing key is configured.
 - If active scoring challenges use official Agora scorer images and those GHCR images are not pullable, the worker should stay alive but report `ready=false`, a `latestError`, and zero healthy workers for the active runtime version.
@@ -528,12 +528,12 @@ agora reindex --from-block <block_number>
 
 ### Managed Authoring Backlog
 
-1. Check `GET /api/posting/health`.
+1. Check `GET /api/authoring/health`.
 2. If `sessions.expired > 0`, sweep expired drafts with:
-   `curl -X POST -H "x-agora-review-token: <token>" <API_URL>/api/posting/review/sweep-expired`
+   `curl -X POST -H "x-agora-review-token: <token>" <API_URL>/api/authoring/review/sweep-expired`
 3. If `sessions.stale_compiling > 0`, inspect recent API logs for interrupted compile requests, then ask the poster to retry from the draft.
 4. If `oldest_needs_review_age_ms` breaches the warning or critical threshold, review the queued drafts or send them to Expert Mode.
-5. If the sweep route returns `401` or `503`, verify `AGORA_POSTING_REVIEW_TOKEN` is configured consistently on the API and internal review surface.
+5. If the sweep route returns `401` or `503`, verify `AGORA_AUTHORING_REVIEW_TOKEN` is configured consistently on the API and internal review surface.
 
 ### Authoring Callback Backlog
 
@@ -574,7 +574,7 @@ curl -X POST \
 5. Interpretation:
    - `delivered > 0`: host recovered and accepted retried callbacks
    - `rescheduled > 0`: host is still failing; the outbox kept the events for another retry
-   - `exhausted > 0`: manual intervention is now required; inspect the host endpoint and refresh host state from `GET /api/authoring/drafts/:id/card`
+   - `exhausted > 0`: manual intervention is now required; inspect the host endpoint and refresh host state from `GET /api/authoring/external/drafts/:id/card`
    - `conflicted > 0`: another sweep or operator already claimed some deliveries; rerun only if backlog remains
 6. Recommended operator cadence:
    - normal: run every minute from an internal scheduler or cron
@@ -583,16 +583,16 @@ curl -X POST \
 
 ```bash
 * * * * * curl -fsS -X POST \
-  -H "x-agora-review-token: ${AGORA_POSTING_REVIEW_TOKEN}" \
+  -H "x-agora-review-token: ${AGORA_AUTHORING_REVIEW_TOKEN}" \
   "https://api.example.com/api/authoring/callbacks/sweep?limit=25" \
   >/dev/null
 ```
 
 Use an internal network path or secret manager-backed environment where possible; do not hardcode the review token in a checked-in crontab.
-8. If the sweep route returns `401` or `503`, verify `AGORA_POSTING_REVIEW_TOKEN` is configured consistently on the API and the caller.
+8. If the sweep route returns `401` or `503`, verify `AGORA_AUTHORING_REVIEW_TOKEN` is configured consistently on the API and the caller.
 9. If the host remains stale after successful callback delivery, force a host-side pull refresh from:
-   - `GET /api/authoring/drafts/:id/card` for draft state
-   - `GET /api/authoring/drafts/:id` for fuller draft/session context
+   - `GET /api/authoring/external/drafts/:id/card` for draft state
+   - `GET /api/authoring/external/drafts/:id` for fuller draft context
 
 Operational rule:
 - callbacks are push signals

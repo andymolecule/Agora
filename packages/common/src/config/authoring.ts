@@ -16,9 +16,9 @@ const managedAuthoringRuntimeConfigSchema = configSchema.pick({
   AGORA_MANAGED_AUTHORING_DRY_RUN_TIMEOUT_MS: true,
 });
 
-const postingReviewRuntimeConfigSchema = configSchema.pick({
+const authoringReviewRuntimeConfigSchema = configSchema.pick({
   AGORA_API_URL: true,
-  AGORA_POSTING_REVIEW_TOKEN: true,
+  AGORA_AUTHORING_REVIEW_TOKEN: true,
 });
 
 const authoringPartnerRuntimeConfigSchema = configSchema.pick({
@@ -35,7 +35,7 @@ export interface AgoraManagedAuthoringRuntimeConfig {
   dryRunTimeoutMs: number;
 }
 
-export interface AgoraPostingReviewRuntimeConfig {
+export interface AgoraAuthoringReviewRuntimeConfig {
   apiUrl?: string;
   token?: string;
 }
@@ -193,20 +193,20 @@ export function readManagedAuthoringRuntimeConfig(
   };
 }
 
-export function readPostingReviewRuntimeConfig(
+export function readAuthoringReviewRuntimeConfig(
   env: Record<string, string | undefined> = process.env,
-): AgoraPostingReviewRuntimeConfig {
+): AgoraAuthoringReviewRuntimeConfig {
   const parsed = parseConfigSection(
-    postingReviewRuntimeConfigSchema,
+    authoringReviewRuntimeConfigSchema,
     unsetBlankStringValues(env, [
       "AGORA_API_URL",
-      "AGORA_POSTING_REVIEW_TOKEN",
+      "AGORA_AUTHORING_REVIEW_TOKEN",
     ]),
   );
 
   return {
     apiUrl: parsed.AGORA_API_URL,
-    token: parsed.AGORA_POSTING_REVIEW_TOKEN,
+    token: parsed.AGORA_AUTHORING_REVIEW_TOKEN,
   };
 }
 

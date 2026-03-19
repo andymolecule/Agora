@@ -1,8 +1,8 @@
 "use client";
 
 import type {
+  AuthoringDraftOutput,
   ClarificationQuestionOutput,
-  PostingSessionOutput,
 } from "@agora/common";
 import { z } from "zod";
 import { formatSubmissionWindowLabel } from "../../lib/post-submission-window";
@@ -75,7 +75,7 @@ export type GuidedComposerState = {
   uploadsStatus: GuidedFieldStatus;
   activePromptId: Exclude<GuidedFieldKey, "title"> | null;
   compileState: GuidedCompileState;
-  sessionId: string | null;
+  draftId: string | null;
   timezone: string;
 };
 
@@ -125,8 +125,8 @@ type GuidedAnswerAction =
       compileState: GuidedCompileState;
     }
   | {
-      type: "set_session_id";
-      sessionId: string | null;
+      type: "set_draft_id";
+      draftId: string | null;
     }
   | {
       type: "apply_clarification";
@@ -220,7 +220,7 @@ const storedGuidedStateSchema = z.object({
   uploadsStatus: guidedFieldStatusSchema.optional(),
   activePromptId: z.enum(GUIDED_PROMPT_ORDER).nullable().optional(),
   compileState: guidedCompileStateSchema.optional(),
-  sessionId: z.string().nullable().optional(),
+  draftId: z.string().nullable().optional(),
   timezone: z.string().optional(),
 });
 type StoredGuidedState = z.infer<typeof storedGuidedStateSchema>;
@@ -559,7 +559,7 @@ function normalizeGuidedState(state: StoredGuidedState): GuidedComposerState {
       state.uploadsStatus ?? (uploads.length > 0 ? "collecting" : "empty"),
     activePromptId,
     compileState: state.compileState ?? "idle",
-    sessionId: typeof state.sessionId === "string" ? state.sessionId : null,
+    draftId: typeof state.draftId === "string" ? state.draftId : null,
     timezone,
   };
 }
@@ -695,7 +695,7 @@ export function createInitialGuidedState(
     uploadsStatus: "empty",
     activePromptId: "problem",
     compileState: "idle",
-    sessionId: null,
+    draftId: null,
     timezone,
   };
 }
@@ -768,8 +768,8 @@ export function guidedComposerReducer(
       nextState.compileState = action.compileState;
       return nextState;
     }
-    case "set_session_id": {
-      nextState.sessionId = action.sessionId;
+    case "set_draft_id": {
+      nextState.draftId = action.draftId;
       return nextState;
     }
     case "apply_clarification": {
@@ -800,13 +800,13 @@ export function buildManagedIntentFromGuidedState(
   };
 }
 
-export function hydrateGuidedStateFromPostingSession(
-  session: PostingSessionOutput,
+export function hydrateGuidedStateFromAuthoringDraft(
+  draft: AuthoringDraftOutput,
   nowMs = Date.now(),
 ): GuidedComposerState {
-  const timezone = session.intent?.timezone?.trim() || resolveBrowserTimezone();
+  const timezone = draft.intent?.timezone?.trim() || resolveBrowserTimezone();
   const nextState = createInitialGuidedState(timezone);
-  const intent = session.intent ?? null;
+  const intent = draft.intent ?? null;
 
   if (intent) {
     setFieldValue(nextState, "problem", intent.description, "locked");
@@ -847,7 +847,7 @@ export function hydrateGuidedStateFromPostingSession(
     }
   }
 
-  nextState.uploads = session.uploaded_artifacts.map((artifact) => ({
+  nextState.uploads = draft.uploaded_artifacts.map((artifact) => ({
     id: artifact.id ?? artifact.uri,
     uri: artifact.uri,
     file_name: artifact.file_name ?? artifact.id ?? "uploaded-artifact",
@@ -857,9 +857,9 @@ export function hydrateGuidedStateFromPostingSession(
     status: "ready" as const,
   }));
   nextState.uploadsStatus = nextState.uploads.length > 0 ? "locked" : "empty";
-  nextState.sessionId = session.id;
+  nextState.draftId = draft.id;
 
-  switch (session.state) {
+  switch (draft.state) {
     case "ready":
     case "published":
       nextState.compileState = "ready";
@@ -872,7 +872,7 @@ export function hydrateGuidedStateFromPostingSession(
     case "needs_clarification":
       nextState.compileState = "needs_clarification";
       nextState.activePromptId = clarificationTargetFromQuestions(
-        session.clarification_questions ?? [],
+        draft.clarification_questions ?? [],
       );
       break;
     case "compiling":

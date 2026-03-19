@@ -265,7 +265,7 @@ test("authoring source route returns a specific error when auth is missing", asy
   });
 
   const response = await router.request(
-    new Request("http://localhost/sources", {
+    new Request("http://localhost/external/sources", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -296,7 +296,7 @@ test("authoring source route returns a specific error for malformed bearer auth"
   });
 
   const response = await router.request(
-    new Request("http://localhost/sources", {
+    new Request("http://localhost/external/sources", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -345,7 +345,7 @@ test("authoring source route creates a partner-owned draft with source context a
   });
 
   const response = await router.request(
-    new Request("http://localhost/sources", {
+    new Request("http://localhost/external/sources", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -385,7 +385,7 @@ test("authoring source route creates a partner-owned draft with source context a
 
   assert.equal(response.status, 200);
   assert.deepEqual(quotaCalls, [
-    "partner:beach_science|/api/authoring/sources",
+    "partner:beach_science|/api/authoring/external/sources",
   ]);
   assert.equal(
     (
@@ -403,7 +403,7 @@ test("authoring source route creates a partner-owned draft with source context a
 
   const payload = (await response.json()) as {
     data: {
-      session: {
+      draft: {
         authoring_ir?: { origin?: { external_id?: string | null } };
       };
       card: {
@@ -414,7 +414,7 @@ test("authoring source route creates a partner-owned draft with source context a
     };
   };
   assert.equal(
-    payload.data.session.authoring_ir?.origin?.external_id,
+    payload.data.draft.authoring_ir?.origin?.external_id,
     "thread-42",
   );
   assert.equal(payload.data.card.draft_id, createSession().id);
@@ -445,7 +445,7 @@ test("authoring source route returns artifact normalization failures without cre
   });
 
   const response = await router.request(
-    new Request("http://localhost/sources", {
+    new Request("http://localhost/external/sources", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -507,7 +507,7 @@ test("authoring source draft routes hide drafts owned by another provider", asyn
   });
 
   const response = await router.request(
-    new Request(`http://localhost/drafts/${storedSession.id}`, {
+    new Request(`http://localhost/external/drafts/${storedSession.id}`, {
       method: "GET",
       headers: {
         authorization: "Bearer beach-secret",
@@ -549,7 +549,7 @@ test("authoring source draft clarify appends transcript context and dispatches c
   });
 
   const response = await router.request(
-    new Request(`http://localhost/drafts/${storedSession.id}/clarify`, {
+    new Request(`http://localhost/external/drafts/${storedSession.id}/clarify`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -577,7 +577,7 @@ test("authoring source draft clarify appends transcript context and dispatches c
 
   assert.equal(response.status, 200);
   assert.deepEqual(quotaCalls, [
-    "partner:beach_science|/api/authoring/drafts/clarify",
+    "partner:beach_science|/api/authoring/external/drafts/clarify",
   ]);
   assert.equal(storedSession.state, "draft");
   assert.equal(storedSession.uploaded_artifacts_json.length, 2);
@@ -620,7 +620,7 @@ test("authoring source draft clarify treats duplicate message ids and artifact u
   });
 
   const response = await router.request(
-    new Request(`http://localhost/drafts/${storedSession.id}/clarify`, {
+    new Request(`http://localhost/external/drafts/${storedSession.id}/clarify`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -671,7 +671,7 @@ test("authoring source draft clarify returns a conflict when the draft changed c
   });
 
   const response = await router.request(
-    new Request(`http://localhost/drafts/${storedSession.id}/clarify`, {
+    new Request(`http://localhost/external/drafts/${storedSession.id}/clarify`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -720,7 +720,7 @@ test("authoring source draft clarify stays successful when callback delivery thr
   });
 
   const response = await router.request(
-    new Request(`http://localhost/drafts/${storedSession.id}/clarify`, {
+    new Request(`http://localhost/external/drafts/${storedSession.id}/clarify`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -761,7 +761,7 @@ test("authoring source draft compile reuses stored artifacts and dispatches comp
       );
       return storedSession as never;
     },
-    compileManagedAuthoringPostingSession: async ({
+    compileManagedAuthoringDraftOutcome: async ({
       intent,
       uploadedArtifacts,
     }) =>
@@ -778,7 +778,7 @@ test("authoring source draft compile reuses stored artifacts and dispatches comp
   });
 
   const response = await router.request(
-    new Request(`http://localhost/drafts/${storedSession.id}/compile`, {
+    new Request(`http://localhost/external/drafts/${storedSession.id}/compile`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -792,7 +792,7 @@ test("authoring source draft compile reuses stored artifacts and dispatches comp
 
   assert.equal(response.status, 200);
   assert.deepEqual(quotaCalls, [
-    "partner:beach_science|/api/authoring/drafts/compile",
+    "partner:beach_science|/api/authoring/external/drafts/compile",
   ]);
   assert.equal(storedSession.state, "ready");
   assert.equal(storedSession.intent_json?.reward_total, "10");
@@ -824,7 +824,7 @@ test("authoring source draft compile rejects expired drafts", async () => {
   });
 
   const response = await router.request(
-    new Request(`http://localhost/drafts/${storedSession.id}/compile`, {
+    new Request(`http://localhost/external/drafts/${storedSession.id}/compile`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -856,7 +856,7 @@ test("authoring source draft compile returns busy when a compile is already in p
   });
 
   const response = await router.request(
-    new Request(`http://localhost/drafts/${storedSession.id}/compile`, {
+    new Request(`http://localhost/external/drafts/${storedSession.id}/compile`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -891,7 +891,7 @@ test("authoring source draft compile stays successful when callback delivery thr
       );
       return storedSession as never;
     },
-    compileManagedAuthoringPostingSession: async ({
+    compileManagedAuthoringDraftOutcome: async ({
       intent,
       uploadedArtifacts,
     }) =>
@@ -907,7 +907,7 @@ test("authoring source draft compile stays successful when callback delivery thr
   });
 
   const response = await router.request(
-    new Request(`http://localhost/drafts/${storedSession.id}/compile`, {
+    new Request(`http://localhost/external/drafts/${storedSession.id}/compile`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -949,7 +949,7 @@ test("authoring source draft webhook registration persists callback metadata", a
   });
 
   const response = await router.request(
-    new Request(`http://localhost/drafts/${storedSession.id}/webhook`, {
+    new Request(`http://localhost/external/drafts/${storedSession.id}/webhook`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -963,7 +963,7 @@ test("authoring source draft webhook registration persists callback metadata", a
 
   assert.equal(response.status, 200);
   assert.deepEqual(quotaCalls, [
-    "partner:beach_science|/api/authoring/drafts/webhook",
+    "partner:beach_science|/api/authoring/external/drafts/webhook",
   ]);
   assert.equal(
     storedSession.source_callback_url,
@@ -979,7 +979,7 @@ test("authoring source draft webhook registration persists callback metadata", a
 
 test("authoring callback sweep requires the internal review token", async () => {
   const router = createTestRouter({
-    readPostingReviewRuntimeConfig: () => ({
+    readAuthoringReviewRuntimeConfig: () => ({
       token: "review-token",
     }),
   });
@@ -993,13 +993,13 @@ test("authoring callback sweep requires the internal review token", async () => 
   assert.equal(response.status, 401);
   assert.equal(
     ((await response.json()) as { code: string }).code,
-    "POSTING_REVIEW_UNAUTHORIZED",
+    "AUTHORING_REVIEW_UNAUTHORIZED",
   );
 });
 
 test("authoring callback sweep returns the durable delivery summary", async () => {
   const router = createTestRouter({
-    readPostingReviewRuntimeConfig: () => ({
+    readAuthoringReviewRuntimeConfig: () => ({
       token: "review-token",
     }),
     sweepPendingAuthoringDraftLifecycleEvents: async ({ limit }) =>

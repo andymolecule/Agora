@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compileManagedAuthoringPostingSession } from "../src/lib/managed-authoring.js";
+import { compileManagedAuthoringDraftOutcome } from "../src/lib/managed-authoring.js";
 import {
   buildAuthoringBenchmarkDependencies,
   loadAuthoringBenchmarkCases,
@@ -44,7 +44,7 @@ for (const benchmarkCase of benchmarkCases) {
       "https://compiler.example/v1";
 
     try {
-      const result = await compileManagedAuthoringPostingSession(
+      const result = await compileManagedAuthoringDraftOutcome(
         {
           intent: benchmarkCase.intent,
           uploadedArtifacts: benchmarkCase.uploadedArtifacts,

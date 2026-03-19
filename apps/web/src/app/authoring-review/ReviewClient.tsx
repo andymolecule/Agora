@@ -1,10 +1,10 @@
 "use client";
 
-import type { PostingSessionOutput } from "@agora/common";
+import type { AuthoringDraftOutput } from "@agora/common";
 import { Check, Loader2, TerminalSquare, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
-const REVIEW_TOKEN_STORAGE_KEY = "agora-posting-review-token";
+const REVIEW_TOKEN_STORAGE_KEY = "agora-authoring-review-token";
 
 async function readErrorMessage(response: Response) {
   const text = await response.text();
@@ -16,25 +16,28 @@ async function readErrorMessage(response: Response) {
   }
 }
 
-async function fetchReviewSessions(reviewToken: string) {
-  const response = await fetch("/api/posting-review/sessions?state=needs_review", {
-    cache: "no-store",
-    headers: {
-      "x-agora-review-token": reviewToken,
+async function fetchReviewDrafts(reviewToken: string) {
+  const response = await fetch(
+    "/api/authoring-review/drafts?state=needs_review",
+    {
+      cache: "no-store",
+      headers: {
+        "x-agora-review-token": reviewToken,
+      },
     },
-  });
+  );
   if (!response.ok) {
     throw new Error(await readErrorMessage(response));
   }
 
   const payload = (await response.json()) as {
-    data: { sessions: PostingSessionOutput[] };
+    data: { drafts: AuthoringDraftOutput[] };
   };
-  return payload.data.sessions;
+  return payload.data.drafts;
 }
 
 async function sendDecision(input: {
-  sessionId: string;
+  draftId: string;
   reviewToken: string;
   body:
     | { action: "approve" }
@@ -42,7 +45,7 @@ async function sendDecision(input: {
     | { action: "reject"; message: string };
 }) {
   const response = await fetch(
-    `/api/posting-review/sessions/${input.sessionId}/decision`,
+    `/api/authoring-review/drafts/${input.draftId}/decision`,
     {
       method: "POST",
       headers: {
@@ -68,19 +71,21 @@ function formatRuntime(value?: string | null) {
 }
 
 export function ReviewClient() {
-  const [sessions, setSessions] = useState<PostingSessionOutput[]>([]);
+  const [drafts, setDrafts] = useState<AuthoringDraftOutput[]>([]);
   const [reviewToken, setReviewToken] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [busySessionId, setBusySessionId] = useState<string | null>(null);
+  const [busyDraftId, setBusyDraftId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   async function load(token: string) {
     try {
       setIsLoading(true);
       setErrorMessage(null);
-      setSessions(await fetchReviewSessions(token));
+      setDrafts(await fetchReviewDrafts(token));
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Review queue failed to load.");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Review queue failed to load.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -90,17 +95,31 @@ export function ReviewClient() {
     const savedToken =
       typeof window === "undefined"
         ? ""
-        : window.sessionStorage.getItem(REVIEW_TOKEN_STORAGE_KEY) ?? "";
+        : (window.sessionStorage.getItem(REVIEW_TOKEN_STORAGE_KEY) ?? "");
     if (savedToken) {
       setReviewToken(savedToken);
-      void load(savedToken);
+      void (async () => {
+        try {
+          setIsLoading(true);
+          setErrorMessage(null);
+          setDrafts(await fetchReviewDrafts(savedToken));
+        } catch (error) {
+          setErrorMessage(
+            error instanceof Error
+              ? error.message
+              : "Review queue failed to load.",
+          );
+        } finally {
+          setIsLoading(false);
+        }
+      })();
       return;
     }
     setIsLoading(false);
   }, []);
 
   async function handleDecision(
-    sessionId: string,
+    draftId: string,
     action: "approve" | "reject" | "send_to_expert_mode",
   ) {
     let body:
@@ -126,18 +145,20 @@ export function ReviewClient() {
     }
 
     try {
-      setBusySessionId(sessionId);
+      setBusyDraftId(draftId);
       setErrorMessage(null);
       await sendDecision({
-        sessionId,
+        draftId,
         reviewToken,
         body,
       });
       await load(reviewToken);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Decision failed.");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Decision failed.",
+      );
     } finally {
-      setBusySessionId(null);
+      setBusyDraftId(null);
     }
   }
 
@@ -148,12 +169,11 @@ export function ReviewClient() {
           Internal Queue
         </div>
         <h1 className="mt-2 font-display text-[2.4rem] font-semibold tracking-[-0.04em] text-warm-900">
-          Managed posting review
+          Managed authoring review
         </h1>
         <p className="mt-3 max-w-3xl text-sm leading-7 text-warm-700">
           Review low-confidence managed drafts before they reach the publish
-          step. Approve the contract, reject it, or push it back to Expert
-          Mode.
+          step. Approve the contract, reject it, or push it back to Expert Mode.
         </p>
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
@@ -203,19 +223,19 @@ export function ReviewClient() {
         </div>
       ) : null}
 
-      {!isLoading && reviewToken.trim().length > 0 && sessions.length === 0 ? (
+      {!isLoading && reviewToken.trim().length > 0 && drafts.length === 0 ? (
         <div className="rounded-[22px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">
           No drafts are waiting for operator review right now.
         </div>
       ) : null}
 
       <div className="space-y-5">
-        {sessions.map((session) => {
-          const compilation = session.compilation;
-          const busy = busySessionId === session.id;
+        {drafts.map((draft) => {
+          const compilation = draft.compilation;
+          const busy = busyDraftId === draft.id;
           return (
             <section
-              key={session.id}
+              key={draft.id}
               className="rounded-[28px] border border-warm-300 bg-white/90 p-6 shadow-[0_18px_55px_rgba(30,27,24,0.06)]"
             >
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -224,10 +244,10 @@ export function ReviewClient() {
                     Review draft
                   </div>
                   <h2 className="mt-2 text-xl font-semibold text-warm-900">
-                    {session.intent?.title ?? session.id}
+                    {draft.intent?.title ?? draft.id}
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-warm-700">
-                    {session.review_summary?.summary ??
+                    {draft.review_summary?.summary ??
                       "This draft needs operator review before publish."}
                   </p>
                 </div>
@@ -235,8 +255,8 @@ export function ReviewClient() {
                 <div className="rounded-[20px] border border-warm-200 bg-warm-50 px-4 py-3 text-right text-sm">
                   <div className="text-warm-500">Confidence</div>
                   <div className="mt-1 font-semibold text-warm-900">
-                    {session.review_summary
-                      ? `${Math.round(session.review_summary.confidence_score * 100)}%`
+                    {draft.review_summary
+                      ? `${Math.round(draft.review_summary.confidence_score * 100)}%`
                       : "N/A"}
                   </div>
                 </div>
@@ -271,9 +291,9 @@ export function ReviewClient() {
                 </div>
               </div>
 
-              {session.review_summary?.reason_codes.length ? (
+              {draft.review_summary?.reason_codes.length ? (
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {session.review_summary.reason_codes.map((code) => (
+                  {draft.review_summary.reason_codes.map((code) => (
                     <span
                       key={code}
                       className="rounded-full border border-warm-200 bg-warm-50 px-3 py-1 text-xs font-mono uppercase tracking-[0.12em] text-warm-700"
@@ -288,18 +308,22 @@ export function ReviewClient() {
                 <button
                   type="button"
                   onClick={() => {
-                    void handleDecision(session.id, "approve");
+                    void handleDecision(draft.id, "approve");
                   }}
                   disabled={busy}
                   className="inline-flex items-center gap-2 rounded-full bg-warm-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  {busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Check className="h-4 w-4" />
+                  )}
                   Approve
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    void handleDecision(session.id, "send_to_expert_mode");
+                    void handleDecision(draft.id, "send_to_expert_mode");
                   }}
                   disabled={busy}
                   className="inline-flex items-center gap-2 rounded-full border border-warm-300 bg-white px-5 py-3 text-sm font-medium text-warm-900 disabled:cursor-not-allowed disabled:opacity-50"
@@ -310,7 +334,7 @@ export function ReviewClient() {
                 <button
                   type="button"
                   onClick={() => {
-                    void handleDecision(session.id, "reject");
+                    void handleDecision(draft.id, "reject");
                   }}
                   disabled={busy}
                   className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-5 py-3 text-sm font-medium text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
@@ -327,7 +351,9 @@ export function ReviewClient() {
                   </summary>
                   <div className="border-t border-white/10 px-4 py-4 text-sm leading-7">
                     <p>{compilation.confirmation_contract.solver_submission}</p>
-                    <p className="mt-3">{compilation.confirmation_contract.scoring_summary}</p>
+                    <p className="mt-3">
+                      {compilation.confirmation_contract.scoring_summary}
+                    </p>
                     <pre className="mt-4 overflow-x-auto rounded-[16px] bg-black/20 p-4 font-mono text-[12px] leading-6 text-warm-100">
                       {JSON.stringify(compilation.challenge_spec, null, 2)}
                     </pre>

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { createAuthoringSourceDraftRequestSchema } from "../schemas/authoring-source.js";
 import {
+  authoringDraftSchema,
   challengeAuthoringIrSchema,
-  compilePostingSessionRequestSchema,
-  createPostingSessionRequestSchema,
-  postingSessionSchema,
+  compileManagedAuthoringDraftRequestSchema,
+  createAuthoringDraftRequestSchema,
 } from "../schemas/managed-authoring.js";
 
 const baseIntent = {
@@ -34,7 +34,7 @@ const baseArtifacts = [
   },
 ];
 
-const validRequest = createPostingSessionRequestSchema.parse({
+const validRequest = createAuthoringDraftRequestSchema.parse({
   poster_address: "0x00000000000000000000000000000000000000aa",
   intent: baseIntent,
   uploaded_artifacts: baseArtifacts,
@@ -43,7 +43,7 @@ const validRequest = createPostingSessionRequestSchema.parse({
 assert.equal(validRequest.uploaded_artifacts.length, 2);
 assert.equal(validRequest.intent?.dispute_window_hours, 168);
 
-const testnetWindow = createPostingSessionRequestSchema.parse({
+const testnetWindow = createAuthoringDraftRequestSchema.parse({
   intent: {
     ...baseIntent,
     dispute_window_hours: 0,
@@ -57,7 +57,7 @@ assert.equal(
   "managed authoring should preserve explicit testnet dispute windows",
 );
 
-const duplicateUri = compilePostingSessionRequestSchema.safeParse({
+const duplicateUri = compileManagedAuthoringDraftRequestSchema.safeParse({
   poster_address: "0x00000000000000000000000000000000000000aa",
   intent: baseIntent,
   uploaded_artifacts: [
@@ -76,7 +76,7 @@ assert.equal(
   "managed authoring should reject duplicate artifact URIs",
 );
 
-const unsupportedUri = createPostingSessionRequestSchema.safeParse({
+const unsupportedUri = createAuthoringDraftRequestSchema.safeParse({
   intent: baseIntent,
   uploaded_artifacts: [
     {
@@ -93,7 +93,7 @@ assert.equal(
   "managed authoring should only accept pinned or hosted artifact URIs",
 );
 
-const tooManyArtifacts = createPostingSessionRequestSchema.safeParse({
+const tooManyArtifacts = createAuthoringDraftRequestSchema.safeParse({
   intent: baseIntent,
   uploaded_artifacts: Array.from({ length: 13 }, (_value, index) => ({
     id: `artifact-${index}`,
@@ -108,7 +108,7 @@ assert.equal(
   "managed authoring should cap uploaded artifacts per draft",
 );
 
-const tooManyTags = createPostingSessionRequestSchema.safeParse({
+const tooManyTags = createAuthoringDraftRequestSchema.safeParse({
   intent: {
     ...baseIntent,
     tags: Array.from({ length: 13 }, (_value, index) => `tag-${index}`),
@@ -205,7 +205,7 @@ const authoringIr = challengeAuthoringIrSchema.parse({
   },
 });
 
-const postingSession = postingSessionSchema.parse({
+const authoringDraft = authoringDraftSchema.parse({
   id: "f5567c15-8e0b-4afe-8d0c-7f511b592c05",
   state: "draft",
   intent: baseIntent,
@@ -216,9 +216,9 @@ const postingSession = postingSessionSchema.parse({
 });
 
 assert.equal(
-  postingSession.authoring_ir?.clarification.open_questions[0]?.blocks_publish,
+  authoringDraft.authoring_ir?.clarification.open_questions[0]?.blocks_publish,
   true,
-  "posting sessions should accept persisted authoring IR state",
+  "authoring drafts should accept persisted authoring IR state",
 );
 
 const sourceDraft = createAuthoringSourceDraftRequestSchema.parse({

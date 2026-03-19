@@ -1,7 +1,7 @@
 import type {
+  AuthoringReviewSummaryOutput,
   ChallengeAuthoringIrOutput,
   CompilationResultOutput,
-  PostingReviewSummaryOutput,
 } from "@agora/common";
 import { validateChallengeScoreability } from "@agora/common";
 import type { AuthoringDraftViewRow } from "@agora/db";
@@ -14,7 +14,7 @@ export function buildManagedReviewSummary(input: {
   confidenceScore: number;
   reasonCodes: string[];
   warnings: string[];
-}): PostingReviewSummaryOutput {
+}): AuthoringReviewSummaryOutput {
   const reasonSummary =
     input.reasonCodes.length > 0
       ? input.reasonCodes.map(formatReasonCode).join(", ")
@@ -37,7 +37,7 @@ export function buildSemiCustomReviewSummary(input: {
   authoringIr: ChallengeAuthoringIrOutput;
   executable: boolean;
   triggerMessage?: string | null;
-}): PostingReviewSummaryOutput {
+}): AuthoringReviewSummaryOutput {
   const evaluatorId =
     input.authoringIr.evaluation.selected_evaluator ?? "semi_custom";
   const evaluatorArchetype =
@@ -66,7 +66,7 @@ export function deriveAuthoringDraftReviewSummary(
     AuthoringDraftViewRow,
     "state" | "authoring_ir_json" | "compilation_json"
   >,
-): PostingReviewSummaryOutput | null {
+): AuthoringReviewSummaryOutput | null {
   if (row.state !== "needs_review") {
     return null;
   }

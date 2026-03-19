@@ -251,7 +251,7 @@ AGORA_RUNTIME_VERSION=
 ### New Authoring / Beach / Review Vars
 
 ```bash
-AGORA_POSTING_REVIEW_TOKEN=
+AGORA_AUTHORING_REVIEW_TOKEN=
 AGORA_AUTHORING_PARTNER_KEYS='beach_science:...'
 AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS='beach_science:...'
 AGORA_AUTHORING_PARTNER_RETURN_ORIGINS='beach_science:https://beach.science'
@@ -274,7 +274,7 @@ Example:
 AGORA_AUTHORING_PARTNER_KEYS='beach_science:beach-prod-bearer'
 AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS='beach_science:beach-prod-callback-secret'
 AGORA_AUTHORING_PARTNER_RETURN_ORIGINS='beach_science:https://beach.science|https://staging.beach.science'
-AGORA_POSTING_REVIEW_TOKEN='internal-review-token'
+AGORA_AUTHORING_REVIEW_TOKEN='internal-review-token'
 ```
 
 ### Web
@@ -289,7 +289,7 @@ NEXT_PUBLIC_AGORA_CHAIN_ID=
 NEXT_PUBLIC_AGORA_RPC_URL=
 ```
 
-If the internal posting review screen is used from the web app, the matching server-side review token must also be set on the web deployment environment.
+If the internal authoring review screen is used from the web app, the matching server-side review token must also be set on the web deployment environment.
 
 ---
 
@@ -368,10 +368,10 @@ Import Beach thread:
 
 Then use generic partner draft lifecycle:
 
-- `GET /api/authoring/drafts/:id`
-- `POST /api/authoring/drafts/:id/clarify`
-- `POST /api/authoring/drafts/:id/compile`
-- `POST /api/authoring/drafts/:id/webhook`
+- `GET /api/authoring/external/drafts/:id`
+- `POST /api/authoring/external/drafts/:id/clarify`
+- `POST /api/authoring/external/drafts/:id/compile`
+- `POST /api/authoring/external/drafts/:id/webhook`
 
 ### Callback Sweep
 
@@ -384,7 +384,7 @@ Endpoint:
 Header:
 
 ```bash
-x-agora-review-token: ${AGORA_POSTING_REVIEW_TOKEN}
+x-agora-review-token: ${AGORA_AUTHORING_REVIEW_TOKEN}
 ```
 
 This can be called from cron or an internal operator job.
@@ -400,7 +400,7 @@ pnpm schema:verify
 pnpm scorers:verify
 curl -sS http://<api>/healthz
 curl -sS http://<api>/api/worker-health
-curl -sS http://<api>/api/posting/health
+curl -sS http://<api>/api/authoring/health
 ```
 
 Authoring-specific checks:
@@ -408,9 +408,9 @@ Authoring-specific checks:
 1. create a direct draft in `/post`
 2. compile a direct draft
 3. import a Beach draft through `/api/integrations/beach/drafts/import`
-4. clarify it through `/api/authoring/drafts/:id/clarify`
-5. compile it through `/api/authoring/drafts/:id/compile`
-6. register a webhook through `/api/authoring/drafts/:id/webhook`
+4. clarify it through `/api/authoring/external/drafts/:id/clarify`
+5. compile it through `/api/authoring/external/drafts/:id/compile`
+6. register a webhook through `/api/authoring/external/drafts/:id/webhook`
 7. publish a hosted draft and confirm return-to behavior
 8. run callback sweep and confirm pending deliveries drain
 
@@ -419,7 +419,7 @@ Useful local regression command:
 ```bash
 cd /Users/changyuesin/Agora/apps/api
 node --import tsx --test \
-  tests/posting-sessions-route.test.ts \
+  tests/authoring-drafts-route.test.ts \
   tests/authoring-sources.test.ts \
   tests/authoring-drafts.test.ts \
   tests/integrations-beach.test.ts

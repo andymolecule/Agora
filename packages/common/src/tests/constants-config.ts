@@ -15,13 +15,13 @@ import {
   readApiClientRuntimeConfig,
   readApiServerRuntimeConfig,
   readAuthoringPartnerRuntimeConfig,
+  readAuthoringReviewRuntimeConfig,
   readCliRuntimeConfig,
   readExecutorServerRuntimeConfig,
   readFeaturePolicy,
   readIndexerHealthRuntimeConfig,
   readManagedAuthoringRuntimeConfig,
   readObservabilityRuntimeConfig,
-  readPostingReviewRuntimeConfig,
   readScorerExecutorRuntimeConfig,
   readWorkerTimingConfig,
   readX402RuntimeConfig,
@@ -271,12 +271,12 @@ try {
     /requires AGORA_MANAGED_AUTHORING_MODEL/,
   );
 
-  const postingReviewRuntime = readPostingReviewRuntimeConfig({
+  const authoringReviewRuntime = readAuthoringReviewRuntimeConfig({
     AGORA_API_URL: "https://api.agora.example",
-    AGORA_POSTING_REVIEW_TOKEN: "review-token",
+    AGORA_AUTHORING_REVIEW_TOKEN: "review-token",
   });
-  assert.equal(postingReviewRuntime.apiUrl, "https://api.agora.example");
-  assert.equal(postingReviewRuntime.token, "review-token");
+  assert.equal(authoringReviewRuntime.apiUrl, "https://api.agora.example");
+  assert.equal(authoringReviewRuntime.token, "review-token");
 
   const authoringPartnerRuntime = readAuthoringPartnerRuntimeConfig({
     AGORA_AUTHORING_PARTNER_KEYS:

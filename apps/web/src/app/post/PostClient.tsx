@@ -1,8 +1,8 @@
 "use client";
 
 import {
+  type AuthoringDraftOutput,
   type CompilationResultOutput,
-  type PostingSessionOutput,
   parseCsvHeaders,
 } from "@agora/common";
 import { useChainModal, useConnectModal } from "@rainbow-me/rainbowkit";
@@ -54,7 +54,7 @@ import {
   clearGuidedDraft,
   createInitialGuidedState,
   guidedComposerReducer,
-  hydrateGuidedStateFromPostingSession,
+  hydrateGuidedStateFromAuthoringDraft,
   isReadyToCompile,
   listReadinessIssues,
   loadGuidedDraft,
@@ -66,7 +66,7 @@ import {
   createChallengeWithApproval,
   createChallengeWithPermit,
   finalizeManagedChallengePost,
-  publishManagedPostingSession,
+  publishManagedAuthoringDraft,
   signRewardPermit,
 } from "./managed-post-flow";
 import {
@@ -78,7 +78,7 @@ import {
 
 type Step = PostStep;
 type DeadlineWindowState = ReturnType<typeof getSubmissionDeadlineWindowState>;
-type PostingSessionRequestError = Error & { status?: number };
+type AuthoringDraftRequestError = Error & { status?: number };
 
 /* ── Utility functions ─────────────────────────────────── */
 
@@ -94,21 +94,21 @@ function parseApiErrorMessage(text: string) {
   return text || "Request failed.";
 }
 
-function createPostingSessionRequestError(response: Response, message: string) {
-  const error = new Error(message) as PostingSessionRequestError;
-  error.name = "PostingSessionRequestError";
+function createAuthoringDraftRequestError(response: Response, message: string) {
+  const error = new Error(message) as AuthoringDraftRequestError;
+  error.name = "AuthoringDraftRequestError";
   error.status = response.status;
   return error;
 }
 
-async function toPostingSessionRequestError(response: Response) {
-  return createPostingSessionRequestError(
+async function toAuthoringDraftRequestError(response: Response) {
+  return createAuthoringDraftRequestError(
     response,
     parseApiErrorMessage(await response.text()),
   );
 }
 
-function getPostingSessionRequestStatus(error: unknown) {
+function getAuthoringDraftRequestStatus(error: unknown) {
   if (
     error &&
     typeof error === "object" &&
@@ -188,17 +188,17 @@ async function pinDataFile(file: File) {
     body: formData,
   });
   if (!response.ok) {
-    throw await toPostingSessionRequestError(response);
+    throw await toAuthoringDraftRequestError(response);
   }
   return (await response.json()) as { cid: string };
 }
 
-async function createPostingSession(input: {
+async function createAuthoringDraft(input: {
   posterAddress?: `0x${string}`;
   intent: ManagedIntentState;
   uploads: UploadedArtifact[];
 }) {
-  const response = await fetch("/api/posting/sessions", {
+  const response = await fetch("/api/authoring/drafts", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -209,23 +209,23 @@ async function createPostingSession(input: {
   });
 
   if (!response.ok) {
-    throw await toPostingSessionRequestError(response);
+    throw await toAuthoringDraftRequestError(response);
   }
 
   const payload = (await response.json()) as {
-    data: { session: PostingSessionOutput };
+    data: { draft: AuthoringDraftOutput };
   };
-  return payload.data.session;
+  return payload.data.draft;
 }
 
-async function compilePostingSession(input: {
-  sessionId: string;
+async function compileAuthoringDraft(input: {
+  draftId: string;
   posterAddress?: `0x${string}`;
   intent: ManagedIntentState;
   uploads: UploadedArtifact[];
 }) {
   const response = await fetch(
-    `/api/posting/sessions/${input.sessionId}/compile`,
+    `/api/authoring/drafts/${input.draftId}/compile`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -238,38 +238,38 @@ async function compilePostingSession(input: {
   );
 
   if (!response.ok) {
-    throw await toPostingSessionRequestError(response);
+    throw await toAuthoringDraftRequestError(response);
   }
 
   const payload = (await response.json()) as {
-    data: { session: PostingSessionOutput };
+    data: { draft: AuthoringDraftOutput };
   };
-  return payload.data.session;
+  return payload.data.draft;
 }
 
-async function getPostingSession(sessionId: string) {
-  const response = await fetch(`/api/posting/sessions/${sessionId}`, {
+async function getAuthoringDraft(draftId: string) {
+  const response = await fetch(`/api/authoring/drafts/${draftId}`, {
     method: "GET",
     cache: "no-store",
   });
 
   if (!response.ok) {
-    throw await toPostingSessionRequestError(response);
+    throw await toAuthoringDraftRequestError(response);
   }
 
   const payload = (await response.json()) as {
-    data: { session: PostingSessionOutput };
+    data: { draft: AuthoringDraftOutput };
   };
-  return payload.data.session;
+  return payload.data.draft;
 }
 
-function getCompilation(session: PostingSessionOutput | null | undefined) {
+function getCompilation(session: AuthoringDraftOutput | null | undefined) {
   return (session?.compilation ?? null) as CompilationResultOutput | null;
 }
 
 function clearCompiledSessionData(
-  current: PostingSessionOutput | null,
-): PostingSessionOutput | null {
+  current: AuthoringDraftOutput | null,
+): AuthoringDraftOutput | null {
   if (!current) {
     return current;
   }
@@ -294,7 +294,7 @@ export function PostClient() {
     undefined,
     () => createInitialGuidedState(),
   );
-  const [session, setSession] = useState<PostingSessionOutput | null>(null);
+  const [session, setSession] = useState<AuthoringDraftOutput | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCompiling, setIsCompiling] = useState(false);
@@ -416,24 +416,24 @@ export function PostClient() {
   }, [expertMode, guidedState, isHostedDraftFlow]);
 
   useEffect(() => {
-    const restoreSessionId = hostedDraftId ?? guidedState.sessionId;
-    if (!restoreSessionId || session?.id === restoreSessionId) {
+    const restoreDraftId = hostedDraftId ?? guidedState.draftId;
+    if (!restoreDraftId || session?.id === restoreDraftId) {
       return;
     }
 
     let cancelled = false;
 
-    void getPostingSession(restoreSessionId)
+    void getAuthoringDraft(restoreDraftId)
       .then((restoredSession) => {
         if (cancelled) {
           return;
         }
         setSession(restoredSession);
-        dispatch({ type: "set_session_id", sessionId: restoredSession.id });
+        dispatch({ type: "set_draft_id", draftId: restoredSession.id });
         if (hostedDraftId) {
           dispatch({
             type: "hydrate",
-            state: hydrateGuidedStateFromPostingSession(restoredSession),
+            state: hydrateGuidedStateFromAuthoringDraft(restoredSession),
           });
         }
         if (restoredSession.state === "ready") {
@@ -465,8 +465,8 @@ export function PostClient() {
         if (cancelled) {
           return;
         }
-        clearRemotePostingSession(
-          getPostingSessionRequestStatus(error) === 404
+        clearRemoteAuthoringDraft(
+          getAuthoringDraftRequestStatus(error) === 404
             ? hostedDraftId
               ? "This linked draft is no longer available. Next step: reopen the host workflow and create a fresh handoff."
               : "Your saved review contract expired. Next step: regenerate the contract from your draft answers."
@@ -479,7 +479,7 @@ export function PostClient() {
     return () => {
       cancelled = true;
     };
-  }, [guidedState.sessionId, hostedDraftId, session?.id]);
+  }, [guidedState.draftId, hostedDraftId, session?.id]);
 
   useEffect(() => {
     if (
@@ -493,7 +493,7 @@ export function PostClient() {
     let cancelled = false;
     const intervalId = window.setInterval(async () => {
       try {
-        const refreshedSession = await getPostingSession(session.id);
+        const refreshedSession = await getAuthoringDraft(session.id);
         if (cancelled) {
           return;
         }
@@ -545,8 +545,8 @@ export function PostClient() {
         if (cancelled) {
           return;
         }
-        if (getPostingSessionRequestStatus(error) === 404) {
-          clearRemotePostingSession(
+        if (getAuthoringDraftRequestStatus(error) === 404) {
+          clearRemoteAuthoringDraft(
             "This review contract is no longer available. Next step: regenerate it from the draft answers before publishing.",
           );
           return;
@@ -576,11 +576,11 @@ export function PostClient() {
     dispatch({ type: "set_compile_state", compileState });
   }
 
-  function clearRemotePostingSession(message: string) {
+  function clearRemoteAuthoringDraft(message: string) {
     setSession(null);
     setHostReturnUrl(null);
     setHostReturnSource(null);
-    dispatch({ type: "set_session_id", sessionId: null });
+    dispatch({ type: "set_draft_id", draftId: null });
     dispatchCompileState(
       isReadyToCompile(guidedStateRef.current) ? "ready_to_compile" : "idle",
     );
@@ -739,25 +739,25 @@ export function PostClient() {
         "Compiling your challenge into a deterministic scoring contract...",
       );
 
-      let existingSessionId = guidedStateRef.current.sessionId;
-      if (!existingSessionId) {
-        const createdSession = await createPostingSession({
+      let existingDraftId = guidedStateRef.current.draftId;
+      if (!existingDraftId) {
+        const createdSession = await createAuthoringDraft({
           posterAddress: address as `0x${string}` | undefined,
           intent: managedIntent,
           uploads: guidedStateRef.current.uploads,
         });
-        existingSessionId = createdSession.id;
-        dispatch({ type: "set_session_id", sessionId: createdSession.id });
+        existingDraftId = createdSession.id;
+        dispatch({ type: "set_draft_id", draftId: createdSession.id });
       }
 
-      const compiledSession = await compilePostingSession({
-        sessionId: existingSessionId,
+      const compiledSession = await compileAuthoringDraft({
+        draftId: existingDraftId,
         posterAddress: address as `0x${string}` | undefined,
         intent: managedIntent,
         uploads: guidedStateRef.current.uploads,
       });
       setSession(compiledSession);
-      dispatch({ type: "set_session_id", sessionId: compiledSession.id });
+      dispatch({ type: "set_draft_id", draftId: compiledSession.id });
 
       if (compiledSession.state === "needs_clarification") {
         dispatch({
@@ -846,7 +846,7 @@ export function PostClient() {
       return;
     }
     if (!session) {
-      setErrorMessage("No posting session found. Recompile the draft first.");
+      setErrorMessage("No authoring draft found. Recompile the draft first.");
       return;
     }
     if (needsDeadlineRefresh) {
@@ -882,8 +882,8 @@ export function PostClient() {
       });
 
       setStatusMessage("Pinning the compiled challenge spec...");
-      const prepared = await publishManagedPostingSession({
-        sessionId: session.id,
+      const prepared = await publishManagedAuthoringDraft({
+        draftId: session.id,
         spec: compilation.challenge_spec,
         address,
         chainId: CHAIN_ID,

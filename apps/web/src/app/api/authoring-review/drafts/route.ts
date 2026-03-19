@@ -1,31 +1,31 @@
 import { NextResponse } from "next/server";
 import {
-  buildPostingReviewUpstreamUrl,
-  POSTING_REVIEW_HEADER_NAME,
-  resolvePostingReviewProxy,
-} from "../../../../lib/posting-review-proxy";
+  AUTHORING_REVIEW_HEADER_NAME,
+  buildAuthoringReviewUpstreamUrl,
+  resolveAuthoringReviewProxy,
+} from "../../../../lib/authoring-review-proxy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const resolved = resolvePostingReviewProxy(request.url);
+  const resolved = resolveAuthoringReviewProxy(request.url);
   if (!resolved.ok) {
     return NextResponse.json({ error: resolved.message }, { status: 503 });
   }
 
-  const reviewToken = request.headers.get(POSTING_REVIEW_HEADER_NAME);
+  const reviewToken = request.headers.get(AUTHORING_REVIEW_HEADER_NAME);
   if (!reviewToken) {
     return NextResponse.json(
       {
         error:
-          "Posting review token missing. Next step: enter the operator review token and retry.",
+          "Authoring review token missing. Next step: enter the operator review token and retry.",
       },
       { status: 401 },
     );
   }
 
-  const upstreamUrl = buildPostingReviewUpstreamUrl({
+  const upstreamUrl = buildAuthoringReviewUpstreamUrl({
     baseUrl: resolved.baseUrl,
     requestUrl: request.url,
   });
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
   const upstream = await fetch(upstreamUrl, {
     method: "GET",
     headers: {
-      [POSTING_REVIEW_HEADER_NAME]: reviewToken,
+      [AUTHORING_REVIEW_HEADER_NAME]: reviewToken,
     },
     cache: "no-store",
   });

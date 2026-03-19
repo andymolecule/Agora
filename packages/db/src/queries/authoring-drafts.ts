@@ -1,5 +1,5 @@
 import type {
-  PostingSessionState as AuthoringDraftState,
+  AuthoringDraftState,
   ChallengeAuthoringIrOutput,
   ChallengeIntentOutput,
   CompilationResultOutput,

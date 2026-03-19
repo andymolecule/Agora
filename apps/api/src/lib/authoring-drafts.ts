@@ -2,7 +2,7 @@ import { createHash, createHmac } from "node:crypto";
 import type {
   AuthoringDraftCardOutput,
   AuthoringDraftLifecycleEventOutput,
-  PostingSessionState as AuthoringDraftState,
+  AuthoringDraftState,
   ExternalSourceProviderOutput,
 } from "@agora/common";
 import {
@@ -260,7 +260,7 @@ export function resolveAuthoringDraftReturnUrl(input: {
         status: 400 as const,
         code: "AUTHORING_RETURN_URL_NOT_ALLOWED",
         message:
-          "Direct posting drafts cannot redirect back to an external host. Next step: remove return_to and retry publish from Agora.",
+          "Direct authoring drafts cannot redirect back to an external host. Next step: remove return_to and retry publish from Agora.",
       },
     };
   }
@@ -351,7 +351,7 @@ export function buildAuthoringDraftCard(
 
 export function buildAuthoringDraftResponse(session: AuthoringDraftViewRow) {
   return {
-    session: toAuthoringDraftPayload(session),
+    draft: toAuthoringDraftPayload(session),
     card: buildAuthoringDraftCard(session),
   };
 }

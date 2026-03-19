@@ -6,11 +6,11 @@ import {
   externalSourceProviderSchema,
   safePublicHttpsUrlSchema,
 } from "./authoring-source.js";
-import { semiCustomEvaluatorContractSchema } from "./evaluator-contract.js";
 import {
   challengeArtifactSchema,
   challengeSpecSchema,
 } from "./challenge-spec.js";
+import { semiCustomEvaluatorContractSchema } from "./evaluator-contract.js";
 import { submissionContractSchema } from "./submission-contract.js";
 
 const AUTHORING_MAX_TITLE_LENGTH = 160;
@@ -365,7 +365,7 @@ export const registerAuthoringDraftWebhookRequestSchema = z.object({
   callback_url: safePublicHttpsUrlSchema,
 });
 
-export const postingReviewSummarySchema = z.object({
+export const authoringReviewSummarySchema = z.object({
   summary: z.string().trim().min(1),
   reason_codes: z.array(z.string().trim().min(1)).default([]),
   confidence_score: z.number().min(0).max(1),
@@ -392,7 +392,7 @@ export const compilationResultSchema = z.object({
   challenge_spec: challengeSpecSchema,
 });
 
-export const POSTING_SESSION_STATES = [
+export const AUTHORING_DRAFT_STATES = [
   "draft",
   "compiling",
   "ready",
@@ -402,12 +402,12 @@ export const POSTING_SESSION_STATES = [
   "failed",
 ] as const;
 
-export const postingSessionStateSchema = z.enum(POSTING_SESSION_STATES);
+export const authoringDraftStateSchema = z.enum(AUTHORING_DRAFT_STATES);
 
 export const authoringDraftCardSchema = z.object({
   draft_id: z.string().uuid(),
   provider: externalSourceProviderSchema,
-  state: postingSessionStateSchema,
+  state: authoringDraftStateSchema,
   title: z.string().trim().min(1).nullable(),
   summary: z.string().trim().min(1).nullable(),
   reward_total: z.string().trim().min(1).nullable(),
@@ -418,7 +418,7 @@ export const authoringDraftCardSchema = z.object({
   clarification_count: z.number().int().nonnegative(),
   next_question: clarificationQuestionSchema.nullable(),
   review_recommended_action:
-    postingReviewSummarySchema.shape.recommended_action.nullable(),
+    authoringReviewSummarySchema.shape.recommended_action.nullable(),
   published_spec_cid: z.string().trim().min(1).nullable(),
   callback_registered: z.boolean(),
   expires_at: z.string().datetime({ offset: true }),
@@ -437,11 +437,11 @@ export const authoringDraftLifecycleEventSchema = z.object({
   occurred_at: z.string().datetime({ offset: true }),
   draft_id: z.string().uuid(),
   provider: externalSourceProviderSchema,
-  state: postingSessionStateSchema,
+  state: authoringDraftStateSchema,
   card: authoringDraftCardSchema,
 });
 
-export const postingSessionStateCountsSchema = z.object({
+export const authoringDraftStateCountsSchema = z.object({
   draft: z.number().int().nonnegative(),
   compiling: z.number().int().nonnegative(),
   ready: z.number().int().nonnegative(),
@@ -451,12 +451,12 @@ export const postingSessionStateCountsSchema = z.object({
   failed: z.number().int().nonnegative(),
 });
 
-export const postingSessionHealthSchema = z.object({
+export const authoringDraftHealthSchema = z.object({
   status: z.enum(["ok", "warning", "critical"]),
   checked_at: z.string().datetime({ offset: true }),
   message: z.string().trim().min(1),
-  sessions: z.object({
-    counts: postingSessionStateCountsSchema,
+  drafts: z.object({
+    counts: authoringDraftStateCountsSchema,
     expired: z.number().int().nonnegative(),
     stale_compiling: z.number().int().nonnegative(),
     oldest_needs_review_at: z.string().datetime({ offset: true }).nullable(),
@@ -470,17 +470,17 @@ export const postingSessionHealthSchema = z.object({
   }),
 });
 
-export const postingSessionSweepResultSchema = z.object({
+export const authoringDraftSweepResultSchema = z.object({
   checked_at: z.string().datetime({ offset: true }),
   deleted_count: z.number().int().nonnegative(),
-  deleted_state_counts: postingSessionStateCountsSchema,
+  deleted_state_counts: authoringDraftStateCountsSchema,
 });
 
-export const postingSessionSchema = z
+export const authoringDraftSchema = z
   .object({
     id: z.string().uuid(),
     poster_address: z.string().trim().min(1).nullable().optional(),
-    state: postingSessionStateSchema,
+    state: authoringDraftStateSchema,
     intent: challengeIntentSchema.nullable().optional(),
     authoring_ir: challengeAuthoringIrSchema.nullable().optional(),
     uploaded_artifacts: z
@@ -489,7 +489,7 @@ export const postingSessionSchema = z
       .default([]),
     compilation: compilationResultSchema.nullable().optional(),
     clarification_questions: z.array(clarificationQuestionSchema).default([]),
-    review_summary: postingReviewSummarySchema.nullable().optional(),
+    review_summary: authoringReviewSummarySchema.nullable().optional(),
     approved_confirmation: confirmationContractSchema.nullable().optional(),
     published_spec_cid: z.string().trim().min(1).nullable().optional(),
     published_spec: challengeSpecSchema.nullable().optional(),
@@ -512,7 +512,7 @@ export const postingSessionSchema = z
     }
   });
 
-export const createPostingSessionRequestSchema = z
+export const createAuthoringDraftRequestSchema = z
   .object({
     poster_address: z
       .string()
@@ -538,7 +538,7 @@ export const createPostingSessionRequestSchema = z
     }
   });
 
-export const compilePostingSessionRequestSchema = z
+export const compileManagedAuthoringDraftRequestSchema = z
   .object({
     poster_address: z
       .string()
@@ -566,7 +566,7 @@ export const compilePostingSessionRequestSchema = z
     }
   });
 
-export const publishPostingSessionRequestSchema = z.object({
+export const publishManagedAuthoringDraftRequestSchema = z.object({
   auth: z.object({
     address: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
     nonce: z.string().min(8).max(128),
@@ -576,9 +576,8 @@ export const publishPostingSessionRequestSchema = z.object({
   return_to: safePublicHttpsUrlSchema.optional(),
 });
 
-export const reviewPostingSessionDecisionRequestSchema = z.discriminatedUnion(
-  "action",
-  [
+export const reviewManagedAuthoringDraftDecisionRequestSchema =
+  z.discriminatedUnion("action", [
     z.object({
       action: z.literal("approve"),
     }),
@@ -589,8 +588,7 @@ export const reviewPostingSessionDecisionRequestSchema = z.discriminatedUnion(
     z.object({
       action: z.literal("send_to_expert_mode"),
     }),
-  ],
-);
+  ]);
 
 export type ChallengeIntentInput = z.input<typeof challengeIntentSchema>;
 export type ChallengeIntentOutput = z.output<typeof challengeIntentSchema>;
@@ -613,8 +611,8 @@ export type ClarificationQuestionOutput = z.output<
 >;
 export type DryRunPreviewOutput = z.output<typeof dryRunPreviewSchema>;
 export type CompilationResultOutput = z.output<typeof compilationResultSchema>;
-export type PostingReviewSummaryOutput = z.output<
-  typeof postingReviewSummarySchema
+export type AuthoringReviewSummaryOutput = z.output<
+  typeof authoringReviewSummarySchema
 >;
 export type ClarifyAuthoringDraftRequestInput = z.input<
   typeof clarifyAuthoringDraftRequestSchema
@@ -640,17 +638,17 @@ export type AuthoringDraftCardOutput = z.output<
 export type AuthoringDraftLifecycleEventOutput = z.output<
   typeof authoringDraftLifecycleEventSchema
 >;
-export type PostingSessionState = z.output<typeof postingSessionStateSchema>;
-export type PostingSessionStateCountsOutput = z.output<
-  typeof postingSessionStateCountsSchema
+export type AuthoringDraftState = z.output<typeof authoringDraftStateSchema>;
+export type AuthoringDraftStateCountsOutput = z.output<
+  typeof authoringDraftStateCountsSchema
 >;
-export type PostingSessionOutput = z.output<typeof postingSessionSchema>;
-export type PostingSessionHealthOutput = z.output<
-  typeof postingSessionHealthSchema
+export type AuthoringDraftOutput = z.output<typeof authoringDraftSchema>;
+export type AuthoringDraftHealthOutput = z.output<
+  typeof authoringDraftHealthSchema
 >;
-export type PostingSessionSweepResultOutput = z.output<
-  typeof postingSessionSweepResultSchema
+export type AuthoringDraftSweepResultOutput = z.output<
+  typeof authoringDraftSweepResultSchema
 >;
-export type ReviewPostingSessionDecisionInput = z.input<
-  typeof reviewPostingSessionDecisionRequestSchema
+export type ReviewManagedAuthoringDraftDecisionInput = z.input<
+  typeof reviewManagedAuthoringDraftDecisionRequestSchema
 >;

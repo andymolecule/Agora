@@ -1,4 +1,4 @@
-import { postingSessionSchema } from "@agora/common";
+import { authoringDraftSchema } from "@agora/common";
 import type { AuthoringDraftViewRow } from "@agora/db";
 import { deriveAuthoringDraftReviewSummary } from "./authoring-draft-review-summary.js";
 import { buildClarificationQuestionsFromAuthoringIr } from "./managed-authoring-ir.js";
@@ -20,32 +20,36 @@ export function isAuthoringDraftExpired(
   return expiresAtMs <= nowMs;
 }
 
-export function toAuthoringDraftPayload(draft: AuthoringDraftViewRow | null) {
-  if (!draft) {
+export function toAuthoringDraftPayload(
+  authoringDraft: AuthoringDraftViewRow | null,
+) {
+  if (!authoringDraft) {
     return null;
   }
 
-  const clarificationQuestions = getAuthoringDraftClarificationQuestions(draft);
-  const reviewSummary = getAuthoringDraftReviewSummary(draft);
-  const approvedConfirmation = getAuthoringDraftApprovedConfirmation(draft);
+  const clarificationQuestions =
+    getAuthoringDraftClarificationQuestions(authoringDraft);
+  const reviewSummary = getAuthoringDraftReviewSummary(authoringDraft);
+  const approvedConfirmation =
+    getAuthoringDraftApprovedConfirmation(authoringDraft);
 
-  return postingSessionSchema.parse({
-    id: draft.id,
-    poster_address: draft.poster_address ?? null,
-    state: draft.state,
-    intent: draft.intent_json ?? null,
-    authoring_ir: draft.authoring_ir_json ?? null,
-    uploaded_artifacts: draft.uploaded_artifacts_json ?? [],
-    compilation: draft.compilation_json ?? null,
+  return authoringDraftSchema.parse({
+    id: authoringDraft.id,
+    poster_address: authoringDraft.poster_address ?? null,
+    state: authoringDraft.state,
+    intent: authoringDraft.intent_json ?? null,
+    authoring_ir: authoringDraft.authoring_ir_json ?? null,
+    uploaded_artifacts: authoringDraft.uploaded_artifacts_json ?? [],
+    compilation: authoringDraft.compilation_json ?? null,
     clarification_questions: clarificationQuestions,
     review_summary: reviewSummary,
     approved_confirmation: approvedConfirmation,
-    published_spec_cid: draft.published_spec_cid ?? null,
-    published_spec: draft.published_spec_json ?? null,
-    failure_message: draft.failure_message ?? null,
-    expires_at: draft.expires_at,
-    created_at: draft.created_at,
-    updated_at: draft.updated_at,
+    published_spec_cid: authoringDraft.published_spec_cid ?? null,
+    published_spec: authoringDraft.published_spec_json ?? null,
+    failure_message: authoringDraft.failure_message ?? null,
+    expires_at: authoringDraft.expires_at,
+    created_at: authoringDraft.created_at,
+    updated_at: authoringDraft.updated_at,
   });
 }
 

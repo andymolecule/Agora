@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  compileManagedAuthoringPostingSession,
+  compileManagedAuthoringDraftOutcome,
   compileManagedAuthoringSession,
 } from "../src/lib/managed-authoring.js";
 
@@ -323,7 +323,7 @@ test("managed authoring routes low-confidence drafts into operator review", asyn
   process.env.AGORA_MANAGED_AUTHORING_BASE_URL = "https://compiler.example/v1";
 
   try {
-    const result = await compileManagedAuthoringPostingSession(
+    const result = await compileManagedAuthoringDraftOutcome(
       {
         intent: {
           ...baseIntent,
@@ -397,7 +397,7 @@ test("managed authoring routes low-confidence non-managed drafts into semi-custo
   process.env.AGORA_MANAGED_AUTHORING_BASE_URL = "https://compiler.example/v1";
 
   try {
-    const result = await compileManagedAuthoringPostingSession(
+    const result = await compileManagedAuthoringDraftOutcome(
       {
         intent: {
           ...baseIntent,
@@ -496,7 +496,7 @@ test("managed authoring can build an executable semi-custom table contract for r
   process.env.AGORA_MANAGED_AUTHORING_BASE_URL = "https://compiler.example/v1";
 
   try {
-    const result = await compileManagedAuthoringPostingSession(
+    const result = await compileManagedAuthoringDraftOutcome(
       {
         intent: {
           ...baseIntent,
@@ -584,7 +584,7 @@ test("managed authoring can build an executable semi-custom exact-match contract
   process.env.AGORA_MANAGED_AUTHORING_BASE_URL = "https://compiler.example/v1";
 
   try {
-    const result = await compileManagedAuthoringPostingSession(
+    const result = await compileManagedAuthoringDraftOutcome(
       {
         intent: {
           ...baseIntent,
@@ -674,7 +674,7 @@ test("managed authoring can build an executable JSON exact-match contract for re
   process.env.AGORA_MANAGED_AUTHORING_BASE_URL = "https://compiler.example/v1";
 
   try {
-    const result = await compileManagedAuthoringPostingSession(
+    const result = await compileManagedAuthoringDraftOutcome(
       {
         intent: {
           ...baseIntent,
@@ -798,7 +798,7 @@ test("managed authoring can build an executable structured-record contract for r
   process.env.AGORA_MANAGED_AUTHORING_BASE_URL = "https://compiler.example/v1";
 
   try {
-    const result = await compileManagedAuthoringPostingSession(
+    const result = await compileManagedAuthoringDraftOutcome(
       {
         intent: {
           ...baseIntent,
@@ -921,7 +921,7 @@ test("managed authoring can build an executable opaque exact-match contract for 
   process.env.AGORA_MANAGED_AUTHORING_BASE_URL = "https://compiler.example/v1";
 
   try {
-    const result = await compileManagedAuthoringPostingSession(
+    const result = await compileManagedAuthoringDraftOutcome(
       {
         intent: {
           ...baseIntent,
@@ -1038,7 +1038,7 @@ test("managed authoring can build an executable opaque exact-match contract for 
 });
 
 test("managed authoring returns clarification questions for unsupported thresholds", async () => {
-  const result = await compileManagedAuthoringPostingSession(
+  const result = await compileManagedAuthoringDraftOutcome(
     {
       intent: {
         ...baseIntent,

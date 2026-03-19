@@ -1,4 +1,4 @@
-import type { PostingSessionState as AuthoringDraftState } from "@agora/common";
+import type { AuthoringDraftState } from "@agora/common";
 import type { ChallengeSpecOutput } from "@agora/common";
 import type { AgoraDbClient } from "../index";
 import {

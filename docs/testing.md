@@ -101,7 +101,7 @@ Useful focused API regression slices:
 
 ```bash
 cd apps/api
-node --import tsx --test tests/posting-sessions-route.test.ts tests/authoring-sources.test.ts tests/authoring-drafts.test.ts tests/integrations-beach.test.ts
+node --import tsx --test tests/authoring-drafts-route.test.ts tests/authoring-sources.test.ts tests/authoring-drafts.test.ts tests/integrations-beach.test.ts
 node --import tsx --test tests/authoring-benchmarks.test.ts tests/managed-authoring-ir.test.ts tests/managed-authoring.test.ts
 ```
 

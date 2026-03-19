@@ -24,7 +24,7 @@ If a callback is missed, the host should recover by calling the draft/card endpo
 
 External hosts register a callback endpoint with:
 
-`POST /api/authoring/drafts/:id/webhook`
+`POST /api/authoring/external/drafts/:id/webhook`
 
 The callback URL must be a public HTTPS URL.
 
@@ -57,7 +57,7 @@ That is intentional:
 
 After any callback, hosts should fetch:
 
-`GET /api/authoring/drafts/:id/card`
+`GET /api/authoring/external/drafts/:id/card`
 
 if they need the latest draft summary.
 
@@ -137,7 +137,7 @@ Current operator path:
 
 `POST /api/authoring/callbacks/sweep`
 
-This endpoint is internal and protected by the posting review token.
+This endpoint is internal and protected by the authoring review token.
 
 The retry model is at-least-once, not exactly-once.
 

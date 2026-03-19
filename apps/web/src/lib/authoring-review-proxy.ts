@@ -1,30 +1,30 @@
-import { readPostingReviewRuntimeConfig } from "@agora/common";
+import { readAuthoringReviewRuntimeConfig } from "@agora/common";
 import { resolveApiProxyBase } from "./api-proxy";
 
-export const POSTING_REVIEW_HEADER_NAME = "x-agora-review-token";
-export const POSTING_REVIEW_SESSIONS_PATH = "api/posting/review/sessions";
+export const AUTHORING_REVIEW_HEADER_NAME = "x-agora-review-token";
+export const AUTHORING_REVIEW_DRAFTS_PATH = "api/authoring/review/drafts";
 
 function normalizeProxyBase(baseUrl: string) {
   return `${baseUrl.replace(/\/$/, "")}/`;
 }
 
-export function buildPostingReviewUpstreamUrl(input: {
+export function buildAuthoringReviewUpstreamUrl(input: {
   baseUrl: string;
   requestUrl: string;
-  sessionId?: string;
+  draftId?: string;
 }) {
   const url = new URL(input.requestUrl);
-  const relativePath = input.sessionId
-    ? `${POSTING_REVIEW_SESSIONS_PATH}/${input.sessionId}/decision`
-    : POSTING_REVIEW_SESSIONS_PATH;
+  const relativePath = input.draftId
+    ? `${AUTHORING_REVIEW_DRAFTS_PATH}/${input.draftId}/decision`
+    : AUTHORING_REVIEW_DRAFTS_PATH;
   return new URL(
     `${relativePath}${url.search}`,
     normalizeProxyBase(input.baseUrl),
   );
 }
 
-export function resolvePostingReviewProxy(requestUrl: string) {
-  const runtime = readPostingReviewRuntimeConfig();
+export function resolveAuthoringReviewProxy(requestUrl: string) {
+  const runtime = readAuthoringReviewRuntimeConfig();
   const resolved = resolveApiProxyBase({
     requestUrl,
     serverApiUrl: runtime.apiUrl,

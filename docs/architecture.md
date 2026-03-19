@@ -624,7 +624,7 @@ erDiagram
 | `GET` | `/api/stats` | — | — | Aggregate counts |
 | `GET` | `/api/indexer-health` | — | — | Indexer lag monitoring |
 | `GET` | `/api/worker-health` | — | — | Worker readiness + runtime alignment |
-| `GET` | `/api/posting/health` | — | — | Managed authoring backlog + review SLA health |
+| `GET` | `/api/authoring/health` | — | — | Managed authoring backlog + review SLA health |
 | `GET` | `/api/analytics` | — | — | Platform analytics with freshness/indexer status |
 | `GET` | `/api/submissions/public-key` | — | — | Active submission sealing public key |
 | `GET` | `/api/submissions/:id/status` | — | — | Submission status lookup |
@@ -632,7 +632,7 @@ erDiagram
 | `POST` | `/api/submissions` | Rate limit | — | Confirm submission after on-chain tx |
 | `GET` | `/api/pin-spec` | — | — | Pin-spec auth nonce |
 | `POST` | `/api/pin-spec` | Signed auth | — | Pin challenge spec to IPFS |
-| `POST` | `/api/posting/review/sweep-expired` | Review token | — | Purge expired managed-authoring sessions |
+| `POST` | `/api/authoring/review/sweep-expired` | Review token | — | Purge expired managed-authoring drafts |
 | `POST` | `/api/verify` | Rate limit | Paid | Re-run scorer verification |
 
 > **Note:** MCP sessions are handled by the separate MCP server on port 3001, not the API.

@@ -1,6 +1,7 @@
 import {
   AgoraError,
   type AuthoringArtifactOutput,
+  type AuthoringReviewSummaryOutput,
   type ChallengeAuthoringIrOutput,
   type ChallengeIntentOutput,
   type ChallengeSpecOutput,
@@ -9,7 +10,6 @@ import {
   type ConfirmationContractOutput,
   type DryRunPreviewOutput,
   PROTOCOL_FEE_PERCENT,
-  type PostingReviewSummaryOutput,
   SEMI_CUSTOM_RUNTIME_FAMILY_ID,
   canonicalizeChallengeSpec,
   challengeSpecSchemaForChain,
@@ -27,6 +27,10 @@ import {
 import type { getText } from "@agora/ipfs";
 import type { executeScoringPipeline } from "@agora/scorer";
 import {
+  buildManagedReviewSummaryFromCompilation,
+  buildSemiCustomReviewSummary,
+} from "./authoring-draft-review-summary.js";
+import {
   type CompilerArtifactAssignment,
   type SupportedRuntimeFamily,
   compileManagedAuthoringProposal,
@@ -40,10 +44,6 @@ import {
   buildManagedAuthoringIr,
 } from "./managed-authoring-ir.js";
 import { readManagedAuthoringRuntimeConfig } from "./managed-authoring-runtime.js";
-import {
-  buildManagedReviewSummaryFromCompilation,
-  buildSemiCustomReviewSummary,
-} from "./authoring-draft-review-summary.js";
 
 interface ParsedThreshold {
   operator: "gte" | "lte";
@@ -62,11 +62,11 @@ const CLARIFICATION_ERROR_CODES = new Set([
   "MANAGED_THRESHOLD_UNSUPPORTED",
 ]);
 
-export interface ManagedAuthoringPostingOutcome {
+export interface ManagedAuthoringDraftOutcome {
   state: "ready" | "needs_clarification" | "needs_review";
   compilation?: CompilationResultOutput;
   clarificationQuestions?: ClarificationQuestionOutput[];
-  reviewSummary?: PostingReviewSummaryOutput;
+  reviewSummary?: AuthoringReviewSummaryOutput;
   authoringIr: ChallengeAuthoringIrOutput;
   message?: string;
 }
@@ -811,7 +811,7 @@ async function buildSemiCustomCompilation(input: {
   };
 }
 
-async function buildSemiCustomPostingReviewOutcome(input: {
+async function buildSemiCustomDraftReviewOutcome(input: {
   intent: ChallengeIntentOutput;
   authoringIr: ChallengeAuthoringIrOutput;
   fetchImpl?: typeof fetch;
@@ -819,7 +819,7 @@ async function buildSemiCustomPostingReviewOutcome(input: {
   getTextImpl?: typeof getText;
   triggerMessage?: string | null;
   message: string;
-}): Promise<ManagedAuthoringPostingOutcome> {
+}): Promise<ManagedAuthoringDraftOutcome> {
   const compilation = await buildSemiCustomCompilation({
     intent: input.intent,
     authoringIr: input.authoringIr,
@@ -1019,7 +1019,7 @@ export async function compileManagedAuthoringSession(
   return result.compilation;
 }
 
-export async function compileManagedAuthoringPostingSession(
+export async function compileManagedAuthoringDraftOutcome(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
@@ -1029,7 +1029,7 @@ export async function compileManagedAuthoringPostingSession(
     executeScoringPipelineImpl?: typeof executeScoringPipeline;
     getTextImpl?: typeof getText;
   } = {},
-): Promise<ManagedAuthoringPostingOutcome> {
+): Promise<ManagedAuthoringDraftOutcome> {
   try {
     const result = await compileManagedAuthoringDraft(input, dependencies, {
       allowLowConfidence: true,
@@ -1044,7 +1044,7 @@ export async function compileManagedAuthoringPostingSession(
           confidenceScore: result.proposal.confidenceScore,
         });
         if (semiCustomAuthoringIr.routing.mode === "semi_custom") {
-          return buildSemiCustomPostingReviewOutcome({
+          return buildSemiCustomDraftReviewOutcome({
             intent: input.intent,
             authoringIr: semiCustomAuthoringIr,
             fetchImpl: dependencies.fetchImpl,
@@ -1137,7 +1137,7 @@ export async function compileManagedAuthoringPostingSession(
       error instanceof AgoraError &&
       error.code === "MANAGED_COMPILATION_LOW_CONFIDENCE"
     ) {
-      return buildSemiCustomPostingReviewOutcome({
+      return buildSemiCustomDraftReviewOutcome({
         intent: input.intent,
         authoringIr: semiCustomAuthoringIr,
         fetchImpl: dependencies.fetchImpl,

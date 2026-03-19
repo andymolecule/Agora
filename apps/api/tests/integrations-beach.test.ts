@@ -190,7 +190,7 @@ test("beach integration imports a thread into a beach-owned authoring draft", as
     data: {
       thread: { id: string; url: string; poster_agent_handle: string | null };
       card: { provider: string };
-      session: { authoring_ir?: { origin?: { provider?: string } } };
+      draft: { authoring_ir?: { origin?: { provider?: string } } };
     };
   };
   assert.equal(payload.data.thread.id, "thread-42");
@@ -198,7 +198,7 @@ test("beach integration imports a thread into a beach-owned authoring draft", as
   assert.equal(payload.data.thread.poster_agent_handle, "lab-alpha");
   assert.equal(payload.data.card.provider, "beach_science");
   assert.equal(
-    payload.data.session.authoring_ir?.origin?.provider,
+    payload.data.draft.authoring_ir?.origin?.provider,
     "beach_science",
   );
 });

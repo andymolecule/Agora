@@ -1,8 +1,8 @@
 "use client";
 
 import type {
+  AuthoringReviewSummaryOutput,
   CompilationResultOutput,
-  PostingReviewSummaryOutput,
 } from "@agora/common";
 import {
   Check,
@@ -252,7 +252,7 @@ export function ReviewStep({
   onSaveTitle: () => void;
   onBeginTitleEdit: () => void;
   isReviewQueued: boolean;
-  reviewSummary: PostingReviewSummaryOutput | null;
+  reviewSummary: AuthoringReviewSummaryOutput | null;
   shouldSuggestExpertMode: boolean;
   onOpenExpertMode: () => void;
   deadlineWindowMessage: string | null;

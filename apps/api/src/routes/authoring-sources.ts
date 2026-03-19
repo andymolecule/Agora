@@ -6,7 +6,7 @@ import {
   compileAuthoringDraftRequestSchema,
   createAuthoringSourceDraftRequestSchema,
   readAuthoringPartnerRuntimeConfig,
-  readPostingReviewRuntimeConfig,
+  readAuthoringReviewRuntimeConfig,
   registerAuthoringDraftWebhookRequestSchema,
 } from "@agora/common";
 import {
@@ -46,7 +46,7 @@ import {
 import { resolveProviderFromBearerToken } from "../lib/authoring-source-auth.js";
 import { createExternalAuthoringDraft } from "../lib/authoring-source-import.js";
 import { buildManagedAuthoringIr } from "../lib/managed-authoring-ir.js";
-import { compileManagedAuthoringPostingSession } from "../lib/managed-authoring.js";
+import { compileManagedAuthoringDraftOutcome } from "../lib/managed-authoring.js";
 import { getRequestLogger } from "../lib/observability.js";
 import { consumeWriteQuota } from "../lib/rate-limit.js";
 import type { ApiEnv } from "../types.js";
@@ -222,10 +222,10 @@ type AuthoringSourcesRouteDependencies = {
   createAuthoringDraft?: typeof createAuthoringDraft;
   getAuthoringDraftViewById?: typeof getAuthoringDraftViewById;
   updateAuthoringDraft?: typeof updateAuthoringDraft;
-  compileManagedAuthoringPostingSession?: typeof compileManagedAuthoringPostingSession;
+  compileManagedAuthoringDraftOutcome?: typeof compileManagedAuthoringDraftOutcome;
   normalizeExternalArtifactsForDraft?: typeof normalizeExternalArtifactsForDraft;
   readAuthoringPartnerRuntimeConfig?: typeof readAuthoringPartnerRuntimeConfig;
-  readPostingReviewRuntimeConfig?: typeof readPostingReviewRuntimeConfig;
+  readAuthoringReviewRuntimeConfig?: typeof readAuthoringReviewRuntimeConfig;
   consumeWriteQuota?: typeof consumeWriteQuota;
   upsertAuthoringCallbackTarget?: typeof upsertAuthoringCallbackTarget;
   deliverAuthoringDraftLifecycleEvent?: typeof deliverAuthoringDraftLifecycleEvent;
@@ -241,11 +241,11 @@ export function createAuthoringSourcesRouter(
     createAuthoringDraft: createAuthoringDraftImpl,
     getAuthoringDraftViewById: getAuthoringDraftViewByIdImpl,
     updateAuthoringDraft: updateAuthoringDraftImpl,
-    compileManagedAuthoringPostingSession:
-      compileManagedAuthoringPostingSessionImpl,
+    compileManagedAuthoringDraftOutcome:
+      compileManagedAuthoringDraftOutcomeImpl,
     normalizeExternalArtifactsForDraft: normalizeExternalArtifactsForDraftImpl,
     readAuthoringPartnerRuntimeConfig: readAuthoringPartnerRuntimeConfigImpl,
-    readPostingReviewRuntimeConfig: readPostingReviewRuntimeConfigImpl,
+    readAuthoringReviewRuntimeConfig: readAuthoringReviewRuntimeConfigImpl,
     consumeWriteQuota: consumeWriteQuotaImpl,
     upsertAuthoringCallbackTarget: upsertAuthoringCallbackTargetImpl,
     deliverAuthoringDraftLifecycleEvent:
@@ -257,10 +257,10 @@ export function createAuthoringSourcesRouter(
     createAuthoringDraft,
     getAuthoringDraftViewById,
     updateAuthoringDraft,
-    compileManagedAuthoringPostingSession,
+    compileManagedAuthoringDraftOutcome,
     normalizeExternalArtifactsForDraft,
     readAuthoringPartnerRuntimeConfig,
-    readPostingReviewRuntimeConfig,
+    readAuthoringReviewRuntimeConfig,
     consumeWriteQuota,
     upsertAuthoringCallbackTarget,
     deliverAuthoringDraftLifecycleEvent,
@@ -268,14 +268,14 @@ export function createAuthoringSourcesRouter(
     ...dependencies,
   };
 
-  function requirePostingReviewAccess(c: Context<ApiEnv>) {
-    const runtime = readPostingReviewRuntimeConfigImpl();
+  function requireAuthoringReviewAccess(c: Context<ApiEnv>) {
+    const runtime = readAuthoringReviewRuntimeConfigImpl();
     if (!runtime.token) {
       return jsonError(c, {
         status: 503,
-        code: "POSTING_REVIEW_DISABLED",
+        code: "AUTHORING_REVIEW_DISABLED",
         message:
-          "Posting review access is not configured. Next step: set AGORA_POSTING_REVIEW_TOKEN on the API and web services, then retry.",
+          "Authoring review access is not configured. Next step: set AGORA_AUTHORING_REVIEW_TOKEN on the API and web services, then retry.",
       });
     }
 
@@ -283,9 +283,9 @@ export function createAuthoringSourcesRouter(
     if (providedToken !== runtime.token) {
       return jsonError(c, {
         status: 401,
-        code: "POSTING_REVIEW_UNAUTHORIZED",
+        code: "AUTHORING_REVIEW_UNAUTHORIZED",
         message:
-          "Posting review access denied. Next step: open the internal review surface or provide a valid review token.",
+          "Authoring review access denied. Next step: open the internal review surface or provide a valid review token.",
       });
     }
 
@@ -293,7 +293,7 @@ export function createAuthoringSourcesRouter(
   }
 
   router.post("/callbacks/sweep", async (c) => {
-    const denied = requirePostingReviewAccess(c);
+    const denied = requireAuthoringReviewAccess(c);
     if (denied) {
       return denied;
     }
@@ -313,7 +313,7 @@ export function createAuthoringSourcesRouter(
     });
   });
 
-  router.use("*", async (c, next) => {
+  router.use("/external/*", async (c, next) => {
     const authResult = resolveProviderFromBearerToken(
       c.req.header("authorization"),
       readAuthoringPartnerRuntimeConfigImpl().partnerKeys,
@@ -331,7 +331,7 @@ export function createAuthoringSourcesRouter(
   });
 
   router.post(
-    "/sources",
+    "/external/sources",
     zValidator("json", createAuthoringSourceDraftRequestSchema),
     async (c) => {
       const provider = c.get("authoringSourceProvider");
@@ -344,7 +344,7 @@ export function createAuthoringSourcesRouter(
       const rateLimitError = partnerWriteRateLimitError(
         c,
         provider,
-        "/api/authoring/sources",
+        "/api/authoring/external/sources",
         consumeWriteQuotaImpl,
       );
       if (rateLimitError) {
@@ -371,7 +371,7 @@ export function createAuthoringSourcesRouter(
     },
   );
 
-  router.get("/drafts/:id", async (c) => {
+  router.get("/external/drafts/:id", async (c) => {
     const provider = c.get("authoringSourceProvider");
     if (!provider) {
       throw new Error(
@@ -394,7 +394,7 @@ export function createAuthoringSourcesRouter(
     });
   });
 
-  router.get("/drafts/:id/card", async (c) => {
+  router.get("/external/drafts/:id/card", async (c) => {
     const provider = c.get("authoringSourceProvider");
     if (!provider) {
       throw new Error(
@@ -420,7 +420,7 @@ export function createAuthoringSourcesRouter(
   });
 
   router.post(
-    "/drafts/:id/clarify",
+    "/external/drafts/:id/clarify",
     zValidator("json", clarifyAuthoringDraftRequestSchema),
     async (c) => {
       const provider = c.get("authoringSourceProvider");
@@ -433,7 +433,7 @@ export function createAuthoringSourcesRouter(
       const rateLimitError = partnerWriteRateLimitError(
         c,
         provider,
-        "/api/authoring/drafts/clarify",
+        "/api/authoring/external/drafts/clarify",
         consumeWriteQuotaImpl,
       );
       if (rateLimitError) {
@@ -544,7 +544,7 @@ export function createAuthoringSourcesRouter(
   );
 
   router.post(
-    "/drafts/:id/compile",
+    "/external/drafts/:id/compile",
     zValidator("json", compileAuthoringDraftRequestSchema),
     async (c) => {
       const provider = c.get("authoringSourceProvider");
@@ -557,7 +557,7 @@ export function createAuthoringSourcesRouter(
       const rateLimitError = partnerWriteRateLimitError(
         c,
         provider,
-        "/api/authoring/drafts/compile",
+        "/api/authoring/external/drafts/compile",
         consumeWriteQuotaImpl,
       );
       if (rateLimitError) {
@@ -623,7 +623,7 @@ export function createAuthoringSourcesRouter(
       }
 
       try {
-        const outcome = await compileManagedAuthoringPostingSessionImpl({
+        const outcome = await compileManagedAuthoringDraftOutcomeImpl({
           intent,
           uploadedArtifacts: result.session.uploaded_artifacts_json ?? [],
         });
@@ -717,7 +717,7 @@ export function createAuthoringSourcesRouter(
   );
 
   router.post(
-    "/drafts/:id/webhook",
+    "/external/drafts/:id/webhook",
     zValidator("json", registerAuthoringDraftWebhookRequestSchema),
     async (c) => {
       const provider = c.get("authoringSourceProvider");
@@ -730,7 +730,7 @@ export function createAuthoringSourcesRouter(
       const rateLimitError = partnerWriteRateLimitError(
         c,
         provider,
-        "/api/authoring/drafts/webhook",
+        "/api/authoring/external/drafts/webhook",
         consumeWriteQuotaImpl,
       );
       if (rateLimitError) {

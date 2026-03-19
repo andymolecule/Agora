@@ -75,7 +75,7 @@ export const configSchema = z.object({
   AGORA_AUTHORING_PARTNER_KEYS: z.string().optional(),
   AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS: z.string().optional(),
   AGORA_AUTHORING_PARTNER_RETURN_ORIGINS: z.string().optional(),
-  AGORA_POSTING_REVIEW_TOKEN: z.string().min(1).optional(),
+  AGORA_AUTHORING_REVIEW_TOKEN: z.string().min(1).optional(),
   AGORA_MANAGED_AUTHORING_DRY_RUN_TIMEOUT_MS: z
     .preprocess(
       (value) => (typeof value === "string" ? Number(value) : value),

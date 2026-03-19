@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   type AgoraAuthoringPartnerRuntimeConfig,
-  type PostingSessionOutput,
+  type AuthoringDraftOutput,
   computeSpecHash,
   createCsvTableSubmissionContract,
   lookupManagedRuntimeFamily,
@@ -10,7 +10,7 @@ import {
 import type { AuthoringDraftViewRow } from "@agora/db";
 import { resolveAuthoringDraftReturnUrl } from "../src/lib/authoring-drafts.js";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
-import { createPostingSessionRoutes } from "../src/routes/posting-sessions.js";
+import { createAuthoringDraftRoutes } from "../src/routes/authoring-drafts.js";
 
 function allowQuota() {
   return () =>
@@ -311,7 +311,7 @@ function createRouterForPublish(input: {
     returnOrigins: { beach_science: ["https://beach.science"] },
   };
 
-  return createPostingSessionRoutes({
+  return createAuthoringDraftRoutes({
     createSupabaseClient: () => ({}) as never,
     getAuthoringDraftViewById: async () =>
       ({
@@ -357,7 +357,7 @@ function createRouterForPublish(input: {
       chainId: 84532,
       corsOrigins: [],
     }),
-    readPostingReviewRuntimeConfig: () => ({
+    readAuthoringReviewRuntimeConfig: () => ({
       token: "review-token",
     }),
     deliverAuthoringDraftLifecycleEvent: async ({ event }) => {
@@ -389,16 +389,16 @@ function buildPublishRequestBody(session: AuthoringDraftViewRow) {
   };
 }
 
-test("posting publish accepts an explicit allowlisted return_to", async () => {
-  const session = createReadySession();
-  const router = createRouterForPublish({ session });
+test("authoring draft publish accepts an explicit allowlisted return_to", async () => {
+  const draft = createReadySession();
+  const router = createRouterForPublish({ session: draft });
 
   const response = await router.request(
-    new Request(`http://localhost/sessions/${session.id}/publish`, {
+    new Request(`http://localhost/drafts/${draft.id}/publish`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        ...buildPublishRequestBody(session),
+        ...buildPublishRequestBody(draft),
         return_to: "https://beach.science/thread/42?tab=publish",
       }),
     }),
@@ -409,7 +409,7 @@ test("posting publish accepts an explicit allowlisted return_to", async () => {
     data: {
       returnTo: string | null;
       returnToSource: "requested" | "origin_external_url" | null;
-      session: PostingSessionOutput;
+      draft: AuthoringDraftOutput;
     };
   };
   assert.equal(
@@ -417,22 +417,22 @@ test("posting publish accepts an explicit allowlisted return_to", async () => {
     "https://beach.science/thread/42?tab=publish",
   );
   assert.equal(payload.data.returnToSource, "requested");
-  assert.equal(payload.data.session.state, "published");
+  assert.equal(payload.data.draft.state, "published");
   assert.equal(
-    payload.data.session.approved_confirmation?.scoring_summary,
+    payload.data.draft.approved_confirmation?.scoring_summary,
     "Highest R2 wins.",
   );
 });
 
-test("posting publish falls back to the stored origin external_url", async () => {
-  const session = createReadySession();
-  const router = createRouterForPublish({ session });
+test("authoring draft publish falls back to the stored origin external_url", async () => {
+  const draft = createReadySession();
+  const router = createRouterForPublish({ session: draft });
 
   const response = await router.request(
-    new Request(`http://localhost/sessions/${session.id}/publish`, {
+    new Request(`http://localhost/drafts/${draft.id}/publish`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(buildPublishRequestBody(session)),
+      body: JSON.stringify(buildPublishRequestBody(draft)),
     }),
   );
 
@@ -441,18 +441,19 @@ test("posting publish falls back to the stored origin external_url", async () =>
     data: {
       returnTo: string | null;
       returnToSource: "requested" | "origin_external_url" | null;
+      draft: AuthoringDraftOutput;
     };
   };
   assert.equal(payload.data.returnTo, "https://beach.science/thread/42");
   assert.equal(payload.data.returnToSource, "origin_external_url");
   assert.equal(
-    payload.data.session.approved_confirmation?.scoring_summary,
+    payload.data.draft.approved_confirmation?.scoring_summary,
     "Highest R2 wins.",
   );
 });
 
-test("posting publish rejects return_to for direct drafts", async () => {
-  const session = createReadySession({
+test("authoring draft publish rejects return_to for direct drafts", async () => {
+  const draft = createReadySession({
     authoring_ir_json: buildManagedAuthoringIr({
       intent: createIntent(),
       uploadedArtifacts: [
@@ -477,14 +478,14 @@ test("posting publish rejects return_to for direct drafts", async () => {
       },
     }),
   });
-  const router = createRouterForPublish({ session });
+  const router = createRouterForPublish({ session: draft });
 
   const response = await router.request(
-    new Request(`http://localhost/sessions/${session.id}/publish`, {
+    new Request(`http://localhost/drafts/${draft.id}/publish`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        ...buildPublishRequestBody(session),
+        ...buildPublishRequestBody(draft),
         return_to: "https://beach.science/thread/42",
       }),
     }),
@@ -497,12 +498,12 @@ test("posting publish rejects return_to for direct drafts", async () => {
   );
 });
 
-test("posting review approval rejects non-scoreable semi-custom drafts", async () => {
-  const session = createNonExecutableSemiCustomSession();
-  const router = createRouterForPublish({ session });
+test("authoring review approval rejects non-scoreable semi-custom drafts", async () => {
+  const draft = createNonExecutableSemiCustomSession();
+  const router = createRouterForPublish({ session: draft });
 
   const response = await router.request(
-    new Request(`http://localhost/review/sessions/${session.id}/decision`, {
+    new Request(`http://localhost/review/drafts/${draft.id}/decision`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -517,27 +518,27 @@ test("posting review approval rejects non-scoreable semi-custom drafts", async (
   assert.equal(response.status, 409);
   assert.equal(
     ((await response.json()) as { code: string }).code,
-    "POSTING_REVIEW_NOT_SCOREABLE",
+    "AUTHORING_REVIEW_NOT_SCOREABLE",
   );
 });
 
-test("posting publish rejects non-scoreable ready drafts", async () => {
-  const session = createNonExecutableSemiCustomSession({
+test("authoring draft publish rejects non-scoreable ready drafts", async () => {
+  const draft = createNonExecutableSemiCustomSession({
     state: "ready",
   });
-  const router = createRouterForPublish({ session });
+  const router = createRouterForPublish({ session: draft });
 
   const response = await router.request(
-    new Request(`http://localhost/sessions/${session.id}/publish`, {
+    new Request(`http://localhost/drafts/${draft.id}/publish`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(buildPublishRequestBody(session)),
+      body: JSON.stringify(buildPublishRequestBody(draft)),
     }),
   );
 
   assert.equal(response.status, 409);
   assert.equal(
     ((await response.json()) as { code: string }).code,
-    "POSTING_SESSION_NOT_SCOREABLE",
+    "AUTHORING_DRAFT_NOT_SCOREABLE",
   );
 });
