@@ -10,14 +10,12 @@ import {
   registerAuthoringDraftWebhookRequestSchema,
 } from "@agora/common";
 import {
-  type PostingSessionRow,
-  PostingSessionWriteConflictError,
+  type AuthoringDraftViewRow,
+  AuthoringDraftWriteConflictError,
   createAuthoringDraft,
-  createPostingSession,
   createSupabaseClient,
-  getPostingSessionById,
+  getAuthoringDraftViewById,
   updateAuthoringDraft,
-  updatePostingSession,
 } from "@agora/db";
 import { zValidator } from "@hono/zod-validator";
 import { type Context, Hono } from "hono";
@@ -55,7 +53,7 @@ const REVIEW_HEADER_NAME = "x-agora-review-token";
 
 function mergeExternalMessages(
   existing: NonNullable<
-    PostingSessionRow["authoring_ir_json"]
+    AuthoringDraftViewRow["authoring_ir_json"]
   >["source"]["poster_messages"],
   added: NonNullable<
     ReturnType<typeof clarifyAuthoringDraftRequestSchema.parse>
@@ -91,7 +89,7 @@ function mergeExternalMessages(
 }
 
 function mergeExternalArtifacts(
-  existing: PostingSessionRow["uploaded_artifacts_json"],
+  existing: AuthoringDraftViewRow["uploaded_artifacts_json"],
   added: AuthoringArtifactOutput[],
 ) {
   const merged = [...existing];
@@ -183,11 +181,11 @@ function partnerWriteRateLimitError(
 async function readPartnerDraft(input: {
   id: string;
   provider: AuthoringPartnerProviderOutput;
-  getPostingSessionByIdImpl: typeof getPostingSessionById;
+  getAuthoringDraftViewByIdImpl: typeof getAuthoringDraftViewById;
   createSupabaseClientImpl: typeof createSupabaseClient;
 }) {
   const db = input.createSupabaseClientImpl(true);
-  const session = await input.getPostingSessionByIdImpl(db, input.id);
+  const session = await input.getAuthoringDraftViewByIdImpl(db, input.id);
   if (!session || !draftBelongsToProvider(session, input.provider)) {
     return { session: null, error: buildDraftNotFoundError() };
   }
@@ -221,10 +219,8 @@ async function safelyDeliverDraftLifecycleEvent(
 type AuthoringSourcesRouteDependencies = {
   createSupabaseClient?: typeof createSupabaseClient;
   createAuthoringDraft?: typeof createAuthoringDraft;
-  createPostingSession?: typeof createPostingSession;
-  getPostingSessionById?: typeof getPostingSessionById;
+  getAuthoringDraftViewById?: typeof getAuthoringDraftViewById;
   updateAuthoringDraft?: typeof updateAuthoringDraft;
-  updatePostingSession?: typeof updatePostingSession;
   compileManagedAuthoringPostingSession?: typeof compileManagedAuthoringPostingSession;
   normalizeExternalArtifactsForDraft?: typeof normalizeExternalArtifactsForDraft;
   readAuthoringPartnerRuntimeConfig?: typeof readAuthoringPartnerRuntimeConfig;
@@ -241,10 +237,8 @@ export function createAuthoringSourcesRouter(
   const {
     createSupabaseClient: createSupabaseClientImpl,
     createAuthoringDraft: createAuthoringDraftImpl,
-    createPostingSession: createPostingSessionImpl,
-    getPostingSessionById: getPostingSessionByIdImpl,
+    getAuthoringDraftViewById: getAuthoringDraftViewByIdImpl,
     updateAuthoringDraft: updateAuthoringDraftImpl,
-    updatePostingSession: updatePostingSessionImpl,
     compileManagedAuthoringPostingSession:
       compileManagedAuthoringPostingSessionImpl,
     normalizeExternalArtifactsForDraft: normalizeExternalArtifactsForDraftImpl,
@@ -258,10 +252,8 @@ export function createAuthoringSourcesRouter(
   } = {
     createSupabaseClient,
     createAuthoringDraft,
-    createPostingSession,
-    getPostingSessionById,
+    getAuthoringDraftViewById,
     updateAuthoringDraft,
-    updatePostingSession,
     compileManagedAuthoringPostingSession,
     normalizeExternalArtifactsForDraft,
     readAuthoringPartnerRuntimeConfig,
@@ -271,14 +263,6 @@ export function createAuthoringSourcesRouter(
     sweepPendingAuthoringDraftLifecycleEvents,
     ...dependencies,
   };
-  const draftCreateImpl =
-    dependencies.createPostingSession && !dependencies.createAuthoringDraft
-      ? undefined
-      : createAuthoringDraftImpl;
-  const draftUpdateImpl =
-    dependencies.updatePostingSession && !dependencies.updateAuthoringDraft
-      ? undefined
-      : updateAuthoringDraftImpl;
 
   function requirePostingReviewAccess(c: Context<ApiEnv>) {
     const runtime = readPostingReviewRuntimeConfigImpl();
@@ -369,9 +353,8 @@ export function createAuthoringSourcesRouter(
           provider,
           body,
           createSupabaseClientImpl,
-          createAuthoringDraftImpl: draftCreateImpl,
-          createPostingSessionImpl: dependencies.createPostingSession,
-          getPostingSessionByIdImpl,
+          createAuthoringDraftImpl,
+          getAuthoringDraftViewByIdImpl,
           normalizeExternalArtifactsForDraftImpl,
           logger: getRequestLogger(c),
         });
@@ -395,7 +378,7 @@ export function createAuthoringSourcesRouter(
     const result = await readPartnerDraft({
       id: c.req.param("id"),
       provider,
-      getPostingSessionByIdImpl,
+      getAuthoringDraftViewByIdImpl,
       createSupabaseClientImpl,
     });
     if (!result.session) {
@@ -418,7 +401,7 @@ export function createAuthoringSourcesRouter(
     const result = await readPartnerDraft({
       id: c.req.param("id"),
       provider,
-      getPostingSessionByIdImpl,
+      getAuthoringDraftViewByIdImpl,
       createSupabaseClientImpl,
     });
     if (!result.session) {
@@ -456,7 +439,7 @@ export function createAuthoringSourcesRouter(
       const result = await readPartnerDraft({
         id: c.req.param("id"),
         provider,
-        getPostingSessionByIdImpl,
+        getAuthoringDraftViewByIdImpl,
         createSupabaseClientImpl,
       });
       if (!result.session) {
@@ -476,7 +459,7 @@ export function createAuthoringSourcesRouter(
 
       const body = c.req.valid("json");
       let mergedMessages: NonNullable<
-        PostingSessionRow["authoring_ir_json"]
+        AuthoringDraftViewRow["authoring_ir_json"]
       >["source"]["poster_messages"];
       try {
         mergedMessages = mergeExternalMessages(
@@ -521,7 +504,7 @@ export function createAuthoringSourcesRouter(
         },
       });
       const db = createSupabaseClientImpl(true);
-      let updatedSession: PostingSessionRow;
+      let updatedSession: AuthoringDraftViewRow;
       try {
         updatedSession = await refreshDraftIr({
           db,
@@ -531,12 +514,11 @@ export function createAuthoringSourcesRouter(
           authoringIrJson: authoringIr,
           uploadedArtifactsJson: mergedArtifacts,
           expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
-          updateAuthoringDraftImpl: draftUpdateImpl,
-          updatePostingSessionImpl: dependencies.updatePostingSession,
-          getPostingSessionByIdImpl,
+          updateAuthoringDraftImpl,
+          getAuthoringDraftViewByIdImpl,
         });
       } catch (error) {
-        if (error instanceof PostingSessionWriteConflictError) {
+        if (error instanceof AuthoringDraftWriteConflictError) {
           return jsonError(c, draftConflictError());
         }
         throw error;
@@ -581,7 +563,7 @@ export function createAuthoringSourcesRouter(
       const result = await readPartnerDraft({
         id: c.req.param("id"),
         provider,
-        getPostingSessionByIdImpl,
+        getAuthoringDraftViewByIdImpl,
         createSupabaseClientImpl,
       });
       if (!result.session) {
@@ -618,7 +600,7 @@ export function createAuthoringSourcesRouter(
           result.session.authoring_ir_json?.source.poster_messages ?? [],
         origin: result.session.authoring_ir_json?.origin ?? { provider },
       });
-      let compilingSession: PostingSessionRow;
+      let compilingSession: AuthoringDraftViewRow;
       try {
         compilingSession = await markDraftCompiling({
           db,
@@ -626,12 +608,11 @@ export function createAuthoringSourcesRouter(
           intentJson: intent,
           authoringIrJson: compilingAuthoringIr,
           expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
-          updateAuthoringDraftImpl: draftUpdateImpl,
-          updatePostingSessionImpl: dependencies.updatePostingSession,
-          getPostingSessionByIdImpl,
+          updateAuthoringDraftImpl,
+          getAuthoringDraftViewByIdImpl,
         });
       } catch (error) {
-        if (error instanceof PostingSessionWriteConflictError) {
+        if (error instanceof AuthoringDraftWriteConflictError) {
           return jsonError(c, draftConflictError());
         }
         throw error;
@@ -642,7 +623,7 @@ export function createAuthoringSourcesRouter(
           intent,
           uploadedArtifacts: result.session.uploaded_artifacts_json ?? [],
         });
-        let updatedSession: PostingSessionRow;
+        let updatedSession: AuthoringDraftViewRow;
         const updatedAuthoringIr = {
           ...outcome.authoringIr,
           origin: result.session.authoring_ir_json?.origin ?? {
@@ -668,12 +649,11 @@ export function createAuthoringSourcesRouter(
             uploadedArtifactsJson: result.session.uploaded_artifacts_json ?? [],
             compilationJson: outcome.compilation ?? null,
             expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
-            updateAuthoringDraftImpl: draftUpdateImpl,
-            updatePostingSessionImpl: dependencies.updatePostingSession,
-            getPostingSessionByIdImpl,
+            updateAuthoringDraftImpl,
+            getAuthoringDraftViewByIdImpl,
           });
         } catch (error) {
-          if (error instanceof PostingSessionWriteConflictError) {
+          if (error instanceof AuthoringDraftWriteConflictError) {
             return jsonError(c, draftConflictError());
           }
           throw error;
@@ -693,7 +673,7 @@ export function createAuthoringSourcesRouter(
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        let failedSession: PostingSessionRow;
+        let failedSession: AuthoringDraftViewRow;
         try {
           failedSession = await failDraft({
             db,
@@ -704,12 +684,11 @@ export function createAuthoringSourcesRouter(
             compilationJson: null,
             message,
             expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
-            updateAuthoringDraftImpl: draftUpdateImpl,
-            updatePostingSessionImpl: dependencies.updatePostingSession,
-            getPostingSessionByIdImpl,
+            updateAuthoringDraftImpl,
+            getAuthoringDraftViewByIdImpl,
           });
         } catch (conflictError) {
-          if (conflictError instanceof PostingSessionWriteConflictError) {
+          if (conflictError instanceof AuthoringDraftWriteConflictError) {
             return jsonError(c, draftConflictError());
           }
           throw conflictError;
@@ -757,7 +736,7 @@ export function createAuthoringSourcesRouter(
       const result = await readPartnerDraft({
         id: c.req.param("id"),
         provider,
-        getPostingSessionByIdImpl,
+        getAuthoringDraftViewByIdImpl,
         createSupabaseClientImpl,
       });
       if (!result.session) {
@@ -770,9 +749,8 @@ export function createAuthoringSourcesRouter(
         db,
         session: result.session,
         callbackUrl: body.callback_url,
-        updateAuthoringDraftImpl: draftUpdateImpl,
-        updatePostingSessionImpl: dependencies.updatePostingSession,
-        getPostingSessionByIdImpl,
+        updateAuthoringDraftImpl,
+        getAuthoringDraftViewByIdImpl,
       });
 
       return c.json({

@@ -7,7 +7,7 @@ import {
   createCsvTableSubmissionContract,
   lookupManagedRuntimeFamily,
 } from "@agora/common";
-import type { PostingSessionRow } from "@agora/db";
+import type { AuthoringDraftViewRow as PostingSessionRow } from "@agora/db";
 import { resolveAuthoringDraftReturnUrl } from "../src/lib/authoring-drafts.js";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 import { createPostingSessionRoutes } from "../src/routes/posting-sessions.js";
@@ -314,7 +314,7 @@ function createRouterForPublish(input: {
 
   return createPostingSessionRoutes({
     createSupabaseClient: () => ({}) as never,
-    getPostingSessionById: async () =>
+    getAuthoringDraftViewById: async () =>
       ({
         ...storedSession,
         published_spec_json:
@@ -344,14 +344,6 @@ function createRouterForPublish(input: {
         updated_at: "2026-03-19T01:00:00.000Z",
       };
       return publishedLink as never;
-    },
-    updatePostingSession: async (_db, patch) => {
-      storedSession = {
-        ...storedSession,
-        ...patch,
-        updated_at: "2026-03-19T01:00:00.000Z",
-      } as PostingSessionRow;
-      return storedSession as never;
     },
     pinJSON: async () => "bafy-published-spec" as never,
     getPublicClient: () =>

@@ -13,15 +13,13 @@ import {
 } from "@agora/common";
 import {
   createAuthoringDraft,
-  createPostingSession,
   createSupabaseClient,
-  getPostingSessionById,
+  getAuthoringDraftViewById,
   getPublishedChallengeLinkByDraftId,
-  listPostingSessionsByState,
-  purgeExpiredPostingSessions,
-  readPostingSessionHealthSnapshot,
+  listAuthoringDraftViewsByState,
+  purgeExpiredAuthoringDrafts,
+  readAuthoringDraftHealthSnapshot,
   updateAuthoringDraft,
-  updatePostingSession,
   upsertPublishedChallengeLink,
 } from "@agora/db";
 import { pinJSON } from "@agora/ipfs";
@@ -81,14 +79,12 @@ function expiredPostingSessionError(c: Context<ApiEnv>) {
 type PostingSessionRouteDependencies = {
   createSupabaseClient?: typeof createSupabaseClient;
   createAuthoringDraft?: typeof createAuthoringDraft;
-  createPostingSession?: typeof createPostingSession;
-  getPostingSessionById?: typeof getPostingSessionById;
+  getAuthoringDraftViewById?: typeof getAuthoringDraftViewById;
   getPublishedChallengeLinkByDraftId?: typeof getPublishedChallengeLinkByDraftId;
-  listPostingSessionsByState?: typeof listPostingSessionsByState;
-  purgeExpiredPostingSessions?: typeof purgeExpiredPostingSessions;
-  readPostingSessionHealthSnapshot?: typeof readPostingSessionHealthSnapshot;
+  listAuthoringDraftViewsByState?: typeof listAuthoringDraftViewsByState;
+  purgeExpiredAuthoringDrafts?: typeof purgeExpiredAuthoringDrafts;
+  readAuthoringDraftHealthSnapshot?: typeof readAuthoringDraftHealthSnapshot;
   updateAuthoringDraft?: typeof updateAuthoringDraft;
-  updatePostingSession?: typeof updatePostingSession;
   upsertPublishedChallengeLink?: typeof upsertPublishedChallengeLink;
   pinJSON?: typeof pinJSON;
   getPublicClient?: typeof getPublicClient;
@@ -111,14 +107,12 @@ export function createPostingSessionRoutes(
   const {
     createSupabaseClient: createSupabaseClientImpl,
     createAuthoringDraft: createAuthoringDraftImpl,
-    createPostingSession: createPostingSessionImpl,
-    getPostingSessionById: getPostingSessionByIdImpl,
+    getAuthoringDraftViewById: getAuthoringDraftViewByIdImpl,
     getPublishedChallengeLinkByDraftId: getPublishedChallengeLinkByDraftIdImpl,
-    listPostingSessionsByState: listPostingSessionsByStateImpl,
-    purgeExpiredPostingSessions: purgeExpiredPostingSessionsImpl,
-    readPostingSessionHealthSnapshot: readPostingSessionHealthSnapshotImpl,
+    listAuthoringDraftViewsByState: listAuthoringDraftViewsByStateImpl,
+    purgeExpiredAuthoringDrafts: purgeExpiredAuthoringDraftsImpl,
+    readAuthoringDraftHealthSnapshot: readAuthoringDraftHealthSnapshotImpl,
     updateAuthoringDraft: updateAuthoringDraftImpl,
-    updatePostingSession: updatePostingSessionImpl,
     upsertPublishedChallengeLink: upsertPublishedChallengeLinkImpl,
     pinJSON: pinJSONImpl,
     getPublicClient: getPublicClientImpl,
@@ -137,14 +131,12 @@ export function createPostingSessionRoutes(
   } = {
     createSupabaseClient,
     createAuthoringDraft,
-    createPostingSession,
-    getPostingSessionById,
+    getAuthoringDraftViewById,
     getPublishedChallengeLinkByDraftId,
-    listPostingSessionsByState,
-    purgeExpiredPostingSessions,
-    readPostingSessionHealthSnapshot,
+    listAuthoringDraftViewsByState,
+    purgeExpiredAuthoringDrafts,
+    readAuthoringDraftHealthSnapshot,
     updateAuthoringDraft,
-    updatePostingSession,
     upsertPublishedChallengeLink,
     pinJSON,
     getPublicClient,
@@ -160,14 +152,6 @@ export function createPostingSessionRoutes(
     resolveAuthoringDraftReturnUrl,
     ...dependencies,
   };
-  const draftCreateImpl =
-    dependencies.createPostingSession && !dependencies.createAuthoringDraft
-      ? undefined
-      : createAuthoringDraftImpl;
-  const draftUpdateImpl =
-    dependencies.updatePostingSession && !dependencies.updateAuthoringDraft
-      ? undefined
-      : updateAuthoringDraftImpl;
 
   function requirePostingReviewAccessWithDeps(c: Context<ApiEnv>) {
     const runtime = readPostingReviewRuntimeConfigImpl();
@@ -196,7 +180,7 @@ export function createPostingSessionRoutes(
   router.get("/health", async (c) => {
     const db = createSupabaseClientImpl(true);
     const checkedAt = new Date().toISOString();
-    const snapshot = await readPostingSessionHealthSnapshotImpl(db, {
+    const snapshot = await readAuthoringDraftHealthSnapshotImpl(db, {
       nowIso: checkedAt,
       staleCompilingAfterMs: POSTING_STALE_COMPILING_THRESHOLD_MS,
     });
@@ -227,9 +211,8 @@ export function createPostingSessionRoutes(
         }),
         uploadedArtifactsJson: body.uploaded_artifacts ?? [],
         expiresInMs: DRAFT_EXPIRY_MS,
-        createAuthoringDraftImpl: draftCreateImpl,
-        createPostingSessionImpl: dependencies.createPostingSession,
-        getPostingSessionByIdImpl,
+        createAuthoringDraftImpl,
+        getAuthoringDraftViewByIdImpl,
       });
 
       return c.json({
@@ -242,7 +225,7 @@ export function createPostingSessionRoutes(
 
   router.get("/sessions/:id", async (c) => {
     const db = createSupabaseClientImpl(true);
-    const session = await getPostingSessionByIdImpl(db, c.req.param("id"));
+    const session = await getAuthoringDraftViewByIdImpl(db, c.req.param("id"));
     if (!session) {
       return jsonError(c, {
         status: 404,
@@ -270,7 +253,10 @@ export function createPostingSessionRoutes(
       const sessionId = c.req.param("id");
       const body = c.req.valid("json");
       const db = createSupabaseClientImpl(true);
-      const existingSession = await getPostingSessionByIdImpl(db, sessionId);
+      const existingSession = await getAuthoringDraftViewByIdImpl(
+        db,
+        sessionId,
+      );
 
       if (!existingSession) {
         return jsonError(c, {
@@ -324,9 +310,8 @@ export function createPostingSessionRoutes(
         intentJson: intent,
         authoringIrJson: compilingAuthoringIr,
         expiresInMs: DRAFT_EXPIRY_MS,
-        updateAuthoringDraftImpl: draftUpdateImpl,
-        updatePostingSessionImpl: dependencies.updatePostingSession,
-        getPostingSessionByIdImpl,
+        updateAuthoringDraftImpl,
+        getAuthoringDraftViewByIdImpl,
       });
 
       try {
@@ -348,9 +333,8 @@ export function createPostingSessionRoutes(
             outcome.state === "ready" || outcome.state === "needs_review"
               ? READY_EXPIRY_MS
               : DRAFT_EXPIRY_MS,
-          updateAuthoringDraftImpl: draftUpdateImpl,
-          updatePostingSessionImpl: dependencies.updatePostingSession,
-          getPostingSessionByIdImpl,
+          updateAuthoringDraftImpl,
+          getAuthoringDraftViewByIdImpl,
         });
 
         return c.json({
@@ -370,9 +354,8 @@ export function createPostingSessionRoutes(
           compilationJson: null,
           message,
           expiresInMs: DRAFT_EXPIRY_MS,
-          updateAuthoringDraftImpl: draftUpdateImpl,
-          updatePostingSessionImpl: dependencies.updatePostingSession,
-          getPostingSessionByIdImpl,
+          updateAuthoringDraftImpl,
+          getAuthoringDraftViewByIdImpl,
         });
 
         return jsonError(c, {
@@ -392,7 +375,7 @@ export function createPostingSessionRoutes(
       const sessionId = c.req.param("id");
       const body = c.req.valid("json");
       const db = createSupabaseClientImpl(true);
-      const session = await getPostingSessionByIdImpl(db, sessionId);
+      const session = await getAuthoringDraftViewByIdImpl(db, sessionId);
 
       if (!session) {
         return jsonError(c, {
@@ -535,7 +518,7 @@ export function createPostingSessionRoutes(
         expiresInMs: PUBLISHED_EXPIRY_MS,
         updateAuthoringDraftImpl,
         upsertPublishedChallengeLinkImpl,
-        getPostingSessionByIdImpl,
+        getAuthoringDraftViewByIdImpl,
       });
 
       await deliverAuthoringDraftLifecycleEventImpl({
@@ -572,7 +555,7 @@ export function createPostingSessionRoutes(
           : (["needs_review"] as const);
 
     const db = createSupabaseClientImpl(true);
-    const sessions = await listPostingSessionsByStateImpl(db, {
+    const sessions = await listAuthoringDraftViewsByStateImpl(db, {
       states: [...states],
       limit:
         Number.isFinite(limit) && limit > 0
@@ -594,7 +577,7 @@ export function createPostingSessionRoutes(
     }
 
     const db = createSupabaseClientImpl(true);
-    const result = await purgeExpiredPostingSessionsImpl(db);
+    const result = await purgeExpiredAuthoringDraftsImpl(db);
 
     return c.json({
       data: result,
@@ -611,7 +594,10 @@ export function createPostingSessionRoutes(
       }
 
       const db = createSupabaseClientImpl(true);
-      const session = await getPostingSessionByIdImpl(db, c.req.param("id"));
+      const session = await getAuthoringDraftViewByIdImpl(
+        db,
+        c.req.param("id"),
+      );
       if (!session) {
         return jsonError(c, {
           status: 404,
@@ -666,9 +652,8 @@ export function createPostingSessionRoutes(
             challenge_spec: canonicalSpec,
           },
           expiresInMs: READY_EXPIRY_MS,
-          updateAuthoringDraftImpl: draftUpdateImpl,
-          updatePostingSessionImpl: dependencies.updatePostingSession,
-          getPostingSessionByIdImpl,
+          updateAuthoringDraftImpl,
+          getAuthoringDraftViewByIdImpl,
         });
         return c.json({
           data: {
@@ -684,9 +669,8 @@ export function createPostingSessionRoutes(
           message:
             "Managed authoring cannot safely publish this draft as-is. Next step: switch to Expert Mode and post the scorer contract from the CLI.",
           expiresInMs: DRAFT_EXPIRY_MS,
-          updateAuthoringDraftImpl: draftUpdateImpl,
-          updatePostingSessionImpl: dependencies.updatePostingSession,
-          getPostingSessionByIdImpl,
+          updateAuthoringDraftImpl,
+          getAuthoringDraftViewByIdImpl,
         });
         return c.json({
           data: {
@@ -700,9 +684,8 @@ export function createPostingSessionRoutes(
         session,
         message: body.message,
         expiresInMs: DRAFT_EXPIRY_MS,
-        updateAuthoringDraftImpl: draftUpdateImpl,
-        updatePostingSessionImpl: dependencies.updatePostingSession,
-        getPostingSessionByIdImpl,
+        updateAuthoringDraftImpl,
+        getAuthoringDraftViewByIdImpl,
       });
 
       return c.json({

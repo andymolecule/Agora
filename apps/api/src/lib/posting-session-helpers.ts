@@ -1,5 +1,5 @@
 import { postingSessionSchema } from "@agora/common";
-import type { PostingSessionRow } from "@agora/db";
+import type { AuthoringDraftViewRow } from "@agora/db";
 import { buildClarificationQuestionsFromAuthoringIr } from "./managed-authoring-ir.js";
 import { derivePostingSessionReviewSummary } from "./posting-review-summary.js";
 
@@ -10,7 +10,7 @@ export function buildExpiry(offsetMs: number) {
 }
 
 export function isPostingSessionExpired(
-  session: Pick<PostingSessionRow, "expires_at">,
+  session: Pick<AuthoringDraftViewRow, "expires_at">,
   nowMs = Date.now(),
 ) {
   const expiresAtMs = new Date(session.expires_at).getTime();
@@ -20,7 +20,7 @@ export function isPostingSessionExpired(
   return expiresAtMs <= nowMs;
 }
 
-export function toPostingSessionPayload(row: PostingSessionRow | null) {
+export function toPostingSessionPayload(row: AuthoringDraftViewRow | null) {
   if (!row) {
     return null;
   }
@@ -50,7 +50,7 @@ export function toPostingSessionPayload(row: PostingSessionRow | null) {
 }
 
 export function getPostingSessionClarificationQuestions(
-  row: Pick<PostingSessionRow, "authoring_ir_json">,
+  row: Pick<AuthoringDraftViewRow, "authoring_ir_json">,
 ) {
   if (row.authoring_ir_json) {
     return buildClarificationQuestionsFromAuthoringIr(row.authoring_ir_json);
@@ -60,7 +60,7 @@ export function getPostingSessionClarificationQuestions(
 
 export function getPostingSessionReviewSummary(
   row: Pick<
-    PostingSessionRow,
+    AuthoringDraftViewRow,
     "state" | "authoring_ir_json" | "compilation_json"
   >,
 ) {
@@ -68,7 +68,7 @@ export function getPostingSessionReviewSummary(
 }
 
 export function getPostingSessionApprovedConfirmation(
-  row: Pick<PostingSessionRow, "compilation_json">,
+  row: Pick<AuthoringDraftViewRow, "compilation_json">,
 ) {
   return row.compilation_json?.confirmation_contract ?? null;
 }

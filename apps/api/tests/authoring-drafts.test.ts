@@ -3,7 +3,7 @@ import { createHash, createHmac } from "node:crypto";
 import test from "node:test";
 import type {
   AuthoringCallbackDeliveryRow,
-  PostingSessionRow,
+  AuthoringDraftViewRow as PostingSessionRow,
 } from "@agora/db";
 import {
   deliverAuthoringDraftLifecycleEvent,

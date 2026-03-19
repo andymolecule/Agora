@@ -5,9 +5,8 @@ import type {
 import type { AgoraLogger } from "@agora/common/server-observability";
 import {
   createAuthoringDraft,
-  createPostingSession,
   createSupabaseClient,
-  getPostingSessionById,
+  getAuthoringDraftViewById,
 } from "@agora/db";
 import { normalizeExternalArtifactsForDraft } from "./authoring-artifacts.js";
 import { createDraft } from "./authoring-draft-transitions.js";
@@ -19,21 +18,16 @@ export async function createExternalAuthoringDraft(input: {
   body: CreateAuthoringSourceDraftRequestOutput;
   createSupabaseClientImpl?: typeof createSupabaseClient;
   createAuthoringDraftImpl?: typeof createAuthoringDraft;
-  createPostingSessionImpl?: typeof createPostingSession;
-  getPostingSessionByIdImpl?: typeof getPostingSessionById;
+  getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
   normalizeExternalArtifactsForDraftImpl?: typeof normalizeExternalArtifactsForDraft;
   logger?: AgoraLogger;
 }) {
   const createSupabaseClientImpl =
     input.createSupabaseClientImpl ?? createSupabaseClient;
   const createAuthoringDraftImpl =
-    input.createPostingSessionImpl && !input.createAuthoringDraftImpl
-      ? undefined
-      : (input.createAuthoringDraftImpl ?? createAuthoringDraft);
-  const createPostingSessionImpl =
-    input.createPostingSessionImpl ?? createPostingSession;
-  const getPostingSessionByIdImpl =
-    input.getPostingSessionByIdImpl ?? getPostingSessionById;
+    input.createAuthoringDraftImpl ?? createAuthoringDraft;
+  const getAuthoringDraftViewByIdImpl =
+    input.getAuthoringDraftViewByIdImpl ?? getAuthoringDraftViewById;
   const normalizeExternalArtifactsForDraftImpl =
     input.normalizeExternalArtifactsForDraftImpl ??
     normalizeExternalArtifactsForDraft;
@@ -61,8 +55,7 @@ export async function createExternalAuthoringDraft(input: {
     uploadedArtifactsJson: uploadedArtifacts,
     expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
     createAuthoringDraftImpl,
-    createPostingSessionImpl,
-    getPostingSessionByIdImpl,
+    getAuthoringDraftViewByIdImpl,
   });
 
   input.logger?.info(

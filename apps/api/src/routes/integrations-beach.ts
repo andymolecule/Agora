@@ -1,9 +1,8 @@
 import { readAuthoringPartnerRuntimeConfig } from "@agora/common";
 import {
   createAuthoringDraft,
-  createPostingSession,
   createSupabaseClient,
-  getPostingSessionById,
+  getAuthoringDraftViewById,
 } from "@agora/db";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
@@ -32,8 +31,7 @@ function providerMismatchError() {
 export function createBeachIntegrationsRouter(dependencies?: {
   createSupabaseClient?: typeof createSupabaseClient;
   createAuthoringDraft?: typeof createAuthoringDraft;
-  createPostingSession?: typeof createPostingSession;
-  getPostingSessionById?: typeof getPostingSessionById;
+  getAuthoringDraftViewById?: typeof getAuthoringDraftViewById;
   normalizeExternalArtifactsForDraft?: typeof normalizeExternalArtifactsForDraft;
   readAuthoringPartnerRuntimeConfig?: typeof readAuthoringPartnerRuntimeConfig;
   consumeWriteQuota?: typeof consumeWriteQuota;
@@ -43,10 +41,8 @@ export function createBeachIntegrationsRouter(dependencies?: {
     dependencies?.createSupabaseClient ?? createSupabaseClient;
   const createAuthoringDraftImpl =
     dependencies?.createAuthoringDraft ?? createAuthoringDraft;
-  const createPostingSessionImpl =
-    dependencies?.createPostingSession ?? createPostingSession;
-  const getPostingSessionByIdImpl =
-    dependencies?.getPostingSessionById ?? getPostingSessionById;
+  const getAuthoringDraftViewByIdImpl =
+    dependencies?.getAuthoringDraftViewById ?? getAuthoringDraftViewById;
   const normalizeExternalArtifactsForDraftImpl =
     dependencies?.normalizeExternalArtifactsForDraft ??
     normalizeExternalArtifactsForDraft;
@@ -55,10 +51,6 @@ export function createBeachIntegrationsRouter(dependencies?: {
     readAuthoringPartnerRuntimeConfig;
   const consumeWriteQuotaImpl =
     dependencies?.consumeWriteQuota ?? consumeWriteQuota;
-  const draftCreateImpl =
-    dependencies?.createPostingSession && !dependencies?.createAuthoringDraft
-      ? undefined
-      : createAuthoringDraftImpl;
 
   router.post(
     "/drafts/import",
@@ -111,9 +103,8 @@ export function createBeachIntegrationsRouter(dependencies?: {
           provider: "beach_science",
           body: normalizeBeachDraftImportRequest(body),
           createSupabaseClientImpl,
-          createAuthoringDraftImpl: draftCreateImpl,
-          createPostingSessionImpl: dependencies?.createPostingSession,
-          getPostingSessionByIdImpl,
+          createAuthoringDraftImpl,
+          getAuthoringDraftViewByIdImpl,
           normalizeExternalArtifactsForDraftImpl,
           logger: getRequestLogger(c),
         });

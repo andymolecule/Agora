@@ -15,7 +15,7 @@ import type { AgoraLogger } from "@agora/common/server-observability";
 import {
   type AuthoringCallbackDeliveryRow,
   AuthoringCallbackDeliveryWriteConflictError,
-  type PostingSessionRow,
+  type AuthoringDraftViewRow,
   createAuthoringCallbackDelivery,
   createSupabaseClient,
   listDueAuthoringCallbackDeliveries,
@@ -119,7 +119,7 @@ async function sendAuthoringDraftLifecycleEventAttempt(input: {
 
 function buildAuthoringDraftLifecyclePayload(input: {
   event: AuthoringDraftLifecycleEventOutput["event"];
-  session: PostingSessionRow;
+  session: AuthoringDraftViewRow;
 }) {
   return authoringDraftLifecycleEventSchema.parse({
     event: input.event,
@@ -176,7 +176,7 @@ async function queueAuthoringDraftLifecycleEventRetry(input: {
 }
 
 function firstPosterMessage(
-  session: Pick<PostingSessionRow, "authoring_ir_json">,
+  session: Pick<AuthoringDraftViewRow, "authoring_ir_json">,
 ) {
   return (
     session.authoring_ir_json?.source.poster_messages.find(
@@ -185,7 +185,7 @@ function firstPosterMessage(
   );
 }
 
-function draftTitle(session: PostingSessionRow) {
+function draftTitle(session: AuthoringDraftViewRow) {
   return (
     session.intent_json?.title ??
     session.compilation_json?.challenge_spec.title ??
@@ -194,8 +194,9 @@ function draftTitle(session: PostingSessionRow) {
   );
 }
 
-function draftSummary(session: PostingSessionRow) {
-  const clarificationQuestions = getPostingSessionClarificationQuestions(session);
+function draftSummary(session: AuthoringDraftViewRow) {
+  const clarificationQuestions =
+    getPostingSessionClarificationQuestions(session);
   const reviewSummary = getPostingSessionReviewSummary(session);
   if (session.state === "needs_review") {
     return reviewSummary?.summary ?? null;
@@ -218,7 +219,7 @@ function draftSummary(session: PostingSessionRow) {
 }
 
 function draftProvider(
-  session: Pick<PostingSessionRow, "authoring_ir_json">,
+  session: Pick<AuthoringDraftViewRow, "authoring_ir_json">,
 ): AuthoringDraftCardOutput["provider"] {
   return session.authoring_ir_json?.origin.provider ?? "direct";
 }
@@ -236,7 +237,7 @@ function normalizeAllowedReturnOrigin(url: string) {
 }
 
 export function resolveAuthoringDraftReturnUrl(input: {
-  session: Pick<PostingSessionRow, "authoring_ir_json">;
+  session: Pick<AuthoringDraftViewRow, "authoring_ir_json">;
   requestedReturnTo?: string | null;
   runtimeConfig?: AgoraAuthoringPartnerRuntimeConfig;
 }) {
@@ -318,10 +319,11 @@ export function resolveAuthoringDraftReturnUrl(input: {
 }
 
 export function buildAuthoringDraftCard(
-  session: PostingSessionRow,
+  session: AuthoringDraftViewRow,
 ): AuthoringDraftCardOutput {
   const provider = draftProvider(session);
-  const clarificationQuestions = getPostingSessionClarificationQuestions(session);
+  const clarificationQuestions =
+    getPostingSessionClarificationQuestions(session);
   const reviewSummary = getPostingSessionReviewSummary(session);
   return authoringDraftCardSchema.parse({
     draft_id: session.id,
@@ -347,7 +349,7 @@ export function buildAuthoringDraftCard(
   });
 }
 
-export function buildAuthoringDraftResponse(session: PostingSessionRow) {
+export function buildAuthoringDraftResponse(session: AuthoringDraftViewRow) {
   return {
     session: toPostingSessionPayload(session),
     card: buildAuthoringDraftCard(session),
@@ -356,7 +358,7 @@ export function buildAuthoringDraftResponse(session: PostingSessionRow) {
 
 export async function deliverAuthoringDraftLifecycleEvent(input: {
   event: AuthoringDraftLifecycleEventOutput["event"];
-  session: PostingSessionRow;
+  session: AuthoringDraftViewRow;
   fetchImpl?: typeof fetch;
   logger?: AgoraLogger;
   retryDelayMs?: number;
@@ -609,7 +611,7 @@ export function buildExpiredDraftError() {
 }
 
 export function draftBelongsToProvider(
-  session: Pick<PostingSessionRow, "authoring_ir_json" | "state">,
+  session: Pick<AuthoringDraftViewRow, "authoring_ir_json" | "state">,
   provider: ExternalSourceProviderOutput,
 ) {
   return session.authoring_ir_json?.origin.provider === provider;

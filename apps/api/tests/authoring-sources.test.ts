@@ -8,8 +8,8 @@ import {
   lookupManagedRuntimeFamily,
 } from "@agora/common";
 import {
-  type PostingSessionRow,
-  PostingSessionWriteConflictError,
+  type AuthoringDraftViewRow as PostingSessionRow,
+  AuthoringDraftWriteConflictError as PostingSessionWriteConflictError,
 } from "@agora/db";
 import { buildClarificationQuestionsFromAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
@@ -257,7 +257,7 @@ function createReadyCompileOutcome(input: {
 test("authoring source route returns a specific error when auth is missing", async () => {
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    createPostingSession: async () => ({}) as never,
+    createAuthoringDraft: async () => ({}) as never,
     readAuthoringPartnerRuntimeConfig: partnerConfig,
     consumeWriteQuota: allowPartnerQuota() as never,
   });
@@ -288,7 +288,7 @@ test("authoring source route returns a specific error when auth is missing", asy
 test("authoring source route returns a specific error for malformed bearer auth", async () => {
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    createPostingSession: async () => ({}) as never,
+    createAuthoringDraft: async () => ({}) as never,
     readAuthoringPartnerRuntimeConfig: partnerConfig,
     consumeWriteQuota: allowPartnerQuota() as never,
   });
@@ -322,21 +322,22 @@ test("authoring source route returns a specific error for malformed bearer auth"
 test("authoring source route creates a partner-owned draft with source context and a host card", async () => {
   let capturedPayload: Record<string, unknown> | null = null;
   const quotaCalls: string[] = [];
+  let storedSession = createSession();
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    createPostingSession: async (_db, payload) => {
+    createAuthoringDraft: async (_db, payload) => {
       capturedPayload = payload as Record<string, unknown>;
-      return createSession({
+      storedSession = createSession({
         state: payload.state,
         intent_json: payload.intent_json ?? null,
         authoring_ir_json: payload.authoring_ir_json ?? null,
         uploaded_artifacts_json: payload.uploaded_artifacts_json ?? [],
-        clarification_questions_json:
-          payload.clarification_questions_json ?? [],
         expires_at: payload.expires_at,
       });
+      return storedSession as never;
     },
+    getAuthoringDraftViewById: async () => storedSession as never,
     readAuthoringPartnerRuntimeConfig: partnerConfig,
     consumeWriteQuota: allowPartnerQuota(quotaCalls) as never,
   });
@@ -420,7 +421,7 @@ test("authoring source route returns artifact normalization failures without cre
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    createPostingSession: async () => {
+    createAuthoringDraft: async () => {
       createCalled = true;
       return {} as never;
     },
@@ -494,7 +495,7 @@ test("authoring source draft routes hide drafts owned by another provider", asyn
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getPostingSessionById: async () => storedSession as never,
+    getAuthoringDraftViewById: async () => storedSession as never,
     readAuthoringPartnerRuntimeConfig: partnerConfig,
     consumeWriteQuota: allowPartnerQuota() as never,
   });
@@ -525,8 +526,8 @@ test("authoring source draft clarify appends transcript context and dispatches c
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getPostingSessionById: async () => storedSession as never,
-    updatePostingSession: async (_db, patch) => {
+    getAuthoringDraftViewById: async () => storedSession as never,
+    updateAuthoringDraft: async (_db, patch) => {
       storedSession = applyUpdate(
         storedSession,
         patch as Record<string, unknown>,
@@ -600,8 +601,8 @@ test("authoring source draft clarify treats duplicate message ids and artifact u
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getPostingSessionById: async () => storedSession as never,
-    updatePostingSession: async (_db, patch) => {
+    getAuthoringDraftViewById: async () => storedSession as never,
+    updateAuthoringDraft: async (_db, patch) => {
       storedSession = applyUpdate(
         storedSession,
         patch as Record<string, unknown>,
@@ -655,8 +656,8 @@ test("authoring source draft clarify returns a conflict when the draft changed c
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getPostingSessionById: async () => storedSession as never,
-    updatePostingSession: async () => {
+    getAuthoringDraftViewById: async () => storedSession as never,
+    updateAuthoringDraft: async () => {
       throw new PostingSessionWriteConflictError("stale");
     },
     readAuthoringPartnerRuntimeConfig: partnerConfig,
@@ -697,8 +698,8 @@ test("authoring source draft clarify stays successful when callback delivery thr
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getPostingSessionById: async () => storedSession as never,
-    updatePostingSession: async (_db, patch) => {
+    getAuthoringDraftViewById: async () => storedSession as never,
+    updateAuthoringDraft: async (_db, patch) => {
       storedSession = applyUpdate(
         storedSession,
         patch as Record<string, unknown>,
@@ -746,8 +747,8 @@ test("authoring source draft compile reuses stored artifacts and dispatches comp
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getPostingSessionById: async () => storedSession as never,
-    updatePostingSession: async (_db, patch) => {
+    getAuthoringDraftViewById: async () => storedSession as never,
+    updateAuthoringDraft: async (_db, patch) => {
       storedSession = applyUpdate(
         storedSession,
         patch as Record<string, unknown>,
@@ -811,7 +812,7 @@ test("authoring source draft compile rejects expired drafts", async () => {
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getPostingSessionById: async () => storedSession as never,
+    getAuthoringDraftViewById: async () => storedSession as never,
     readAuthoringPartnerRuntimeConfig: partnerConfig,
     consumeWriteQuota: allowPartnerQuota() as never,
   });
@@ -843,7 +844,7 @@ test("authoring source draft compile returns busy when a compile is already in p
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getPostingSessionById: async () => storedSession as never,
+    getAuthoringDraftViewById: async () => storedSession as never,
     readAuthoringPartnerRuntimeConfig: partnerConfig,
     consumeWriteQuota: allowPartnerQuota() as never,
   });
@@ -876,8 +877,8 @@ test("authoring source draft compile stays successful when callback delivery thr
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getPostingSessionById: async () => storedSession as never,
-    updatePostingSession: async (_db, patch) => {
+    getAuthoringDraftViewById: async () => storedSession as never,
+    updateAuthoringDraft: async (_db, patch) => {
       storedSession = applyUpdate(
         storedSession,
         patch as Record<string, unknown>,
@@ -922,8 +923,8 @@ test("authoring source draft webhook registration persists callback metadata", a
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getPostingSessionById: async () => storedSession as never,
-    updatePostingSession: async (_db, patch) => {
+    getAuthoringDraftViewById: async () => storedSession as never,
+    updateAuthoringDraft: async (_db, patch) => {
       storedSession = applyUpdate(
         storedSession,
         patch as Record<string, unknown>,

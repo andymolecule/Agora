@@ -4,7 +4,7 @@ import type {
   PostingReviewSummaryOutput,
 } from "@agora/common";
 import { validateChallengeScoreability } from "@agora/common";
-import type { PostingSessionRow } from "@agora/db";
+import type { AuthoringDraftViewRow } from "@agora/db";
 
 function formatReasonCode(reasonCode: string) {
   return reasonCode.replace(/_/g, " ");
@@ -63,7 +63,7 @@ export function buildSemiCustomReviewSummary(input: {
 
 export function derivePostingSessionReviewSummary(
   row: Pick<
-    PostingSessionRow,
+    AuthoringDraftViewRow,
     "state" | "authoring_ir_json" | "compilation_json"
   >,
 ): PostingReviewSummaryOutput | null {

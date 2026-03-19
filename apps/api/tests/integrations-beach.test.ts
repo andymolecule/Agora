@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import type { PostingSessionRow } from "@agora/db";
+import type { AuthoringDraftViewRow as PostingSessionRow } from "@agora/db";
 import { buildClarificationQuestionsFromAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 import { createBeachIntegrationsRouter } from "../src/routes/integrations-beach.js";
@@ -99,21 +99,22 @@ function partnerConfig() {
 test("beach integration imports a thread into a beach-owned authoring draft", async () => {
   let capturedPayload: Record<string, unknown> | null = null;
   const quotaCalls: string[] = [];
+  let storedSession = createSession();
 
   const router = createBeachIntegrationsRouter({
     createSupabaseClient: () => ({}) as never,
-    createPostingSession: async (_db, payload) => {
+    createAuthoringDraft: async (_db, payload) => {
       capturedPayload = payload as Record<string, unknown>;
-      return createSession({
+      storedSession = createSession({
         state: payload.state,
         intent_json: payload.intent_json ?? null,
         authoring_ir_json: payload.authoring_ir_json ?? null,
         uploaded_artifacts_json: payload.uploaded_artifacts_json ?? [],
-        clarification_questions_json:
-          payload.clarification_questions_json ?? [],
         expires_at: payload.expires_at,
       });
+      return storedSession as never;
     },
+    getAuthoringDraftViewById: async () => storedSession as never,
     normalizeExternalArtifactsForDraft: async ({ artifacts }) =>
       artifacts.map((artifact) =>
         buildStubArtifactFromSourceUrl(artifact.source_url),
