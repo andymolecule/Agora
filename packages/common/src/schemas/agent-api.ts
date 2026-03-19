@@ -311,7 +311,6 @@ export const submissionIntentResponseSchema = z.object({
     intentId: z.string().uuid(),
     resultHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
     expiresAt: z.string(),
-    matchedSubmissionId: z.string().uuid().nullable(),
   }),
 });
 

@@ -12,13 +12,29 @@ Run a full end-to-end consistency sweep across all Agora services. Verify that e
 
 | Service | Tool | What you can check |
 |---------|------|-------------------|
-| **Supabase** | MCP (`mcp__claude_ai_Supabase__*`) | Execute SQL queries, list tables, list migrations, check schema |
+| **Supabase** | MCP (`mcp__claude_ai_Supabase__*`) or `psql` via `DATABASE_URL` | Execute SQL queries, list tables, list migrations, check schema, apply migrations |
 | **Vercel** | MCP (`mcp__claude_ai_Vercel__*`) | List deployments, get deployment status, check build logs, get runtime logs |
 | **Railway** | `railway` CLI or WebFetch | Check service status, deployments, logs. Install CLI: `npm i -g @railway/cli` then `railway login` |
 | **API endpoints** | Bash (`curl`) or WebFetch | Hit health endpoints directly |
 | **Local** | Bash | `pnpm turbo build`, `pnpm schema:verify`, `pnpm scorers:verify`, `agora doctor` |
 
 If a CLI is not installed, note it in the report and skip that check — don't fail the whole run.
+
+### Database Connection
+
+For direct Postgres access (schema checks, applying migrations), use `DATABASE_URL` from `.env`:
+
+```
+postgresql://postgres:[PASSWORD]@db.hnimaouknacrtakzaxqt.supabase.co:5432/postgres
+```
+
+If the direct host is IPv6-only and unreachable, use the Supabase session-mode pooler:
+
+```
+postgresql://postgres.hnimaouknacrtakzaxqt:[PASSWORD]@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres
+```
+
+Prefer Supabase MCP tools when available. Fall back to `psql` via `DATABASE_URL` when MCP returns permission errors. Migration files live in `packages/db/supabase/migrations/`.
 
 ## Check Sequence
 

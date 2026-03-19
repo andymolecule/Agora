@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import type { AuthoringDraftViewRow as PostingSessionRow } from "@agora/db";
-import { buildClarificationQuestionsFromAuthoringIr } from "../src/lib/managed-authoring-ir.js";
+import type { AuthoringDraftViewRow } from "@agora/db";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 import { createBeachIntegrationsRouter } from "../src/routes/integrations-beach.js";
 
@@ -25,8 +24,8 @@ function buildStubArtifactFromSourceUrl(sourceUrl: string) {
 }
 
 function createSession(
-  overrides: Partial<PostingSessionRow> = {},
-): PostingSessionRow {
+  overrides: Partial<AuthoringDraftViewRow> = {},
+): AuthoringDraftViewRow {
   const uploadedArtifacts = overrides.uploaded_artifacts_json ?? [
     buildStubArtifactFromSourceUrl(
       "https://cdn.beach.science/uploads/train.csv",
@@ -62,11 +61,6 @@ function createSession(
     authoring_ir_json: authoringIr,
     uploaded_artifacts_json: uploadedArtifacts,
     compilation_json: overrides.compilation_json ?? null,
-    clarification_questions_json:
-      overrides.clarification_questions_json ??
-      buildClarificationQuestionsFromAuthoringIr(authoringIr),
-    review_summary_json: overrides.review_summary_json ?? null,
-    approved_confirmation_json: overrides.approved_confirmation_json ?? null,
     published_spec_json: overrides.published_spec_json ?? null,
     published_spec_cid: overrides.published_spec_cid ?? null,
     source_callback_url: overrides.source_callback_url ?? null,

@@ -44,7 +44,7 @@ Key code paths:
 - Worker scoring flow and replay publication: `apps/api/src/worker/scoring.ts`
 - Scorer-side sealed envelope resolution and decrypt: `packages/scorer/src/sealed-submission.ts`
 - Worker heartbeat/readiness queries: `packages/db/src/queries/worker-runtime.ts`
-- Database result-format + worker runtime migrations: `packages/db/supabase/migrations/001_baseline.sql`, `packages/db/supabase/migrations/002_align_sealed_submission_result_format.sql`, `packages/db/supabase/migrations/003_add_worker_runtime_state.sql`, `packages/db/supabase/migrations/004_add_score_job_backoff.sql`, `packages/db/supabase/migrations/005_add_submission_intents.sql`, `packages/db/supabase/migrations/006_add_worker_runtime_version.sql`, `packages/db/supabase/migrations/008_add_worker_runtime_control.sql`, `packages/db/supabase/migrations/010_finalize_worker_runtime_fencing.sql`, `packages/db/supabase/migrations/011_rename_worker_runtime_executor_ready.sql`
+- Database result-format + worker runtime migrations: `packages/db/supabase/migrations/001_baseline.sql`, `packages/db/supabase/migrations/002_align_sealed_submission_result_format.sql`, `packages/db/supabase/migrations/003_add_worker_runtime_state.sql`, `packages/db/supabase/migrations/004_add_score_job_backoff.sql`, `packages/db/supabase/migrations/005_add_submission_intents.sql`, `packages/db/supabase/migrations/006_add_worker_runtime_version.sql`, `packages/db/supabase/migrations/008_add_worker_runtime_control.sql`, `packages/db/supabase/migrations/010_finalize_worker_runtime_fencing.sql`, `packages/db/supabase/migrations/011_rename_worker_runtime_executor_ready.sql`, `packages/db/supabase/migrations/020_strict_submission_intents.sql`, `packages/db/supabase/migrations/022_restrict_submission_intent_fk.sql`
 
 ---
 
@@ -88,10 +88,10 @@ sequenceDiagram
     IPFS-->>Solver: result CID
     Solver->>API: POST /api/submissions/intent { challengeId, solverAddress, resultCid, resultFormat }
     API->>API: compute resultHash
-    API->>DB: store submission_intent + attempt reconcile
+    API->>DB: store submission_intent
     Solver->>Chain: submit(resultHash)
     Solver->>API: POST /api/submissions { challengeId, txHash, resultCid, resultFormat } (required confirmation)
-    API->>DB: upsert on-chain submission + reconcile intent
+    API->>DB: upsert on-chain submission linked to registered intent
 
     Note over Solver,Worker: While challenge is Open, public verification stays locked.
 

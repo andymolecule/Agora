@@ -244,7 +244,6 @@ export async function createSubmissionIntent(input: {
     intentId: string;
     resultHash: `0x${string}`;
     expiresAt: string;
-    matchedSubmissionId: string | null;
   }>("/api/submissions/intent", {
     method: "POST",
     body: JSON.stringify(input),

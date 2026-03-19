@@ -128,7 +128,7 @@
 
 :root {
   /* Surfaces */
-  --surface-base: var(--color-warm-100);
+  --surface-base: #fcf9f3;
   --surface-default: #FFFFFF;
   --surface-elevated: #FFFFFF;
   --surface-overlay: rgba(255, 255, 255, 0.85);
@@ -296,8 +296,8 @@ body {
   border-bottom: 1px solid rgba(0, 0, 0, 0.15);
 }
 
-/* Enforce wireframe corners *everywhere* */
-* {
+/* Neo-brutalist radius — scoped to legacy pages only */
+.brutalist * {
   border-radius: 2px;
 }
 

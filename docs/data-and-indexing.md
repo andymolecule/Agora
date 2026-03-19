@@ -22,9 +22,11 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 - On-chain contracts are authoritative for lifecycle status, payout entitlements, and claimability
 - Supabase is a projection and operational cache, not the source of truth
 - The indexer polls chain events every 30s and writes idempotent projections to Supabase
+- Scoreable submissions require a pre-registered `submission_intent` and a linked `submissions.submission_intent_id`
 - Fairness-sensitive visibility checks use chain `status()` rather than projected status
 - Public leaderboard, win rate, and earned USDC derive from finalized `challenge_payouts` rows
 - Worker scoring reads cached `submission_contract_json` and `scoring_env_json` from the DB first; IPFS spec fetch is legacy fallback only
+- Authoring state is now split by concern: `authoring_drafts` for canonical draft state, `authoring_callback_targets` for registered host callback URLs, `published_challenge_links` for publish outcome, and `authoring_callback_deliveries` for callback retry
 
 ---
 
@@ -55,7 +57,7 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 | UI status labels | API domain types derived from chain | — |
 | Verification gate | Chain truth | Fairness-sensitive routes re-check |
 | Challenge metadata | IPFS (immutable) + DB (searchable cache) | DB also caches resolved scoring config for worker hot-path reads |
-| Submission fetch metadata (`result_cid`, `result_format`) | DB reconciliation (`submission_intents` + `submissions`) | Chain stores only `result_hash` |
+| Submission fetch metadata (`result_cid`, `result_format`) | DB registration (`submission_intents` + `submissions.submission_intent_id`) | Chain stores only `result_hash`; unmatched on-chain submissions are not scoreable |
 | Submission content | IPFS | Hash anchored on-chain |
 
 ---
@@ -95,6 +97,7 @@ erDiagram
     submissions {
         uuid id PK
         uuid challenge_id FK
+        uuid submission_intent_id FK
         int on_chain_sub_id
         string solver_address
         string result_hash
@@ -199,10 +202,55 @@ erDiagram
         string result_hash
         string result_cid
         string result_format
-        uuid matched_submission_id FK
-        timestamp matched_at
         timestamp expires_at
         timestamp created_at
+    }
+
+    authoring_drafts {
+        uuid id PK
+        string poster_address
+        string provider
+        string state
+        jsonb intent_json
+        jsonb authoring_ir_json
+        jsonb uploaded_artifacts_json
+        jsonb compilation_json
+        string failure_message
+        timestamp expires_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    authoring_callback_targets {
+        uuid draft_id PK,FK
+        string callback_url
+        timestamp registered_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    published_challenge_links {
+        uuid draft_id PK
+        uuid challenge_id FK
+        string published_spec_cid
+        jsonb published_spec_json
+        string return_to
+        timestamp published_at
+    }
+
+    authoring_callback_deliveries {
+        uuid id PK
+        uuid draft_id FK
+        string provider
+        string event
+        string callback_url
+        jsonb payload_json
+        int attempts
+        timestamp next_attempt_at
+        timestamp delivered_at
+        string last_error
+        timestamp created_at
+        timestamp updated_at
     }
 
     auth_nonces {
@@ -229,16 +277,20 @@ erDiagram
     submissions ||--o| score_jobs : queued_as
     challenges ||--o{ score_jobs : has
     challenges ||--o{ submission_intents : stages
-    submissions ||--o| submission_intents : matched_by
+    submission_intents ||--o| submissions : registers
+    authoring_drafts ||--o| authoring_callback_targets : notifies_via
+    authoring_drafts ||--o| published_challenge_links : publishes_as
+    authoring_drafts ||--o{ authoring_callback_deliveries : retries
+    challenges ||--o| published_challenge_links : linked_from
 ```
 
 ### Table Descriptions
 
-- **challenges** — Projected from `ChallengeCreated` events + IPFS spec parsing. Key fields: `contract_address` (unique on-chain identity), `status` (projected lifecycle state), `reward_amount` (USDC, 6 decimals), `deadline` (UTC timestamp), `spec_cid` (IPFS pointer to challenge YAML), `runtime_family` (managed runtime selection), `evaluation_json` (resolved scorer image + metric metadata), `artifacts_json` (public/private artifact cache), `submission_contract_json` (cached solver artifact contract), and `scoring_env_json` (cached resolved scoring env such as tolerance).
+- **challenges** — Projected from `ChallengeCreated` events + IPFS spec parsing. Key fields: `contract_address` (unique on-chain identity), `status` (projected lifecycle state), `reward_amount` (USDC, 6 decimals), `deadline` (UTC timestamp), `spec_cid` (IPFS pointer to challenge YAML), `runtime_family` (managed runtime selection), `evaluation_json` (resolved scorer image + metric metadata), `artifacts_json` (public/private artifact cache), `submission_contract_json` (cached solver artifact contract), and `scoring_env_json` (cached resolved scoring env such as tolerance). `challenge_type` remains a compatibility and display field, but execution behavior should key off `runtime_family` plus the evaluator contract.
 
-- **submissions** — Projected from `Submitted` + `Scored` events. Key fields: `on_chain_sub_id` (contract-level submission index), `result_hash` (keccak256 of result CID, anchored on-chain), `result_cid` (IPFS pointer to submission file once metadata is reconciled), `score` (WAD-scaled score string), `scored` (boolean, set true when `Scored` event is indexed). Additional columns: `result_format` (enum: `plain_v0` for direct/public payloads or `sealed_submission_v2` for sealed envelopes), `proof_bundle_cid` (IPFS CID of the proof bundle), `proof_bundle_hash` (on-chain hash of the proof bundle), `scored_at` (timestamp when the score was posted). For `sealed_submission_v2`, `result_cid` points to the sealed envelope, not the plaintext replay artifact.
+- **submissions** — Projected from `Submitted` + `Scored` events. Key fields: `on_chain_sub_id` (contract-level submission index), `result_hash` (keccak256 of result CID, anchored on-chain), `submission_intent_id` (required link to the pre-registered submission intent), `result_cid` (IPFS pointer to the registered submission file), `score` (WAD-scaled score string), and `scored` (boolean, set true when `Scored` event is indexed). Additional columns: `result_format` (enum: `plain_v0` for direct/public payloads or `sealed_submission_v2` for sealed envelopes), `proof_bundle_cid` (IPFS CID of the proof bundle), `proof_bundle_hash` (on-chain hash of the proof bundle), and `scored_at` (timestamp when the score was posted). For `sealed_submission_v2`, `result_cid` points to the sealed envelope, not the plaintext replay artifact.
 
-- **submission_intents** — Pre-registered off-chain submission metadata. This is the durable bridge between the solver’s pinned IPFS payload and the later on-chain `Submitted` event. Rows are keyed by `(challenge_id, solver_address, result_hash)` at reconcile time, store `result_cid` + `result_format`, and optionally point at the matched `submissions` row via `matched_submission_id`. Unmatched rows expire after the challenge deadline plus a 30-day recovery window.
+- **submission_intents** — Required off-chain submission registration records. Each scoreable submission must start here before the wallet transaction is sent. Rows store `(challenge_id, solver_address, result_hash)` plus the canonical `result_cid` and `result_format`. The only canonical link from a registered on-chain submission back to its intent is `submissions.submission_intent_id`; there is no reverse match pointer on the intent row anymore.
 
 - **proof_bundles** — Created during scoring. Links a submission to its proof CID and reproducibility check. Fields include `input_hash`, `output_hash`, and `container_image_hash` for full audit trail. `reproducible` indicates whether independent re-runs match. `replaySubmissionCid` may point to a plaintext replay artifact once scoring begins, which is why public verification stays locked while the challenge is open.
 
@@ -246,11 +298,14 @@ erDiagram
 
 - **indexed_events** — Deduplication table keyed on `(tx_hash, log_index)`. Prevents reprocessing of already-handled events. Also used for health monitoring by comparing `block_number` against chain head.
 
-- **score_jobs** — Worker coordination table. States: `queued` → `running` → `scored` | `failed` | `skipped`. Includes lease management via `locked_at`, `locked_by`, and stale-lease recovery. `max_attempts` defaults to 5. `next_attempt_at` gates delayed retries. Jobs are only created or revived after a `submissions` row has both the on-chain fields and reconciled metadata (`result_cid`, `result_format`). `skipped` means the submission exceeded per-challenge or per-solver scoring limits.
+- **score_jobs** — Worker coordination table. States: `queued` → `running` → `scored` | `failed` | `skipped`. Includes lease management via `locked_at`, `locked_by`, and stale-lease recovery. `max_attempts` defaults to 5. `next_attempt_at` gates delayed retries. Jobs are only created or revived after a `submissions` row has both the on-chain fields and the linked registered metadata (`result_cid`, `result_format`, `submission_intent_id`). `skipped` means the submission exceeded per-challenge or per-solver scoring limits.
 
 - **worker_runtime_state** — Worker heartbeat and readiness table. Each scoring worker publishes `worker_id`, `host`, `runtime_version`, scorer-backend readiness, sealing readiness, and `last_error`. The `executor_ready` column means “the configured scorer execution backend is ready,” regardless of whether that backend is local Docker in dev or the remote executor in production. The API reads this table for `/api/worker-health` and runtime-mismatch detection.
 - **worker_runtime_control** — Active scoring-runtime control row. The API upserts the active runtime version on startup, and score-job claims are fenced against it so older workers cannot keep claiming jobs after a deploy.
-- **posting_sessions** — Managed-authoring drafts and review state. Stores poster intent, uploaded artifact metadata, compiled challenge contracts, clarification prompts, review summaries, approved confirmation copy, and expiry timestamps. The API reads this table for `/api/posting/health`, the internal review queue, and expired-session sweeps.
+- **authoring_drafts** — Canonical draft aggregate for guided posting and external source imports. Stores poster/provider identity, raw `intent_json`, interpreted `authoring_ir_json`, normalized artifact metadata, current compilation state, failure state, and expiry timestamps.
+- **authoring_callback_targets** — Registered callback target per external authoring draft. Stores the latest host callback URL and registration timestamp without pushing that transport metadata onto the draft row itself.
+- **published_challenge_links** — Publish outcome attached to an authoring draft. Stores the published challenge id, final pinned spec, approved `return_to`, and publish timestamp without pushing publish-only state back onto the draft row.
+- **authoring_callback_deliveries** — Durable callback outbox for external authoring hosts. Stores signed payloads, retry timing, attempt counts, terminal delivery timestamp, and last error for sweep-based retries.
 
 - **verifications** — Records independent re-runs of the scorer. Links a proof_bundle to a verifier address, the computed score, whether it matches the original, and an optional log CID. Created by `agora verify`. `agora verify-public` is read-only and does not insert verification rows.
 

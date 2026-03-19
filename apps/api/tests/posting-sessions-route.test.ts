@@ -7,7 +7,7 @@ import {
   createCsvTableSubmissionContract,
   lookupManagedRuntimeFamily,
 } from "@agora/common";
-import type { AuthoringDraftViewRow as PostingSessionRow } from "@agora/db";
+import type { AuthoringDraftViewRow } from "@agora/db";
 import { resolveAuthoringDraftReturnUrl } from "../src/lib/authoring-drafts.js";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 import { createPostingSessionRoutes } from "../src/routes/posting-sessions.js";
@@ -35,8 +35,8 @@ function createIntent() {
 }
 
 function createReadySession(
-  overrides: Partial<PostingSessionRow> = {},
-): PostingSessionRow {
+  overrides: Partial<AuthoringDraftViewRow> = {},
+): AuthoringDraftViewRow {
   const runtimeFamily = lookupManagedRuntimeFamily("tabular_regression");
   if (!runtimeFamily) {
     throw new Error("missing runtime family fixture");
@@ -139,9 +139,6 @@ function createReadySession(
       },
       challenge_spec: challengeSpec,
     },
-    clarification_questions_json: overrides.clarification_questions_json ?? [],
-    review_summary_json: overrides.review_summary_json ?? null,
-    approved_confirmation_json: overrides.approved_confirmation_json ?? null,
     published_spec_json: overrides.published_spec_json ?? null,
     published_spec_cid: overrides.published_spec_cid ?? null,
     source_callback_url: overrides.source_callback_url ?? null,
@@ -155,8 +152,8 @@ function createReadySession(
 }
 
 function createNonExecutableSemiCustomSession(
-  overrides: Partial<PostingSessionRow> = {},
-): PostingSessionRow {
+  overrides: Partial<AuthoringDraftViewRow> = {},
+): AuthoringDraftViewRow {
   const intent = overrides.intent_json ?? createIntent();
   const uploadedArtifacts = overrides.uploaded_artifacts_json ?? [
     {
@@ -273,19 +270,21 @@ function createNonExecutableSemiCustomSession(
             "Semi-custom evaluator contract is typed but not executable.",
         },
         challenge_spec: challengeSpec,
-      } as PostingSessionRow["compilation_json"]),
+      } as AuthoringDraftViewRow["compilation_json"]),
   };
 }
 
 function createRouterForPublish(input: {
-  session: PostingSessionRow;
+  session: AuthoringDraftViewRow;
   deliveredEvents?: string[];
 }) {
   let storedSession = input.session;
   let publishedLink: {
     draft_id: string;
     challenge_id: string | null;
-    published_spec_json: NonNullable<PostingSessionRow["published_spec_json"]>;
+    published_spec_json: NonNullable<
+      AuthoringDraftViewRow["published_spec_json"]
+    >;
     published_spec_cid: string;
     return_to: string | null;
     published_at: string;
@@ -329,7 +328,7 @@ function createRouterForPublish(input: {
         ...storedSession,
         ...patch,
         updated_at: "2026-03-19T01:00:00.000Z",
-      } as PostingSessionRow;
+      } as AuthoringDraftViewRow;
       return storedSession as never;
     },
     upsertPublishedChallengeLink: async (_db, payload) => {
@@ -374,7 +373,7 @@ function createRouterForPublish(input: {
   });
 }
 
-function buildPublishRequestBody(session: PostingSessionRow) {
+function buildPublishRequestBody(session: AuthoringDraftViewRow) {
   const spec = session.compilation_json?.challenge_spec;
   if (!spec) {
     throw new Error("publish fixture requires a compiled challenge spec");

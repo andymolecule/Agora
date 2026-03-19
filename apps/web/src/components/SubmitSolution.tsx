@@ -119,25 +119,25 @@ function formatExpectedColumns(columns: string[]) {
 
 function SubmissionPrivacyNotice() {
   return (
-    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border-subtle)] bg-[var(--color-warm-50,var(--surface-inset))]">
-        <Lock className="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
-        <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[var(--text-tertiary)]">
+    <div className="rounded-lg bg-[#ebe8e2] overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-2.5 bg-[#e5e2dc]">
+        <Lock className="w-3.5 h-3.5 shrink-0 text-[#8c9096]" />
+        <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8c9096]">
           Privacy
         </h4>
       </div>
       <div className="px-4 py-3 space-y-2.5">
-        <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
+        <p className="text-xs leading-relaxed text-[#45474a]">
           {PRIVATE_SUBMISSION_COPY}
         </p>
-        <p className="text-xs font-medium leading-relaxed text-[var(--color-warm-900)]">
+        <p className="text-xs font-medium leading-relaxed text-[#111519]">
           {PRIVATE_SUBMISSION_FLOW_COPY}
         </p>
         <details className="group">
-          <summary className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)] cursor-pointer hover:text-[var(--text-secondary)] transition-colors">
+          <summary className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#8c9096] cursor-pointer hover:text-[#45474a] transition-colors">
             Privacy boundary details
           </summary>
-          <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-[var(--text-muted)] pl-3 list-disc list-outside marker:text-[var(--border-default)]">
+          <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-[#8c9096] pl-3 list-disc list-outside marker:text-[#c5c6cb]">
             <li>{PRIVATE_SUBMISSION_KEY_COPY}</li>
             <li>{PRIVATE_SUBMISSION_IPFS_COPY}</li>
             <li>{PRIVATE_SUBMISSION_METADATA_COPY}</li>
@@ -145,7 +145,7 @@ function SubmissionPrivacyNotice() {
             <li>{PRIVATE_SUBMISSION_BOUNDARY_COPY}</li>
           </ul>
         </details>
-        <p className="text-[10.5px] leading-relaxed text-[var(--text-muted)]">
+        <p className="text-[10.5px] leading-relaxed text-[#8c9096]">
           {PRIVATE_SUBMISSION_DISCLOSURE_COPY}
         </p>
       </div>
@@ -216,17 +216,17 @@ export function SubmitSolution({
 
   if (!canSubmit) {
     return (
-      <div className="rounded-lg border border-[var(--border-default)] p-6 bg-white">
+      <div className="bg-[#f6f3ed] rounded-xl p-6 sm:p-8">
         <div className="flex items-start gap-3">
           <Upload
-            className="mt-0.5 w-5 h-5 text-[var(--text-muted)] shrink-0"
+            className="mt-0.5 w-5 h-5 text-[#8c9096] shrink-0"
             strokeWidth={1.75}
           />
           <div className="min-w-0">
-            <h3 className="text-lg font-bold font-mono tracking-wider uppercase mb-2 text-[var(--color-warm-900)]">
+            <h3 className="text-lg font-bold font-mono tracking-wider uppercase mb-2 text-[#111519]">
               Submissions Closed
             </h3>
-            <p className="text-sm text-[var(--text-muted)] font-medium leading-relaxed">
+            <p className="text-sm text-[#8c9096] font-medium leading-relaxed">
               {isPastDeadline
                 ? "Submission deadline has passed."
                 : `This challenge is ${challengeStatus} — submissions are not open.`}
@@ -239,17 +239,17 @@ export function SubmitSolution({
 
   if (submissionUnavailableReason) {
     return (
-      <div className="rounded-lg border border-[var(--border-default)] p-6 bg-white">
+      <div className="bg-[#f6f3ed] rounded-xl p-6 sm:p-8">
         <div className="flex items-start gap-3">
           <AlertCircle
-            className="mt-0.5 w-5 h-5 text-[var(--text-muted)] shrink-0"
+            className="mt-0.5 w-5 h-5 text-[#8c9096] shrink-0"
             strokeWidth={1.75}
           />
           <div className="min-w-0">
-            <h3 className="text-lg font-bold font-mono tracking-wider uppercase mb-2 text-[var(--color-warm-900)]">
+            <h3 className="text-lg font-bold font-mono tracking-wider uppercase mb-2 text-[#111519]">
               Submission Unavailable
             </h3>
-            <p className="text-sm text-[var(--text-muted)] font-medium leading-relaxed">
+            <p className="text-sm text-[#8c9096] font-medium leading-relaxed">
               {submissionUnavailableReason}
             </p>
           </div>
@@ -546,9 +546,9 @@ export function SubmitSolution({
   }
 
   return (
-    <div className="rounded-lg border border-[var(--border-default)] p-6 bg-white">
-      <h3 className="text-xl font-display font-bold mb-4 flex items-center gap-2 text-[var(--color-warm-900)] uppercase tracking-tight">
-        <Upload className="w-5 h-5" strokeWidth={2.5} />
+    <div className="bg-[#f6f3ed] rounded-xl p-6 sm:p-8">
+      <h3 className="font-display font-bold text-xl mb-4 flex items-center gap-2 text-[#111519]">
+        <Upload className="w-5 h-5" strokeWidth={2} />
         Submit Solution
       </h3>
 
@@ -568,7 +568,7 @@ export function SubmitSolution({
       ) : (
         <div className="space-y-5">
           {wrongChain ? (
-            <div className="flex items-start gap-3 p-4 border border-[var(--border-default)] bg-white text-[var(--color-warm-900)] text-sm rounded-lg">
+            <div className="flex items-start gap-3 p-4 border border-[#e5e2dc] bg-white text-[#111519] text-sm rounded-lg">
               <AlertCircle
                 className="w-5 h-5 mt-0.5 shrink-0"
                 strokeWidth={2}
@@ -580,25 +580,25 @@ export function SubmitSolution({
           ) : null}
 
           {/* Wallet info + payout notice */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border border-[var(--border-subtle)] bg-[var(--surface-inset)] rounded-lg">
-            <div className="flex items-center gap-2 text-sm text-[var(--color-warm-900)] font-bold">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border border-[#e5e2dc] bg-[#ebe8e2] rounded-lg">
+            <div className="flex items-center gap-2 text-sm text-[#111519] font-bold">
               <Wallet className="w-4 h-4" strokeWidth={2} />
               <span className="font-mono">{shortAddress(address ?? "")}</span>
             </div>
-            <span className="text-[10px] font-mono tracking-wider uppercase font-bold text-[var(--text-muted)]">
+            <span className="text-[10px] font-mono tracking-wider uppercase font-bold text-[#8c9096]">
               ← Rewards paid here
             </span>
           </div>
 
           {isCheckingSealing ? (
-            <div className="flex items-start gap-3 p-4 border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--color-warm-900)] text-sm rounded-lg">
+            <div className="flex items-start gap-3 p-4 border border-[#e5e2dc] bg-[#ebe8e2] text-[#111519] text-sm rounded-lg">
               <Loader2 className="w-5 h-5 mt-0.5 shrink-0 animate-spin" />
               <p className="font-mono text-xs font-bold uppercase tracking-wide leading-relaxed">
                 Checking private answer protection...
               </p>
             </div>
           ) : sealingUnavailableMessage ? (
-            <div className="flex items-start gap-3 p-4 border border-[var(--border-default)] bg-white text-[var(--color-warm-900)] text-sm rounded-lg">
+            <div className="flex items-start gap-3 p-4 border border-[#e5e2dc] bg-white text-[#111519] text-sm rounded-lg">
               <AlertCircle
                 className="w-5 h-5 mt-0.5 shrink-0"
                 strokeWidth={2}
@@ -618,17 +618,17 @@ export function SubmitSolution({
               <div className="space-y-3">
                 {!requiresFileSubmission && (
                   <div className="flex items-center justify-between">
-                    <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[var(--text-tertiary)]">
+                    <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8c9096]">
                       Upload
                     </h4>
-                    <div className="flex border border-[var(--border-default)] p-0.5 bg-[var(--surface-inset)] rounded-lg">
+                    <div className="flex border border-[#e5e2dc] p-0.5 bg-[#ebe8e2] rounded-lg">
                       <button
                         type="button"
                         onClick={() => setInputMode("file")}
                         className={`px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
                           inputMode === "file"
-                            ? "bg-[var(--color-warm-900)] text-white"
-                            : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
+                            ? "bg-[#111519] text-white"
+                            : "text-[#8c9096] hover:text-[#111519]"
                         }`}
                       >
                         File
@@ -638,8 +638,8 @@ export function SubmitSolution({
                         onClick={() => setInputMode("text")}
                         className={`px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
                           inputMode === "text"
-                            ? "bg-[var(--color-warm-900)] text-white"
-                            : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
+                            ? "bg-[#111519] text-white"
+                            : "text-[#8c9096] hover:text-[#111519]"
                         }`}
                       >
                         Text
@@ -649,14 +649,14 @@ export function SubmitSolution({
                 )}
 
                 {requiresCsvSubmission && (
-                  <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-4">
-                    <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                  <div className="rounded-lg border border-[#e5e2dc] bg-[#ebe8e2] p-4">
+                    <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#8c9096]">
                       Required CSV columns
                     </div>
-                    <div className="mt-2 font-mono text-xs font-bold text-[var(--color-warm-900)] break-all">
+                    <div className="mt-2 font-mono text-xs font-bold text-[#111519] break-all">
                       {formatExpectedColumns(requiredColumns)}
                     </div>
-                    <p className="mt-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+                    <p className="mt-2 text-xs leading-relaxed text-[#45474a]">
                       Agora checks these headers locally before sealing and
                       before you confirm the wallet transaction.
                     </p>
@@ -679,10 +679,10 @@ export function SubmitSolution({
                       disabled={dropZoneDisabled}
                       className={`w-full flex flex-col items-center justify-center gap-3 p-8 border border-dashed rounded-lg transition-all duration-300 ${
                         dragging
-                          ? "border-[var(--color-warm-900)] bg-[var(--color-warm-900)]/10"
+                          ? "border-[#111519] bg-[#111519]/10"
                           : resultFile
                             ? "border-[#7A9A6D] bg-gradient-to-b from-[#F0F5ED] to-[#FAFAF8]"
-                            : "border-[var(--border-default)] hover:bg-[var(--surface-inset)]"
+                            : "border-[#e5e2dc] hover:bg-[#ebe8e2]"
                       } ${dropZoneDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                       onDragEnter={handleDragEnter}
                       onDragOver={handleDragOver}
@@ -700,7 +700,7 @@ export function SubmitSolution({
                               strokeWidth={1.75}
                             />
                           </div>
-                          <span className="text-sm font-bold text-[var(--color-warm-900)] font-mono">
+                          <span className="text-sm font-bold text-[#111519] font-mono">
                             {resultFile.name}
                           </span>
                           <div className="flex items-center gap-2">
@@ -708,7 +708,7 @@ export function SubmitSolution({
                               <Lock className="w-3 h-3" />
                               {READY_TO_SEAL_BADGE_COPY}
                             </span>
-                            <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] bg-white border border-[var(--border-subtle)] px-2 py-0.5 rounded-sm">
+                            <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[#8c9096] bg-white border border-[#e5e2dc] px-2 py-0.5 rounded-sm">
                               {(resultFile.size / 1024).toFixed(1)} KB — click
                               to change
                             </span>
@@ -717,16 +717,16 @@ export function SubmitSolution({
                       ) : (
                         <>
                           <FileUp
-                            className="w-8 h-8 text-[var(--text-muted)]"
+                            className="w-8 h-8 text-[#8c9096]"
                             strokeWidth={1.5}
                           />
-                          <span className="text-sm font-medium text-[var(--text-secondary)]">
+                          <span className="text-sm font-medium text-[#45474a]">
                             Drop your result file here or{" "}
-                            <span className="text-[var(--color-warm-900)] font-bold underline underline-offset-2">
+                            <span className="text-[#111519] font-bold underline underline-offset-2">
                               browse
                             </span>
                           </span>
-                          <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-[var(--text-muted)]">
+                          <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-[#8c9096]">
                             {requiresCsvSubmission
                               ? "CSV file with the required columns"
                               : "CSV, JSON, or any file format"}
@@ -742,13 +742,13 @@ export function SubmitSolution({
                   <div className="flex flex-col w-full">
                     <label
                       htmlFor="submission-text"
-                      className="block text-[10px] font-bold font-mono tracking-wider uppercase text-[var(--text-muted)] mb-2"
+                      className="block text-[10px] font-bold font-mono tracking-wider uppercase text-[#8c9096] mb-2"
                     >
                       Your answer
                     </label>
                     <textarea
                       id="submission-text"
-                      className="w-full px-4 py-3 text-sm border font-mono border-[var(--border-default)] bg-white text-[var(--color-warm-900)] placeholder:text-[var(--text-muted)] resize-none input-focus rounded-lg"
+                      className="w-full px-4 py-3 text-sm border font-mono border-[#e5e2dc] bg-white text-[#111519] placeholder:text-[#8c9096] resize-none input-focus rounded-lg"
                       rows={4}
                       placeholder="Type your answer here (e.g., a number, JSON object, prediction result...)"
                       value={resultText}
@@ -789,7 +789,7 @@ export function SubmitSolution({
 
           {/* Status messages */}
           {isWorking && (
-            <div className="flex items-start gap-3 p-4 border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--color-warm-900)] text-sm rounded-lg">
+            <div className="flex items-start gap-3 p-4 border border-[#e5e2dc] bg-[#ebe8e2] text-[#111519] text-sm rounded-lg">
               <Loader2 className="w-5 h-5 mt-0.5 shrink-0 animate-spin" />
               <div className="space-y-2">
                 <p className="font-bold text-base font-display">
@@ -803,7 +803,7 @@ export function SubmitSolution({
           )}
 
           {isSuccess && (
-            <div className="flex items-start gap-3 p-4 border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--color-warm-900)] text-sm rounded-lg">
+            <div className="flex items-start gap-3 p-4 border border-[#e5e2dc] bg-[#ebe8e2] text-[#111519] text-sm rounded-lg">
               <CheckCircle
                 className="w-5 h-5 mt-0.5 shrink-0"
                 strokeWidth={2}
@@ -828,7 +828,7 @@ export function SubmitSolution({
           )}
 
           {isError && (
-            <div className="flex items-start gap-3 p-4 border border-[var(--border-default)] bg-white text-[var(--color-warm-900)] text-sm rounded-lg">
+            <div className="flex items-start gap-3 p-4 border border-[#e5e2dc] bg-white text-[#111519] text-sm rounded-lg">
               <AlertCircle
                 className="w-5 h-5 mt-0.5 shrink-0"
                 strokeWidth={2}

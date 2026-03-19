@@ -88,6 +88,7 @@ test("submission endpoints parse canonical API responses", async () => {
     return new Response(
       JSON.stringify({
         data: {
+          intentId: "22222222-2222-4222-8222-222222222222",
           resultHash:
             "0x1111111111111111111111111111111111111111111111111111111111111111",
           expiresAt: "2026-03-13T00:00:00.000Z",
@@ -327,7 +328,6 @@ test("submission intent creation retries retriable API failures", async () => {
           resultHash:
             "0x1111111111111111111111111111111111111111111111111111111111111111",
           expiresAt: "2026-03-13T00:00:00.000Z",
-          matchedSubmissionId: null,
         },
       }),
       { status: 200, headers: { "content-type": "application/json" } },

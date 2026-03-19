@@ -290,30 +290,48 @@ The operational goal should be:
 | [`runtime-families.ts`](../packages/common/src/runtime-families.ts) | Registry of managed execution backends | Remains the source of truth for managed evaluator capabilities after routing |
 | [`challenge-spec.ts`](../packages/common/src/schemas/challenge-spec.ts) | Final publishable contract | Stays the publish boundary; generated from a resolved IR |
 
-## Suggested Migration Path
+## Implementation Status
 
-### Phase 1: Store the IR without breaking the current flow
+This document still describes the target authoring contract, but large parts of the migration are already implemented in `main`.
 
-- Add `authoring_ir_json` alongside the existing posting-session intent/artifact payloads.
-- Populate it from the current guided `/post` flow.
-- Keep the current compile and publish APIs intact.
+### Phase 1: Persist the IR
 
-### Phase 2: Move clarification and routing onto the IR
+Status: done
 
-- Generate clarification questions from unresolved IR fields instead of compiler-specific prose.
-- Track ambiguity classes, contradictions, and evaluator candidates explicitly.
-- Keep runtime-family inference as a downstream consequence of routing.
+- `authoring_ir_json` is now a real persisted draft checkpoint.
+- Guided `/post` and external source imports both populate the IR.
+- The old direct-from-prose flow is no longer the only persisted authoring state.
 
-### Phase 3: Introduce semi-custom evaluator contracts
+### Phase 2: Clarification and routing from IR
 
-- Add a configurable evaluator path between managed templates and Expert Mode.
-- Reuse stable base runtimes where possible.
-- Reserve bespoke scorer images for true custom cases.
+Status: done
 
-### Phase 4: Narrow the old direct-from-prose compiler role
+- Clarification prompts derive from unresolved IR fields rather than compiler-only prose.
+- Ambiguity, routing mode, evaluator candidates, and artifact roles are first-class IR concepts.
+- Runtime-family inference now sits downstream of routing instead of replacing it.
 
-- The compiler should help normalize poster language into IR updates.
-- It should stop being the sole owner of the authoring contract.
+### Phase 3: Semi-custom evaluator contracts
+
+Status: foundation done, executable expansion in progress
+
+- Semi-custom evaluator contracts now exist between managed templates and full custom/expert paths.
+- Typed evaluator archetypes are in place.
+- Constrained executable semi-custom paths now exist for structured tables, exact artifact match, and structured record validation.
+- Broader archetype coverage is still the active expansion area.
+
+### Phase 4: Narrow the old compiler role
+
+Status: done for architecture, still evolving in heuristics
+
+- The compiler now proposes IR deltas, evaluator candidates, and routing hints.
+- It is no longer the sole owner of the final authoring contract.
+- Remaining work is mostly around improving domain-agnostic inference quality rather than changing the boundary.
+
+### Phase 5+: Current next work
+
+- Expand benchmark-led semi-custom evaluator coverage without adding arbitrary-code execution paths.
+- Keep authoring heuristics broad and domain-agnostic.
+- Continue tightening docs, tests, and operational guidance around the new draft and submission model.
 
 ## Benchmark Implications
 

@@ -2,8 +2,8 @@ import { createHash, createHmac } from "node:crypto";
 import type {
   AuthoringDraftCardOutput,
   AuthoringDraftLifecycleEventOutput,
+  PostingSessionState as AuthoringDraftState,
   ExternalSourceProviderOutput,
-  PostingSessionState,
 } from "@agora/common";
 import {
   type AgoraAuthoringPartnerRuntimeConfig,
@@ -22,10 +22,10 @@ import {
   updateAuthoringCallbackDelivery,
 } from "@agora/db";
 import {
-  getPostingSessionClarificationQuestions,
-  getPostingSessionReviewSummary,
-  toPostingSessionPayload,
-} from "./posting-session-helpers.js";
+  getAuthoringDraftClarificationQuestions,
+  getAuthoringDraftReviewSummary,
+  toAuthoringDraftPayload,
+} from "./authoring-draft-payloads.js";
 
 const AUTHORING_CALLBACK_RETRY_DELAY_MS = 5_000;
 const AUTHORING_CALLBACK_DELIVERY_MAX_ATTEMPTS = 5;
@@ -196,8 +196,8 @@ function draftTitle(session: AuthoringDraftViewRow) {
 
 function draftSummary(session: AuthoringDraftViewRow) {
   const clarificationQuestions =
-    getPostingSessionClarificationQuestions(session);
-  const reviewSummary = getPostingSessionReviewSummary(session);
+    getAuthoringDraftClarificationQuestions(session);
+  const reviewSummary = getAuthoringDraftReviewSummary(session);
   if (session.state === "needs_review") {
     return reviewSummary?.summary ?? null;
   }
@@ -323,8 +323,8 @@ export function buildAuthoringDraftCard(
 ): AuthoringDraftCardOutput {
   const provider = draftProvider(session);
   const clarificationQuestions =
-    getPostingSessionClarificationQuestions(session);
-  const reviewSummary = getPostingSessionReviewSummary(session);
+    getAuthoringDraftClarificationQuestions(session);
+  const reviewSummary = getAuthoringDraftReviewSummary(session);
   return authoringDraftCardSchema.parse({
     draft_id: session.id,
     provider,
@@ -351,7 +351,7 @@ export function buildAuthoringDraftCard(
 
 export function buildAuthoringDraftResponse(session: AuthoringDraftViewRow) {
   return {
-    session: toPostingSessionPayload(session),
+    session: toAuthoringDraftPayload(session),
     card: buildAuthoringDraftCard(session),
   };
 }
@@ -618,8 +618,8 @@ export function draftBelongsToProvider(
 }
 
 export function buildDraftUpdatedState(
-  currentState: PostingSessionState,
-): PostingSessionState {
+  currentState: AuthoringDraftState,
+): AuthoringDraftState {
   if (currentState === "published") {
     return "published";
   }

@@ -1,14 +1,13 @@
 import type {
+  PostingSessionState as AuthoringDraftState,
   ChallengeAuthoringIrOutput,
   ChallengeIntentOutput,
   CompilationResultOutput,
-  PostingSessionOutput,
-  PostingSessionState,
 } from "@agora/common";
 import type { AuthoringArtifactOutput } from "@agora/common";
 import type { AgoraDbClient } from "../index";
 
-type PostingSessionStateCounts = Record<PostingSessionState, number>;
+type AuthoringDraftStateCounts = Record<AuthoringDraftState, number>;
 
 export class AuthoringDraftWriteConflictError extends Error {
   constructor(message: string) {
@@ -17,7 +16,7 @@ export class AuthoringDraftWriteConflictError extends Error {
   }
 }
 
-const AUTHORING_DRAFT_STATE_VALUES: PostingSessionState[] = [
+const AUTHORING_DRAFT_STATE_VALUES: AuthoringDraftState[] = [
   "draft",
   "compiling",
   "ready",
@@ -29,13 +28,11 @@ const AUTHORING_DRAFT_STATE_VALUES: PostingSessionState[] = [
 
 export interface AuthoringDraftInsert {
   poster_address?: string | null;
-  state: PostingSessionState;
+  state: AuthoringDraftState;
   intent_json?: ChallengeIntentOutput | null;
   authoring_ir_json?: ChallengeAuthoringIrOutput | null;
   uploaded_artifacts_json?: AuthoringArtifactOutput[];
   compilation_json?: CompilationResultOutput | null;
-  source_callback_url?: string | null;
-  source_callback_registered_at?: string | null;
   failure_message?: string | null;
   expires_at: string;
 }
@@ -43,13 +40,11 @@ export interface AuthoringDraftInsert {
 export interface AuthoringDraftRow {
   id: string;
   poster_address: string | null;
-  state: PostingSessionState;
+  state: AuthoringDraftState;
   intent_json: ChallengeIntentOutput | null;
   authoring_ir_json: ChallengeAuthoringIrOutput | null;
   uploaded_artifacts_json: AuthoringArtifactOutput[];
   compilation_json: CompilationResultOutput | null;
-  source_callback_url: string | null;
-  source_callback_registered_at: string | null;
   failure_message: string | null;
   expires_at: string;
   created_at: string;
@@ -57,14 +52,14 @@ export interface AuthoringDraftRow {
 }
 
 export interface AuthoringDraftHealthSnapshot {
-  counts: PostingSessionStateCounts;
+  counts: AuthoringDraftStateCounts;
   expired: number;
   staleCompiling: number;
   oldestNeedsReviewAt: string | null;
   oldestNeedsReviewAgeMs: number | null;
 }
 
-function createEmptyPostingSessionStateCounts(): PostingSessionStateCounts {
+function createEmptyAuthoringDraftStateCounts(): AuthoringDraftStateCounts {
   return {
     draft: 0,
     compiling: 0,
@@ -114,9 +109,6 @@ export async function createAuthoringDraft(
       authoring_ir_json: payload.authoring_ir_json ?? null,
       uploaded_artifacts_json: payload.uploaded_artifacts_json ?? [],
       compilation_json: payload.compilation_json ?? null,
-      source_callback_url: payload.source_callback_url ?? null,
-      source_callback_registered_at:
-        payload.source_callback_registered_at ?? null,
       failure_message: payload.failure_message ?? null,
       expires_at: payload.expires_at,
       updated_at: new Date().toISOString(),
@@ -154,13 +146,11 @@ export async function updateAuthoringDraft(
     id: string;
     expected_updated_at?: string;
     poster_address?: string | null;
-    state?: PostingSessionState;
+    state?: AuthoringDraftState;
     intent_json?: ChallengeIntentOutput | null;
     authoring_ir_json?: ChallengeAuthoringIrOutput | null;
     uploaded_artifacts_json?: AuthoringArtifactOutput[];
     compilation_json?: CompilationResultOutput | null;
-    source_callback_url?: string | null;
-    source_callback_registered_at?: string | null;
     failure_message?: string | null;
     expires_at?: string;
   },
@@ -186,12 +176,6 @@ export async function updateAuthoringDraft(
   }
   if (input.compilation_json !== undefined) {
     patch.compilation_json = input.compilation_json;
-  }
-  if (input.source_callback_url !== undefined) {
-    patch.source_callback_url = input.source_callback_url;
-  }
-  if (input.source_callback_registered_at !== undefined) {
-    patch.source_callback_registered_at = input.source_callback_registered_at;
   }
   if (input.failure_message !== undefined) {
     patch.failure_message = input.failure_message;
@@ -226,16 +210,13 @@ export async function updateAuthoringDraft(
 export async function listAuthoringDraftsByState(
   db: AgoraDbClient,
   input: {
-    states: PostingSessionState[];
+    states: AuthoringDraftState[];
     limit?: number;
     includeExpired?: boolean;
     nowIso?: string;
   },
 ): Promise<AuthoringDraftRow[]> {
-  let query = db
-    .from("authoring_drafts")
-    .select("*")
-    .in("state", input.states);
+  let query = db.from("authoring_drafts").select("*").in("state", input.states);
 
   if (!input.includeExpired) {
     query = query.gt("expires_at", input.nowIso ?? new Date().toISOString());
@@ -263,11 +244,13 @@ export async function purgeExpiredAuthoringDrafts(
     .select("state");
 
   if (error) {
-    throw new Error(`Failed to purge expired authoring drafts: ${error.message}`);
+    throw new Error(
+      `Failed to purge expired authoring drafts: ${error.message}`,
+    );
   }
 
-  const deletedStateCounts = createEmptyPostingSessionStateCounts();
-  for (const row of (data as Array<{ state: PostingSessionState }> | null) ??
+  const deletedStateCounts = createEmptyAuthoringDraftStateCounts();
+  for (const row of (data as Array<{ state: AuthoringDraftState }> | null) ??
     []) {
     deletedStateCounts[row.state] += 1;
   }
@@ -275,7 +258,7 @@ export async function purgeExpiredAuthoringDrafts(
   return {
     checked_at: nowIso,
     deleted_count:
-      (data as Array<{ state: PostingSessionState }> | null)?.length ?? 0,
+      (data as Array<{ state: AuthoringDraftState }> | null)?.length ?? 0,
     deleted_state_counts: deletedStateCounts,
   };
 }
@@ -335,7 +318,7 @@ export async function readAuthoringDraftHealthSnapshot(
     );
   }
 
-  const counts = createEmptyPostingSessionStateCounts();
+  const counts = createEmptyAuthoringDraftStateCounts();
   for (const [state, count] of countsByState) {
     counts[state] = count;
   }

@@ -6,8 +6,8 @@ import {
   apiErrorResponseSchema,
   challengeRegistrationResponseSchema,
   challengeSolverStatusResponseSchema,
-  submissionPublicKeyResponseSchema,
   submissionIntentResponseSchema,
+  submissionPublicKeyResponseSchema,
   submissionRegistrationResponseSchema,
   submissionStatusResponseSchema,
   submissionValidationResponseSchema,
@@ -174,7 +174,6 @@ const submissionIntent = submissionIntentResponseSchema.parse({
     intentId: "44444444-4444-4444-8444-444444444444",
     resultHash: `0x${"ab".repeat(32)}`,
     expiresAt: "2026-03-12T00:00:00.000Z",
-    matchedSubmissionId: null,
   },
 });
 assert.equal(

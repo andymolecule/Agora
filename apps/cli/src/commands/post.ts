@@ -354,7 +354,7 @@ export function buildPostCommand() {
           registrationWarning =
             error instanceof Error
               ? error.message
-              : "Challenge registration may take a minute.";
+              : "Challenge API confirmation may take a minute.";
         }
 
         const output = {
@@ -367,7 +367,7 @@ export function buildPostCommand() {
           txHash,
           registrationStatus: registeredChallengeId
             ? "confirmed"
-            : "pending_reconciliation",
+            : "confirmation_pending",
           warning: registrationWarning,
         };
 

@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { HatchedDivider } from "./HatchedDivider";
+import { Landmark } from "lucide-react";
 import { WalletButton } from "./WalletButton";
 
 const WebProviders = dynamic(
@@ -21,62 +21,73 @@ function TopNav() {
   };
 
   const navItems = [
-    { href: "/", label: "Dashboard" },
-    { href: "/analytics", label: "Analytics" },
+    { href: "/", label: "Browse" },
     { href: "/leaderboard", label: "Leaderboard" },
     { href: "/portfolio", label: "Portfolio" },
-    { href: "/agents", label: "Agents" },
+    { href: "/analytics", label: "Analytics" },
+    { href: "/agents", label: "Agents Doc" },
   ];
 
   return (
-    <div className="w-full bg-surface-base flex flex-col">
-      <header className="flex items-center justify-between px-6 py-4 border-b border-warm-900">
-        {/* Logo Left */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-[2px] border-2 border-warm-900 flex items-center justify-center bg-white">
-            <div className="w-5 h-5 border-2 border-warm-900 rounded-full relative">
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-warm-900 rounded-full" />
-            </div>
-          </div>
-        </div>
-
-        {/* Nav Center */}
+    <header
+      className="fixed top-0 w-full z-50 flex items-center justify-between px-6 py-4"
+      style={{
+        backgroundColor: "rgba(252, 249, 243, 0.80)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        boxShadow: "0 20px 40px rgba(28, 28, 24, 0.06)",
+      }}
+    >
+      {/* Logo + Nav */}
+      <div className="flex items-center gap-8">
+        <Link
+          href="/"
+          className="flex items-center gap-2.5 no-underline"
+        >
+          <Landmark className="w-6 h-6" strokeWidth={2.5} style={{ color: "#111519" }} />
+          <span
+            className="font-display font-bold tracking-tight"
+            style={{ color: "#111519", fontSize: "1.25rem", letterSpacing: "-0.03em" }}
+          >
+            Agora
+          </span>
+        </Link>
         <nav className="flex items-center gap-6">
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className={`text-sm font-semibold font-mono uppercase tracking-wider text-warm-900 no-underline transition-all duration-200 ${isActive(item.href) ? "opacity-100 border-b-2 border-warm-900 pb-0.5" : "opacity-60 hover:opacity-100"}`}
+              className="text-sm font-medium no-underline transition-all duration-200"
+              style={{
+                color: "#111519",
+                opacity: isActive(item.href) ? 1 : 0.5,
+                borderBottom: isActive(item.href) ? "2px solid #111519" : "2px solid transparent",
+                paddingBottom: "2px",
+              }}
             >
               {item.label}
             </Link>
           ))}
         </nav>
+      </div>
 
-        {/* Actions Right */}
-        <div className="flex items-center gap-3">
-          <WalletButton
-            className="btn-primary inline-flex items-center justify-center gap-2 px-6 py-2.5 font-semibold text-sm uppercase font-mono tracking-wider"
-            connectLabel="Connect"
-          />
-        </div>
-      </header>
-      <HatchedDivider />
-    </div>
+      {/* Connect */}
+      <WalletButton
+        className="inline-flex items-center justify-center gap-2 px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 hover:opacity-90 bg-[#111519] text-white"
+        connectLabel="Connect"
+      />
+    </header>
   );
 }
-
-// ─── Client Layout (Dashboard Shell) ─────────────────
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <WebProviders>
-      <div className="min-h-screen flex flex-col bg-surface-base text-warm-900 font-sans">
+      <div className="min-h-screen flex flex-col font-sans" style={{ backgroundColor: "#fcf9f3", color: "#111519" }}>
         <TopNav />
-        <main className="flex-1 w-full max-w-7xl mx-auto px-6 py-12">
+        <main className="flex-1 w-full max-w-7xl mx-auto px-6 py-10 pt-24">
           {children}
         </main>
-        <HatchedDivider />
       </div>
     </WebProviders>
   );

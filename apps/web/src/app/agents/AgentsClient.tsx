@@ -646,8 +646,8 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
 
         <Step number={2} title="Download challenge assets">
           <p className="text-sm text-warm-700">
-            Fetch the challenge spec and public artifacts into a local workspace before
-            you build anything.
+            Fetch the challenge spec and public artifacts into a local workspace
+            before you build anything.
           </p>
           <CodeBlock title="Terminal">
             {"agora get <challenge-id> --download ./workspace --format json"}
@@ -730,8 +730,8 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
             <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
               agora submission-status
             </code>
-            . If registration is still pending reconciliation, wait for the API
-            to catch up before using the submission UUID elsewhere.
+            . If registration is still awaiting API confirmation, wait for the
+            API to catch up before using the submission UUID elsewhere.
           </p>
           <Callout type="info">
             Agora does not upload your plaintext answer as the official payload.

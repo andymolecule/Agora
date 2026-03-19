@@ -28,8 +28,8 @@ These are boundary problems, not isolated route bugs. If they are not corrected 
   - the protocol id (`factoryChallengeId`, `onChainSubmissionId`, `challengeAddress`)
 - Registration must be explicit and idempotent:
   - post: chain write first, then API registration
-  - submit: chain write first, then API registration
-  - both flows return `registrationStatus: confirmed | pending_reconciliation`
+  - submit: API intent first, then chain write, then API confirmation
+  - both flows return `registrationStatus: confirmed | confirmation_pending`
 - Queue state is advisory for scheduling, not authoritative for settlement finality. Once the contract is finalizable, stale control-plane state must not block settle and claim forever.
 - We will reduce boundary duplication before any package reshuffle. Do not split apps/packages until the API, CLI, and runtime seams are clean.
 
@@ -60,7 +60,7 @@ These are boundary problems, not isolated route bugs. If they are not corrected 
 
 - Add or formalize API lookups by protocol refs where needed.
 - Ensure challenge and submission responses always include both projection ids and protocol ids.
-- Make orphan-recovery and reconciliation endpoints explicit, documented, and idempotent.
+- Make registration failure states and unmatched on-chain submissions explicit, documented, and operationally visible instead of relying on silent recovery paths.
 
 ### Phase 3: Settlement decoupling
 

@@ -13,11 +13,18 @@
       "WebFetch(domain:beach.science)",
       "Skill(eli5)",
       "WebFetch(domain:stitch.withgoogle.com)",
-      "mcp__mcp-registry__search_mcp_registry"
+      "mcp__mcp-registry__search_mcp_registry",
+      "Skill(agora-design-system)",
+      "Skill(ops-consistency)",
+      "mcp__claude_ai_Vercel__list_teams",
+      "mcp__claude_ai_Vercel__list_projects",
+      "mcp__claude_ai_Supabase__apply_migration",
+      "mcp__claude_ai_Supabase__execute_sql"
     ]
   },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
-    "agora"
+    "agora",
+    "figma"
   ]
 }

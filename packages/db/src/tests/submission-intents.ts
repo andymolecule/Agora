@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
-import {
-  CHALLENGE_STATUS,
-  SUBMISSION_RESULT_FORMAT,
-} from "@agora/common";
+import { CHALLENGE_STATUS, SUBMISSION_RESULT_FORMAT } from "@agora/common";
 import {
   createSubmissionIntent,
   ensureScoreJobForRegisteredSubmission,
@@ -60,8 +57,6 @@ async function testFindActiveSubmissionIntentByMatchUsesCanonicalLookup() {
       result_hash: "0xhash",
       result_cid: "ipfs://bafy-test",
       result_format: SUBMISSION_RESULT_FORMAT.plainV0,
-      matched_submission_id: null,
-      matched_at: null,
       trace_id: "trace-1",
       expires_at: "2026-03-11T00:00:00.000Z",
       created_at: "2026-03-10T00:00:00.000Z",

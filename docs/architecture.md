@@ -244,10 +244,10 @@ sequenceDiagram
     Solver->>IPFS: upload sealed-submission.json
     Solver->>API: POST /api/submissions/intent
     API->>API: compute resultHash
-    API->>DB: store submission_intent + attempt reconcile
+    API->>DB: store submission_intent
     Solver->>Chain: submit(resultHash)
     Solver->>API: POST /api/submissions (required confirmation)
-    API->>DB: upsert on-chain submission + reconcile intent
+    API->>DB: upsert on-chain submission linked to registered intent
 
     Note over Solver,Worker: While challenge is Open, public verification stays locked.
 

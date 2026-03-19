@@ -3,7 +3,7 @@ import { createHash, createHmac } from "node:crypto";
 import test from "node:test";
 import type {
   AuthoringCallbackDeliveryRow,
-  AuthoringDraftViewRow as PostingSessionRow,
+  AuthoringDraftViewRow,
 } from "@agora/db";
 import {
   deliverAuthoringDraftLifecycleEvent,
@@ -13,8 +13,8 @@ import {
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 
 function createSession(
-  overrides: Partial<PostingSessionRow> = {},
-): PostingSessionRow {
+  overrides: Partial<AuthoringDraftViewRow> = {},
+): AuthoringDraftViewRow {
   const uploadedArtifacts = overrides.uploaded_artifacts_json ?? [
     {
       id: "artifact-1",
@@ -52,9 +52,6 @@ function createSession(
       }),
     uploaded_artifacts_json: uploadedArtifacts,
     compilation_json: overrides.compilation_json ?? null,
-    clarification_questions_json: overrides.clarification_questions_json ?? [],
-    review_summary_json: overrides.review_summary_json ?? null,
-    approved_confirmation_json: overrides.approved_confirmation_json ?? null,
     published_spec_json: overrides.published_spec_json ?? null,
     published_spec_cid: overrides.published_spec_cid ?? null,
     source_callback_url:

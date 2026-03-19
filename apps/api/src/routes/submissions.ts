@@ -16,9 +16,9 @@ import {
   type ChallengeStatus,
   SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
-  type SubmissionResultFormat,
   SUBMISSION_SEAL_ALG,
   SUBMISSION_SEAL_VERSION,
+  type SubmissionResultFormat,
   computeSubmissionResultHash,
   hasSubmissionSealPublicConfig,
   isValidPinnedSpecCid,
@@ -29,8 +29,9 @@ import {
   submissionRegistrationRequestSchema,
 } from "@agora/common";
 import {
+  SubmissionOnChainWriteConflictError,
+  countSubmissionIntentsByResultCid,
   countSubmissionsByResultCid,
-  countUnmatchedSubmissionIntentsByResultCid,
   createSubmissionIntent,
   createSupabaseClient,
   deleteUnmatchedSubmissionIntentById,
@@ -44,8 +45,6 @@ import {
   getSubmissionById,
   getSubmissionByIntentId,
   getSubmissionIntentById,
-  markSubmissionIntentMatched,
-  SubmissionOnChainWriteConflictError,
   upsertSubmissionOnChain,
 } from "@agora/db";
 import { getJSON, pinFile, unpinCid } from "@agora/ipfs";
@@ -434,7 +433,7 @@ async function cleanupSubmissionArtifact(input: {
   }
 
   const [remainingIntents, persistedSubmissions] = await Promise.all([
-    countUnmatchedSubmissionIntentsByResultCid(db, input.resultCid, {
+    countSubmissionIntentsByResultCid(db, input.resultCid, {
       excludeIntentId: deletedIntentId ?? undefined,
     }),
     countSubmissionsByResultCid(db, input.resultCid),
@@ -1020,7 +1019,6 @@ router.post(
         challengeId: challenge.id,
         intentId: intent.id,
         solverAddress: normalizedSolverAddress,
-        matchedSubmissionId: intent.matched_submission_id,
         traceId: requestId,
       },
       "Submission intent created",
@@ -1031,7 +1029,6 @@ router.post(
         intentId: intent.id,
         resultHash,
         expiresAt: intent.expires_at,
-        matchedSubmissionId: intent.matched_submission_id,
       },
     });
   },
@@ -1112,8 +1109,12 @@ async function handleSubmissionRegistration(
         "Submission intent is linked to different submission metadata. Next step: retry with the original sealed payload and result format from the reserved intent.",
     });
   }
+  const existingSubmissionForIntent = await getSubmissionByIntentId(
+    db,
+    intent.id,
+  );
   if (
-    !intent.matched_submission_id &&
+    !existingSubmissionForIntent &&
     isSubmissionIntentExpired(intent.expires_at)
   ) {
     return jsonError(c, {
@@ -1253,10 +1254,6 @@ async function handleSubmissionRegistration(
     });
   }
 
-  const existingSubmissionForIntent =
-    (intent.matched_submission_id
-      ? await getSubmissionById(db, intent.matched_submission_id)
-      : await getSubmissionByIntentId(db, intent.id)) ?? null;
   if (
     existingSubmissionForIntent &&
     existingSubmissionForIntent.on_chain_sub_id !== Number(subId)
@@ -1269,7 +1266,7 @@ async function handleSubmissionRegistration(
     });
   }
 
-  let submissionRow;
+  let submissionRow: Awaited<ReturnType<typeof upsertSubmissionOnChain>>;
   try {
     submissionRow = await upsertSubmissionOnChain(db, {
       submission_intent_id: intent.id,
@@ -1297,33 +1294,6 @@ async function handleSubmissionRegistration(
     throw error;
   }
 
-  let matchedIntent = intent;
-  if (!intent.matched_submission_id) {
-    matchedIntent =
-      (await markSubmissionIntentMatched(db, intent.id, submissionRow.id)) ??
-      intent;
-    if (matchedIntent.matched_submission_id !== submissionRow.id) {
-      const refreshedIntent = await getSubmissionIntentById(db, intent.id);
-      if (!refreshedIntent) {
-        return jsonError(c, {
-          status: 409,
-          code: "SUBMISSION_INTENT_ALREADY_USED",
-          message:
-            "Submission intent disappeared during registration. Next step: inspect the existing submission row before retrying.",
-        });
-      }
-      if (refreshedIntent.matched_submission_id !== submissionRow.id) {
-        return jsonError(c, {
-          status: 409,
-          code: "SUBMISSION_INTENT_ALREADY_USED",
-          message:
-            "Submission intent was claimed by a different submission during registration. Next step: inspect the existing submission row before retrying.",
-        });
-      }
-      matchedIntent = refreshedIntent;
-    }
-  }
-
   const scoreJob = await ensureScoreJobForRegisteredSubmission(
     db,
     {
@@ -1338,9 +1308,9 @@ async function handleSubmissionRegistration(
       on_chain_sub_id: submissionRow.on_chain_sub_id,
       solver_address: submissionRow.solver_address,
       scored: submissionRow.scored,
-      trace_id: submissionRow.trace_id ?? matchedIntent.trace_id,
+      trace_id: submissionRow.trace_id ?? intent.trace_id,
     },
-    matchedIntent.trace_id ?? requestId,
+    intent.trace_id ?? requestId,
   );
 
   const replayedRegistration = Boolean(existingSubmissionForIntent);
@@ -1365,8 +1335,7 @@ async function handleSubmissionRegistration(
       onChainSubmissionId: submissionRow.on_chain_sub_id,
       txHash,
       scoreJobAction: scoreJob.action,
-      matchedSubmissionId: matchedIntent.matched_submission_id,
-      traceId: submissionRow.trace_id ?? matchedIntent.trace_id ?? requestId,
+      traceId: submissionRow.trace_id ?? intent.trace_id ?? requestId,
     },
     "Submission registration confirmed",
   );

@@ -12,6 +12,7 @@ Operators and engineers responsible for running Agora in testnet or production e
 
 - [Architecture](architecture.md) — system overview
 - [Authoring Callbacks](authoring-callbacks.md) — external host callback verification and retry contract
+- [Authoring Rollout](authoring-rollout.md) — authoring/draft/submission cutover specifics
 - [Protocol](protocol.md) — contract lifecycle and settlement rules
 - [Data and Indexing](data-and-indexing.md) — DB schema and indexer behavior
 - [Deployment](deployment.md) — deploy, cutover, and rollback procedures
@@ -134,7 +135,7 @@ flowchart LR
 
 Architecture boundary:
 
-- Clients now pre-register `submission_intents` before the on-chain submit. API submit confirmation and the indexer both reconcile intents into `submissions` rows and only then create or revive `score_jobs`.
+- Clients now pre-register `submission_intents` before the on-chain submit. API submit confirmation and the indexer only attach on-chain submissions to already-registered intents, and only then create or revive `score_jobs`.
 - Worker polls `score_jobs` but only claims jobs after the challenge enters `Scoring` at deadline, and only when the worker runtime matches the active scoring runtime version declared by the API.
 - Scorer is the Docker container itself (for example `ghcr.io/andymolecule/repro-scorer:v1`) — stateless, sandboxed, no network access. The orchestrator stages inputs; the executor service runs the container.
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
@@ -209,9 +210,10 @@ Existing testnet DBs:
 - Fresh environments should apply all migrations.
 - Existing environments that still contain `result_format='sealed_v1'` must apply `002_align_sealed_submission_result_format.sql` before accepting new sealed submissions.
 - Existing environments should also apply `004_add_score_job_backoff.sql` so delayed no-penalty worker retries and queue eligibility work correctly.
-- Existing environments should also apply `005_add_submission_intents.sql` so pre-registered submission metadata can reconcile safely after on-chain submit confirmation.
+- Existing environments should also apply `005_add_submission_intents.sql` so pre-registered submission metadata exists before the later strict intent-first migration window.
 - Existing environments should also apply `006_add_worker_runtime_version.sql` so worker/runtime alignment is visible in health checks.
 - Existing environments should also apply `011_rename_worker_runtime_executor_ready.sql` so worker readiness reflects the new orchestrator/executor naming in runtime checks.
+- Existing environments rolling onto the latest authoring and strict-submission model should also follow [Authoring Rollout](authoring-rollout.md) and apply the `017` through `022` migration window in order.
 
 Operational privacy boundary:
 
@@ -384,10 +386,10 @@ Per-challenge overrides can be set in the challenge spec:
 
 ## Confirming Worker Scoring
 
-1. Check `submission_intents`: each client submission should create an unmatched intent before the wallet transaction is sent, then the intent should gain `matched_submission_id` after the on-chain submission is indexed or the submit-confirmation API call succeeds.
-2. Check `score_jobs` transitions: once the submission has both on-chain state and reconciled metadata, jobs should move from `queued` -> `running` -> `scored`. Infrastructure and tx-reconciliation retries may temporarily stay `queued` with a future `next_attempt_at`.
+1. Check `submission_intents`: each client submission should create an intent before the wallet transaction is sent, and the on-chain submission should attach to that existing intent. `submissions.submission_intent_id` should be present before the row can become scoreable.
+2. Check `score_jobs` transitions: once the submission has both on-chain state and the linked registered metadata, jobs should move from `queued` -> `running` -> `scored`. Infrastructure retries may temporarily stay `queued` with a future `next_attempt_at`.
 3. Check `GET /api/worker-health`: it should show `status != "warning"` and `workers.healthyWorkersForActiveRuntimeVersion > 0` before you expect automatic scoring. `healthyWorkersNotOnActiveRuntimeVersion` is still useful diagnostically, but it is no longer a hard readiness requirement when an active healthy worker already exists.
-4. After a submission, a `submission_intents` row appears immediately. A `score_jobs` row appears only after that intent is reconciled into a `submissions` row. The job should remain queued until the deadline passes and the challenge enters `Scoring`, then the worker should pick it up within ~15s (worker poll).
+4. After a submission, a `submission_intents` row appears immediately. A `score_jobs` row appears only after the indexed `submissions` row exists with its linked `submission_intent_id`. The job should remain queued until the deadline passes and the challenge enters `Scoring`, then the worker should pick it up within ~15s (worker poll).
 5. Successful scoring produces a proof bundle CID in `proof_bundles.cid`.
 6. The frontend ActivityPanel "Scorer" row shows live queued/scored/failed counts.
 

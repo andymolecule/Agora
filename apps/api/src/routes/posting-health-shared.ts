@@ -1,6 +1,6 @@
 type PostingHealthStatus = "ok" | "warning" | "critical";
 
-interface PostingSessionStateCounts {
+interface AuthoringDraftStateCounts {
   draft: number;
   compiling: number;
   ready: number;
@@ -15,7 +15,7 @@ interface PostingSessionHealthResponse {
   checked_at: string;
   message: string;
   sessions: {
-    counts: PostingSessionStateCounts;
+    counts: AuthoringDraftStateCounts;
     expired: number;
     stale_compiling: number;
     oldest_needs_review_at: string | null;
@@ -36,7 +36,7 @@ export const POSTING_REVIEW_QUEUE_WARNING_COUNT = 10;
 
 interface PostingHealthInput {
   checkedAt: string;
-  counts: PostingSessionStateCounts;
+  counts: AuthoringDraftStateCounts;
   expired: number;
   staleCompiling: number;
   oldestNeedsReviewAt: string | null;
@@ -49,9 +49,7 @@ export function derivePostingHealthStatus(
     "counts" | "expired" | "staleCompiling" | "oldestNeedsReviewAgeMs"
   >,
 ): PostingHealthStatus {
-  if (
-    (input.oldestNeedsReviewAgeMs ?? 0) >= POSTING_REVIEW_CRITICAL_MS
-  ) {
+  if ((input.oldestNeedsReviewAgeMs ?? 0) >= POSTING_REVIEW_CRITICAL_MS) {
     return "critical";
   }
 

@@ -16,11 +16,16 @@ import {
   createSupabaseClient,
   getAuthoringDraftViewById,
   updateAuthoringDraft,
+  upsertAuthoringCallbackTarget,
 } from "@agora/db";
 import { zValidator } from "@hono/zod-validator";
 import { type Context, Hono } from "hono";
 import { jsonError, toApiErrorResponse } from "../lib/api-error.js";
 import { normalizeExternalArtifactsForDraft } from "../lib/authoring-artifacts.js";
+import {
+  EXTERNAL_DRAFT_EXPIRY_MS,
+  isAuthoringDraftExpired,
+} from "../lib/authoring-draft-payloads.js";
 import {
   completeDraftCompilation,
   failDraft,
@@ -43,10 +48,6 @@ import { createExternalAuthoringDraft } from "../lib/authoring-source-import.js"
 import { buildManagedAuthoringIr } from "../lib/managed-authoring-ir.js";
 import { compileManagedAuthoringPostingSession } from "../lib/managed-authoring.js";
 import { getRequestLogger } from "../lib/observability.js";
-import {
-  EXTERNAL_DRAFT_EXPIRY_MS,
-  isPostingSessionExpired,
-} from "../lib/posting-session-helpers.js";
 import { consumeWriteQuota } from "../lib/rate-limit.js";
 import type { ApiEnv } from "../types.js";
 const REVIEW_HEADER_NAME = "x-agora-review-token";
@@ -189,7 +190,7 @@ async function readPartnerDraft(input: {
   if (!session || !draftBelongsToProvider(session, input.provider)) {
     return { session: null, error: buildDraftNotFoundError() };
   }
-  if (isPostingSessionExpired(session)) {
+  if (isAuthoringDraftExpired(session)) {
     return { session: null, error: buildExpiredDraftError() };
   }
   return { session, error: null };
@@ -226,6 +227,7 @@ type AuthoringSourcesRouteDependencies = {
   readAuthoringPartnerRuntimeConfig?: typeof readAuthoringPartnerRuntimeConfig;
   readPostingReviewRuntimeConfig?: typeof readPostingReviewRuntimeConfig;
   consumeWriteQuota?: typeof consumeWriteQuota;
+  upsertAuthoringCallbackTarget?: typeof upsertAuthoringCallbackTarget;
   deliverAuthoringDraftLifecycleEvent?: typeof deliverAuthoringDraftLifecycleEvent;
   sweepPendingAuthoringDraftLifecycleEvents?: typeof sweepPendingAuthoringDraftLifecycleEvents;
 };
@@ -245,6 +247,7 @@ export function createAuthoringSourcesRouter(
     readAuthoringPartnerRuntimeConfig: readAuthoringPartnerRuntimeConfigImpl,
     readPostingReviewRuntimeConfig: readPostingReviewRuntimeConfigImpl,
     consumeWriteQuota: consumeWriteQuotaImpl,
+    upsertAuthoringCallbackTarget: upsertAuthoringCallbackTargetImpl,
     deliverAuthoringDraftLifecycleEvent:
       deliverAuthoringDraftLifecycleEventImpl,
     sweepPendingAuthoringDraftLifecycleEvents:
@@ -259,6 +262,7 @@ export function createAuthoringSourcesRouter(
     readAuthoringPartnerRuntimeConfig,
     readPostingReviewRuntimeConfig,
     consumeWriteQuota,
+    upsertAuthoringCallbackTarget,
     deliverAuthoringDraftLifecycleEvent,
     sweepPendingAuthoringDraftLifecycleEvents,
     ...dependencies,
@@ -749,7 +753,7 @@ export function createAuthoringSourcesRouter(
         db,
         session: result.session,
         callbackUrl: body.callback_url,
-        updateAuthoringDraftImpl,
+        upsertAuthoringCallbackTargetImpl,
         getAuthoringDraftViewByIdImpl,
       });
 

@@ -177,9 +177,7 @@ async function cleanupFailedSubmissionArtifact(input: {
   }
 }
 
-export type SubmissionRegistrationStatus =
-  | "confirmed"
-  | "pending_reconciliation";
+export type SubmissionRegistrationStatus = "confirmed" | "confirmation_pending";
 
 export interface SubmitSolutionDryRunResult {
   challengeId: string | null;
@@ -451,7 +449,7 @@ export async function submitSolution(input: {
     registrationWarning =
       error instanceof Error
         ? error.message
-        : "Submission metadata confirmation may take a minute.";
+        : "Submission API confirmation may take a minute.";
   }
 
   return {
@@ -464,7 +462,7 @@ export async function submitSolution(input: {
     submission: registeredSubmission,
     registrationStatus: registeredSubmission
       ? "confirmed"
-      : "pending_reconciliation",
+      : "confirmation_pending",
     warning: registrationWarning,
   };
 }

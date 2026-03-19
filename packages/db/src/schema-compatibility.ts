@@ -26,9 +26,9 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
   {
     id: "submission_intents_columns",
     table: "submission_intents",
-    select: "result_format,matched_submission_id,trace_id",
+    select: "result_format,trace_id",
     nextStep:
-      "Apply migrations 005_add_submission_intents.sql and 013_add_trace_ids.sql, then reload the PostgREST schema cache before restarting services.",
+      "Apply migrations 005_add_submission_intents.sql, 013_add_trace_ids.sql, and 023_drop_submission_intent_match_backrefs.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
     id: "submissions_registration_columns",
@@ -90,9 +90,16 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     id: "authoring_drafts_table",
     table: "authoring_drafts",
     select:
-      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,source_callback_url,source_callback_registered_at,expires_at",
+      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,expires_at",
     nextStep:
-      "Apply migrations 017_posting_session_authoring_ir.sql, 018_authoring_source_callbacks.sql, and 021_split_authoring_drafts.sql, then reload the PostgREST schema cache before restarting services.",
+      "Apply migrations 017_posting_session_authoring_ir.sql, 021_split_authoring_drafts.sql, and 024_move_authoring_callback_targets.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
+    id: "authoring_callback_targets_table",
+    table: "authoring_callback_targets",
+    select: "draft_id,callback_url,registered_at",
+    nextStep:
+      "Apply migration 024_move_authoring_callback_targets.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
     id: "published_challenge_links_table",

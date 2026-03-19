@@ -35,8 +35,6 @@ export interface SubmissionIntentRow {
   result_hash: string;
   result_cid: string;
   result_format: SubmissionResultFormat;
-  matched_submission_id: string | null;
-  matched_at: string | null;
   trace_id: string | null;
   expires_at: string;
   created_at: string;
@@ -74,33 +72,6 @@ export async function createSubmissionIntent(
   }
 
   return data as SubmissionIntentRow;
-}
-
-export async function findSubmissionIntentByMatch(
-  db: AgoraDbClient,
-  input: {
-    challengeId: string;
-    solverAddress: string;
-    resultHash: string;
-  },
-) {
-  const { data, error } = await db
-    .from("submission_intents")
-    .select("*")
-    .eq("challenge_id", input.challengeId)
-    .eq("solver_address", input.solverAddress.toLowerCase())
-    .eq("result_hash", input.resultHash)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (error && error.code !== "PGRST116") {
-    throw new Error(
-      `Failed to fetch submission intent by match: ${error.message}`,
-    );
-  }
-
-  return (data as SubmissionIntentRow | null) ?? null;
 }
 
 export async function findActiveSubmissionIntentByMatch(
@@ -157,10 +128,12 @@ export async function deleteUnmatchedSubmissionIntentById(
     .from("submission_intents")
     .delete()
     .eq("id", intentId)
-    .is("matched_submission_id", null)
     .select("*")
     .maybeSingle();
 
+  if (error?.code === "23503") {
+    return null;
+  }
   if (error && error.code !== "PGRST116") {
     throw new Error(`Failed to delete submission intent: ${error.message}`);
   }
@@ -168,7 +141,7 @@ export async function deleteUnmatchedSubmissionIntentById(
   return (data as SubmissionIntentRow | null) ?? null;
 }
 
-export async function countUnmatchedSubmissionIntentsByResultCid(
+export async function countSubmissionIntentsByResultCid(
   db: AgoraDbClient,
   resultCid: string,
   input?: {
@@ -178,8 +151,7 @@ export async function countUnmatchedSubmissionIntentsByResultCid(
   let query = db
     .from("submission_intents")
     .select("id", { count: "exact", head: true })
-    .eq("result_cid", resultCid)
-    .is("matched_submission_id", null);
+    .eq("result_cid", resultCid);
 
   if (input?.excludeIntentId) {
     query = query.neq("id", input.excludeIntentId);
@@ -187,39 +159,10 @@ export async function countUnmatchedSubmissionIntentsByResultCid(
 
   const { count, error } = await query;
   if (error) {
-    throw new Error(
-      `Failed to count unmatched submission intents: ${error.message}`,
-    );
+    throw new Error(`Failed to count submission intents: ${error.message}`);
   }
 
   return count ?? 0;
-}
-
-export async function markSubmissionIntentMatched(
-  db: AgoraDbClient,
-  intentId: string,
-  submissionId: string,
-) {
-  const { data, error } = await db
-    .from("submission_intents")
-    .update({
-      matched_submission_id: submissionId,
-      matched_at: new Date().toISOString(),
-    })
-    .eq("id", intentId)
-    .is("matched_submission_id", null)
-    .select("*")
-    .maybeSingle();
-
-  if (!error) {
-    return (data as SubmissionIntentRow | null) ?? null;
-  }
-
-  if (error.code === "PGRST116" || error.code === "23505") {
-    return null;
-  }
-
-  throw new Error(`Failed to mark submission intent matched: ${error.message}`);
 }
 
 export async function ensureScoreJobForRegisteredSubmission(

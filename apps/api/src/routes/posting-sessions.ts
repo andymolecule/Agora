@@ -28,6 +28,10 @@ import { type Context, Hono } from "hono";
 import { jsonError } from "../lib/api-error.js";
 import { consumeNonce } from "../lib/auth-store.js";
 import {
+  isAuthoringDraftExpired,
+  toAuthoringDraftPayload,
+} from "../lib/authoring-draft-payloads.js";
+import {
   approveDraftForPublish,
   completeDraftCompilation,
   createDraft,
@@ -43,21 +47,17 @@ import {
 import { buildManagedAuthoringIr } from "../lib/managed-authoring-ir.js";
 import { compileManagedAuthoringPostingSession } from "../lib/managed-authoring.js";
 import { getRequestLogger } from "../lib/observability.js";
-import {
-  isPostingSessionExpired,
-  toPostingSessionPayload,
-} from "../lib/posting-session-helpers.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import type { ApiEnv } from "../types.js";
+import {
+  getAuthoringDraftOwnershipError,
+  normalizePosterAddress,
+  resolveAuthoringDraftPosterAddress,
+} from "./authoring-draft-ownership.js";
 import {
   POSTING_STALE_COMPILING_THRESHOLD_MS,
   buildPostingHealthResponse,
 } from "./posting-health-shared.js";
-import {
-  getPostingSessionOwnershipError,
-  normalizePosterAddress,
-  resolvePostingSessionPosterAddress,
-} from "./posting-session-ownership.js";
 
 const DRAFT_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const READY_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
@@ -76,7 +76,7 @@ function expiredPostingSessionError(c: Context<ApiEnv>) {
       "Posting session expired. Next step: start a new draft or use the published challenge spec if this draft was already posted.",
   });
 }
-type PostingSessionRouteDependencies = {
+type AuthoringDraftRouteDependencies = {
   createSupabaseClient?: typeof createSupabaseClient;
   createAuthoringDraft?: typeof createAuthoringDraft;
   getAuthoringDraftViewById?: typeof getAuthoringDraftViewById;
@@ -101,7 +101,7 @@ type PostingSessionRouteDependencies = {
 };
 
 export function createPostingSessionRoutes(
-  dependencies: PostingSessionRouteDependencies = {},
+  dependencies: AuthoringDraftRouteDependencies = {},
 ) {
   const router = new Hono<ApiEnv>();
   const {
@@ -217,7 +217,7 @@ export function createPostingSessionRoutes(
 
       return c.json({
         data: {
-          session: toPostingSessionPayload(session),
+          session: toAuthoringDraftPayload(session),
         },
       });
     },
@@ -234,13 +234,13 @@ export function createPostingSessionRoutes(
           "Posting session not found. Next step: start a new draft and retry.",
       });
     }
-    if (isPostingSessionExpired(session)) {
+    if (isAuthoringDraftExpired(session)) {
       return expiredPostingSessionError(c);
     }
 
     return c.json({
       data: {
-        session: toPostingSessionPayload(session),
+        session: toAuthoringDraftPayload(session),
       },
     });
   });
@@ -266,13 +266,13 @@ export function createPostingSessionRoutes(
             "Posting session not found. Next step: start a new draft and retry.",
         });
       }
-      if (isPostingSessionExpired(existingSession)) {
+      if (isAuthoringDraftExpired(existingSession)) {
         return expiredPostingSessionError(c);
       }
 
       const requesterAddress = normalizePosterAddress(body.poster_address);
-      const ownershipError = getPostingSessionOwnershipError({
-        sessionPosterAddress: existingSession.poster_address,
+      const ownershipError = getAuthoringDraftOwnershipError({
+        draftPosterAddress: existingSession.poster_address,
         requesterAddress,
         action: "compile",
       });
@@ -294,8 +294,8 @@ export function createPostingSessionRoutes(
         body.uploaded_artifacts ??
         existingSession.uploaded_artifacts_json ??
         [];
-      const resolvedPosterAddress = resolvePostingSessionPosterAddress({
-        sessionPosterAddress: existingSession.poster_address,
+      const resolvedPosterAddress = resolveAuthoringDraftPosterAddress({
+        draftPosterAddress: existingSession.poster_address,
         requesterAddress,
       });
       const compilingAuthoringIr = buildManagedAuthoringIrImpl({
@@ -339,7 +339,7 @@ export function createPostingSessionRoutes(
 
         return c.json({
           data: {
-            session: toPostingSessionPayload(updatedSession),
+            session: toAuthoringDraftPayload(updatedSession),
           },
         });
       } catch (error) {
@@ -385,13 +385,13 @@ export function createPostingSessionRoutes(
             "Posting session not found. Next step: start a new draft and retry.",
         });
       }
-      if (isPostingSessionExpired(session)) {
+      if (isAuthoringDraftExpired(session)) {
         return expiredPostingSessionError(c);
       }
 
       const signerAddress = normalizePosterAddress(body.auth.address);
-      const ownershipError = getPostingSessionOwnershipError({
-        sessionPosterAddress: session.poster_address,
+      const ownershipError = getAuthoringDraftOwnershipError({
+        draftPosterAddress: session.poster_address,
         requesterAddress: signerAddress,
         action: "publish",
       });
@@ -414,7 +414,7 @@ export function createPostingSessionRoutes(
         );
         return c.json({
           data: {
-            session: toPostingSessionPayload(session),
+            session: toAuthoringDraftPayload(session),
             specCid: session.published_spec_cid,
             spec:
               session.published_spec_json ??
@@ -529,7 +529,7 @@ export function createPostingSessionRoutes(
 
       return c.json({
         data: {
-          session: toPostingSessionPayload(updatedSession),
+          session: toAuthoringDraftPayload(updatedSession),
           specCid,
           spec: canonicalSpec,
           returnTo: returnTo.returnTo,
@@ -565,7 +565,7 @@ export function createPostingSessionRoutes(
 
     return c.json({
       data: {
-        sessions: sessions.map((session) => toPostingSessionPayload(session)),
+        sessions: sessions.map((session) => toAuthoringDraftPayload(session)),
       },
     });
   });
@@ -606,7 +606,7 @@ export function createPostingSessionRoutes(
             "Posting session not found. Next step: refresh the review queue and retry.",
         });
       }
-      if (isPostingSessionExpired(session)) {
+      if (isAuthoringDraftExpired(session)) {
         return expiredPostingSessionError(c);
       }
 
@@ -616,7 +616,7 @@ export function createPostingSessionRoutes(
         if (session.state === "ready") {
           return c.json({
             data: {
-              session: toPostingSessionPayload(session),
+              session: toAuthoringDraftPayload(session),
             },
           });
         }
@@ -657,7 +657,7 @@ export function createPostingSessionRoutes(
         });
         return c.json({
           data: {
-            session: toPostingSessionPayload(updated),
+            session: toAuthoringDraftPayload(updated),
           },
         });
       }
@@ -674,7 +674,7 @@ export function createPostingSessionRoutes(
         });
         return c.json({
           data: {
-            session: toPostingSessionPayload(updated),
+            session: toAuthoringDraftPayload(updated),
           },
         });
       }
@@ -690,7 +690,7 @@ export function createPostingSessionRoutes(
 
       return c.json({
         data: {
-          session: toPostingSessionPayload(updated),
+          session: toAuthoringDraftPayload(updated),
         },
       });
     },

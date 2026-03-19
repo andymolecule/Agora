@@ -40,7 +40,7 @@ const checks: RuntimeSchemaCheck[] = [
   {
     id: "submission_intents_columns",
     table: "submission_intents",
-    select: "result_format,matched_submission_id,trace_id",
+    select: "result_format,trace_id",
     nextStep: "apply migration",
   },
   {
@@ -65,7 +65,13 @@ const checks: RuntimeSchemaCheck[] = [
     id: "authoring_drafts_table",
     table: "authoring_drafts",
     select:
-      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,source_callback_url,source_callback_registered_at,expires_at",
+      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,expires_at",
+    nextStep: "apply migration",
+  },
+  {
+    id: "authoring_callback_targets_table",
+    table: "authoring_callback_targets",
+    select: "draft_id,callback_url,registered_at",
     nextStep: "apply migration",
   },
   {

@@ -1,8 +1,8 @@
 import type {
+  PostingSessionState as AuthoringDraftState,
   ChallengeAuthoringIrOutput,
   ChallengeIntentOutput,
   CompilationResultOutput,
-  PostingSessionState,
 } from "@agora/common";
 import type {
   AuthoringArtifactOutput,
@@ -14,9 +14,10 @@ import {
   createAuthoringDraft,
   getAuthoringDraftViewById,
   updateAuthoringDraft,
+  upsertAuthoringCallbackTarget,
   upsertPublishedChallengeLink,
 } from "@agora/db";
-import { buildExpiry } from "./posting-session-helpers.js";
+import { buildExpiry } from "./authoring-draft-payloads.js";
 
 async function reloadDraftViewOrThrow(
   db: Parameters<typeof getAuthoringDraftViewById>[0],
@@ -34,7 +35,7 @@ async function reloadDraftViewOrThrow(
 
 export async function createDraft(input: {
   db: Parameters<typeof createAuthoringDraft>[0];
-  state: PostingSessionState;
+  state: AuthoringDraftState;
   posterAddress?: string | null;
   intentJson?: ChallengeIntentOutput | null;
   authoringIrJson?: ChallengeAuthoringIrOutput | null;
@@ -42,8 +43,6 @@ export async function createDraft(input: {
   compilationJson?: CompilationResultOutput | null;
   expiresInMs: number;
   failureMessage?: string | null;
-  sourceCallbackUrl?: string | null;
-  sourceCallbackRegisteredAt?: string | null;
   createAuthoringDraftImpl?: typeof createAuthoringDraft;
   getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
 }) {
@@ -57,8 +56,6 @@ export async function createDraft(input: {
       uploaded_artifacts_json: input.uploadedArtifactsJson ?? [],
       compilation_json: input.compilationJson ?? null,
       failure_message: input.failureMessage ?? null,
-      source_callback_url: input.sourceCallbackUrl ?? null,
-      source_callback_registered_at: input.sourceCallbackRegisteredAt ?? null,
       expires_at: buildExpiry(input.expiresInMs),
     },
   );
@@ -73,7 +70,7 @@ export async function createDraft(input: {
 export async function refreshDraftIr(input: {
   db: Parameters<typeof updateAuthoringDraft>[0];
   session: Pick<AuthoringDraftViewRow, "id" | "updated_at">;
-  state: PostingSessionState;
+  state: AuthoringDraftState;
   intentJson?: ChallengeIntentOutput | null;
   authoringIrJson: ChallengeAuthoringIrOutput;
   uploadedArtifactsJson: AuthoringArtifactOutput[];
@@ -132,7 +129,7 @@ export async function markDraftCompiling(input: {
 export async function completeDraftCompilation(input: {
   db: Parameters<typeof updateAuthoringDraft>[0];
   session: Pick<AuthoringDraftViewRow, "id" | "updated_at">;
-  state: PostingSessionState;
+  state: AuthoringDraftState;
   posterAddress?: string | null;
   intentJson: ChallengeIntentOutput;
   authoringIrJson: ChallengeAuthoringIrOutput;
@@ -276,14 +273,15 @@ export async function registerDraftCallback(input: {
   session: Pick<AuthoringDraftViewRow, "id">;
   callbackUrl: string;
   registeredAt?: string;
-  updateAuthoringDraftImpl?: typeof updateAuthoringDraft;
+  upsertAuthoringCallbackTargetImpl?: typeof upsertAuthoringCallbackTarget;
   getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
 }) {
-  await (input.updateAuthoringDraftImpl ?? updateAuthoringDraft)(input.db, {
-    id: input.session.id,
-    source_callback_url: input.callbackUrl,
-    source_callback_registered_at:
-      input.registeredAt ?? new Date().toISOString(),
+  await (
+    input.upsertAuthoringCallbackTargetImpl ?? upsertAuthoringCallbackTarget
+  )(input.db, {
+    draft_id: input.session.id,
+    callback_url: input.callbackUrl,
+    registered_at: input.registeredAt ?? new Date().toISOString(),
   });
 
   return reloadDraftViewOrThrow(

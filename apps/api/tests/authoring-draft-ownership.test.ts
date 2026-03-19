@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  getPostingSessionOwnershipError,
+  getAuthoringDraftOwnershipError,
   normalizePosterAddress,
-  resolvePostingSessionPosterAddress,
-} from "../src/routes/posting-session-ownership.js";
+  resolveAuthoringDraftPosterAddress,
+} from "../src/routes/authoring-draft-ownership.js";
 
 test("normalizePosterAddress lowercases non-empty values", () => {
   assert.equal(
@@ -16,8 +16,8 @@ test("normalizePosterAddress lowercases non-empty values", () => {
 
 test("ownership check allows unbound sessions", () => {
   assert.equal(
-    getPostingSessionOwnershipError({
-      sessionPosterAddress: null,
+    getAuthoringDraftOwnershipError({
+      draftPosterAddress: null,
       requesterAddress: null,
       action: "compile",
     }),
@@ -26,46 +26,46 @@ test("ownership check allows unbound sessions", () => {
 });
 
 test("ownership check requires the bound wallet for compile", () => {
-  const error = getPostingSessionOwnershipError({
-    sessionPosterAddress: "0x00000000000000000000000000000000000000aa",
+  const error = getAuthoringDraftOwnershipError({
+    draftPosterAddress: "0x00000000000000000000000000000000000000aa",
     requesterAddress: null,
     action: "compile",
   });
 
   assert.deepEqual(error, {
     status: 401,
-    code: "POSTING_SESSION_ADDRESS_REQUIRED",
+    code: "AUTHORING_DRAFT_ADDRESS_REQUIRED",
     message:
-      "This posting session is already bound to wallet 0x00000000000000000000000000000000000000aa. Next step: reconnect that wallet and retry compile.",
+      "This authoring draft is already bound to wallet 0x00000000000000000000000000000000000000aa. Next step: reconnect that wallet and retry compile.",
   });
 });
 
 test("ownership check rejects a different wallet", () => {
-  const error = getPostingSessionOwnershipError({
-    sessionPosterAddress: "0x00000000000000000000000000000000000000aa",
+  const error = getAuthoringDraftOwnershipError({
+    draftPosterAddress: "0x00000000000000000000000000000000000000aa",
     requesterAddress: "0x00000000000000000000000000000000000000bb",
     action: "publish",
   });
 
   assert.deepEqual(error, {
     status: 403,
-    code: "POSTING_SESSION_ADDRESS_MISMATCH",
+    code: "AUTHORING_DRAFT_ADDRESS_MISMATCH",
     message:
-      "This posting session belongs to wallet 0x00000000000000000000000000000000000000aa. Next step: switch back to that wallet and retry publish.",
+      "This authoring draft belongs to wallet 0x00000000000000000000000000000000000000aa. Next step: switch back to that wallet and retry publish.",
   });
 });
 
-test("resolvePostingSessionPosterAddress keeps the bound wallet unless a matching requester is provided", () => {
+test("resolveAuthoringDraftPosterAddress keeps the bound wallet unless a matching requester is provided", () => {
   assert.equal(
-    resolvePostingSessionPosterAddress({
-      sessionPosterAddress: "0x00000000000000000000000000000000000000aa",
+    resolveAuthoringDraftPosterAddress({
+      draftPosterAddress: "0x00000000000000000000000000000000000000aa",
       requesterAddress: null,
     }),
     "0x00000000000000000000000000000000000000aa",
   );
   assert.equal(
-    resolvePostingSessionPosterAddress({
-      sessionPosterAddress: null,
+    resolveAuthoringDraftPosterAddress({
+      draftPosterAddress: null,
       requesterAddress: "0x00000000000000000000000000000000000000bb",
     }),
     "0x00000000000000000000000000000000000000bb",

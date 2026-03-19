@@ -9,9 +9,9 @@ import {
   getAuthoringDraftViewById,
 } from "@agora/db";
 import { normalizeExternalArtifactsForDraft } from "./authoring-artifacts.js";
+import { EXTERNAL_DRAFT_EXPIRY_MS } from "./authoring-draft-payloads.js";
 import { createDraft } from "./authoring-draft-transitions.js";
 import { buildManagedAuthoringIr } from "./managed-authoring-ir.js";
-import { EXTERNAL_DRAFT_EXPIRY_MS } from "./posting-session-helpers.js";
 
 export async function createExternalAuthoringDraft(input: {
   provider: AuthoringPartnerProviderOutput;

@@ -12,6 +12,7 @@ Engineers writing or running tests. Operators validating deployments.
 
 - [Architecture](architecture.md) — system overview
 - [Operations](operations.md) — day-to-day service operations
+- [Authoring Rollout](authoring-rollout.md) — rollout-specific migration and smoke-test checks
 
 ## Source of truth
 
@@ -96,6 +97,14 @@ pnpm --filter @agora/web test
 | `@agora/mcp-server` | Tool catalog, challenge listing |
 | `@agora/web` | Component rendering, browser API client behavior, wallet/session state helpers |
 
+Useful focused API regression slices:
+
+```bash
+cd apps/api
+node --import tsx --test tests/posting-sessions-route.test.ts tests/authoring-sources.test.ts tests/authoring-drafts.test.ts tests/integrations-beach.test.ts
+node --import tsx --test tests/authoring-benchmarks.test.ts tests/managed-authoring-ir.test.ts tests/managed-authoring.test.ts
+```
+
 ---
 
 ## Test File Locations
@@ -155,7 +164,7 @@ Wallet/session hardening checks now live in:
 4. Download challenge data
 5. Run `score-local` (preview)
 6. Submit on-chain
-7. Wait for submission metadata reconciliation
+7. Wait for the indexed submission to attach to the registered `submission_intent`
 8. Wait for worker scoring
 9. Verify public replay artifacts
 10. Wait for dispute window

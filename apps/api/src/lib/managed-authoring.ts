@@ -43,7 +43,7 @@ import { readManagedAuthoringRuntimeConfig } from "./managed-authoring-runtime.j
 import {
   buildManagedReviewSummaryFromCompilation,
   buildSemiCustomReviewSummary,
-} from "./posting-review-summary.js";
+} from "./authoring-draft-review-summary.js";
 
 interface ParsedThreshold {
   operator: "gte" | "lte";

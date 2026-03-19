@@ -8,10 +8,9 @@ import {
   lookupManagedRuntimeFamily,
 } from "@agora/common";
 import {
-  type AuthoringDraftViewRow as PostingSessionRow,
-  AuthoringDraftWriteConflictError as PostingSessionWriteConflictError,
+  type AuthoringDraftViewRow,
+  AuthoringDraftWriteConflictError,
 } from "@agora/db";
-import { buildClarificationQuestionsFromAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 import { createAuthoringSourcesRouter } from "../src/routes/authoring-sources.js";
 
@@ -42,8 +41,8 @@ function buildStubArtifactFromSourceUrl(input: {
 }
 
 function createSession(
-  overrides: Partial<PostingSessionRow> = {},
-): PostingSessionRow {
+  overrides: Partial<AuthoringDraftViewRow> = {},
+): AuthoringDraftViewRow {
   const uploadedArtifacts = overrides.uploaded_artifacts_json ?? [
     buildStubArtifactFromSourceUrl({
       sourceUrl: "https://cdn.beach.science/uploads/dataset.csv",
@@ -80,11 +79,6 @@ function createSession(
     authoring_ir_json: authoringIr,
     uploaded_artifacts_json: uploadedArtifacts,
     compilation_json: overrides.compilation_json ?? null,
-    clarification_questions_json:
-      overrides.clarification_questions_json ??
-      buildClarificationQuestionsFromAuthoringIr(authoringIr),
-    review_summary_json: overrides.review_summary_json ?? null,
-    approved_confirmation_json: overrides.approved_confirmation_json ?? null,
     published_spec_json: overrides.published_spec_json ?? null,
     published_spec_cid: overrides.published_spec_cid ?? null,
     source_callback_url: overrides.source_callback_url ?? null,
@@ -117,14 +111,22 @@ function createTestRouter(
 ) {
   return createAuthoringSourcesRouter({
     normalizeExternalArtifactsForDraft: normalizeExternalArtifactsStub,
+    upsertAuthoringCallbackTarget: async () =>
+      ({
+        draft_id: "68dff5c6-336a-47fa-a4de-41e6386bd2e4",
+        callback_url: "https://hooks.beach.science/agora",
+        registered_at: "2026-03-18T00:05:00.000Z",
+        created_at: "2026-03-18T00:05:00.000Z",
+        updated_at: "2026-03-18T00:05:00.000Z",
+      }) as never,
     ...dependencies,
   });
 }
 
 function applyUpdate(
-  session: PostingSessionRow,
+  session: AuthoringDraftViewRow,
   patch: Record<string, unknown>,
-): PostingSessionRow {
+): AuthoringDraftViewRow {
   return {
     ...session,
     ...patch,
@@ -132,7 +134,7 @@ function applyUpdate(
       typeof patch.updated_at === "string"
         ? patch.updated_at
         : "2026-03-18T01:00:00.000Z",
-  } as PostingSessionRow;
+  } as AuthoringDraftViewRow;
 }
 
 function partnerConfig() {
@@ -168,7 +170,7 @@ function createCompileIntent() {
 
 function createReadyCompileOutcome(input: {
   intent: ReturnType<typeof createCompileIntent>;
-  uploadedArtifacts: PostingSessionRow["uploaded_artifacts_json"];
+  uploadedArtifacts: AuthoringDraftViewRow["uploaded_artifacts_json"];
 }) {
   const submissionContract = createCsvTableSubmissionContract({
     requiredColumns: ["id", "prediction"],
@@ -393,7 +395,11 @@ test("authoring source route creates a partner-owned draft with source context a
     ).origin?.provider,
     "beach_science",
   );
-  assert.equal(capturedPayload?.clarification_questions_json, undefined);
+  assert.equal(
+    (capturedPayload as { clarification_questions?: unknown })
+      ?.clarification_questions,
+    undefined,
+  );
 
   const payload = (await response.json()) as {
     data: {
@@ -658,7 +664,7 @@ test("authoring source draft clarify returns a conflict when the draft changed c
     createSupabaseClient: () => ({}) as never,
     getAuthoringDraftViewById: async () => storedSession as never,
     updateAuthoringDraft: async () => {
-      throw new PostingSessionWriteConflictError("stale");
+      throw new AuthoringDraftWriteConflictError("stale");
     },
     readAuthoringPartnerRuntimeConfig: partnerConfig,
     consumeWriteQuota: allowPartnerQuota() as never,
@@ -924,12 +930,19 @@ test("authoring source draft webhook registration persists callback metadata", a
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
     getAuthoringDraftViewById: async () => storedSession as never,
-    updateAuthoringDraft: async (_db, patch) => {
-      storedSession = applyUpdate(
-        storedSession,
-        patch as Record<string, unknown>,
-      );
-      return storedSession as never;
+    upsertAuthoringCallbackTarget: async (_db, payload) => {
+      storedSession = applyUpdate(storedSession, {
+        source_callback_url: payload.callback_url,
+        source_callback_registered_at: payload.registered_at,
+      });
+      return {
+        draft_id: storedSession.id,
+        callback_url: storedSession.source_callback_url ?? payload.callback_url,
+        registered_at:
+          storedSession.source_callback_registered_at ?? payload.registered_at,
+        created_at: "2026-03-18T00:05:00.000Z",
+        updated_at: "2026-03-18T00:05:00.000Z",
+      } as never;
     },
     readAuthoringPartnerRuntimeConfig: partnerConfig,
     consumeWriteQuota: allowPartnerQuota(quotaCalls) as never,

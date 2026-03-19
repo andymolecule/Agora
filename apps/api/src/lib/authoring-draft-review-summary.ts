@@ -61,7 +61,7 @@ export function buildSemiCustomReviewSummary(input: {
   };
 }
 
-export function derivePostingSessionReviewSummary(
+export function deriveAuthoringDraftReviewSummary(
   row: Pick<
     AuthoringDraftViewRow,
     "state" | "authoring_ir_json" | "compilation_json"

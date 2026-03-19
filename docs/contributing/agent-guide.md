@@ -145,7 +145,7 @@ agora status <challenge_uuid> --format json
 `agora submit` returns:
 - `submissionId` — Agora submission UUID when API registration is confirmed
 - `onChainSubmissionId` — numeric submission id from the challenge contract
-- `registrationStatus` — `confirmed` or `pending_reconciliation`
+- `registrationStatus` — `confirmed` or `confirmation_pending`
 
 Use `agora submission-status --watch` to follow one solver submission until it
 reaches a terminal state. Use `agora status` or `agora get` to watch the
