@@ -1,11 +1,11 @@
-import { z } from "zod";
 import {
+  AgoraError,
   type AuthoringArtifactOutput,
   type ChallengeIntentOutput,
-  AgoraError,
   lookupManagedRuntimeFamily,
   validateRuntimeMetric,
 } from "@agora/common";
+import { z } from "zod";
 import { readManagedAuthoringRuntimeConfig } from "./managed-authoring-runtime.js";
 
 export type SupportedRuntimeFamily =
@@ -66,24 +66,54 @@ function artifactName(artifact: AuthoringArtifactOutput) {
   return artifact.file_name?.trim() || artifact.uri;
 }
 
-function inferRuntimeFamily(sourceText: string): SupportedRuntimeFamily {
+function inferRuntimeFamily(sourceText: string): {
+  runtimeFamily: SupportedRuntimeFamily;
+  matchedSupportedSignal: boolean;
+} {
   if (
     /(reproduce|reproduc|exact match|same output|reference output|benchmark)/i.test(
       sourceText,
     )
   ) {
-    return "reproducibility";
+    return {
+      runtimeFamily: "reproducibility",
+      matchedSupportedSignal: true,
+    };
   }
-  if (/(dock|docking|ligand|binding pocket|target structure)/i.test(sourceText)) {
-    return "docking";
+  if (
+    /(dock|docking|ligand|binding pocket|target structure)/i.test(sourceText)
+  ) {
+    return {
+      runtimeFamily: "docking",
+      matchedSupportedSignal: true,
+    };
   }
   if (/(rank|ranking|ndcg|leaderboard)/i.test(sourceText)) {
-    return "ranking";
+    return {
+      runtimeFamily: "ranking",
+      matchedSupportedSignal: true,
+    };
   }
   if (/(classif|accuracy|f1|precision|recall|label class)/i.test(sourceText)) {
-    return "tabular_classification";
+    return {
+      runtimeFamily: "tabular_classification",
+      matchedSupportedSignal: true,
+    };
   }
-  return "tabular_regression";
+  if (
+    /(predict|prediction|regress|regression|forecast|estimate|holdout|numeric response|response values?)/i.test(
+      sourceText,
+    )
+  ) {
+    return {
+      runtimeFamily: "tabular_regression",
+      matchedSupportedSignal: true,
+    };
+  }
+  return {
+    runtimeFamily: "tabular_regression",
+    matchedSupportedSignal: false,
+  };
 }
 
 function inferMetric(
@@ -123,12 +153,21 @@ class HeuristicCompilerProvider implements CompilerProvider {
       ...input.uploadedArtifacts.map((artifact) => artifactName(artifact)),
     ].join(" ");
 
-    const runtimeFamily = inferRuntimeFamily(sourceText);
+    const { runtimeFamily, matchedSupportedSignal } =
+      inferRuntimeFamily(sourceText);
     const metric = inferMetric(runtimeFamily, sourceText);
 
     let confidenceScore = 0.8;
     const reasonCodes: string[] = [];
     const warnings: string[] = [];
+
+    if (!matchedSupportedSignal) {
+      confidenceScore -= 0.35;
+      reasonCodes.push("no_supported_runtime_signal");
+      warnings.push(
+        "Challenge description does not clearly match a current managed evaluator template.",
+      );
+    }
 
     const minimumArtifacts = runtimeFamily === "docking" ? 3 : 2;
     if (input.uploadedArtifacts.length < minimumArtifacts) {
@@ -197,6 +236,7 @@ function buildSystemPrompt() {
     "Use only these visibility values: public, private.",
     "Confidence should reflect whether a non-technical poster would likely agree that the uploaded files were mapped correctly and the scoring metric matches their stated payout condition.",
     "If the challenge is ambiguous, keep confidence below 0.75 and include concrete reason_codes.",
+    "If the challenge does not fit the managed catalog cleanly, keep confidence low and include reason_codes such as no_supported_runtime_signal or weak_runtime_fit so the caller can route to semi-custom or Expert Mode.",
     "Prefer tabular_regression for numeric prediction tasks, tabular_classification for label prediction tasks, reproducibility for exact output matching, docking for ligand-ranking tasks against a target structure, and ranking for ordered or leaderboard-style outcomes that are not docking-specific.",
     `Supported runtime catalog: ${JSON.stringify(buildCompilerCatalog())}`,
   ].join("\n");

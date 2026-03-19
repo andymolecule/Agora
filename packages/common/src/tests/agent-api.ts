@@ -7,6 +7,7 @@ import {
   challengeRegistrationResponseSchema,
   challengeSolverStatusResponseSchema,
   submissionPublicKeyResponseSchema,
+  submissionIntentResponseSchema,
   submissionRegistrationResponseSchema,
   submissionStatusResponseSchema,
   submissionValidationResponseSchema,
@@ -167,6 +168,19 @@ const submissionRegistration = submissionRegistrationResponseSchema.parse({
   warning: null,
 });
 assert.equal(submissionRegistration.submission.on_chain_sub_id, 1);
+
+const submissionIntent = submissionIntentResponseSchema.parse({
+  data: {
+    intentId: "44444444-4444-4444-8444-444444444444",
+    resultHash: `0x${"ab".repeat(32)}`,
+    expiresAt: "2026-03-12T00:00:00.000Z",
+    matchedSubmissionId: null,
+  },
+});
+assert.equal(
+  submissionIntent.data.intentId,
+  "44444444-4444-4444-8444-444444444444",
+);
 
 const submissionPublicKey = submissionPublicKeyResponseSchema.parse({
   data: {

@@ -11,13 +11,14 @@ Operators and engineers responsible for running Agora in testnet or production e
 ## Read this after
 
 - [Architecture](architecture.md) — system overview
+- [Authoring Callbacks](authoring-callbacks.md) — external host callback verification and retry contract
 - [Protocol](protocol.md) — contract lifecycle and settlement rules
 - [Data and Indexing](data-and-indexing.md) — DB schema and indexer behavior
 - [Deployment](deployment.md) — deploy, cutover, and rollback procedures
 
 ## Source of truth
 
-This doc is authoritative for: service startup, monitoring, incident response, scoring limits, and indexer operations. It is NOT authoritative for: deployment procedures, cutover checklists (see [Deployment](deployment.md)), smart contract logic, sealed submission format internals, or database schema. For the privacy model itself, see [Submission Privacy](submission-privacy.md).
+This doc is authoritative for: service startup, monitoring, incident response, scoring limits, indexer operations, and operator-triggered callback recovery. It is NOT authoritative for: deployment procedures, cutover checklists (see [Deployment](deployment.md)), smart contract logic, sealed submission format internals, or database schema. For the privacy model itself, see [Submission Privacy](submission-privacy.md).
 
 ## Summary
 
@@ -531,6 +532,71 @@ agora reindex --from-block <block_number>
 3. If `sessions.stale_compiling > 0`, inspect recent API logs for interrupted compile requests, then ask the poster to retry from the draft.
 4. If `oldest_needs_review_age_ms` breaches the warning or critical threshold, review the queued drafts or send them to Expert Mode.
 5. If the sweep route returns `401` or `503`, verify `AGORA_POSTING_REVIEW_TOKEN` is configured consistently on the API and internal review surface.
+
+### Authoring Callback Backlog
+
+Use this when an external host such as Beach stops reflecting draft state transitions even though drafts are still changing in Agora.
+
+1. Confirm the host callback contract first:
+   - host endpoint is still reachable over public HTTPS
+   - the registered callback URL on the draft is correct
+   - the host is verifying `x-agora-signature`, `x-agora-timestamp`, and `x-agora-event-id` as documented in [Authoring Callbacks](authoring-callbacks.md)
+2. Check API logs for:
+   - `authoring.callback.delivery_failed`
+   - `authoring.callback.enqueued`
+   - `authoring.callback.enqueue_failed`
+   - `authoring.callback.direct_provider_ignored`
+3. If callbacks were enqueued during a host outage, run the durable sweep:
+
+```bash
+curl -X POST \
+  -H "x-agora-review-token: <token>" \
+  "<API_URL>/api/authoring/callbacks/sweep?limit=25"
+```
+
+4. Expected response shape:
+
+```json
+{
+  "data": {
+    "due": 3,
+    "claimed": 3,
+    "delivered": 2,
+    "rescheduled": 1,
+    "exhausted": 0,
+    "conflicted": 0
+  }
+}
+```
+
+5. Interpretation:
+   - `delivered > 0`: host recovered and accepted retried callbacks
+   - `rescheduled > 0`: host is still failing; the outbox kept the events for another retry
+   - `exhausted > 0`: manual intervention is now required; inspect the host endpoint and refresh host state from `GET /api/authoring/drafts/:id/card`
+   - `conflicted > 0`: another sweep or operator already claimed some deliveries; rerun only if backlog remains
+6. Recommended operator cadence:
+   - normal: run every minute from an internal scheduler or cron
+   - outage recovery: run manually after the host endpoint is restored
+7. Minimal cron example:
+
+```bash
+* * * * * curl -fsS -X POST \
+  -H "x-agora-review-token: ${AGORA_POSTING_REVIEW_TOKEN}" \
+  "https://api.example.com/api/authoring/callbacks/sweep?limit=25" \
+  >/dev/null
+```
+
+Use an internal network path or secret manager-backed environment where possible; do not hardcode the review token in a checked-in crontab.
+8. If the sweep route returns `401` or `503`, verify `AGORA_POSTING_REVIEW_TOKEN` is configured consistently on the API and the caller.
+9. If the host remains stale after successful callback delivery, force a host-side pull refresh from:
+   - `GET /api/authoring/drafts/:id/card` for draft state
+   - `GET /api/authoring/drafts/:id` for fuller draft/session context
+
+Operational rule:
+- callbacks are push signals
+- draft/card endpoints are pull truth
+
+Do not try to reconstruct canonical draft state purely from callback history.
 
 ### Oracle Key Issue
 

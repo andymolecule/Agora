@@ -211,6 +211,7 @@ export async function getPublicLeaderboard(): Promise<
 
 export async function createSubmissionRecord(input: {
   challengeId: string;
+  intentId: string;
   resultCid: string;
   txHash: `0x${string}`;
   resultFormat?: "plain_v0" | "sealed_submission_v2";

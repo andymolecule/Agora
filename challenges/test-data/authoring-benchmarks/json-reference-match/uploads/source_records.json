@@ -1,0 +1,7 @@
+{
+  "batch_id": "eval-2026-03",
+  "records": [
+    { "sample_id": "sample-1", "raw_value": 17, "unit": "mg" },
+    { "sample_id": "sample-2", "raw_value": 23, "unit": "mg" }
+  ]
+}

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { createAuthoringSourceDraftRequestSchema } from "../schemas/authoring-source.js";
 import {
+  challengeAuthoringIrSchema,
   compilePostingSessionRequestSchema,
   createPostingSessionRequestSchema,
+  postingSessionSchema,
 } from "../schemas/managed-authoring.js";
 
 const baseIntent = {
@@ -117,6 +120,162 @@ assert.equal(
   tooManyTags.success,
   false,
   "managed authoring should cap tag count per draft",
+);
+
+const authoringIr = challengeAuthoringIrSchema.parse({
+  version: 1,
+  origin: {
+    provider: "direct",
+    external_id: null,
+    external_url: null,
+    ingested_at: "2026-03-18T00:00:00.000Z",
+    raw_context: null,
+  },
+  source: {
+    poster_messages: [],
+    uploaded_artifact_ids: [],
+  },
+  problem: {
+    raw_brief: "",
+    normalized_summary: null,
+    domain_hints: [],
+    hard_constraints: [],
+  },
+  objective: {
+    solver_goal: null,
+    winning_definition: null,
+    comparator: null,
+    primary_metric: null,
+    minimum_threshold: null,
+    secondary_constraints: [],
+  },
+  artifacts: [],
+  submission: {
+    solver_deliverable: null,
+    artifact_kind: null,
+    schema_requirements: null,
+    validation_rules: [],
+  },
+  evaluation: {
+    scoreability: "not_objective_yet",
+    evaluator_candidates: [],
+    selected_evaluator: null,
+    runtime_family: null,
+    metric: null,
+    semi_custom_contract: null,
+    compute_hints: [],
+    privacy_requirements: [],
+  },
+  economics: {
+    reward_total: null,
+    distribution: null,
+    submission_deadline: null,
+    dispute_window_hours: null,
+  },
+  ambiguity: {
+    classes: ["objective_missing", "deadline_unclear"],
+    alternative_interpretations: [],
+    confidence_by_section: {
+      problem: 0,
+      objective: 0,
+      artifacts: 0,
+      submission: 0,
+      evaluation: 0,
+      economics: 0.33,
+    },
+  },
+  routing: {
+    mode: "not_ready",
+    confidence_score: 0.4,
+    blocking_reasons: ["objective_missing"],
+    recommended_next_action: "State the exact score rule and retry.",
+  },
+  clarification: {
+    open_questions: [
+      {
+        id: "winning-definition",
+        prompt: "How should Agora determine the winner?",
+        reason_code: "objective_missing",
+        next_step: "Add a deterministic winning rule.",
+        blocks_publish: true,
+      },
+    ],
+    resolved_assumptions: [],
+    contradictions: [],
+  },
+});
+
+const postingSession = postingSessionSchema.parse({
+  id: "f5567c15-8e0b-4afe-8d0c-7f511b592c05",
+  state: "draft",
+  intent: baseIntent,
+  authoring_ir: authoringIr,
+  uploaded_artifacts: baseArtifacts,
+  clarification_questions: [],
+  expires_at: "2026-12-31T00:00:00.000Z",
+});
+
+assert.equal(
+  postingSession.authoring_ir?.clarification.open_questions[0]?.blocks_publish,
+  true,
+  "posting sessions should accept persisted authoring IR state",
+);
+
+const sourceDraft = createAuthoringSourceDraftRequestSchema.parse({
+  title: "Beach-originated draft",
+  external_id: "thread-42",
+  external_url: "https://beach.science/thread/42",
+  messages: [
+    {
+      id: "msg-1",
+      role: "poster",
+      content: "We need a deterministic scoring contract for this dataset.",
+    },
+  ],
+  artifacts: [
+    {
+      source_url: "https://example.org/data.csv",
+      suggested_role: "training_data",
+      suggested_filename: "data.csv",
+      mime_type: "text/csv",
+      size_bytes: 1024,
+    },
+  ],
+});
+
+assert.equal(sourceDraft.messages.length, 1);
+assert.equal(sourceDraft.artifacts.length, 1);
+assert.equal(sourceDraft.external_id, "thread-42");
+
+assert.equal(
+  createAuthoringSourceDraftRequestSchema.safeParse({
+    title: "Insecure host draft",
+    external_url: "http://beach.science/thread/42",
+    messages: [
+      {
+        id: "msg-1",
+        role: "poster",
+        content: "We need a deterministic scoring contract for this dataset.",
+      },
+    ],
+  }).success,
+  false,
+  "external source drafts should reject non-HTTPS external URLs",
+);
+assert.equal(
+  createAuthoringSourceDraftRequestSchema.safeParse({
+    title: "Credentialed host draft",
+    external_url: "https://user:pass@beach.science/thread/42",
+    messages: [
+      {
+        id: "msg-1",
+        role: "poster",
+        content: "We need a deterministic scoring contract for this dataset.",
+      },
+    ],
+  }).success,
+  false,
+  "external source drafts should reject credentialed host URLs",
 );
 
 console.log("managed authoring schema guardrails passed");

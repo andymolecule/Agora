@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { SUBMISSION_RESULT_FORMAT } from "@agora/common";
 import {
-  attachSubmissionResultMetadata,
+  SubmissionOnChainWriteConflictError,
   upsertSubmissionOnChain,
 } from "../queries/submissions.js";
 
-function makeConflictDbMock() {
+async function testOnChainUpsertConflictPathDoesNotTouchRegisteredFields() {
   const calls: {
     insertPayload?: Record<string, unknown>;
     updatePayload?: Record<string, unknown>;
@@ -30,10 +30,51 @@ function makeConflictDbMock() {
             },
           };
         },
+        select(selection: string) {
+          assert.equal(selection, "*");
+          return {
+            eq(field: string, value: unknown) {
+              if (field === "challenge_id") {
+                assert.equal(value, "challenge-1");
+              }
+              if (field === "on_chain_sub_id") {
+                assert.equal(value, 1);
+              }
+              return this;
+            },
+            async maybeSingle() {
+              return {
+                data: {
+                  id: "sub-1",
+                  challenge_id: "challenge-1",
+                  on_chain_sub_id: 1,
+                  solver_address: "0x00000000000000000000000000000000000000aa",
+                  submission_intent_id: "intent-1",
+                  result_hash: "0xabc",
+                  result_cid: "ipfs://bafy-test",
+                  result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+                  proof_bundle_hash: "0xproof",
+                  score: null,
+                  scored: false,
+                  submitted_at: "2026-01-01T00:00:00.000Z",
+                  tx_hash: "0x123",
+                  trace_id: null,
+                },
+                error: null,
+              };
+            },
+          };
+        },
         update(payload: Record<string, unknown>) {
           calls.updatePayload = payload;
           return {
-            eq() {
+            eq(field: string, value: unknown) {
+              if (field === "challenge_id") {
+                assert.equal(value, "challenge-1");
+              }
+              if (field === "on_chain_sub_id") {
+                assert.equal(value, 1);
+              }
               return this;
             },
             select() {
@@ -47,18 +88,16 @@ function makeConflictDbMock() {
         },
       };
     },
-  };
+  } as never;
 
-  return { db: db as never, calls };
-}
-
-async function testOnChainUpsertConflictPathDoesNotTouchOffchainFields() {
-  const { db, calls } = makeConflictDbMock();
   await upsertSubmissionOnChain(db, {
+    submission_intent_id: "intent-1",
     challenge_id: "challenge-1",
     on_chain_sub_id: 1,
     solver_address: "0x00000000000000000000000000000000000000AA",
     result_hash: "0xabc",
+    result_cid: "ipfs://bafy-test",
+    result_format: SUBMISSION_RESULT_FORMAT.plainV0,
     proof_bundle_hash: "0xdef",
     score: null,
     scored: false,
@@ -66,16 +105,11 @@ async function testOnChainUpsertConflictPathDoesNotTouchOffchainFields() {
     tx_hash: "0x123",
   });
 
-  assert.ok(calls.insertPayload, "insert payload should be captured");
-  assert.ok(calls.updatePayload, "update payload should be captured");
   assert.equal(
     calls.insertPayload?.solver_address,
     "0x00000000000000000000000000000000000000aa",
-    "solver address should be normalized to lowercase",
   );
-
-  const updateKeys = Object.keys(calls.updatePayload ?? {}).sort();
-  assert.deepEqual(updateKeys, [
+  assert.deepEqual(Object.keys(calls.updatePayload ?? {}).sort(), [
     "proof_bundle_hash",
     "result_hash",
     "score",
@@ -86,44 +120,65 @@ async function testOnChainUpsertConflictPathDoesNotTouchOffchainFields() {
     "tx_hash",
   ]);
   assert.equal(
-    Object.prototype.hasOwnProperty.call(calls.updatePayload, "result_cid"),
-    false,
-    "on-chain upsert must never overwrite result_cid",
-  );
-  assert.equal(
     Object.prototype.hasOwnProperty.call(
       calls.updatePayload,
-      "proof_bundle_cid",
+      "submission_intent_id",
     ),
     false,
-    "on-chain upsert must never overwrite proof_bundle_cid",
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(calls.updatePayload, "result_cid"),
+    false,
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(calls.updatePayload, "result_format"),
+    false,
   );
 }
 
-async function testAttachSubmissionResultMetadataTouchesOnlyMetadataFields() {
-  let updatePayload: Record<string, unknown> | null = null;
+async function testOnChainUpsertRejectsIntentMismatch() {
   const db = {
     from(table: string) {
       assert.equal(table, "submissions");
       return {
-        update(payload: Record<string, unknown>) {
-          updatePayload = payload;
+        insert() {
           return {
-            eq(field: string, value: string) {
-              assert.equal(field, "id");
-              assert.equal(value, "sub-1");
-              return this;
-            },
-            is(field: string, value: null) {
-              assert.equal(field, "result_cid");
-              assert.equal(value, null);
-              return this;
-            },
             select() {
               return {
-                async maybeSingle() {
-                  return { data: { id: "sub-1", ...payload }, error: null };
+                async single() {
+                  return {
+                    data: null,
+                    error: { code: "23505", message: "duplicate key value" },
+                  };
                 },
+              };
+            },
+          };
+        },
+        select() {
+          return {
+            eq() {
+              return this;
+            },
+            async maybeSingle() {
+              return {
+                data: {
+                  id: "sub-1",
+                  challenge_id: "challenge-1",
+                  on_chain_sub_id: 1,
+                  solver_address: "0xsolver",
+                  submission_intent_id: "intent-2",
+                  result_hash: "0xabc",
+                  result_cid: "ipfs://bafy-test",
+                  result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+                  proof_bundle_hash: "0xproof",
+                  score: null,
+                  scored: false,
+                  submitted_at: "2026-01-01T00:00:00.000Z",
+                  tx_hash: "0x123",
+                  trace_id: null,
+                },
+                error: null,
               };
             },
           };
@@ -132,18 +187,98 @@ async function testAttachSubmissionResultMetadataTouchesOnlyMetadataFields() {
     },
   } as never;
 
-  await attachSubmissionResultMetadata(
-    db,
-    "sub-1",
-    "ipfs://bafy-test",
-    SUBMISSION_RESULT_FORMAT.plainV0,
+  await assert.rejects(
+    () =>
+      upsertSubmissionOnChain(db, {
+        submission_intent_id: "intent-1",
+        challenge_id: "challenge-1",
+        on_chain_sub_id: 1,
+        solver_address: "0xsolver",
+        result_hash: "0xabc",
+        result_cid: "ipfs://bafy-test",
+        result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+        proof_bundle_hash: "0xdef",
+        score: null,
+        scored: false,
+        submitted_at: "2026-01-01T00:00:00.000Z",
+        tx_hash: "0x123",
+      }),
+    SubmissionOnChainWriteConflictError,
   );
-  assert.deepEqual(updatePayload, {
-    result_cid: "ipfs://bafy-test",
-    result_format: SUBMISSION_RESULT_FORMAT.plainV0,
-  });
 }
 
-await testOnChainUpsertConflictPathDoesNotTouchOffchainFields();
-await testAttachSubmissionResultMetadataTouchesOnlyMetadataFields();
+async function testOnChainUpsertRejectsMetadataMismatch() {
+  const db = {
+    from(table: string) {
+      assert.equal(table, "submissions");
+      return {
+        insert() {
+          return {
+            select() {
+              return {
+                async single() {
+                  return {
+                    data: null,
+                    error: { code: "23505", message: "duplicate key value" },
+                  };
+                },
+              };
+            },
+          };
+        },
+        select() {
+          return {
+            eq() {
+              return this;
+            },
+            async maybeSingle() {
+              return {
+                data: {
+                  id: "sub-1",
+                  challenge_id: "challenge-1",
+                  on_chain_sub_id: 1,
+                  solver_address: "0xsolver",
+                  submission_intent_id: "intent-1",
+                  result_hash: "0xabc",
+                  result_cid: "ipfs://bafy-other",
+                  result_format: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+                  proof_bundle_hash: "0xproof",
+                  score: null,
+                  scored: false,
+                  submitted_at: "2026-01-01T00:00:00.000Z",
+                  tx_hash: "0x123",
+                  trace_id: null,
+                },
+                error: null,
+              };
+            },
+          };
+        },
+      };
+    },
+  } as never;
+
+  await assert.rejects(
+    () =>
+      upsertSubmissionOnChain(db, {
+        submission_intent_id: "intent-1",
+        challenge_id: "challenge-1",
+        on_chain_sub_id: 1,
+        solver_address: "0xsolver",
+        result_hash: "0xabc",
+        result_cid: "ipfs://bafy-test",
+        result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+        proof_bundle_hash: "0xdef",
+        score: null,
+        scored: false,
+        submitted_at: "2026-01-01T00:00:00.000Z",
+        tx_hash: "0x123",
+      }),
+    SubmissionOnChainWriteConflictError,
+  );
+}
+
+await testOnChainUpsertConflictPathDoesNotTouchRegisteredFields();
+await testOnChainUpsertRejectsIntentMismatch();
+await testOnChainUpsertRejectsMetadataMismatch();
 console.log("submission write ownership tests passed");

@@ -6,7 +6,8 @@ import {
   type ChallengeStatus,
   SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
-  defaultMinimumScoreForChallengeType,
+  defaultMinimumScoreForEvaluation,
+  getChallengeCompatibilityTypeFromEvaluation,
   resolveChallengeEvaluation,
   resolveScoringEnvironmentFromSpec,
   validateChallengeScoreability,
@@ -83,15 +84,22 @@ export async function buildChallengeInsert(
     title: canonicalSpec.title,
     description: canonicalSpec.description,
     domain: canonicalSpec.domain,
-    challenge_type: canonicalSpec.type,
+    challenge_type: getChallengeCompatibilityTypeFromEvaluation(
+      canonicalSpec.evaluation,
+    ),
     runtime_family: canonicalSpec.evaluation.runtime_family,
     spec_cid: input.specCid,
     evaluation_json: {
       runtime_family: resolvedEvalPlan.runtimeFamily,
       metric: resolvedEvalPlan.metric,
-      scorer_image: resolvedEvalPlan.image,
+      ...(resolvedEvalPlan.image
+        ? { scorer_image: resolvedEvalPlan.image }
+        : {}),
       ...(resolvedEvalPlan.evaluationBundleCid
         ? { evaluation_bundle: resolvedEvalPlan.evaluationBundleCid }
+        : {}),
+      ...(resolvedEvalPlan.evaluatorContract
+        ? { evaluator_contract: resolvedEvalPlan.evaluatorContract }
         : {}),
     },
     artifacts_json: canonicalSpec.artifacts,
@@ -99,7 +107,7 @@ export async function buildChallengeInsert(
     scoring_env_json: scoringEnv ?? null,
     minimum_score:
       canonicalSpec.minimum_score ??
-      defaultMinimumScoreForChallengeType(canonicalSpec.type) ??
+      defaultMinimumScoreForEvaluation(canonicalSpec.evaluation) ??
       null,
     max_submissions_total:
       canonicalSpec.max_submissions_total ?? SUBMISSION_LIMITS.maxPerChallenge,

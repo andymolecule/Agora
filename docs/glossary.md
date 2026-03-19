@@ -57,6 +57,13 @@ Quick reference for key terms used across Agora documentation and code.
 | **Sealed submission** (`sealed_submission_v2`) | Encrypted submission envelope. Browser seals answer bytes locally with the API's RSA public key, uploads only the sealed envelope to IPFS. Worker decrypts after deadline. |
 | **`kid`** | Key identifier for the active sealing public/private key pair. Worker must hold the matching private key. |
 
+## Authoring
+
+| Term | Definition |
+|------|-----------|
+| **Authoring IR** (`ChallengeAuthoringIR`) | Proposed typed intermediate representation between open-ended poster language and the final challenge spec. It should capture objective, artifacts, submission shape, privacy, economics, routing, and unresolved clarifications before compile/publish. |
+| **Expert Mode** | Manual or advanced authoring path used when a challenge cannot be safely expressed through the managed posting flow. |
+
 ## Infrastructure
 
 | Term | Definition |
@@ -87,6 +94,9 @@ Quick reference for key terms used across Agora documentation and code.
 | **CLI** | Canonical local execution surface. `agora` command with subcommands for the full challenge lifecycle. |
 | **SIWE** | Sign-In With Ethereum. Authentication flow used by the web frontend. |
 | **x402** | HTTP payment protocol used for paid API routes (agent discovery, verification). |
+| **Authoring callback** | Signed webhook from Agora to an external authoring host announcing a draft lifecycle event such as `draft_updated` or `draft_published`. It is a push signal, not the canonical state source. |
+| **`x-agora-event-id`** | Deterministic idempotency key on authoring callbacks derived from `draft_id`, `event`, and `occurred_at`. Hosts should use it to deduplicate retries. |
+| **Replay window** | Host-side timestamp validity window for callback verification. Recommended default: reject any callback whose `x-agora-timestamp` is more than 5 minutes away from wall-clock time. |
 
 ## Deployment
 

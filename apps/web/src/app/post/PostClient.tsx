@@ -8,6 +8,7 @@ import {
 import { useChainModal, useConnectModal } from "@rainbow-me/rainbowkit";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   useAccount,
@@ -53,6 +54,7 @@ import {
   clearGuidedDraft,
   createInitialGuidedState,
   guidedComposerReducer,
+  hydrateGuidedStateFromPostingSession,
   isReadyToCompile,
   listReadinessIssues,
   loadGuidedDraft,
@@ -76,6 +78,7 @@ import {
 
 type Step = PostStep;
 type DeadlineWindowState = ReturnType<typeof getSubmissionDeadlineWindowState>;
+type PostingSessionRequestError = Error & { status?: number };
 
 /* ── Utility functions ─────────────────────────────────── */
 
@@ -89,6 +92,32 @@ function parseApiErrorMessage(text: string) {
     return text || "Request failed.";
   }
   return text || "Request failed.";
+}
+
+function createPostingSessionRequestError(response: Response, message: string) {
+  const error = new Error(message) as PostingSessionRequestError;
+  error.name = "PostingSessionRequestError";
+  error.status = response.status;
+  return error;
+}
+
+async function toPostingSessionRequestError(response: Response) {
+  return createPostingSessionRequestError(
+    response,
+    parseApiErrorMessage(await response.text()),
+  );
+}
+
+function getPostingSessionRequestStatus(error: unknown) {
+  if (
+    error &&
+    typeof error === "object" &&
+    "status" in error &&
+    typeof (error as { status?: unknown }).status === "number"
+  ) {
+    return (error as { status: number }).status;
+  }
+  return undefined;
 }
 
 function buildPostingIntent(intent: ManagedIntentState) {
@@ -125,6 +154,30 @@ function getDeadlineWindowMessage(state: DeadlineWindowState) {
   }
 }
 
+function buildHostReturnUrl(input: {
+  baseUrl: string | null;
+  draftId: string;
+  challengeId: string;
+  specCid: string;
+}) {
+  if (!input.baseUrl) {
+    return null;
+  }
+
+  const url = new URL(input.baseUrl);
+  url.searchParams.set("agora_event", "challenge_live");
+  url.searchParams.set("agora_draft_id", input.draftId);
+  url.searchParams.set("agora_challenge_id", input.challengeId);
+  url.searchParams.set("agora_spec_cid", input.specCid);
+  if (typeof window !== "undefined") {
+    url.searchParams.set(
+      "agora_challenge_url",
+      `${window.location.origin}/challenges/${input.challengeId}`,
+    );
+  }
+  return url.toString();
+}
+
 /* ── API helpers ───────────────────────────────────────── */
 
 async function pinDataFile(file: File) {
@@ -135,7 +188,7 @@ async function pinDataFile(file: File) {
     body: formData,
   });
   if (!response.ok) {
-    throw new Error(parseApiErrorMessage(await response.text()));
+    throw await toPostingSessionRequestError(response);
   }
   return (await response.json()) as { cid: string };
 }
@@ -156,7 +209,7 @@ async function createPostingSession(input: {
   });
 
   if (!response.ok) {
-    throw new Error(parseApiErrorMessage(await response.text()));
+    throw await toPostingSessionRequestError(response);
   }
 
   const payload = (await response.json()) as {
@@ -185,7 +238,7 @@ async function compilePostingSession(input: {
   );
 
   if (!response.ok) {
-    throw new Error(parseApiErrorMessage(await response.text()));
+    throw await toPostingSessionRequestError(response);
   }
 
   const payload = (await response.json()) as {
@@ -201,7 +254,7 @@ async function getPostingSession(sessionId: string) {
   });
 
   if (!response.ok) {
-    throw new Error(parseApiErrorMessage(await response.text()));
+    throw await toPostingSessionRequestError(response);
   }
 
   const payload = (await response.json()) as {
@@ -234,6 +287,7 @@ function clearCompiledSessionData(
 /* ── Main component ────────────────────────────────────── */
 
 export function PostClient() {
+  const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>(1);
   const [guidedState, dispatch] = useReducer(
     guidedComposerReducer,
@@ -249,6 +303,10 @@ export function PostClient() {
   const [postedChallengeId, setPostedChallengeId] = useState<string | null>(
     null,
   );
+  const [hostReturnUrl, setHostReturnUrl] = useState<string | null>(null);
+  const [hostReturnSource, setHostReturnSource] = useState<
+    "requested" | "origin_external_url" | null
+  >(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [expertMode, setExpertMode] = useState(false);
@@ -269,6 +327,9 @@ export function PostClient() {
     () => buildManagedIntentFromGuidedState(guidedState),
     [guidedState],
   );
+  const hostedDraftId = searchParams.get("draft")?.trim() || null;
+  const requestedReturnTo = searchParams.get("return_to")?.trim() || null;
+  const isHostedDraftFlow = hostedDraftId !== null;
   const compileReady = useMemo(
     () => isReadyToCompile(guidedState),
     [guidedState],
@@ -282,6 +343,10 @@ export function PostClient() {
   const clarificationQuestions = session?.clarification_questions ?? [];
   const reviewSummary = session?.review_summary ?? null;
   const isReviewQueued = session?.state === "needs_review";
+  const isSemiCustomReview =
+    session?.state === "needs_review" &&
+    !compilation &&
+    session.authoring_ir?.routing.mode === "semi_custom";
   const shouldSuggestExpertMode =
     reviewSummary?.recommended_action === "send_to_expert_mode";
   const rewardInput =
@@ -334,32 +399,43 @@ export function PostClient() {
   /* ── Effects ──────────────────────────────────────────── */
 
   useEffect(() => {
+    if (isHostedDraftFlow) {
+      return;
+    }
     const restored = loadGuidedDraft();
     if (restored) {
       dispatch({ type: "hydrate", state: restored });
     }
-  }, []);
+  }, [isHostedDraftFlow]);
 
   useEffect(() => {
-    if (expertMode) {
+    if (expertMode || isHostedDraftFlow) {
       return;
     }
     saveGuidedDraft(guidedState);
-  }, [expertMode, guidedState]);
+  }, [expertMode, guidedState, isHostedDraftFlow]);
 
   useEffect(() => {
-    if (!guidedState.sessionId || session) {
+    const restoreSessionId = hostedDraftId ?? guidedState.sessionId;
+    if (!restoreSessionId || session?.id === restoreSessionId) {
       return;
     }
 
     let cancelled = false;
 
-    void getPostingSession(guidedState.sessionId)
+    void getPostingSession(restoreSessionId)
       .then((restoredSession) => {
         if (cancelled) {
           return;
         }
         setSession(restoredSession);
+        dispatch({ type: "set_session_id", sessionId: restoredSession.id });
+        if (hostedDraftId) {
+          dispatch({
+            type: "hydrate",
+            state: hydrateGuidedStateFromPostingSession(restoredSession),
+          });
+        }
         if (restoredSession.state === "ready") {
           dispatch({ type: "set_compile_state", compileState: "ready" });
           setStep(2);
@@ -377,17 +453,40 @@ export function PostClient() {
             ),
           });
           setStep(1);
+        } else if (restoredSession.state === "published") {
+          dispatch({ type: "set_compile_state", compileState: "ready" });
+          setStep(3);
+          setStatusMessage(
+            "This draft was already pinned and is ready for on-chain publish confirmation.",
+          );
         }
       })
-      .catch(() => {});
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        clearRemotePostingSession(
+          getPostingSessionRequestStatus(error) === 404
+            ? hostedDraftId
+              ? "This linked draft is no longer available. Next step: reopen the host workflow and create a fresh handoff."
+              : "Your saved review contract expired. Next step: regenerate the contract from your draft answers."
+            : hostedDraftId
+              ? "Could not restore the linked draft. Next step: reopen the host workflow and try the publish handoff again."
+              : "Could not restore the saved review contract. Next step: regenerate it from your draft answers.",
+        );
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [guidedState.sessionId, session]);
+  }, [guidedState.sessionId, hostedDraftId, session?.id]);
 
   useEffect(() => {
-    if (!session?.id || session.state !== "needs_review") {
+    if (
+      !session?.id ||
+      session.state !== "needs_review" ||
+      isSemiCustomReview
+    ) {
       return;
     }
 
@@ -395,7 +494,11 @@ export function PostClient() {
     const intervalId = window.setInterval(async () => {
       try {
         const refreshedSession = await getPostingSession(session.id);
-        if (cancelled || refreshedSession.state === "needs_review") {
+        if (cancelled) {
+          return;
+        }
+        setErrorMessage(null);
+        if (refreshedSession.state === "needs_review") {
           return;
         }
 
@@ -438,14 +541,27 @@ export function PostClient() {
           );
           setStep(1);
         }
-      } catch {}
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        if (getPostingSessionRequestStatus(error) === 404) {
+          clearRemotePostingSession(
+            "This review contract is no longer available. Next step: regenerate it from the draft answers before publishing.",
+          );
+          return;
+        }
+        setErrorMessage(
+          "Could not refresh operator review status. Next step: wait a moment and refresh the page.",
+        );
+      }
     }, 10_000);
 
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [compileReady, session?.id, session?.state]);
+  }, [compileReady, isSemiCustomReview, session?.id, session?.state]);
 
   /* ── Handlers ─────────────────────────────────────────── */
 
@@ -458,6 +574,19 @@ export function PostClient() {
 
   function dispatchCompileState(compileState: GuidedCompileState) {
     dispatch({ type: "set_compile_state", compileState });
+  }
+
+  function clearRemotePostingSession(message: string) {
+    setSession(null);
+    setHostReturnUrl(null);
+    setHostReturnSource(null);
+    dispatch({ type: "set_session_id", sessionId: null });
+    dispatchCompileState(
+      isReadyToCompile(guidedStateRef.current) ? "ready_to_compile" : "idle",
+    );
+    setStatusMessage(null);
+    setErrorMessage(message);
+    setStep(1);
   }
 
   function handlePromptAnswer(
@@ -645,7 +774,9 @@ export function PostClient() {
         dispatchCompileState("needs_review");
         setStep(2);
         setStatusMessage(
-          "Agora compiled a contract and queued it for operator review before publish.",
+          compiledSession.authoring_ir?.routing.mode === "semi_custom"
+            ? "This draft is deterministic enough for a semi-custom evaluator, but it does not fit a current managed template."
+            : "Agora compiled a contract and queued it for operator review before publish.",
         );
       } else {
         dispatchCompileState("ready");
@@ -729,6 +860,8 @@ export function PostClient() {
     try {
       setIsPublishing(true);
       setErrorMessage(null);
+      setHostReturnUrl(null);
+      setHostReturnSource(null);
       const rewardUnits = getRewardUnitsFromInput(
         compilation.challenge_spec.reward.total,
       );
@@ -755,6 +888,7 @@ export function PostClient() {
         address,
         chainId: CHAIN_ID,
         signTypedDataAsync,
+        returnTo: requestedReturnTo ?? undefined,
       });
 
       let createTx: `0x${string}`;
@@ -815,9 +949,36 @@ export function PostClient() {
         createTx,
         publicClient,
       });
-      clearGuidedDraft();
+      if (!isHostedDraftFlow) {
+        clearGuidedDraft();
+      }
       setPostedChallengeId(registration.challengeId);
-      setStatusMessage("Challenge published successfully.");
+      const nextHostReturnUrl = buildHostReturnUrl({
+        baseUrl: prepared.returnTo,
+        draftId: session.id,
+        challengeId: registration.challengeId,
+        specCid: prepared.specCid,
+      });
+      setHostReturnUrl(nextHostReturnUrl);
+      setHostReturnSource(prepared.returnToSource);
+      if (
+        nextHostReturnUrl &&
+        prepared.returnToSource === "requested" &&
+        requestedReturnTo
+      ) {
+        setStatusMessage(
+          "Challenge published successfully. Redirecting back to the host workflow...",
+        );
+        window.setTimeout(() => {
+          window.location.assign(nextHostReturnUrl);
+        }, 2_500);
+      } else if (nextHostReturnUrl) {
+        setStatusMessage(
+          "Challenge published successfully. Use the return link to go back to the host workflow.",
+        );
+      } else {
+        setStatusMessage("Challenge published successfully.");
+      }
     } catch (error) {
       setErrorMessage(
         isUserRejectedError(error)
@@ -828,6 +989,8 @@ export function PostClient() {
       setIsPublishing(false);
     }
   }
+
+  const managedReviewTitle = session?.intent?.title ?? managedIntent.title;
 
   function handleRefreshCompiledDeadline() {
     resetInterviewForEdit();
@@ -874,13 +1037,26 @@ export function PostClient() {
               Challenge published. ID:{" "}
               <span className="font-mono">{postedChallengeId}</span>
             </div>
-            <Link
-              href={`/challenges/${postedChallengeId}`}
-              className="btn-secondary inline-flex items-center gap-2 rounded-[2px] px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider"
-            >
-              View challenge
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              {hostReturnUrl ? (
+                <a
+                  href={hostReturnUrl}
+                  className="btn-secondary inline-flex items-center gap-2 rounded-[2px] px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider"
+                >
+                  {hostReturnSource === "requested"
+                    ? "Return to host"
+                    : "Open host thread"}
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </a>
+              ) : null}
+              <Link
+                href={`/challenges/${postedChallengeId}`}
+                className="btn-secondary inline-flex items-center gap-2 rounded-[2px] px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider"
+              >
+                View challenge
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
           </div>
         </PostNotice>
       ) : null}
@@ -909,7 +1085,7 @@ export function PostClient() {
       {!expertMode && step === 2 && compilation ? (
         <ReviewStep
           compilation={compilation}
-          managedTitle={managedIntent.title}
+          managedTitle={managedReviewTitle}
           editingTitle={editingTitle}
           titleDraft={titleDraft}
           onTitleDraftChange={setTitleDraft}
@@ -930,6 +1106,32 @@ export function PostClient() {
           publicArtifacts={publicArtifacts}
           privateArtifacts={privateArtifacts}
         />
+      ) : null}
+
+      {!expertMode && step === 2 && isSemiCustomReview ? (
+        <PostNotice tone="warning">
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <div className="font-mono text-xs font-bold uppercase tracking-wider">
+                Semi-Custom Evaluator Needed
+              </div>
+              <p>
+                {reviewSummary?.summary ??
+                  "This draft is deterministic enough to continue, but it does not map cleanly to a current managed runtime family."}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleSetPostingMode("expert")}
+                className="btn-primary inline-flex items-center gap-2 rounded-[2px] px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider"
+              >
+                Open Expert Mode
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        </PostNotice>
       ) : null}
 
       {/* ── Step 3: Publish ────────────────────────────── */}
@@ -958,6 +1160,13 @@ export function PostClient() {
           isCompiling={isCompiling}
           compileReady={compileReady}
           isReviewQueued={isReviewQueued}
+          reviewMode={
+            isSemiCustomReview
+              ? "semi_custom"
+              : isReviewQueued
+                ? "operator_review"
+                : null
+          }
           needsDeadlineRefresh={needsDeadlineRefresh}
           isConnected={isConnected}
           isWrongChain={isWrongChain}
@@ -970,6 +1179,7 @@ export function PostClient() {
             void handleCompile();
           }}
           onContinueToPublish={() => setStep(3)}
+          onOpenExpertMode={() => handleSetPostingMode("expert")}
           onOpenConnect={() => openConnectModal?.()}
           onOpenChain={() => openChainModal?.()}
           onRefreshContract={handleRefreshCompiledDeadline}

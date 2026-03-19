@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import {
   buildChallengeSpecDraft,
   defaultMinimumScoreForChallengeType,
+  defaultMinimumScoreForEvaluation,
   defaultRuntimeFamilyForChallengeType,
+  getChallengeCompatibilityType,
+  getChallengeCompatibilityTypeFromEvaluation,
   getChallengeTypeTemplate,
 } from "../challenges/index.js";
 
 const predictionTemplate = getChallengeTypeTemplate("prediction");
-assert.equal(
-  predictionTemplate.defaultRuntimeFamily,
-  "tabular_regression",
-);
+assert.equal(predictionTemplate.defaultRuntimeFamily, "tabular_regression");
 
 const reproducibilitySpec = buildChallengeSpecDraft({
   id: "draft-001",
@@ -114,11 +114,93 @@ const customSpec = buildChallengeSpecDraft({
 });
 
 assert.equal(customSpec.submission_contract.kind, "opaque_file");
+
+const semiCustomSpec = buildChallengeSpecDraft({
+  id: "draft-004",
+  title: "Deterministic JSON report judge",
+  domain: "other",
+  type: "custom",
+  description: "Score solver JSON reports with a typed evaluator contract.",
+  artifacts: [
+    {
+      role: "public_prompt",
+      visibility: "public",
+      uri: "ipfs://QmPrompt",
+    },
+    {
+      role: "hidden_rubric",
+      visibility: "private",
+      uri: "ipfs://QmRubric",
+    },
+  ],
+  runtimeFamily: "semi_custom",
+  metric: "validation_score",
+  evaluatorContract: {
+    version: "v1",
+    archetype: "structured_record_score",
+    summary: "Validate a JSON report against a deterministic rubric.",
+    artifact_roles: {
+      solver_visible: ["public_prompt"],
+      hidden: ["hidden_rubric"],
+    },
+    submission: {
+      kind: "json_file",
+      schema_requirements: {
+        expected_kind: "json_file",
+      },
+      validation_rules: ["Submission must be valid JSON."],
+    },
+    scoring: {
+      metric: "validation_score",
+      comparator: "maximize",
+      deterministic_rule:
+        "Score the JSON report against the hidden rubric and rank by the resulting validation score.",
+      minimum_threshold: null,
+    },
+    notes: [
+      "Execution path configured separately from the evaluator contract.",
+    ],
+  },
+  reward: {
+    total: "40",
+    distribution: "winner_take_all",
+  },
+  deadline: "2026-03-20T00:00:00Z",
+  submission: {
+    type: "custom",
+    extension: ".json",
+    mime: "application/json",
+  },
+});
+
+assert.equal(semiCustomSpec.evaluation.runtime_family, "semi_custom");
+assert.equal("scorer_image" in semiCustomSpec.evaluation, false);
+assert.equal(
+  semiCustomSpec.evaluation.evaluator_contract?.archetype,
+  "structured_record_score",
+);
 assert.equal(
   defaultRuntimeFamilyForChallengeType("prediction"),
   "tabular_regression",
 );
 assert.equal(defaultRuntimeFamilyForChallengeType("docking"), "docking");
 assert.equal(defaultMinimumScoreForChallengeType("prediction"), 0);
+assert.equal(
+  getChallengeCompatibilityType({
+    runtimeFamily: "tabular_regression",
+  }),
+  "prediction",
+);
+assert.equal(
+  getChallengeCompatibilityType({
+    runtimeFamily: "ranking",
+  }),
+  "optimization",
+);
+assert.equal(
+  getChallengeCompatibilityTypeFromEvaluation(semiCustomSpec.evaluation),
+  "custom",
+);
+assert.equal(defaultMinimumScoreForEvaluation(semiCustomSpec.evaluation), 0);
 
 console.log("challenge templates validation passed");

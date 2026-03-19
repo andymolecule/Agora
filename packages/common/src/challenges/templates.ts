@@ -1,7 +1,9 @@
 import {
   EXPERT_RUNTIME_FAMILY_ID,
+  SEMI_CUSTOM_RUNTIME_FAMILY_ID,
   resolveManagedScorerImage,
 } from "../runtime-families.js";
+import type { SemiCustomEvaluatorContractOutput } from "../schemas/evaluator-contract.js";
 import {
   type SubmissionContractOutput,
   createCsvTableSubmissionContract,
@@ -10,6 +12,7 @@ import {
 import type {
   ChallengeArtifact,
   ChallengeDomain,
+  ChallengeEvaluation,
   ChallengeSpec,
   ChallengeType,
 } from "../types/challenge.js";
@@ -34,8 +37,7 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
     defaultDomain: "omics",
     defaultMetric: "r2",
     defaultRuntimeFamily: "tabular_regression",
-    defaultScorerImage:
-      resolveManagedScorerImage("tabular_regression") ?? "",
+    defaultScorerImage: resolveManagedScorerImage("tabular_regression") ?? "",
     defaultMinimumScore: 0,
   },
   reproducibility: {
@@ -46,8 +48,7 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
     defaultDomain: "other",
     defaultMetric: "exact_match",
     defaultRuntimeFamily: "reproducibility",
-    defaultScorerImage:
-      resolveManagedScorerImage("reproducibility") ?? "",
+    defaultScorerImage: resolveManagedScorerImage("reproducibility") ?? "",
     defaultMinimumScore: 0,
   },
   docking: {
@@ -109,6 +110,51 @@ export function defaultMinimumScoreForChallengeType(
   challengeType: ChallengeType,
 ): number {
   return TYPE_TEMPLATE_REGISTRY[challengeType].defaultMinimumScore;
+}
+
+export function getChallengeCompatibilityType(input: {
+  runtimeFamily: string;
+  evaluatorContract?: SemiCustomEvaluatorContractOutput | null;
+}): ChallengeType {
+  switch (input.runtimeFamily) {
+    case "reproducibility":
+      return "reproducibility";
+    case "tabular_regression":
+    case "tabular_classification":
+      return "prediction";
+    case "docking":
+      return "docking";
+    case "ranking":
+      return "optimization";
+    case SEMI_CUSTOM_RUNTIME_FAMILY_ID:
+    case EXPERT_RUNTIME_FAMILY_ID:
+      return "custom";
+    default:
+      return "custom";
+  }
+}
+
+export function getChallengeCompatibilityTypeFromEvaluation(
+  evaluation: Pick<
+    ChallengeEvaluation,
+    "runtime_family" | "evaluator_contract"
+  >,
+): ChallengeType {
+  return getChallengeCompatibilityType({
+    runtimeFamily: evaluation.runtime_family,
+    evaluatorContract: evaluation.evaluator_contract ?? null,
+  });
+}
+
+export function defaultMinimumScoreForEvaluation(
+  evaluation: Pick<
+    ChallengeEvaluation,
+    "runtime_family" | "evaluator_contract"
+  >,
+): number {
+  return defaultMinimumScoreForChallengeType(
+    getChallengeCompatibilityTypeFromEvaluation(evaluation),
+  );
 }
 
 export type ChallengeSubmissionContractDraftInput =
@@ -181,6 +227,7 @@ export interface ChallengeSpecDraftInput {
   tags?: string[];
   labTba?: string;
   evaluationBundle?: string;
+  evaluatorContract?: SemiCustomEvaluatorContractOutput;
 }
 
 export function buildChallengeSpecDraft(
@@ -193,7 +240,10 @@ export function buildChallengeSpecDraft(
     input.scorerImage?.trim() ||
     (runtimeFamily === EXPERT_RUNTIME_FAMILY_ID
       ? ""
-      : (resolveManagedScorerImage(runtimeFamily) ?? template.defaultScorerImage));
+      : runtimeFamily === SEMI_CUSTOM_RUNTIME_FAMILY_ID
+        ? null
+        : (resolveManagedScorerImage(runtimeFamily) ??
+          template.defaultScorerImage));
 
   return {
     schema_version: 3,
@@ -205,9 +255,12 @@ export function buildChallengeSpecDraft(
     evaluation: {
       runtime_family: runtimeFamily,
       metric: input.metric?.trim() || template.defaultMetric,
-      scorer_image: scorerImage,
+      ...(scorerImage ? { scorer_image: scorerImage } : {}),
       ...(input.evaluationBundle
         ? { evaluation_bundle: input.evaluationBundle }
+        : {}),
+      ...(input.evaluatorContract
+        ? { evaluator_contract: input.evaluatorContract }
         : {}),
     },
     artifacts: input.artifacts,

@@ -1,13 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  type CsvTableEvaluationContractOutput,
   DEFAULT_SCORER_MOUNT,
   SCORER_RUNTIME_CONFIG_FILE_NAME,
+  type ScorerRuntimePoliciesOutput,
   type ScoringMountConfig,
   type SubmissionContractOutput,
   buildScorerRuntimeConfig,
   challengeSpecSchema,
   parseChallengeSpecDocument,
+  resolveChallengeEvaluation,
   resolveRuntimeFamilyRuntimeDefaults,
   resolveScoringEnvironmentFromSpec,
   validateSubmissionBytesAgainstContract,
@@ -46,7 +49,9 @@ export interface ExecuteScoringPipelineInput {
   submission: ScoringInputSource;
   mount?: ScoringMountConfig;
   submissionContract?: SubmissionContractOutput;
+  evaluationContract?: CsvTableEvaluationContractOutput;
   metric?: string;
+  policies?: Partial<ScorerRuntimePoliciesOutput>;
   env?: Record<string, string>;
   timeoutMs?: number;
   limits?: RunScorerInput["limits"];
@@ -70,11 +75,15 @@ export interface ScoringPipelineResult {
 export interface ScoringSpecRuntimeConfig {
   env?: Record<string, string>;
   submissionContract?: SubmissionContractOutput;
+  evaluationContract?: CsvTableEvaluationContractOutput;
+  policies?: Partial<ScorerRuntimePoliciesOutput>;
 }
 
 export interface ResolveScoringRuntimeConfigInput {
   env?: Record<string, string> | null;
   submissionContract?: SubmissionContractOutput | null;
+  evaluationContract?: CsvTableEvaluationContractOutput | null;
+  policies?: Partial<ScorerRuntimePoliciesOutput> | null;
   specCid?: string | null;
   onLegacyFallback?: (specCid: string) => void | Promise<void>;
 }
@@ -110,9 +119,12 @@ export async function resolveScoringSpecRuntimeConfigFromSpecCid(
     const spec = challengeSpecSchema.parse(
       parseChallengeSpecDocument(await getText(specCid)),
     );
+    const evalPlan = resolveChallengeEvaluation(spec);
     return {
       env: resolveScoringEnvironmentFromSpec(spec),
       submissionContract: spec.submission_contract,
+      evaluationContract: evalPlan.semiCustomExecution?.evaluation_contract,
+      policies: evalPlan.semiCustomExecution?.policies,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -128,11 +140,21 @@ export async function resolveScoringRuntimeConfig(
   const resolved: ScoringSpecRuntimeConfig = {
     env: input.env ?? undefined,
     submissionContract: input.submissionContract ?? undefined,
+    evaluationContract: input.evaluationContract ?? undefined,
+    policies: input.policies ?? undefined,
   };
 
   const needsEnv = resolved.env === undefined;
   const needsSubmissionContract = resolved.submissionContract === undefined;
-  if ((!needsEnv && !needsSubmissionContract) || !input.specCid) {
+  const needsEvaluationContract = resolved.evaluationContract === undefined;
+  const needsPolicies = resolved.policies === undefined;
+  if (
+    (!needsEnv &&
+      !needsSubmissionContract &&
+      !needsEvaluationContract &&
+      !needsPolicies) ||
+    !input.specCid
+  ) {
     return resolved;
   }
 
@@ -144,6 +166,9 @@ export async function resolveScoringRuntimeConfig(
     env: resolved.env ?? legacy.env,
     submissionContract:
       resolved.submissionContract ?? legacy.submissionContract,
+    evaluationContract:
+      resolved.evaluationContract ?? legacy.evaluationContract,
+    policies: resolved.policies ?? legacy.policies,
   };
 }
 
@@ -240,8 +265,9 @@ export async function executeScoringPipeline(
           metric: input.metric,
           mount: input.mount ?? DEFAULT_SCORER_MOUNT,
           submissionContract: input.submissionContract,
-          evaluationContract: runtimeDefaults?.evaluationContract,
-          policies: runtimeDefaults?.policies,
+          evaluationContract:
+            input.evaluationContract ?? runtimeDefaults?.evaluationContract,
+          policies: input.policies ?? runtimeDefaults?.policies,
         });
         await fs.writeFile(
           stagingPlan.runtimeConfigPath,

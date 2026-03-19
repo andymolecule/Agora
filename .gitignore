@@ -5,6 +5,9 @@ dist/
 .env.local
 .env
 .DS_Store
+__pycache__/
+*.py[cod]
+.mcp.json
 coverage/
 
 # Foundry

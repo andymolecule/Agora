@@ -21,4 +21,6 @@ test("openapi document is served from well-known path", async () => {
   );
   assert.ok("/api/submissions/upload" in body.paths);
   assert.ok("/api/submissions/{id}/status" in body.paths);
+  assert.ok("/api/submissions" in body.paths);
+  assert.ok(!("/api/submissions/attach-metadata" in body.paths));
 });

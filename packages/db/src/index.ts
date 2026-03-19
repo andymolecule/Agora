@@ -38,4 +38,7 @@ export * from "./queries/analytics.js";
 export * from "./queries/leaderboard.js";
 export * from "./queries/auth.js";
 export * from "./queries/posting-sessions.js";
+export * from "./queries/authoring-drafts.js";
+export * from "./queries/published-challenge-links.js";
+export * from "./queries/authoring-callback-deliveries.js";
 export * from "./schema-compatibility.js";

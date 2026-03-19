@@ -511,6 +511,7 @@ export function SubmitSolution({
         setStatus("Confirming submission metadata...");
         await createSubmissionRecord({
           challengeId,
+          intentId: submissionIntent.intentId,
           resultCid: cid,
           txHash: tx,
           resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,

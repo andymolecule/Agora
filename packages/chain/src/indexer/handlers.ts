@@ -2,6 +2,7 @@ import {
   type AgoraConfig,
   CHALLENGE_LIMITS,
   CHALLENGE_STATUS,
+  SUBMISSION_RESULT_FORMAT,
   buildChallengeCursorKey,
 } from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
@@ -13,11 +14,11 @@ import {
   type createSupabaseClient,
   deleteChallengeById,
   deleteSubmissionsFromOnChainSubId,
+  getSubmissionByChainId,
   getIndexerCursor,
   isEventIndexed,
   markChallengePayoutClaimed,
   markEventIndexed,
-  reconcileSubmissionIntentMatch,
   replaceChallengePayouts,
   setChallengeFinalized,
   setIndexerCursor,
@@ -451,11 +452,33 @@ export async function reconcileChallengeProjection(input: {
       BigInt(subIndex),
       blockNumber,
     );
+    const existingSubmission = await getSubmissionByChainId(
+      db,
+      challenge.id,
+      subIndex,
+    );
+    if (!existingSubmission?.submission_intent_id || !existingSubmission.result_cid) {
+      indexerLogger.warn(
+        {
+          event: "indexer.submission.unregistered",
+          challengeId: challenge.id,
+          onChainSubmissionId: subIndex,
+          solver: submission.solver,
+        },
+        "Observed on-chain submission without a registered submission intent; skipping projection refresh",
+      );
+      continue;
+    }
     await upsertSubmissionOnChain(db, {
+      submission_intent_id: existingSubmission.submission_intent_id,
       challenge_id: challenge.id,
       on_chain_sub_id: subIndex,
       solver_address: submission.solver,
       result_hash: submission.resultHash,
+      result_cid: existingSubmission.result_cid,
+      result_format:
+        existingSubmission.result_format ??
+        SUBMISSION_RESULT_FORMAT.plainV0,
       proof_bundle_hash: submission.proofBundleHash,
       score: submission.scored ? submission.score.toString() : null,
       scored: submission.scored,
@@ -464,16 +487,7 @@ export async function reconcileChallengeProjection(input: {
       ).toISOString(),
       ...(submission.scored ? {} : { scored_at: null }),
       tx_hash: challenge.tx_hash,
-    });
-    await reconcileSubmissionIntentMatch(db, {
-      challenge: {
-        id: challenge.id,
-        status: lifecycle.status,
-        max_submissions_total: challenge.max_submissions_total,
-        max_submissions_per_solver: challenge.max_submissions_per_solver,
-      },
-      solverAddress: submission.solver,
-      resultHash: submission.resultHash,
+      trace_id: existingSubmission.trace_id ?? null,
     });
   }
 
@@ -659,17 +673,13 @@ export async function processFactoryLog(input: {
             logIndex,
             attempts: retry.attempts,
           },
-          "Retryable factory event exhausted max attempts; marking invalid",
+          "Retryable factory event exhausted max attempts",
         );
-        await markEventIndexed(
-          db,
-          txHash,
-          logIndex,
-          `${log.eventName}:retry_exhausted`,
-          Number(log.blockNumber ?? 0),
-          log.blockHash ?? null,
+        throw new Error(
+          `Retryable factory event exhausted max attempts for ${log.eventName} (${txHash}:${logIndex}). Last error: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         );
-        return;
       }
       indexerLogger.warn(
         {
@@ -756,51 +766,41 @@ export async function processChallengeLog(input: {
         submissionId,
         log.blockNumber ?? undefined,
       );
-
-      const row = await upsertSubmissionOnChain(db, {
-        challenge_id: challenge.id,
-        on_chain_sub_id: Number(submissionId),
-        solver_address: submission.solver,
-        result_hash: submission.resultHash,
-        proof_bundle_hash: submission.proofBundleHash,
-        score: submission.scored ? submission.score.toString() : null,
-        scored: submission.scored,
-        submitted_at: new Date(
-          Number(submission.submittedAt) * 1000,
-        ).toISOString(),
-        tx_hash: txHash,
-      });
-
-      const reconcileResult = await reconcileSubmissionIntentMatch(db, {
-        challenge: {
-          id: challenge.id,
-          status:
-            challenge.status as (typeof CHALLENGE_STATUS)[keyof typeof CHALLENGE_STATUS],
-          max_submissions_total: challenge.max_submissions_total,
-          max_submissions_per_solver: challenge.max_submissions_per_solver,
-        },
-        solverAddress: submission.solver,
-        resultHash: submission.resultHash,
-      });
-      if (reconcileResult.warning) {
+      const existingSubmission = await getSubmissionByChainId(
+        db,
+        challenge.id,
+        Number(submissionId),
+      );
+      if (!existingSubmission?.submission_intent_id || !existingSubmission.result_cid) {
         indexerLogger.warn(
           {
-            event: "indexer.submission.skipped_by_limits",
+            event: "indexer.submission.unregistered",
             challengeId: challenge.id,
             submissionId: Number(submissionId),
             solver: submission.solver,
-            traceId:
-              reconcileResult.submission?.trace_id ??
-              reconcileResult.intent?.trace_id ??
-              row.trace_id ??
-              null,
-            reason: reconcileResult.warning,
-            scoreJobAction: reconcileResult.scoreJobAction,
-            matchedIntent: reconcileResult.matched,
-            submissionRowId: row.id,
           },
-          "Submission scoring skipped by configured limits",
+          "Observed on-chain submission without a registered submission intent; skipping projection refresh",
         );
+      } else {
+        await upsertSubmissionOnChain(db, {
+          submission_intent_id: existingSubmission.submission_intent_id,
+          challenge_id: challenge.id,
+          on_chain_sub_id: Number(submissionId),
+          solver_address: submission.solver,
+          result_hash: submission.resultHash,
+          result_cid: existingSubmission.result_cid,
+          result_format:
+            existingSubmission.result_format ??
+            SUBMISSION_RESULT_FORMAT.plainV0,
+          proof_bundle_hash: submission.proofBundleHash,
+          score: submission.scored ? submission.score.toString() : null,
+          scored: submission.scored,
+          submitted_at: new Date(
+            Number(submission.submittedAt) * 1000,
+          ).toISOString(),
+          tx_hash: txHash,
+          trace_id: existingSubmission.trace_id ?? null,
+        });
       }
     }
 
@@ -829,20 +829,43 @@ export async function processChallengeLog(input: {
       // scored, scored_at, proof_bundle_hash).  proof_bundle_cid is owned
       // exclusively by the oracle worker via updateScore — the indexer
       // must never touch it.
-      await upsertSubmissionOnChain(db, {
-        challenge_id: challenge.id,
-        on_chain_sub_id: Number(submissionId),
-        solver_address: submission.solver,
-        result_hash: submission.resultHash,
-        proof_bundle_hash: proofBundleHash,
-        score: score.toString(),
-        scored: true,
-        submitted_at: new Date(
-          Number(submission.submittedAt) * 1000,
-        ).toISOString(),
-        scored_at: new Date().toISOString(),
-        tx_hash: txHash,
-      });
+      const existingSubmission = await getSubmissionByChainId(
+        db,
+        challenge.id,
+        Number(submissionId),
+      );
+      if (!existingSubmission?.submission_intent_id || !existingSubmission.result_cid) {
+        indexerLogger.warn(
+          {
+            event: "indexer.submission.scored_without_registration",
+            challengeId: challenge.id,
+            submissionId: Number(submissionId),
+            solver: submission.solver,
+          },
+          "Observed scored on-chain submission without a registered submission intent; skipping projection refresh",
+        );
+      } else {
+        await upsertSubmissionOnChain(db, {
+          submission_intent_id: existingSubmission.submission_intent_id,
+          challenge_id: challenge.id,
+          on_chain_sub_id: Number(submissionId),
+          solver_address: submission.solver,
+          result_hash: submission.resultHash,
+          result_cid: existingSubmission.result_cid,
+          result_format:
+            existingSubmission.result_format ??
+            SUBMISSION_RESULT_FORMAT.plainV0,
+          proof_bundle_hash: proofBundleHash,
+          score: score.toString(),
+          scored: true,
+          submitted_at: new Date(
+            Number(submission.submittedAt) * 1000,
+          ).toISOString(),
+          scored_at: new Date().toISOString(),
+          tx_hash: txHash,
+          trace_id: existingSubmission.trace_id ?? null,
+        });
+      }
     }
 
     if (log.eventName === "StatusChanged") {
@@ -975,18 +998,13 @@ export async function processChallengeLog(input: {
             logIndex,
             attempts: retry.attempts,
           },
-          "Retryable challenge event exhausted max attempts; marking invalid",
+          "Retryable challenge event exhausted max attempts",
         );
-        await markEventIndexed(
-          db,
-          txHash,
-          logIndex,
-          `${log.eventName}:retry_exhausted`,
-          Number(log.blockNumber ?? 0),
-          log.blockHash ?? null,
+        throw new Error(
+          `Retryable challenge event exhausted max attempts for ${log.eventName} (${txHash}:${logIndex}). Last error: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         );
-        challengePersistTargets.delete(challengeCursorKey);
-        return { needsRepair: false };
       }
       indexerLogger.warn(
         {

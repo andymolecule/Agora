@@ -3,7 +3,7 @@ import type { ChallengeStatus } from "@agora/common";
 export type ChallengeEvaluation = {
   runtime_family: string;
   metric: string;
-  scorer_image: string;
+  scorer_image?: string;
 };
 
 export type PublicChallengeArtifact = {

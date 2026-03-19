@@ -31,11 +31,11 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
       "Apply migrations 005_add_submission_intents.sql and 013_add_trace_ids.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
-    id: "submissions_trace_id_column",
+    id: "submissions_registration_columns",
     table: "submissions",
-    select: "trace_id",
+    select: "submission_intent_id,trace_id",
     nextStep:
-      "Apply migration 013_add_trace_ids.sql, then reload the PostgREST schema cache before restarting services.",
+      "Apply migrations 013_add_trace_ids.sql and 020_strict_submission_intents.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
     id: "score_jobs_trace_id_column",
@@ -87,12 +87,28 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
       "Apply migration 008_add_worker_runtime_control.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
-    id: "posting_sessions_table",
-    table: "posting_sessions",
+    id: "authoring_drafts_table",
+    table: "authoring_drafts",
     select:
-      "state,intent_json,uploaded_artifacts_json,compilation_json,clarification_questions_json,review_summary_json,approved_confirmation_json,published_spec_json,published_spec_cid,expires_at",
+      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,source_callback_url,source_callback_registered_at,expires_at",
     nextStep:
-      "Apply migrations 015_managed_authoring_v3.sql and 016_posting_review_queue.sql, then reload the PostgREST schema cache before restarting services.",
+      "Apply migrations 017_posting_session_authoring_ir.sql, 018_authoring_source_callbacks.sql, and 021_split_authoring_drafts.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
+    id: "published_challenge_links_table",
+    table: "published_challenge_links",
+    select:
+      "draft_id,challenge_id,published_spec_json,published_spec_cid,return_to,published_at",
+    nextStep:
+      "Apply migration 021_split_authoring_drafts.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
+    id: "authoring_callback_deliveries_table",
+    table: "authoring_callback_deliveries",
+    select:
+      "draft_id,provider,callback_url,event,payload_json,status,attempts,max_attempts,last_attempt_at,next_attempt_at,delivered_at,last_error",
+    nextStep:
+      "Apply migrations 019_authoring_callback_deliveries.sql and 021_split_authoring_drafts.sql, then reload the PostgREST schema cache before restarting services.",
   },
 ];
 

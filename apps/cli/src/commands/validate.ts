@@ -28,7 +28,7 @@ function buildCsvDryRunRow(
 }
 
 function buildDryRunInputs(input: {
-  type: string;
+  runtimeFamily: string;
   submissionContract: SubmissionContractOutput;
 }) {
   if (input.submissionContract.kind !== "csv_table") {
@@ -46,7 +46,10 @@ function buildDryRunInputs(input: {
     input.submissionContract.columns.value,
   )}\n`;
 
-  if (input.type === "prediction") {
+  if (
+    input.runtimeFamily === "tabular_regression" ||
+    input.runtimeFamily === "tabular_classification"
+  ) {
     return {
       submission: { content: submissionContent },
       evaluationBundle: { content: "id,label\nrow-1,1.0\n" },
@@ -109,7 +112,7 @@ export function buildValidateCommand() {
       try {
         const evalPlan = resolveChallengeEvaluation(parsed.data);
         const dryRunInputs = buildDryRunInputs({
-          type: parsed.data.type,
+          runtimeFamily: evalPlan.runtimeFamily,
           submissionContract: parsed.data.submission_contract,
         });
         const run = await executeScoringPipeline({

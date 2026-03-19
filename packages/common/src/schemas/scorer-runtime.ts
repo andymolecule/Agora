@@ -16,7 +16,7 @@ export const csvTableEvaluationContractSchema = z.object({
   columns: csvTableColumnsSchema,
 });
 
-const scorerRuntimePoliciesSchema = z.object({
+export const scorerRuntimePoliciesSchema = z.object({
   coverage_policy: coveragePolicyEnum.default("ignore"),
   duplicate_id_policy: duplicateIdPolicyEnum.default("ignore"),
   invalid_value_policy: invalidValuePolicyEnum.default("ignore"),

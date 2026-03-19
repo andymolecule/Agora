@@ -17,7 +17,7 @@ import {
   DEFAULT_CHAIN_ID,
   SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
-  defaultMinimumScoreForChallengeType,
+  defaultMinimumScoreForEvaluation,
   validateChallengeSpec,
 } from "@agora/common";
 import { pinFile } from "@agora/ipfs";
@@ -132,8 +132,8 @@ function decimalToWad(value: number): bigint {
   return parseUnits(decimal, 18);
 }
 
-function defaultMinimumScoreForType(type: ChallengeSpecOutput["type"]) {
-  return defaultMinimumScoreForChallengeType(type);
+function defaultMinimumScoreForSpec(spec: ChallengeSpecOutput) {
+  return defaultMinimumScoreForEvaluation(spec.evaluation);
 }
 
 export function buildPostCommand() {
@@ -315,7 +315,7 @@ export function buildPostCommand() {
 
         const createSpinnerInstance = createSpinner("Creating challenge...");
         const minimumScoreWad = decimalToWad(
-          spec.minimum_score ?? defaultMinimumScoreForType(spec.type),
+          spec.minimum_score ?? defaultMinimumScoreForSpec(spec),
         );
         const txHash = await createChallenge({
           specCid,

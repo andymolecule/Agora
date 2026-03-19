@@ -443,7 +443,11 @@ export function ReviewStep({
 
         {compilation.warnings.length > 0 ? (
           <PostNotice tone="warning">
-            {compilation.warnings.join(" ")}
+            <ul className="list-inside list-disc space-y-1">
+              {compilation.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
           </PostNotice>
         ) : null}
       </div>
@@ -594,6 +598,7 @@ export function PostingActionBar({
   isCompiling,
   compileReady,
   isReviewQueued,
+  reviewMode,
   needsDeadlineRefresh,
   isConnected,
   isWrongChain,
@@ -604,6 +609,7 @@ export function PostingActionBar({
   onBack,
   onCompile,
   onContinueToPublish,
+  onOpenExpertMode,
   onOpenConnect,
   onOpenChain,
   onRefreshContract,
@@ -614,6 +620,7 @@ export function PostingActionBar({
   isCompiling: boolean;
   compileReady: boolean;
   isReviewQueued: boolean;
+  reviewMode: "operator_review" | "semi_custom" | null;
   needsDeadlineRefresh: boolean;
   isConnected: boolean;
   isWrongChain: boolean;
@@ -624,6 +631,7 @@ export function PostingActionBar({
   onBack: () => void;
   onCompile: () => void;
   onContinueToPublish: () => void;
+  onOpenExpertMode: () => void;
   onOpenConnect: () => void;
   onOpenChain: () => void;
   onRefreshContract: () => void;
@@ -636,11 +644,13 @@ export function PostingActionBar({
         {step === 1
           ? "Lock answers, then compile."
           : step === 2
-            ? isReviewQueued
-              ? "Waiting for operator review."
-              : needsDeadlineRefresh
-                ? "Refresh the contract before you continue."
-                : "Review the contract, then continue."
+            ? reviewMode === "semi_custom"
+              ? "Managed publish is not available for this evaluator yet."
+              : isReviewQueued
+                ? "Waiting for operator review."
+                : needsDeadlineRefresh
+                  ? "Refresh the contract before you continue."
+                  : "Review the contract, then continue."
             : needsDeadlineRefresh
               ? "Refresh the contract before you publish."
               : "Fund and publish your challenge."}
@@ -689,7 +699,17 @@ export function PostingActionBar({
           )
         ) : null}
 
-        {step === 2 && isReviewQueued ? (
+        {step === 2 && reviewMode === "semi_custom" ? (
+          <button
+            type="button"
+            onClick={onOpenExpertMode}
+            className="btn-primary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
+          >
+            Open Expert Mode
+          </button>
+        ) : null}
+
+        {step === 2 && isReviewQueued && reviewMode !== "semi_custom" ? (
           <div className="rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-2.5 font-mono text-xs font-bold uppercase tracking-wider text-amber-900">
             Awaiting review
           </div>

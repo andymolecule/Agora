@@ -13,12 +13,13 @@ import {
   loadConfig,
   loadIpfsConfig,
   readApiClientRuntimeConfig,
-  readManagedAuthoringRuntimeConfig,
   readApiServerRuntimeConfig,
+  readAuthoringPartnerRuntimeConfig,
   readCliRuntimeConfig,
   readExecutorServerRuntimeConfig,
   readFeaturePolicy,
   readIndexerHealthRuntimeConfig,
+  readManagedAuthoringRuntimeConfig,
   readObservabilityRuntimeConfig,
   readPostingReviewRuntimeConfig,
   readScorerExecutorRuntimeConfig,
@@ -257,10 +258,7 @@ try {
     "https://api.openai.com/v1",
   );
   assert.equal(openAiCompatibleManagedAuthoringRuntime.apiKey, "sk-test");
-  assert.equal(
-    openAiCompatibleManagedAuthoringRuntime.dryRunTimeoutMs,
-    90_000,
-  );
+  assert.equal(openAiCompatibleManagedAuthoringRuntime.dryRunTimeoutMs, 90_000);
 
   assert.throws(
     () =>
@@ -279,6 +277,67 @@ try {
   });
   assert.equal(postingReviewRuntime.apiUrl, "https://api.agora.example");
   assert.equal(postingReviewRuntime.token, "review-token");
+
+  const authoringPartnerRuntime = readAuthoringPartnerRuntimeConfig({
+    AGORA_AUTHORING_PARTNER_KEYS:
+      "beach_science:beach-secret,github:github-secret",
+    AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS:
+      "beach_science:beach-callback-secret",
+    AGORA_AUTHORING_PARTNER_RETURN_ORIGINS:
+      "beach_science:https://beach.science|https://staging.beach.science,github:https://github.com",
+  });
+  assert.equal(
+    authoringPartnerRuntime.partnerKeys.beach_science,
+    "beach-secret",
+  );
+  assert.equal(authoringPartnerRuntime.partnerKeys.github, "github-secret");
+  assert.equal(
+    authoringPartnerRuntime.callbackSecrets.beach_science,
+    "beach-callback-secret",
+  );
+  assert.equal(
+    authoringPartnerRuntime.callbackSecrets.github,
+    "github-secret",
+    "partner bearer keys should remain the callback signing fallback when no explicit callback secret is configured",
+  );
+  assert.deepEqual(authoringPartnerRuntime.returnOrigins.beach_science, [
+    "https://beach.science",
+    "https://staging.beach.science",
+  ]);
+  assert.deepEqual(authoringPartnerRuntime.returnOrigins.github, [
+    "https://github.com",
+  ]);
+  assert.throws(
+    () =>
+      readAuthoringPartnerRuntimeConfig({
+        AGORA_AUTHORING_PARTNER_KEYS: "unknown:secret",
+      }),
+    /Invalid AGORA_AUTHORING_PARTNER_KEYS provider/,
+  );
+  assert.throws(
+    () =>
+      readAuthoringPartnerRuntimeConfig({
+        AGORA_AUTHORING_PARTNER_KEYS:
+          "beach_science:first,beach_science:second",
+      }),
+    /Duplicate AGORA_AUTHORING_PARTNER_KEYS provider/,
+  );
+  assert.throws(
+    () =>
+      readAuthoringPartnerRuntimeConfig({
+        AGORA_AUTHORING_PARTNER_RETURN_ORIGINS:
+          "beach_science:https://beach.science,beach_science:https://staging.beach.science",
+      }),
+    /Duplicate AGORA_AUTHORING_PARTNER_RETURN_ORIGINS provider/,
+  );
+  assert.throws(
+    () =>
+      readAuthoringPartnerRuntimeConfig({
+        AGORA_AUTHORING_PARTNER_RETURN_ORIGINS:
+          "beach_science:http://beach.science",
+      }),
+    /valid HTTPS origins/i,
+  );
 
   const blankCliRuntime = readCliRuntimeConfig({
     AGORA_API_URL: "",

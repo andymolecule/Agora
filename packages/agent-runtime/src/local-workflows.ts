@@ -27,6 +27,7 @@ import {
   parseChallengeSpecDocument,
   readApiClientRuntimeConfig,
   resolveChallengeEvaluation,
+  resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeys,
   sealSubmission,
   serializeSealedSubmissionEnvelope,
@@ -76,6 +77,13 @@ async function withScorerLock<T>(fn: () => Promise<T>): Promise<T> {
   } finally {
     scorerRunning = false;
   }
+}
+
+function cliWorkflowError(message: string, nextAction?: string) {
+  return new AgoraError(message, {
+    code: AGORA_ERROR_CODES.cliCommandFailed,
+    nextAction,
+  });
 }
 
 function normalizeOptionalPrivateKey(
@@ -430,6 +438,7 @@ export async function submitSolution(input: {
     const registration = await registerSubmissionWithApi(
       {
         ...challengeTarget,
+        intentId: submissionIntent.intentId,
         resultCid,
         txHash,
         resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
@@ -569,9 +578,9 @@ export async function scoreLocal(input: {
 
     try {
       if (!run.result.ok) {
-        throw new Error(
-          run.result.error ??
-            "Scorer rejected the submission as invalid. Next step: inspect the scorer error and resubmit a valid file.",
+        throw cliWorkflowError(
+          run.result.error ?? "Scorer rejected the submission as invalid.",
+          "Inspect the scorer error and resubmit a valid file.",
         );
       }
       return {
@@ -591,7 +600,7 @@ async function resolveLocalScoringConfigFromDb(challengeId: string) {
   const challenge = await getChallengeById(db, challengeId);
   const evalPlan = resolveChallengeEvaluation(challenge);
   if (!evalPlan.evaluationBundleCid) {
-    throw new Error(
+    throw cliWorkflowError(
       "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
     );
   }
@@ -617,7 +626,7 @@ async function resolveLocalScoringConfigFromApi(input: {
   const specCid =
     challenge.spec_cid ?? response.data.artifacts.spec_cid ?? null;
   if (!specCid) {
-    throw new Error(
+    throw cliWorkflowError(
       "Challenge detail is missing spec_cid. Next step: retry against the canonical Agora API or choose a current-schema challenge.",
     );
   }
@@ -627,7 +636,7 @@ async function resolveLocalScoringConfigFromApi(input: {
   );
   const evalPlan = resolveChallengeEvaluation(spec);
   if (!evalPlan.evaluationBundleCid) {
-    throw new Error(
+    throw cliWorkflowError(
       "Challenge spec is missing an evaluation bundle CID. Next step: inspect the pinned spec and retry against a scoreable challenge.",
     );
   }
@@ -647,33 +656,34 @@ export async function verifySubmission(input: {
   recordVerification?: boolean;
 }) {
   return withScorerLock(async () => {
+    const runtimeConfig = loadConfig();
     const db = createSupabaseClient(true);
     const challenge = await getChallengeById(db, input.challengeId);
     const submission = await getSubmissionById(db, input.submissionId);
     if (submission.challenge_id !== challenge.id) {
-      throw new Error(
+      throw cliWorkflowError(
         "Submission does not belong to the provided challenge. Next step: confirm the challenge and submission IDs.",
       );
     }
     if (!submission.result_cid) {
-      throw new Error(
+      throw cliWorkflowError(
         "Submission is missing result CID metadata. Next step: inspect the submission row and resubmit if needed.",
       );
     }
     if (submission.on_chain_sub_id == null) {
-      throw new Error(
+      throw cliWorkflowError(
         "Submission is missing an on-chain submission id. Next step: wait for indexing or inspect the transaction receipt.",
       );
     }
 
     const proof = await getProofBundleBySubmissionId(db, input.submissionId);
     if (!proof) {
-      throw new Error(
+      throw cliWorkflowError(
         "No proof bundle found for this submission. Next step: wait for the scorer to publish the proof bundle and retry.",
       );
     }
     if (!submission.proof_bundle_hash) {
-      throw new Error(
+      throw cliWorkflowError(
         "Submission has no recorded proof bundle hash. Next step: inspect the indexed submission metadata before retrying verification.",
       );
     }
@@ -682,7 +692,7 @@ export async function verifySubmission(input: {
     if (
       expectedHash.toLowerCase() !== submission.proof_bundle_hash.toLowerCase()
     ) {
-      throw new Error(
+      throw cliWorkflowError(
         "Proof CID hash does not match the stored proof_bundle_hash. Next step: inspect the proof bundle row and on-chain data before retrying.",
       );
     }
@@ -692,12 +702,12 @@ export async function verifySubmission(input: {
       proofPayload.containerImageDigest &&
       proofPayload.containerImageDigest !== proof.container_image_hash
     ) {
-      throw new Error(
+      throw cliWorkflowError(
         "Proof bundle container digest does not match the stored record. Next step: inspect the proof bundle payload and DB row.",
       );
     }
     if (proofPayload.inputHash && proofPayload.inputHash !== proof.input_hash) {
-      throw new Error(
+      throw cliWorkflowError(
         "Proof bundle input hash does not match the stored record. Next step: inspect the proof bundle payload and DB row.",
       );
     }
@@ -705,14 +715,14 @@ export async function verifySubmission(input: {
       proofPayload.outputHash &&
       proofPayload.outputHash !== proof.output_hash
     ) {
-      throw new Error(
+      throw cliWorkflowError(
         "Proof bundle output hash does not match the stored record. Next step: inspect the proof bundle payload and DB row.",
       );
     }
 
     const evalPlan = resolveChallengeEvaluation(challenge);
     if (!evalPlan.evaluationBundleCid) {
-      throw new Error(
+      throw cliWorkflowError(
         "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
       );
     }
@@ -722,7 +732,7 @@ export async function verifySubmission(input: {
       BigInt(submission.on_chain_sub_id),
     );
     if (!onChain.scored) {
-      throw new Error(
+      throw cliWorkflowError(
         "On-chain submission has not been scored yet. Next step: wait for scoring to complete and retry.",
       );
     }
@@ -746,7 +756,7 @@ export async function verifySubmission(input: {
         resultFormat: submission.result_format,
         challengeId: challenge.id,
         solverAddress: submission.solver_address,
-        privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(loadConfig()),
+        privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(runtimeConfig),
       }),
       submissionContract: scoringSpecConfig.submissionContract,
       metric: evalPlan.metric,
@@ -755,9 +765,9 @@ export async function verifySubmission(input: {
 
     try {
       if (!run.result.ok) {
-        throw new Error(
-          run.result.error ??
-            "Verification scorer rejected the submission. Next step: inspect the scorer error and retry with a valid proof bundle.",
+        throw cliWorkflowError(
+          run.result.error ?? "Verification scorer rejected the submission.",
+          "Inspect the scorer error and retry with a valid proof bundle.",
         );
       }
 
@@ -768,9 +778,9 @@ export async function verifySubmission(input: {
       const match = delta <= tolerance;
 
       if (input.recordVerification) {
-        const verifierAddress = process.env.AGORA_PRIVATE_KEY
-          ? privateKeyToAccount(process.env.AGORA_PRIVATE_KEY as `0x${string}`)
-              .address
+        const verifierPrivateKey = resolveRuntimePrivateKey(runtimeConfig);
+        const verifierAddress = verifierPrivateKey
+          ? privateKeyToAccount(verifierPrivateKey).address
           : ZERO_ADDRESS;
         await createVerification(db, {
           proof_bundle_id: proof.id,

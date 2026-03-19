@@ -16,6 +16,7 @@ import {
   type ChallengeStatus,
   SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
+  type SubmissionResultFormat,
   SUBMISSION_SEAL_ALG,
   SUBMISSION_SEAL_VERSION,
   computeSubmissionResultHash,
@@ -33,15 +34,18 @@ import {
   createSubmissionIntent,
   createSupabaseClient,
   deleteUnmatchedSubmissionIntentById,
-  findOldestUnmatchedSubmissionIntent,
+  ensureScoreJobForRegisteredSubmission,
+  findActiveSubmissionIntentByMatch,
   getChallengeByContractAddress,
   getChallengeById,
   getProofBundleBySubmissionId,
   getScoreJobBySubmissionId,
   getSubmissionByChainId,
   getSubmissionById,
+  getSubmissionByIntentId,
   getSubmissionIntentById,
-  reconcileSubmissionIntentMatch,
+  markSubmissionIntentMatched,
+  SubmissionOnChainWriteConflictError,
   upsertSubmissionOnChain,
 } from "@agora/db";
 import { getJSON, pinFile, unpinCid } from "@agora/ipfs";
@@ -130,6 +134,17 @@ export function getSubmissionIntentExpiry(input: {
   return new Date(
     input.deadlineMs + (input.retentionMs ?? SUBMISSION_INTENT_RETENTION_MS),
   ).toISOString();
+}
+
+function resolveRequestedSubmissionResultFormat(
+  resultFormat?: SubmissionResultFormat,
+) {
+  return resultFormat ?? SUBMISSION_RESULT_FORMAT.plainV0;
+}
+
+function isSubmissionIntentExpired(expiresAt: string, nowMs = Date.now()) {
+  const expiresAtMs = Date.parse(expiresAt);
+  return Number.isFinite(expiresAtMs) && expiresAtMs <= nowMs;
 }
 
 async function getOptionalSessionAddress(c: Context<ApiEnv>) {
@@ -965,33 +980,39 @@ router.post(
     const normalizedSolverAddress =
       sessionAddress ?? solverAddress.toLowerCase();
     const resultHash = computeSubmissionResultHash(normalizedResultCid);
+    const requestedResultFormat =
+      resolveRequestedSubmissionResultFormat(resultFormat);
+    const existingIntent = await findActiveSubmissionIntentByMatch(db, {
+      challengeId: challenge.id,
+      solverAddress: normalizedSolverAddress,
+      resultHash,
+    });
+    if (
+      existingIntent &&
+      (existingIntent.result_cid !== normalizedResultCid ||
+        existingIntent.result_format !== requestedResultFormat)
+    ) {
+      return jsonError(c, {
+        status: 409,
+        code: "SUBMISSION_INTENT_CONFLICT",
+        message:
+          "An existing submission intent for this challenge and solver is already linked to different submission metadata. Next step: reuse the original sealed payload or clean up the stale intent before retrying.",
+      });
+    }
+
     const intent =
-      (await findOldestUnmatchedSubmissionIntent(db, {
-        challengeId: challenge.id,
-        solverAddress: normalizedSolverAddress,
-        resultHash,
-      })) ??
+      existingIntent ??
       (await createSubmissionIntent(db, {
         challenge_id: challenge.id,
         solver_address: normalizedSolverAddress,
         result_hash: resultHash,
         result_cid: normalizedResultCid,
-        result_format: resultFormat ?? SUBMISSION_RESULT_FORMAT.plainV0,
+        result_format: requestedResultFormat,
         expires_at: getSubmissionIntentExpiry({
           deadlineMs: window.deadlineMs,
         }),
         trace_id: requestId,
       }));
-    const reconcileResult = await reconcileSubmissionIntentMatch(db, {
-      challenge: {
-        id: challenge.id,
-        status: challenge.status,
-        max_submissions_total: challenge.max_submissions_total,
-        max_submissions_per_solver: challenge.max_submissions_per_solver,
-      },
-      solverAddress: normalizedSolverAddress,
-      resultHash,
-    });
 
     getRequestLogger(c).info(
       {
@@ -999,7 +1020,7 @@ router.post(
         challengeId: challenge.id,
         intentId: intent.id,
         solverAddress: normalizedSolverAddress,
-        matchedSubmissionId: reconcileResult.submission?.id ?? null,
+        matchedSubmissionId: intent.matched_submission_id,
         traceId: requestId,
       },
       "Submission intent created",
@@ -1010,7 +1031,7 @@ router.post(
         intentId: intent.id,
         resultHash,
         expiresAt: intent.expires_at,
-        matchedSubmissionId: reconcileResult.submission?.id ?? null,
+        matchedSubmissionId: intent.matched_submission_id,
       },
     });
   },
@@ -1021,15 +1042,24 @@ async function handleSubmissionRegistration(
   payload: {
     challengeId?: string;
     challengeAddress?: string;
+    intentId: string;
     resultCid: string;
     txHash: string;
     resultFormat?: "plain_v0" | "sealed_submission_v2";
   },
 ) {
-  const { challengeId, challengeAddress, resultCid, txHash, resultFormat } =
-    payload;
+  const {
+    challengeId,
+    challengeAddress,
+    intentId,
+    resultCid,
+    txHash,
+    resultFormat,
+  } = payload;
   const requestId = getRequestId(c);
   const normalizedResultCid = resultCid.trim();
+  const requestedResultFormat =
+    resolveRequestedSubmissionResultFormat(resultFormat);
   const logger = getRequestLogger(c);
   if (!isValidPinnedSpecCid(normalizedResultCid)) {
     return jsonError(c, {
@@ -1052,6 +1082,46 @@ async function handleSubmissionRegistration(
       code: "CHALLENGE_TARGET_CONFLICT",
       message:
         "challengeId and challengeAddress refer to different challenges. Next step: retry with one canonical challenge reference.",
+    });
+  }
+  const intent = await getSubmissionIntentById(db, intentId);
+  if (!intent) {
+    return jsonError(c, {
+      status: 404,
+      code: "SUBMISSION_INTENT_NOT_FOUND",
+      message:
+        "Submission intent was not found. Next step: create a fresh submission intent before retrying on-chain registration.",
+    });
+  }
+  if (intent.challenge_id !== challenge.id) {
+    return jsonError(c, {
+      status: 409,
+      code: "SUBMISSION_INTENT_TARGET_CONFLICT",
+      message:
+        "Submission intent belongs to a different challenge. Next step: retry with the original challenge target or create a fresh intent for this challenge.",
+    });
+  }
+  if (
+    intent.result_cid !== normalizedResultCid ||
+    intent.result_format !== requestedResultFormat
+  ) {
+    return jsonError(c, {
+      status: 409,
+      code: "SUBMISSION_INTENT_METADATA_CONFLICT",
+      message:
+        "Submission intent is linked to different submission metadata. Next step: retry with the original sealed payload and result format from the reserved intent.",
+    });
+  }
+  if (
+    !intent.matched_submission_id &&
+    isSubmissionIntentExpired(intent.expires_at)
+  ) {
+    return jsonError(c, {
+      status: 409,
+      code: "SUBMISSION_INTENT_EXPIRED",
+      message:
+        "Submission intent has expired. Next step: create a fresh intent and resubmit the challenge result on-chain.",
+      retriable: false,
     });
   }
 
@@ -1081,7 +1151,7 @@ async function handleSubmissionRegistration(
     return jsonError(c, {
       status: 400,
       code: "SUBMISSION_RECEIPT_INVALID",
-      message,
+      message: `Submission receipt is missing the canonical Submitted event. Next step: confirm the transaction called the expected challenge contract and retry. Details: ${message}`,
     });
   }
 
@@ -1145,7 +1215,16 @@ async function handleSubmissionRegistration(
     return jsonError(c, {
       status: 400,
       code: "RESULT_HASH_MISMATCH",
-      message: "Provided resultCid does not match on-chain result hash.",
+      message:
+        "Provided resultCid does not match the on-chain result hash. Next step: retry with the exact sealed payload that was submitted on-chain.",
+    });
+  }
+  if (intent.result_hash.toLowerCase() !== expectedHash.toLowerCase()) {
+    return jsonError(c, {
+      status: 409,
+      code: "SUBMISSION_INTENT_HASH_MISMATCH",
+      message:
+        "Submission intent does not match the provided result CID. Next step: retry with the exact sealed payload reserved by the intent.",
     });
   }
 
@@ -1161,82 +1240,121 @@ async function handleSubmissionRegistration(
     return jsonError(c, {
       status: 403,
       code: "SUBMISSION_SOLVER_MISMATCH",
-      message: "Transaction sender does not match submission solver.",
+      message:
+        "Transaction sender does not match the on-chain submission solver. Next step: retry with the wallet that submitted the result on-chain.",
     });
   }
-
-  const submissionRow = await upsertSubmissionOnChain(db, {
-    challenge_id: challenge.id,
-    on_chain_sub_id: Number(subId),
-    solver_address: onChain.solver,
-    result_hash: onChain.resultHash,
-    proof_bundle_hash: onChain.proofBundleHash,
-    score: onChain.scored ? onChain.score.toString() : null,
-    scored: onChain.scored,
-    submitted_at: new Date(Number(onChain.submittedAt) * 1000).toISOString(),
-    tx_hash: txHash,
-    trace_id: requestId,
-  });
-
-  const requestedResultFormat =
-    resultFormat ?? SUBMISSION_RESULT_FORMAT.plainV0;
-  if (submissionRow.result_cid) {
-    if (
-      submissionRow.result_cid === normalizedResultCid &&
-      submissionRow.result_format === requestedResultFormat
-    ) {
-      logger.info(
-        {
-          event: "submission.registration.replayed",
-          challengeId: challenge.id,
-          submissionId: submissionRow.id,
-          onChainSubmissionId: submissionRow.on_chain_sub_id,
-          txHash,
-        },
-        "Submission registration replay returned the existing row",
-      );
-      return c.json(
-        toSubmissionRegistrationResponse({
-          submission: submissionRow,
-          challenge,
-        }),
-      );
-    }
+  if (intent.solver_address.toLowerCase() !== onChain.solver.toLowerCase()) {
     return jsonError(c, {
       status: 409,
-      code: "SUBMISSION_METADATA_CONFLICT",
+      code: "SUBMISSION_INTENT_SOLVER_MISMATCH",
       message:
-        "Submission metadata is already attached with a different CID or format. Next step: inspect the stored submission row before retrying.",
+        "Submission intent belongs to a different solver address. Next step: retry with the wallet that reserved the intent or create a new intent for the current solver.",
     });
   }
 
-  const reconcileInput = {
-    challenge: {
+  const existingSubmissionForIntent =
+    (intent.matched_submission_id
+      ? await getSubmissionById(db, intent.matched_submission_id)
+      : await getSubmissionByIntentId(db, intent.id)) ?? null;
+  if (
+    existingSubmissionForIntent &&
+    existingSubmissionForIntent.on_chain_sub_id !== Number(subId)
+  ) {
+    return jsonError(c, {
+      status: 409,
+      code: "SUBMISSION_INTENT_ALREADY_USED",
+      message:
+        "Submission intent is already linked to a different on-chain submission. Next step: create a fresh intent before submitting again.",
+    });
+  }
+
+  let submissionRow;
+  try {
+    submissionRow = await upsertSubmissionOnChain(db, {
+      submission_intent_id: intent.id,
+      challenge_id: challenge.id,
+      on_chain_sub_id: Number(subId),
+      solver_address: onChain.solver,
+      result_hash: onChain.resultHash,
+      result_cid: intent.result_cid,
+      result_format: intent.result_format,
+      proof_bundle_hash: onChain.proofBundleHash,
+      score: onChain.scored ? onChain.score.toString() : null,
+      scored: onChain.scored,
+      submitted_at: new Date(Number(onChain.submittedAt) * 1000).toISOString(),
+      tx_hash: txHash,
+      trace_id: requestId,
+    });
+  } catch (error) {
+    if (error instanceof SubmissionOnChainWriteConflictError) {
+      return jsonError(c, {
+        status: 409,
+        code: "SUBMISSION_REGISTRATION_CONFLICT",
+        message: `${error.message}`,
+      });
+    }
+    throw error;
+  }
+
+  let matchedIntent = intent;
+  if (!intent.matched_submission_id) {
+    matchedIntent =
+      (await markSubmissionIntentMatched(db, intent.id, submissionRow.id)) ??
+      intent;
+    if (matchedIntent.matched_submission_id !== submissionRow.id) {
+      const refreshedIntent = await getSubmissionIntentById(db, intent.id);
+      if (!refreshedIntent) {
+        return jsonError(c, {
+          status: 409,
+          code: "SUBMISSION_INTENT_ALREADY_USED",
+          message:
+            "Submission intent disappeared during registration. Next step: inspect the existing submission row before retrying.",
+        });
+      }
+      if (refreshedIntent.matched_submission_id !== submissionRow.id) {
+        return jsonError(c, {
+          status: 409,
+          code: "SUBMISSION_INTENT_ALREADY_USED",
+          message:
+            "Submission intent was claimed by a different submission during registration. Next step: inspect the existing submission row before retrying.",
+        });
+      }
+      matchedIntent = refreshedIntent;
+    }
+  }
+
+  const scoreJob = await ensureScoreJobForRegisteredSubmission(
+    db,
+    {
       id: challenge.id,
       status: challenge.status,
       max_submissions_total: challenge.max_submissions_total,
       max_submissions_per_solver: challenge.max_submissions_per_solver,
     },
-    solverAddress: onChain.solver,
-    resultHash: onChain.resultHash,
-  } as const;
-  let reconcileResult = await reconcileSubmissionIntentMatch(
-    db,
-    reconcileInput,
+    {
+      id: submissionRow.id,
+      challenge_id: submissionRow.challenge_id,
+      on_chain_sub_id: submissionRow.on_chain_sub_id,
+      solver_address: submissionRow.solver_address,
+      scored: submissionRow.scored,
+      trace_id: submissionRow.trace_id ?? matchedIntent.trace_id,
+    },
+    matchedIntent.trace_id ?? requestId,
   );
-  if (!reconcileResult.submission) {
-    await createSubmissionIntent(db, {
-      challenge_id: challenge.id,
-      solver_address: onChain.solver,
-      result_hash: onChain.resultHash,
-      result_cid: normalizedResultCid,
-      result_format: requestedResultFormat,
-      expires_at: getSubmissionIntentExpiry({
-        deadlineMs: new Date(challenge.deadline).getTime(),
-      }),
-      trace_id: requestId,
-    });
-    reconcileResult = await reconcileSubmissionIntentMatch(db, reconcileInput);
+
+  const replayedRegistration = Boolean(existingSubmissionForIntent);
+  if (replayedRegistration) {
+    logger.info(
+      {
+        event: "submission.registration.replayed",
+        challengeId: challenge.id,
+        submissionId: submissionRow.id,
+        onChainSubmissionId: submissionRow.on_chain_sub_id,
+        txHash,
+      },
+      "Submission registration replay returned the existing row",
+    );
   }
 
   logger.info(
@@ -1246,55 +1364,25 @@ async function handleSubmissionRegistration(
       submissionId: submissionRow.id,
       onChainSubmissionId: submissionRow.on_chain_sub_id,
       txHash,
-      scoreJobAction: reconcileResult.scoreJobAction,
-      matchedSubmissionId: reconcileResult.submission?.id ?? null,
-      traceId: reconcileResult.submission?.trace_id ?? requestId,
+      scoreJobAction: scoreJob.action,
+      matchedSubmissionId: matchedIntent.matched_submission_id,
+      traceId: submissionRow.trace_id ?? matchedIntent.trace_id ?? requestId,
     },
     "Submission registration confirmed",
   );
-  const submission =
-    reconcileResult.submission &&
-    (await getSubmissionById(db, reconcileResult.submission.id));
-
-  if (!submission) {
-    return jsonError(c, {
-      status: 409,
-      code: "SUBMISSION_METADATA_PENDING",
-      message:
-        "Submission was confirmed on-chain, but metadata could not be attached yet. Next step: retry in a few seconds.",
-      retriable: true,
-    });
-  }
 
   return c.json(
     toSubmissionRegistrationResponse({
-      submission,
+      submission: submissionRow,
       challenge,
-      warning: reconcileResult.warning ?? null,
+      warning: scoreJob.warning ?? null,
     }),
-    reconcileResult.warning ? 202 : 200,
+    scoreJob.warning ? 202 : 200,
   );
 }
 
 router.post(
   "/",
-  requireWriteQuota("/api/submissions"),
-  zValidator("json", submissionRegistrationRequestSchema, (result, c) => {
-    if (!result.success) {
-      return jsonError(c, {
-        status: 400,
-        code: "VALIDATION_ERROR",
-        message:
-          "Invalid submission registration payload. Next step: fix the request body and retry.",
-        extras: { issues: result.error.issues },
-      });
-    }
-  }),
-  (c) => handleSubmissionRegistration(c, c.req.valid("json")),
-);
-
-router.post(
-  "/attach-metadata",
   requireWriteQuota("/api/submissions"),
   zValidator("json", submissionRegistrationRequestSchema, (result, c) => {
     if (!result.success) {

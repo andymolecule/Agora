@@ -13,6 +13,7 @@ export const OFFICIAL_SCORER_IMAGES = {
   docking: "ghcr.io/andymolecule/docking-scorer:v1",
 } as const;
 
+export const SEMI_CUSTOM_RUNTIME_FAMILY_ID = "semi_custom" as const;
 export const EXPERT_RUNTIME_FAMILY_ID = "expert_custom" as const;
 
 export interface RunnerLimits {
@@ -225,6 +226,12 @@ export function validateRuntimeMetric(
   runtimeFamilyId: string,
   metricId: string,
 ): string | null {
+  if (runtimeFamilyId === SEMI_CUSTOM_RUNTIME_FAMILY_ID) {
+    return metricId.trim().length > 0
+      ? null
+      : "Semi-custom challenges require a metric identifier.";
+  }
+
   if (runtimeFamilyId === EXPERT_RUNTIME_FAMILY_ID) {
     return metricId.trim().length > 0
       ? null

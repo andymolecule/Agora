@@ -628,6 +628,7 @@ test("API client supports protocol-ref challenge and submission lookups", async 
     const registration = await registerSubmissionWithApi(
       {
         challengeAddress: "0x0000000000000000000000000000000000000001",
+        intentId: "22222222-2222-4222-8222-222222222222",
         resultCid: "ipfs://result",
         txHash:
           "0x1111111111111111111111111111111111111111111111111111111111111111",

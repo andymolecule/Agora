@@ -4,8 +4,8 @@ import { CHALLENGE_STATUS } from "@agora/common";
 import {
   type TransactionReceipt,
   encodeAbiParameters,
-  encodeFunctionData,
   encodeEventTopics,
+  encodeFunctionData,
   parseAbiItem,
 } from "viem";
 import { parseSubmittedReceipt } from "../challenge.js";
@@ -16,6 +16,7 @@ import {
 import {
   persistChallengeCursors,
   processChallengeLog,
+  processFactoryLog,
 } from "../indexer/handlers.js";
 import { DEFAULT_INDEXER_POLLING_CONFIG } from "../indexer/polling.js";
 
@@ -112,7 +113,8 @@ function createFakeDb() {
                       eq(_rankColumn: string, rank: number) {
                         return {
                           async maybeSingle() {
-                            const rows = challengePayouts.get(challengeId) ?? [];
+                            const rows =
+                              challengePayouts.get(challengeId) ?? [];
                             const match =
                               rows.find(
                                 (row) =>
@@ -147,9 +149,14 @@ function createFakeDb() {
                     );
                     const normalized = {
                       ...payload,
-                      solver_address: String(payload.solver_address).toLowerCase(),
+                      solver_address: String(
+                        payload.solver_address,
+                      ).toLowerCase(),
                     };
-                    challengePayouts.set(challengeId, [...nextRows, normalized]);
+                    challengePayouts.set(challengeId, [
+                      ...nextRows,
+                      normalized,
+                    ]);
                     return { data: normalized, error: null };
                   },
                 };
@@ -558,6 +565,93 @@ test("PayoutAllocated accepts numeric rank values and stores payout rows", async
       },
     ],
   );
+});
+
+test("retry-exhausted challenge events fail loud instead of being marked indexed", async () => {
+  const db = createFakeDb();
+  const txHash = `0x${"9".repeat(64)}` as `0x${string}`;
+
+  await assert.rejects(
+    () =>
+      processChallengeLog({
+        db: db as never,
+        publicClient: {
+          async getBlock() {
+            throw new Error("network timeout");
+          },
+        } as never,
+        challenge: {
+          id: "challenge-retry",
+          contract_address: "0x0000000000000000000000000000000000000007",
+          tx_hash: txHash,
+          status: CHALLENGE_STATUS.finalized,
+        },
+        pollingConfig: {
+          ...DEFAULT_INDEXER_POLLING_CONFIG,
+          retryableEventMaxAttempts: 1,
+        },
+        log: {
+          eventName: "Claimed",
+          args: {
+            claimant: "0x0000000000000000000000000000000000000008",
+          },
+          transactionHash: txHash,
+          logIndex: 11,
+          blockNumber: 458n,
+          blockHash: `0x${"a".repeat(64)}`,
+        },
+        fromBlock: 450n,
+        challengeFromBlock: 450n,
+        challengeCursorKey: "challenge-retry",
+        challengePersistTargets: new Map(),
+      }),
+    /Retryable challenge event exhausted max attempts/,
+  );
+
+  assert.equal(db.indexedEvents.get(`${txHash}:11`), undefined);
+});
+
+test("retry-exhausted factory events fail loud instead of being marked indexed", async () => {
+  const db = createFakeDb();
+  const txHash = `0x${"8".repeat(64)}` as `0x${string}`;
+
+  await assert.rejects(
+    () =>
+      processFactoryLog({
+        db: db as never,
+        publicClient: {
+          async readContract() {
+            throw new Error("network timeout");
+          },
+        } as never,
+        config: {
+          AGORA_CHAIN_ID: 8453,
+          AGORA_FACTORY_ADDRESS:
+            "0x0000000000000000000000000000000000000010" as `0x${string}`,
+        } as never,
+        pollingConfig: {
+          ...DEFAULT_INDEXER_POLLING_CONFIG,
+          retryableEventMaxAttempts: 1,
+        },
+        log: {
+          eventName: "ChallengeCreated",
+          args: {
+            id: 1n,
+            challenge: "0x0000000000000000000000000000000000000001",
+            poster: "0x0000000000000000000000000000000000000002",
+            reward: 10_000_000n,
+          },
+          transactionHash: txHash,
+          logIndex: 12,
+          blockNumber: 459n,
+          blockHash: `0x${"b".repeat(64)}`,
+        },
+        fromBlock: 450n,
+      }),
+    /Retryable factory event exhausted max attempts/,
+  );
+
+  assert.equal(db.indexedEvents.get(`${txHash}:12`), undefined);
 });
 
 test("persistChallengeCursors replays a safety window for quiet challenges", async () => {

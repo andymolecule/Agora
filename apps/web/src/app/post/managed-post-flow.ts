@@ -39,6 +39,8 @@ type WriteContractAsync = ReturnType<
 export interface PreparedManagedChallenge {
   specCid: string;
   spec: ChallengeSpecOutput;
+  returnTo: string | null;
+  returnToSource: "requested" | "origin_external_url" | null;
   rewardUnits: bigint;
   deadlineSeconds: bigint;
   disputeWindowHours: bigint;
@@ -64,6 +66,7 @@ export async function publishManagedPostingSession(input: {
   address: `0x${string}`;
   chainId: number;
   signTypedDataAsync: SignTypedDataAsync;
+  returnTo?: string;
 }): Promise<PreparedManagedChallenge> {
   const nonceResponse = await fetch("/api/pin-spec", {
     method: "GET",
@@ -98,6 +101,7 @@ export async function publishManagedPostingSession(input: {
           signature,
           specHash,
         },
+        return_to: input.returnTo,
       }),
     },
   );
@@ -106,13 +110,20 @@ export async function publishManagedPostingSession(input: {
   }
 
   const payload = (await publishResponse.json()) as {
-    data: { specCid: string; spec: ChallengeSpecOutput };
+    data: {
+      specCid: string;
+      spec: ChallengeSpecOutput;
+      returnTo?: string | null;
+      returnToSource?: "requested" | "origin_external_url" | null;
+    };
   };
   const spec = payload.data.spec;
 
   return {
     specCid: payload.data.specCid,
     spec,
+    returnTo: payload.data.returnTo ?? null,
+    returnToSource: payload.data.returnToSource ?? null,
     rewardUnits: parseUnits(String(spec.reward.total), 6),
     deadlineSeconds: BigInt(
       Math.floor(new Date(spec.deadline).getTime() / 1000),

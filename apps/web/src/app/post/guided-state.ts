@@ -1,6 +1,9 @@
 "use client";
 
-import type { ClarificationQuestionOutput } from "@agora/common";
+import type {
+  ClarificationQuestionOutput,
+  PostingSessionOutput,
+} from "@agora/common";
 import { z } from "zod";
 import { formatSubmissionWindowLabel } from "../../lib/post-submission-window";
 import { GUIDED_PROMPT_ORDER, GUIDED_SELECT_DEFAULTS } from "./guided-prompts";
@@ -471,6 +474,38 @@ function buildInitialFields() {
   };
 }
 
+function inferSubmissionWindowValue(
+  deadlineIso: string | null | undefined,
+  nowMs = Date.now(),
+) {
+  const normalizedDeadline = deadlineIso?.trim() ?? "";
+  if (normalizedDeadline.length === 0) {
+    return GUIDED_SELECT_DEFAULTS.deadline;
+  }
+
+  const deadlineMs = Date.parse(normalizedDeadline);
+  if (Number.isNaN(deadlineMs)) {
+    return GUIDED_SELECT_DEFAULTS.deadline;
+  }
+
+  const remainingMinutes = Math.max(
+    0,
+    Math.round((deadlineMs - nowMs) / 60_000),
+  );
+  if (remainingMinutes <= 20) {
+    return "15m";
+  }
+  if (remainingMinutes <= 45) {
+    return "0";
+  }
+
+  const remainingDays = Math.max(
+    1,
+    Math.round((deadlineMs - nowMs) / (24 * 60 * 60 * 1000)),
+  );
+  return String(remainingDays);
+}
+
 function normalizeGuidedState(state: StoredGuidedState): GuidedComposerState {
   const timezone =
     typeof state.timezone === "string" && state.timezone.trim().length > 0
@@ -763,6 +798,96 @@ export function buildManagedIntentFromGuidedState(
     solverInstructions: trimText(state.fields.solverInstructions.value),
     timezone: state.timezone || "UTC",
   };
+}
+
+export function hydrateGuidedStateFromPostingSession(
+  session: PostingSessionOutput,
+  nowMs = Date.now(),
+): GuidedComposerState {
+  const timezone = session.intent?.timezone?.trim() || resolveBrowserTimezone();
+  const nextState = createInitialGuidedState(timezone);
+  const intent = session.intent ?? null;
+
+  if (intent) {
+    setFieldValue(nextState, "problem", intent.description, "locked");
+    nextState.fields.title = buildManualTitleField(
+      intent.description,
+      intent.title,
+    );
+    setFieldValue(
+      nextState,
+      "winningCondition",
+      intent.payout_condition,
+      "locked",
+    );
+    setFieldValue(nextState, "rewardTotal", intent.reward_total, "locked");
+    setFieldValue(nextState, "distribution", intent.distribution, "locked");
+    setFieldValue(
+      nextState,
+      "deadline",
+      inferSubmissionWindowValue(intent.deadline, nowMs),
+      "locked",
+    );
+    setFieldValue(
+      nextState,
+      "disputeWindow",
+      String(
+        intent.dispute_window_hours ??
+          Number(GUIDED_SELECT_DEFAULTS.disputeWindow),
+      ),
+      "locked",
+    );
+    if (hasTextValue(intent.solver_instructions)) {
+      setFieldValue(
+        nextState,
+        "solverInstructions",
+        intent.solver_instructions ?? "",
+        "locked",
+      );
+    }
+  }
+
+  nextState.uploads = session.uploaded_artifacts.map((artifact) => ({
+    id: artifact.id ?? artifact.uri,
+    uri: artifact.uri,
+    file_name: artifact.file_name ?? artifact.id ?? "uploaded-artifact",
+    mime_type: artifact.mime_type ?? undefined,
+    size_bytes: artifact.size_bytes ?? undefined,
+    detected_columns: artifact.detected_columns ?? undefined,
+    status: "ready" as const,
+  }));
+  nextState.uploadsStatus = nextState.uploads.length > 0 ? "locked" : "empty";
+  nextState.sessionId = session.id;
+
+  switch (session.state) {
+    case "ready":
+    case "published":
+      nextState.compileState = "ready";
+      nextState.activePromptId = null;
+      break;
+    case "needs_review":
+      nextState.compileState = "needs_review";
+      nextState.activePromptId = null;
+      break;
+    case "needs_clarification":
+      nextState.compileState = "needs_clarification";
+      nextState.activePromptId = clarificationTargetFromQuestions(
+        session.clarification_questions ?? [],
+      );
+      break;
+    case "compiling":
+      nextState.compileState = "compiling";
+      nextState.activePromptId = null;
+      break;
+    default:
+      nextState.compileState = isReadyToCompile(nextState)
+        ? "ready_to_compile"
+        : "idle";
+      nextState.activePromptId = nextIncompletePrompt(nextState, 0);
+      break;
+  }
+
+  return nextState;
 }
 
 export function buildPostingArtifactsFromGuidedState(

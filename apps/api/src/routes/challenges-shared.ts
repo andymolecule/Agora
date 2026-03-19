@@ -158,14 +158,12 @@ function cidToGatewayUrl(cid: string | null | undefined) {
 function toChallengeEvaluation(
   row: ChallengeRow | ChallengeListRow,
 ): Pick<ChallengeEvaluation, "runtime_family" | "metric" | "scorer_image"> {
-  const evaluation = (
-    row as { evaluation_json?: ChallengeEvaluation | null }
-  ).evaluation_json;
+  const evaluation = (row as { evaluation_json?: ChallengeEvaluation | null })
+    .evaluation_json;
   if (
     !evaluation ||
     typeof evaluation.runtime_family !== "string" ||
-    typeof evaluation.metric !== "string" ||
-    typeof evaluation.scorer_image !== "string"
+    typeof evaluation.metric !== "string"
   ) {
     throw new Error(
       "Challenge projection is missing evaluation_json. Next step: rebuild the challenge projection and retry.",
@@ -175,7 +173,9 @@ function toChallengeEvaluation(
   return {
     runtime_family: evaluation.runtime_family,
     metric: evaluation.metric,
-    scorer_image: evaluation.scorer_image,
+    ...(typeof evaluation.scorer_image === "string"
+      ? { scorer_image: evaluation.scorer_image }
+      : {}),
   };
 }
 
@@ -187,15 +187,14 @@ function normalizeChallengeArtifacts(
     return [];
   }
 
-  return raw.filter(
-    (artifact): artifact is ChallengeArtifact =>
-      Boolean(
-        artifact &&
-          typeof artifact === "object" &&
-          typeof (artifact as ChallengeArtifact).role === "string" &&
-          typeof (artifact as ChallengeArtifact).visibility === "string" &&
-          typeof (artifact as ChallengeArtifact).uri === "string",
-      ),
+  return raw.filter((artifact): artifact is ChallengeArtifact =>
+    Boolean(
+      artifact &&
+        typeof artifact === "object" &&
+        typeof (artifact as ChallengeArtifact).role === "string" &&
+        typeof (artifact as ChallengeArtifact).visibility === "string" &&
+        typeof (artifact as ChallengeArtifact).uri === "string",
+    ),
   );
 }
 

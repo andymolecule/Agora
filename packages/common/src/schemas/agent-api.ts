@@ -308,10 +308,10 @@ export const submissionUploadResponseSchema = z.object({
 
 export const submissionIntentResponseSchema = z.object({
   data: z.object({
-    intentId: z.string().uuid().optional(),
+    intentId: z.string().uuid(),
     resultHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
     expiresAt: z.string(),
-    matchedSubmissionId: z.string().uuid().nullable().optional(),
+    matchedSubmissionId: z.string().uuid().nullable(),
   }),
 });
 
@@ -357,6 +357,7 @@ export const submissionIntentRequestSchema = z
 export const submissionRegistrationRequestSchema = z
   .object({
     ...challengeTargetFields,
+    intentId: z.string().uuid(),
     resultCid: z.string().min(1),
     txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
     resultFormat: z

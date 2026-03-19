@@ -1,3 +1,4 @@
+import type { SemiCustomEvaluatorContractOutput } from "../schemas/evaluator-contract.js";
 import type { SubmissionContractOutput } from "../schemas/submission-contract.js";
 
 export const CHALLENGE_DOMAINS = [
@@ -77,8 +78,9 @@ export interface ChallengeArtifact {
 export interface ChallengeEvaluation {
   runtime_family: string;
   metric: string;
-  scorer_image: string;
+  scorer_image?: string;
   evaluation_bundle?: string;
+  evaluator_contract?: SemiCustomEvaluatorContractOutput;
 }
 
 export interface ChallengeReward {

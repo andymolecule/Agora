@@ -1,0 +1,5 @@
+{
+  "incident_id": "INC-2042",
+  "severity": "high",
+  "actions_taken": ["isolated affected service", "rotated credentials"]
+}

@@ -140,7 +140,7 @@ async function toApiRequestError(response: Response) {
   return new AgoraError(
     `API request failed (${response.status}). Next step: retry or inspect the API response body.`,
     {
-      code: "API_REQUEST_FAILED",
+      code: AGORA_ERROR_CODES.apiRequestFailed,
       retriable: response.status >= 500,
       status: response.status,
     },
@@ -332,6 +332,7 @@ export async function registerSubmissionWithApi(
   input: {
     challengeId?: string;
     challengeAddress?: `0x${string}`;
+    intentId: string;
     resultCid: string;
     txHash: `0x${string}`;
     resultFormat: "sealed_submission_v2";

@@ -67,6 +67,7 @@ const insertWithManagedRuntime = await buildChallengeInsert({
   spec: regressionSpec,
 });
 assert.equal(insertWithManagedRuntime.runtime_family, "tabular_regression");
+assert.equal(insertWithManagedRuntime.challenge_type, "prediction");
 assert.equal(
   insertWithManagedRuntime.evaluation_json.scorer_image,
   "ghcr.io/andymolecule/regression-scorer:v1",
@@ -76,7 +77,10 @@ assert.equal(
   "ipfs://QmHiddenLabelsOnly",
 );
 assert.equal(insertWithManagedRuntime.artifacts_json.length, 2);
-assert.equal(insertWithManagedRuntime.submission_contract_json?.kind, "csv_table");
+assert.equal(
+  insertWithManagedRuntime.submission_contract_json?.kind,
+  "csv_table",
+);
 assert.equal(insertWithManagedRuntime.scoring_env_json, null);
 assert.equal(
   insertWithManagedRuntime.max_submissions_total,
@@ -93,6 +97,21 @@ const insertWithOnChainDeadline = await buildChallengeInsert({
   onChainDeadline: "2027-01-01T00:00:00Z",
 });
 assert.equal(insertWithOnChainDeadline.deadline, "2027-01-01T00:00:00Z");
+
+const mismatchedCompatibilitySpec = challengeSpecSchema.parse({
+  ...regressionSpec,
+  id: "ch-compat",
+  type: "custom",
+});
+const compatibilityInsert = await buildChallengeInsert({
+  ...baseInput,
+  spec: mismatchedCompatibilitySpec,
+});
+assert.equal(
+  compatibilityInsert.challenge_type,
+  "prediction",
+  "challenge_type should follow evaluation identity, not the raw compatibility field",
+);
 
 const customSpec = challengeSpecSchema.parse({
   schema_version: 3,

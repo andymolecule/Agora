@@ -1,14 +1,21 @@
-import {
-  SUBMISSION_RESULT_FORMAT,
-  type SubmissionResultFormat,
-} from "@agora/common";
+import { type SubmissionResultFormat } from "@agora/common";
 import type { AgoraDbClient } from "../index";
 
+export class SubmissionOnChainWriteConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SubmissionOnChainWriteConflictError";
+  }
+}
+
 export interface SubmissionOnChainWrite {
+  submission_intent_id: string;
   challenge_id: string;
   on_chain_sub_id: number;
   solver_address: string;
   result_hash: string;
+  result_cid: string;
+  result_format: SubmissionResultFormat;
   proof_bundle_hash: string;
   score: string | null;
   scored: boolean;
@@ -19,14 +26,15 @@ export interface SubmissionOnChainWrite {
 }
 
 /**
- * Upsert only on-chain-owned submission fields.
+ * Upsert a registered submission row and refresh its on-chain-owned fields.
  *
  * Ownership model:
+ * - Registration owns: submission_intent_id/result_cid/result_format
  * - On-chain/indexer/API submit confirmation own: solver/result_hash/proof_bundle_hash/score/scored/submitted_at/scored_at/tx_hash
- * - Off-chain ingest owns: result_cid/result_format (via attachSubmissionResultMetadata)
  * - Worker scoring output owns: proof_bundle_cid + score fields (via updateScore)
  *
- * This function intentionally never writes result_cid/proof_bundle_cid.
+ * This function refuses to repoint an existing submission row to a different
+ * submission intent or result payload.
  */
 export async function upsertSubmissionOnChain(
   db: AgoraDbClient,
@@ -52,18 +60,47 @@ export async function upsertSubmissionOnChain(
     throw new Error(`Failed to insert submission: ${insertError.message}`);
   }
 
+  const current = await getSubmissionByChainId(
+    db,
+    normalizedPayload.challenge_id,
+    normalizedPayload.on_chain_sub_id,
+  );
+  if (!current) {
+    throw new Error(
+      "Failed to update submission on conflict: existing submission row disappeared before it could be refreshed. Next step: retry the registration or indexer sync.",
+    );
+  }
+  if (current.submission_intent_id !== normalizedPayload.submission_intent_id) {
+    throw new SubmissionOnChainWriteConflictError(
+      "Submission row is already linked to a different submission intent. Next step: inspect the existing submission row and retry with the original intent id.",
+    );
+  }
+  if (
+    current.result_cid !== normalizedPayload.result_cid ||
+    current.result_format !== normalizedPayload.result_format
+  ) {
+    throw new SubmissionOnChainWriteConflictError(
+      "Submission row is already linked to different submission metadata. Next step: inspect the existing submission row and retry with the original result CID and format.",
+    );
+  }
+
+  const updatePayload: Record<string, unknown> = {
+    solver_address: normalizedPayload.solver_address,
+    result_hash: normalizedPayload.result_hash,
+    proof_bundle_hash: normalizedPayload.proof_bundle_hash,
+    score: normalizedPayload.score,
+    scored: normalizedPayload.scored,
+    submitted_at: normalizedPayload.submitted_at,
+    scored_at: normalizedPayload.scored_at ?? null,
+    tx_hash: normalizedPayload.tx_hash,
+  };
+  if (normalizedPayload.trace_id && !current.trace_id) {
+    updatePayload.trace_id = normalizedPayload.trace_id;
+  }
+
   const { data: updated, error: updateError } = await db
     .from("submissions")
-    .update({
-      solver_address: normalizedPayload.solver_address,
-      result_hash: normalizedPayload.result_hash,
-      proof_bundle_hash: normalizedPayload.proof_bundle_hash,
-      score: normalizedPayload.score,
-      scored: normalizedPayload.scored,
-      submitted_at: normalizedPayload.submitted_at,
-      scored_at: normalizedPayload.scored_at ?? null,
-      tx_hash: normalizedPayload.tx_hash,
-    })
+    .update(updatePayload)
     .eq("challenge_id", normalizedPayload.challenge_id)
     .eq("on_chain_sub_id", normalizedPayload.on_chain_sub_id)
     .select("*")
@@ -121,6 +158,25 @@ export async function getSubmissionById(db: AgoraDbClient, id: string) {
     throw new Error(`Failed to fetch submission by id: ${error.message}`);
   }
   return data;
+}
+
+export async function getSubmissionByIntentId(
+  db: AgoraDbClient,
+  submissionIntentId: string,
+) {
+  const { data, error } = await db
+    .from("submissions")
+    .select("*")
+    .eq("submission_intent_id", submissionIntentId)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(
+      `Failed to fetch submission by intent id: ${error.message}`,
+    );
+  }
+
+  return data ?? null;
 }
 
 export async function attachSubmissionTraceIdIfMissing(
@@ -264,108 +320,4 @@ export async function listSubmissionsBySolver(
     throw new Error(`Failed to list submissions by solver: ${error.message}`);
   }
   return data ?? [];
-}
-
-export async function findPendingSubmissionByMatch(
-  db: AgoraDbClient,
-  challengeId: string,
-  solverAddress: string,
-  resultHash: string,
-) {
-  const { data, error } = await db
-    .from("submissions")
-    .select("*")
-    .eq("challenge_id", challengeId)
-    .eq("solver_address", solverAddress.toLowerCase())
-    .eq("result_hash", resultHash)
-    .is("result_cid", null)
-    .order("on_chain_sub_id", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (error && error.code !== "PGRST116") {
-    throw new Error(
-      `Failed to fetch pending submission by match: ${error.message}`,
-    );
-  }
-
-  return data ?? null;
-}
-
-export async function findSubmissionByExactMetadata(
-  db: AgoraDbClient,
-  input: {
-    challengeId: string;
-    solverAddress: string;
-    resultHash: string;
-    resultCid: string;
-    resultFormat: SubmissionResultFormat;
-  },
-) {
-  const { data, error } = await db
-    .from("submissions")
-    .select("*")
-    .eq("challenge_id", input.challengeId)
-    .eq("solver_address", input.solverAddress.toLowerCase())
-    .eq("result_hash", input.resultHash)
-    .eq("result_cid", input.resultCid)
-    .eq("result_format", input.resultFormat)
-    .order("on_chain_sub_id", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (error && error.code !== "PGRST116") {
-    throw new Error(
-      `Failed to fetch submission by exact metadata: ${error.message}`,
-    );
-  }
-
-  return data ?? null;
-}
-
-export async function attachSubmissionResultMetadata(
-  db: AgoraDbClient,
-  submissionId: string,
-  resultCid: string,
-  resultFormat: SubmissionResultFormat = SUBMISSION_RESULT_FORMAT.plainV0,
-  traceId?: string | null,
-) {
-  const updatePayload: Record<string, unknown> = {
-    result_cid: resultCid,
-    result_format: resultFormat,
-  };
-  if (traceId) {
-    updatePayload.trace_id = traceId;
-  }
-  const { data, error } = await db
-    .from("submissions")
-    .update(updatePayload)
-    .eq("id", submissionId)
-    .is("result_cid", null)
-    .select("*")
-    .maybeSingle();
-  if (error && error.code !== "PGRST116") {
-    throw new Error(`Failed to attach submission metadata: ${error.message}`);
-  }
-  if (data) {
-    return data;
-  }
-
-  const current = await getSubmissionById(db, submissionId);
-  if (
-    current.result_cid === resultCid &&
-    current.result_format === resultFormat
-  ) {
-    if (traceId && !current.trace_id) {
-      return (
-        (await attachSubmissionTraceIdIfMissing(db, submissionId, traceId)) ??
-        current
-      );
-    }
-    return current;
-  }
-
-  throw new Error(
-    "Submission metadata is already attached with a different CID or format. Next step: inspect the existing submission row before retrying.",
-  );
 }

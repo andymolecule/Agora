@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   EXPERT_RUNTIME_FAMILY_ID,
   type RunnerLimits,
+  SEMI_CUSTOM_RUNTIME_FAMILY_ID,
   SUBMISSION_RESULT_FORMAT,
   getSubmissionLimitViolation,
   isProductionRuntime,
@@ -61,6 +62,7 @@ function policyFromLimits(
 export function resolveRunnerPolicyForChallenge(challenge: {
   image: string;
   runtime_family: string;
+  semi_custom_runner_family?: string;
 }): ResolvedRunnerPolicy {
   const runtimeFamily = challenge.runtime_family.trim();
 
@@ -72,6 +74,21 @@ export function resolveRunnerPolicyForChallenge(challenge: {
       );
     }
     return { source: "default" };
+  }
+
+  if (
+    runtimeFamily === SEMI_CUSTOM_RUNTIME_FAMILY_ID &&
+    challenge.semi_custom_runner_family?.trim()
+  ) {
+    const runnerLimits = resolveRuntimeFamilyLimits(
+      challenge.semi_custom_runner_family,
+    );
+    if (!runnerLimits) {
+      throw new Error(
+        `Unknown semi-custom runner family: ${challenge.semi_custom_runner_family}`,
+      );
+    }
+    return policyFromLimits(runnerLimits, "runtime_family");
   }
 
   const runnerLimits = resolveRuntimeFamilyLimits(runtimeFamily);
@@ -158,6 +175,8 @@ export async function scoreSubmissionAndBuildProof(
   const runnerPolicy = resolveRunnerPolicyForChallenge({
     image: evalPlan.image,
     runtime_family: challenge.runtime_family,
+    semi_custom_runner_family:
+      evalPlan.semiCustomExecution?.runner_runtime_family,
   });
   const phaseMeta = {
     jobId,
@@ -170,6 +189,8 @@ export async function scoreSubmissionAndBuildProof(
   const scoringSpecConfig = await resolveScoringRuntimeConfig({
     env: challenge.scoring_env_json,
     submissionContract: challenge.submission_contract_json,
+    evaluationContract: evalPlan.semiCustomExecution?.evaluation_contract,
+    policies: evalPlan.semiCustomExecution?.policies,
     specCid: challenge.spec_cid,
     onLegacyFallback: async (specCid) => {
       log(
@@ -210,7 +231,9 @@ export async function scoreSubmissionAndBuildProof(
     mount: evalPlan.mount,
     submission: submissionSource,
     submissionContract: scoringSpecConfig.submissionContract,
+    evaluationContract: scoringSpecConfig.evaluationContract,
     metric: evalPlan.metric,
+    policies: scoringSpecConfig.policies,
     env: scoringSpecConfig.env,
     timeoutMs: runnerPolicy.timeoutMs,
     limits: runnerPolicy.limits,

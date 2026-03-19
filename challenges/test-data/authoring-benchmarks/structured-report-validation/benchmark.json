@@ -1,0 +1,74 @@
+{
+  "id": "structured-report-validation",
+  "managed_support": "semi_custom_executable",
+  "intent_family": "structured_record_score",
+  "artifacts_root": "uploads",
+  "prompt_variants_root": "prompt-variants",
+  "solver_submissions_root": "solver-submissions",
+  "compile_invariants": {
+    "runtime_family": "semi_custom",
+    "evaluator_archetype": "structured_record_score",
+    "metric": "validation_score",
+    "artifact_roles": [
+      {
+        "file_name": "report_schema.json",
+        "role": "public_inputs",
+        "visibility": "public"
+      },
+      {
+        "file_name": "validation_rubric.json",
+        "role": "hidden_reference",
+        "visibility": "private"
+      }
+    ],
+    "submission_contract": {
+      "kind": "opaque_file",
+      "extension": ".json",
+      "mime": "application/json"
+    }
+  },
+  "acceptable_compile_states": ["needs_review"],
+  "disallowed_outcomes": {
+    "runtime_families": [
+      "tabular_regression",
+      "tabular_classification",
+      "ranking",
+      "docking",
+      "reproducibility"
+    ],
+    "recommended_actions": ["send_to_expert_mode"]
+  },
+  "prompt_variants": [
+    {
+      "id": "direct-poster-brief",
+      "file": "prompt-variants/direct-poster-brief.md",
+      "acceptable_compile_states": ["needs_review"],
+      "expected_follow_up_topics": [
+        "scoring rubric",
+        "required JSON fields",
+        "public versus hidden artifact split",
+        "reward"
+      ]
+    },
+    {
+      "id": "thread-summary-brief",
+      "file": "prompt-variants/thread-summary-brief.md",
+      "acceptable_compile_states": ["needs_review"],
+      "expected_follow_up_topics": [
+        "what counts as a valid report",
+        "what stays hidden",
+        "submission deadline"
+      ]
+    },
+    {
+      "id": "minimal-ops-brief",
+      "file": "prompt-variants/minimal-ops-brief.md",
+      "acceptable_compile_states": ["needs_review"],
+      "expected_follow_up_topics": [
+        "JSON submission format",
+        "deterministic judging rule",
+        "reward"
+      ]
+    }
+  ]
+}

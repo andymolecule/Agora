@@ -44,9 +44,9 @@ const checks: RuntimeSchemaCheck[] = [
     nextStep: "apply migration",
   },
   {
-    id: "submissions_trace_id_column",
+    id: "submissions_registration_columns",
     table: "submissions",
-    select: "trace_id",
+    select: "submission_intent_id,trace_id",
     nextStep: "apply migration",
   },
   {
@@ -62,10 +62,24 @@ const checks: RuntimeSchemaCheck[] = [
     nextStep: "apply migration",
   },
   {
-    id: "posting_sessions_table",
-    table: "posting_sessions",
+    id: "authoring_drafts_table",
+    table: "authoring_drafts",
     select:
-      "state,intent_json,uploaded_artifacts_json,compilation_json,clarification_questions_json,review_summary_json,approved_confirmation_json,published_spec_json,published_spec_cid,expires_at",
+      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,source_callback_url,source_callback_registered_at,expires_at",
+    nextStep: "apply migration",
+  },
+  {
+    id: "published_challenge_links_table",
+    table: "published_challenge_links",
+    select:
+      "draft_id,challenge_id,published_spec_json,published_spec_cid,return_to,published_at",
+    nextStep: "apply migration",
+  },
+  {
+    id: "authoring_callback_deliveries_table",
+    table: "authoring_callback_deliveries",
+    select:
+      "draft_id,provider,callback_url,event,payload_json,status,attempts,max_attempts,last_attempt_at,next_attempt_at,delivered_at,last_error",
     nextStep: "apply migration",
   },
 ];

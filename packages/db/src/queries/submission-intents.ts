@@ -1,8 +1,6 @@
 import {
   CHALLENGE_STATUS,
   type ChallengeStatus,
-  SCORE_JOB_STATUS,
-  SUBMISSION_RESULT_CID_MISSING_ERROR,
   SUBMISSION_RESULT_FORMAT,
   type SubmissionResultFormat,
   getSubmissionLimitViolation,
@@ -14,14 +12,10 @@ import {
   createScoreJob,
   getScoreJobBySubmissionId,
   markScoreJobSkipped,
-  reviveMetadataBlockedScoreJob,
 } from "./score-jobs.js";
 import {
-  attachSubmissionResultMetadata,
   countSubmissionsBySolverForChallengeUpToOnChainSubId,
   countSubmissionsForChallengeUpToOnChainSubId,
-  findPendingSubmissionByMatch,
-  findSubmissionByExactMetadata,
 } from "./submissions.js";
 
 export interface SubmissionIntentInsert {
@@ -57,28 +51,9 @@ export interface SubmissionIntentChallengeContext {
 
 export type SubmissionIntentScoreJobAction =
   | "queued"
-  | "revived"
   | "skipped"
   | "unchanged"
   | "not_applicable";
-
-export interface ReconcileSubmissionIntentResult {
-  matched: boolean;
-  intent: SubmissionIntentRow | null;
-  submission: {
-    id: string;
-    challenge_id: string;
-    on_chain_sub_id: number;
-    solver_address: string;
-    result_hash: string;
-    result_cid: string | null;
-    result_format: SubmissionResultFormat;
-    scored: boolean;
-    trace_id?: string | null;
-  } | null;
-  scoreJobAction: SubmissionIntentScoreJobAction;
-  warning: string | null;
-}
 
 export async function createSubmissionIntent(
   db: AgoraDbClient,
@@ -101,7 +76,34 @@ export async function createSubmissionIntent(
   return data as SubmissionIntentRow;
 }
 
-export async function findOldestUnmatchedSubmissionIntent(
+export async function findSubmissionIntentByMatch(
+  db: AgoraDbClient,
+  input: {
+    challengeId: string;
+    solverAddress: string;
+    resultHash: string;
+  },
+) {
+  const { data, error } = await db
+    .from("submission_intents")
+    .select("*")
+    .eq("challenge_id", input.challengeId)
+    .eq("solver_address", input.solverAddress.toLowerCase())
+    .eq("result_hash", input.resultHash)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(
+      `Failed to fetch submission intent by match: ${error.message}`,
+    );
+  }
+
+  return (data as SubmissionIntentRow | null) ?? null;
+}
+
+export async function findActiveSubmissionIntentByMatch(
   db: AgoraDbClient,
   input: {
     challengeId: string;
@@ -116,7 +118,6 @@ export async function findOldestUnmatchedSubmissionIntent(
     .eq("challenge_id", input.challengeId)
     .eq("solver_address", input.solverAddress.toLowerCase())
     .eq("result_hash", input.resultHash)
-    .is("matched_submission_id", null)
     .gt("expires_at", input.nowIso ?? new Date().toISOString())
     .order("created_at", { ascending: true })
     .limit(1)
@@ -124,7 +125,7 @@ export async function findOldestUnmatchedSubmissionIntent(
 
   if (error && error.code !== "PGRST116") {
     throw new Error(
-      `Failed to fetch unmatched submission intent: ${error.message}`,
+      `Failed to fetch active submission intent by match: ${error.message}`,
     );
   }
 
@@ -221,7 +222,7 @@ export async function markSubmissionIntentMatched(
   throw new Error(`Failed to mark submission intent matched: ${error.message}`);
 }
 
-async function ensureScoreJobForSubmission(
+export async function ensureScoreJobForRegisteredSubmission(
   db: AgoraDbClient,
   challenge: SubmissionIntentChallengeContext,
   submission: {
@@ -281,21 +282,10 @@ async function ensureScoreJobForSubmission(
     return { action: "skipped", warning: violation };
   }
 
-  const revived = await reviveMetadataBlockedScoreJob(db, submission.id);
-  if (revived) {
-    return { action: "revived", warning: null };
-  }
-
   const existingJob = await getScoreJobBySubmissionId(db, submission.id);
   if (existingJob) {
     if (traceId && !existingJob.trace_id) {
       await attachScoreJobTraceIdIfMissing(db, existingJob.id, traceId);
-    }
-    if (
-      existingJob.status === SCORE_JOB_STATUS.failed &&
-      existingJob.last_error?.startsWith(SUBMISSION_RESULT_CID_MISSING_ERROR)
-    ) {
-      return { action: "unchanged", warning: null };
     }
     return { action: "unchanged", warning: null };
   }
@@ -306,89 +296,4 @@ async function ensureScoreJobForSubmission(
     trace_id: traceId ?? submission.trace_id ?? null,
   });
   return { action: "queued", warning: null };
-}
-
-export async function reconcileSubmissionIntentMatch(
-  db: AgoraDbClient,
-  input: {
-    challenge: SubmissionIntentChallengeContext;
-    solverAddress: string;
-    resultHash: string;
-  },
-): Promise<ReconcileSubmissionIntentResult> {
-  const intent = await findOldestUnmatchedSubmissionIntent(db, {
-    challengeId: input.challenge.id,
-    solverAddress: input.solverAddress,
-    resultHash: input.resultHash,
-  });
-
-  if (!intent) {
-    return {
-      matched: false,
-      intent: null,
-      submission: null,
-      scoreJobAction: "unchanged",
-      warning: null,
-    };
-  }
-
-  const pendingSubmission = await findPendingSubmissionByMatch(
-    db,
-    input.challenge.id,
-    input.solverAddress,
-    input.resultHash,
-  );
-  const existingExactSubmission =
-    pendingSubmission ??
-    (await findSubmissionByExactMetadata(db, {
-      challengeId: input.challenge.id,
-      solverAddress: input.solverAddress,
-      resultHash: input.resultHash,
-      resultCid: intent.result_cid,
-      resultFormat: intent.result_format,
-    }));
-
-  if (!existingExactSubmission) {
-    return {
-      matched: false,
-      intent,
-      submission: null,
-      scoreJobAction: "unchanged",
-      warning: null,
-    };
-  }
-
-  const attachedSubmission = await attachSubmissionResultMetadata(
-    db,
-    existingExactSubmission.id,
-    intent.result_cid,
-    intent.result_format,
-    intent.trace_id,
-  );
-  const matchedIntent = await markSubmissionIntentMatched(
-    db,
-    intent.id,
-    attachedSubmission.id,
-  );
-  const scoreJob = await ensureScoreJobForSubmission(
-    db,
-    input.challenge,
-    {
-      id: attachedSubmission.id,
-      challenge_id: attachedSubmission.challenge_id,
-      on_chain_sub_id: attachedSubmission.on_chain_sub_id,
-      solver_address: attachedSubmission.solver_address,
-      scored: attachedSubmission.scored,
-      trace_id: attachedSubmission.trace_id ?? intent.trace_id,
-    },
-    intent.trace_id,
-  );
-
-  return {
-    matched: Boolean(matchedIntent),
-    intent: matchedIntent ?? intent,
-    submission: attachedSubmission,
-    scoreJobAction: scoreJob.action,
-    warning: scoreJob.warning,
-  };
 }

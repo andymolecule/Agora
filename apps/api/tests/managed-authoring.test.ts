@@ -103,8 +103,7 @@ function buildDockingDryRunDependencies() {
           selected_metric_value: 0.97,
           selected_metric: "spearman",
         },
-        containerImageDigest:
-          "ghcr.io/andymolecule/docking-scorer@sha256:1234",
+        containerImageDigest: "ghcr.io/andymolecule/docking-scorer@sha256:1234",
         log: "",
         outputPath: "/tmp/output/score.json",
       },
@@ -119,21 +118,68 @@ function buildDockingDryRunDependencies() {
   };
 }
 
+function buildStructuredRecordDryRunDependencies() {
+  return {
+    getTextImpl: async (_uri: string) =>
+      JSON.stringify({
+        required_fields: [
+          "incident_id",
+          "severity",
+          "timeline",
+          "actions_taken",
+        ],
+        non_empty_array_fields: ["timeline", "actions_taken"],
+        allowed_string_values: {
+          severity: ["low", "medium", "high"],
+        },
+      }),
+    executeScoringPipelineImpl: async (_input: unknown) => ({
+      result: {
+        ok: true,
+        score: 1,
+        details: {
+          selected_metric_value: 1,
+          selected_metric: "validation_score",
+          checks_passed: 7,
+          checks_total: 7,
+        },
+        containerImageDigest:
+          "ghcr.io/andymolecule/repro-scorer@sha256:1234",
+        log: "",
+        outputPath: "/tmp/output/score.json",
+      },
+      workspaceRoot: "/tmp/workspace",
+      inputDir: "/tmp/workspace/input",
+      evaluationBundlePath: "/tmp/workspace/input/ground_truth.json",
+      submissionPath: "/tmp/workspace/input/submission.json",
+      runtimeConfigPath: "/tmp/workspace/input/agora-runtime.json",
+      inputPaths: [],
+      cleanup: async () => undefined,
+    }),
+  };
+}
+
 test("managed authoring accepts RMSE regression challenges", async () => {
-  const result = await compileManagedAuthoringSession({
-    intent: {
-      ...baseIntent,
-      payout_condition: "Lowest RMSE wins.",
+  const result = await compileManagedAuthoringSession(
+    {
+      intent: {
+        ...baseIntent,
+        payout_condition: "Lowest RMSE wins.",
+      },
+      uploadedArtifacts,
     },
-    uploadedArtifacts,
-  }, buildDryRunDependencies());
+    buildDryRunDependencies(),
+  );
 
   assert.equal(result.runtime_family, "tabular_regression");
   assert.equal(result.metric, "rmse");
   assert.equal(result.challenge_spec.evaluation.metric, "rmse");
   assert.equal(result.challenge_spec.dispute_window_hours, 168);
   assert.equal(result.dry_run.status, "validated");
-  assert.match(result.confirmation_contract.dry_run_summary, /normalized score/);
+  assert.match(
+    result.confirmation_contract.dry_run_summary,
+    /normalized score/,
+  );
 });
 
 test("managed authoring preserves explicit testnet dispute windows", async () => {
@@ -160,7 +206,8 @@ test("managed authoring compiles docking challenges into the docking runtime fam
         title: "Rank ligands against a kinase pocket",
         description:
           "We provide a target structure and ligand set. Solvers should predict docking scores and rank ligands by expected binding strength.",
-        payout_condition: "Highest Spearman correlation to the hidden docking scores wins.",
+        payout_condition:
+          "Highest Spearman correlation to the hidden docking scores wins.",
         domain: "drug_discovery",
       },
       uploadedArtifacts: dockingArtifacts,
@@ -172,7 +219,10 @@ test("managed authoring compiles docking challenges into the docking runtime fam
   assert.equal(result.runtime_family, "docking");
   assert.equal(result.metric, "spearman");
   assert.equal(result.challenge_spec.type, "docking");
-  assert.equal(result.challenge_spec.submission_contract.columns.id, "ligand_id");
+  assert.equal(
+    result.challenge_spec.submission_contract.columns.id,
+    "ligand_id",
+  );
   assert.equal(
     result.challenge_spec.submission_contract.columns.value,
     "docking_score",
@@ -183,13 +233,16 @@ test("managed authoring compiles docking challenges into the docking runtime fam
 test("managed authoring rejects lower-is-better payout thresholds", async () => {
   await assert.rejects(
     () =>
-      compileManagedAuthoringSession({
-        intent: {
-          ...baseIntent,
-          payout_condition: "Pay if RMSE < 0.1.",
+      compileManagedAuthoringSession(
+        {
+          intent: {
+            ...baseIntent,
+            payout_condition: "Pay if RMSE < 0.1.",
+          },
+          uploadedArtifacts,
         },
-        uploadedArtifacts,
-      }, buildDryRunDependencies()),
+        buildDryRunDependencies(),
+      ),
     /lower-is-better metrics like RMSE and MAE/,
   );
 });
@@ -256,10 +309,7 @@ test("managed authoring uses openai-compatible compiler responses when configure
 
     assert.equal(result.runtime_family, "tabular_regression");
     assert.equal(result.metric, "r2");
-    assert.deepEqual(
-      result.reason_codes,
-      ["model_selected_runtime"],
-    );
+    assert.deepEqual(result.reason_codes, ["model_selected_runtime"]);
   } finally {
     process.env = originalEnv;
   }
@@ -294,7 +344,9 @@ test("managed authoring routes low-confidence drafts into operator review", asyn
                       metric: "r2",
                       confidence_score: 0.62,
                       reason_codes: ["weak_artifact_role_signals"],
-                      warnings: ["Poster language does not name the hidden labels explicitly."],
+                      warnings: [
+                        "Poster language does not name the hidden labels explicitly.",
+                      ],
                       artifact_assignments: [
                         {
                           artifact_index: 0,
@@ -327,8 +379,659 @@ test("managed authoring routes low-confidence drafts into operator review", asyn
 
     assert.equal(result.state, "needs_review");
     assert.equal(result.compilation?.runtime_family, "tabular_regression");
-    assert.equal(result.reviewSummary?.recommended_action, "approve_after_review");
+    assert.equal(
+      result.reviewSummary?.recommended_action,
+      "approve_after_review",
+    );
     assert.match(result.reviewSummary?.summary ?? "", /confidence is 62%/i);
+  } finally {
+    process.env = originalEnv;
+  }
+});
+
+test("managed authoring routes low-confidence non-managed drafts into semi-custom review", async () => {
+  const originalEnv = { ...process.env };
+  process.env.AGORA_MANAGED_AUTHORING_COMPILER_BACKEND = "openai_compatible";
+  process.env.AGORA_MANAGED_AUTHORING_MODEL = "gpt-5-mini";
+  process.env.AGORA_MANAGED_AUTHORING_API_KEY = "sk-test";
+  process.env.AGORA_MANAGED_AUTHORING_BASE_URL = "https://compiler.example/v1";
+
+  try {
+    const result = await compileManagedAuthoringPostingSession(
+      {
+        intent: {
+          ...baseIntent,
+          title: "Deterministic report validation",
+          description:
+            "Validate solver-submitted JSON reports against a hidden deterministic rubric.",
+          payout_condition: "Highest deterministic validation score wins.",
+          domain: "other",
+          solver_instructions:
+            "Solvers submit a JSON report artifact with the required fields.",
+        },
+        uploadedArtifacts,
+      },
+      {
+        ...buildDryRunDependencies(),
+        fetchImpl: async (_url: string | URL | Request, _init?: RequestInit) =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      runtime_family: "tabular_regression",
+                      metric: "r2",
+                      confidence_score: 0.41,
+                      reason_codes: ["no_supported_runtime_signal"],
+                      warnings: [
+                        "Challenge description does not fit a managed template cleanly.",
+                      ],
+                      artifact_assignments: [
+                        {
+                          artifact_index: 0,
+                          role: "training_data",
+                          visibility: "public",
+                        },
+                        {
+                          artifact_index: 1,
+                          role: "evaluation_features",
+                          visibility: "public",
+                        },
+                        {
+                          artifact_index: 2,
+                          role: "hidden_labels",
+                          visibility: "private",
+                        },
+                      ],
+                    }),
+                  },
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          ),
+      },
+    );
+
+    assert.equal(result.state, "needs_review");
+    assert.equal(result.compilation?.runtime_family, "semi_custom");
+    assert.equal(
+      result.compilation?.challenge_spec.evaluation.runtime_family,
+      "semi_custom",
+    );
+    assert.equal(
+      "scorer_image" in (result.compilation?.challenge_spec.evaluation ?? {}),
+      false,
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.evaluation.evaluator_contract
+        ?.archetype,
+      "structured_record_score",
+    );
+    assert.equal(result.compilation?.dry_run.status, "skipped");
+    assert.equal(result.authoringIr.routing.mode, "semi_custom");
+    assert.equal(
+      result.authoringIr.evaluation.evaluator_candidates[0]?.kind,
+      "semi_custom",
+    );
+    assert.equal(
+      result.reviewSummary?.recommended_action,
+      "send_to_expert_mode",
+    );
+    assert.match(result.reviewSummary?.summary ?? "", /semi-custom evaluator/i);
+  } finally {
+    process.env = originalEnv;
+  }
+});
+
+test("managed authoring can build an executable semi-custom table contract for review", async () => {
+  const originalEnv = { ...process.env };
+  process.env.AGORA_MANAGED_AUTHORING_COMPILER_BACKEND = "openai_compatible";
+  process.env.AGORA_MANAGED_AUTHORING_MODEL = "gpt-5-mini";
+  process.env.AGORA_MANAGED_AUTHORING_API_KEY = "sk-test";
+  process.env.AGORA_MANAGED_AUTHORING_BASE_URL = "https://compiler.example/v1";
+
+  try {
+    const result = await compileManagedAuthoringPostingSession(
+      {
+        intent: {
+          ...baseIntent,
+          title: "Deterministic score reconciliation",
+          description:
+            "Participants submit a CSV of ids and predicted scores. Agora compares them against a hidden reference table.",
+          payout_condition: "Lowest RMSE wins.",
+          domain: "other",
+          solver_instructions: "Submit a CSV with columns id and prediction.",
+        },
+        uploadedArtifacts,
+      },
+      {
+        ...buildDryRunDependencies(),
+        fetchImpl: async (url: string | URL | Request, _init?: RequestInit) => {
+          const requestUrl =
+            typeof url === "string"
+              ? url
+              : url instanceof URL
+                ? url.toString()
+                : url.url;
+          if (requestUrl.includes("ghcr.io/v2/")) {
+            return new Response(null, {
+              status: 200,
+              headers: {
+                "docker-content-digest":
+                  "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+              },
+            });
+          }
+
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      runtime_family: "tabular_regression",
+                      metric: "rmse",
+                      confidence_score: 0.43,
+                      reason_codes: ["no_supported_runtime_signal"],
+                      warnings: [
+                        "Challenge description does not fit a managed template cleanly.",
+                      ],
+                    }),
+                  },
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        },
+      },
+    );
+
+    assert.equal(result.state, "needs_review");
+    assert.equal(result.compilation?.runtime_family, "semi_custom");
+    assert.equal(result.compilation?.dry_run.status, "validated");
+    assert.equal(
+      result.compilation?.challenge_spec.evaluation.evaluator_contract
+        ?.execution?.template,
+      "official_table_metric_v1",
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.evaluation.scorer_image,
+      "ghcr.io/andymolecule/regression-scorer@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    );
+    assert.equal(
+      result.reviewSummary?.recommended_action,
+      "approve_after_review",
+    );
+  } finally {
+    process.env = originalEnv;
+  }
+});
+
+test("managed authoring can build an executable semi-custom exact-match contract for review", async () => {
+  const originalEnv = { ...process.env };
+  process.env.AGORA_MANAGED_AUTHORING_COMPILER_BACKEND = "openai_compatible";
+  process.env.AGORA_MANAGED_AUTHORING_MODEL = "gpt-5-mini";
+  process.env.AGORA_MANAGED_AUTHORING_API_KEY = "sk-test";
+  process.env.AGORA_MANAGED_AUTHORING_BASE_URL = "https://compiler.example/v1";
+
+  try {
+    const result = await compileManagedAuthoringPostingSession(
+      {
+        intent: {
+          ...baseIntent,
+          title: "Reference output match",
+          description:
+            "Participants submit a CSV output artifact and Agora compares it against a hidden reference output.",
+          payout_condition:
+            "Exact match against the hidden reference output wins.",
+          domain: "other",
+          solver_instructions:
+            "Submit a CSV output artifact with deterministic rows.",
+        },
+        uploadedArtifacts,
+      },
+      {
+        ...buildDryRunDependencies(),
+        fetchImpl: async (url: string | URL | Request, _init?: RequestInit) => {
+          const requestUrl =
+            typeof url === "string"
+              ? url
+              : url instanceof URL
+                ? url.toString()
+                : url.url;
+          if (requestUrl.includes("ghcr.io/v2/")) {
+            return new Response(null, {
+              status: 200,
+              headers: {
+                "docker-content-digest":
+                  "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+              },
+            });
+          }
+
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      runtime_family: "reproducibility",
+                      metric: "exact_match",
+                      confidence_score: 0.41,
+                      reason_codes: ["no_supported_runtime_signal"],
+                      warnings: [
+                        "Challenge description does not fit a managed template cleanly.",
+                      ],
+                    }),
+                  },
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        },
+      },
+    );
+
+    assert.equal(result.state, "needs_review");
+    assert.equal(result.compilation?.runtime_family, "semi_custom");
+    assert.equal(result.compilation?.dry_run.status, "validated");
+    assert.equal(
+      result.compilation?.challenge_spec.evaluation.evaluator_contract
+        ?.execution?.template,
+      "official_exact_match_v1",
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.evaluation.scorer_image,
+      "ghcr.io/andymolecule/repro-scorer@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    );
+    assert.equal(
+      result.reviewSummary?.recommended_action,
+      "approve_after_review",
+    );
+  } finally {
+    process.env = originalEnv;
+  }
+});
+
+test("managed authoring can build an executable JSON exact-match contract for review", async () => {
+  const originalEnv = { ...process.env };
+  process.env.AGORA_MANAGED_AUTHORING_COMPILER_BACKEND = "openai_compatible";
+  process.env.AGORA_MANAGED_AUTHORING_MODEL = "gpt-5-mini";
+  process.env.AGORA_MANAGED_AUTHORING_API_KEY = "sk-test";
+  process.env.AGORA_MANAGED_AUTHORING_BASE_URL = "https://compiler.example/v1";
+
+  try {
+    const result = await compileManagedAuthoringPostingSession(
+      {
+        intent: {
+          ...baseIntent,
+          title: "Reference document match",
+          description:
+            "Participants submit a JSON report artifact and Agora compares it against a hidden reference output.",
+          payout_condition:
+            "Exact match against the hidden reference output wins.",
+          domain: "other",
+          solver_instructions:
+            "Submit a JSON report artifact with deterministic fields.",
+        },
+        uploadedArtifacts: [
+          {
+            id: "source-data",
+            uri: "ipfs://bafysourcejson",
+            file_name: "source_data.json",
+            mime_type: "application/json",
+          },
+          {
+            id: "reference-output",
+            uri: "ipfs://bafyreferencejson",
+            file_name: "reference_output.json",
+            mime_type: "application/json",
+          },
+        ],
+      },
+      {
+        ...buildDryRunDependencies(),
+        fetchImpl: async (url: string | URL | Request, _init?: RequestInit) => {
+          const requestUrl =
+            typeof url === "string"
+              ? url
+              : url instanceof URL
+                ? url.toString()
+                : url.url;
+          if (requestUrl.includes("ghcr.io/v2/")) {
+            return new Response(null, {
+              status: 200,
+              headers: {
+                "docker-content-digest":
+                  "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+              },
+            });
+          }
+
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      runtime_family: "reproducibility",
+                      metric: "exact_match",
+                      confidence_score: 0.39,
+                      reason_codes: ["no_supported_runtime_signal"],
+                      warnings: [
+                        "Challenge description does not fit a managed template cleanly.",
+                      ],
+                    }),
+                  },
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        },
+      },
+    );
+
+    assert.equal(result.state, "needs_review");
+    assert.equal(result.compilation?.runtime_family, "semi_custom");
+    assert.equal(result.compilation?.dry_run.status, "validated");
+    assert.equal(
+      result.compilation?.challenge_spec.evaluation.evaluator_contract
+        ?.submission.kind,
+      "json_file",
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.evaluation.evaluator_contract
+        ?.execution?.template,
+      "official_exact_match_v1",
+    );
+    assert.match(
+      result.compilation?.challenge_spec.evaluation.scorer_image ?? "",
+      /^ghcr\.io\/andymolecule\/repro-scorer@sha256:[a-f0-9]{64}$/,
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.submission_contract.kind,
+      "opaque_file",
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.submission_contract.kind === "opaque_file"
+        ? result.compilation.challenge_spec.submission_contract.file.extension
+        : null,
+      ".json",
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.submission_contract.kind === "opaque_file"
+        ? result.compilation.challenge_spec.submission_contract.file.mime
+        : null,
+      "application/json",
+    );
+    assert.equal(
+      result.reviewSummary?.recommended_action,
+      "approve_after_review",
+    );
+  } finally {
+    process.env = originalEnv;
+  }
+});
+
+test("managed authoring can build an executable structured-record contract for review", async () => {
+  const originalEnv = { ...process.env };
+  process.env.AGORA_MANAGED_AUTHORING_COMPILER_BACKEND = "openai_compatible";
+  process.env.AGORA_MANAGED_AUTHORING_MODEL = "gpt-5-mini";
+  process.env.AGORA_MANAGED_AUTHORING_API_KEY = "sk-test";
+  process.env.AGORA_MANAGED_AUTHORING_BASE_URL = "https://compiler.example/v1";
+
+  try {
+    const result = await compileManagedAuthoringPostingSession(
+      {
+        intent: {
+          ...baseIntent,
+          title: "Deterministic report validation",
+          description:
+            "Participants submit a JSON incident report and Agora validates it against a hidden deterministic rubric.",
+          payout_condition: "Highest deterministic validation score wins.",
+          domain: "other",
+          solver_instructions:
+            "Submit one JSON report artifact with incident_id, severity, timeline, and actions_taken fields.",
+        },
+        uploadedArtifacts: [
+          {
+            id: "report-schema",
+            uri: "ipfs://bafyreportschema",
+            file_name: "report_schema.json",
+            mime_type: "application/json",
+          },
+          {
+            id: "validation-rubric",
+            uri: "ipfs://bafyrubric",
+            file_name: "validation_rubric.json",
+            mime_type: "application/json",
+          },
+        ],
+      },
+      {
+        ...buildStructuredRecordDryRunDependencies(),
+        fetchImpl: async (url: string | URL | Request, _init?: RequestInit) => {
+          const requestUrl =
+            typeof url === "string"
+              ? url
+              : url instanceof URL
+                ? url.toString()
+                : url.url;
+          if (requestUrl.includes("ghcr.io/v2/")) {
+            return new Response(null, {
+              status: 200,
+              headers: {
+                "docker-content-digest":
+                  "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+              },
+            });
+          }
+
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      runtime_family: "reproducibility",
+                      metric: "exact_match",
+                      confidence_score: 0.4,
+                      reason_codes: ["no_supported_runtime_signal"],
+                      warnings: [
+                        "Challenge description does not fit a managed template cleanly.",
+                      ],
+                    }),
+                  },
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        },
+      },
+    );
+
+    assert.equal(result.state, "needs_review");
+    assert.equal(result.compilation?.runtime_family, "semi_custom");
+    assert.equal(result.compilation?.dry_run.status, "validated");
+    assert.equal(
+      result.compilation?.challenge_spec.evaluation.evaluator_contract
+        ?.archetype,
+      "structured_record_score",
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.evaluation.evaluator_contract
+        ?.execution?.template,
+      "official_structured_record_v1",
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.submission_contract.kind,
+      "opaque_file",
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.submission_contract.kind === "opaque_file"
+        ? result.compilation.challenge_spec.submission_contract.file.extension
+        : null,
+      ".json",
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.submission_contract.kind === "opaque_file"
+        ? result.compilation.challenge_spec.submission_contract.file.mime
+        : null,
+      "application/json",
+    );
+    assert.match(
+      result.compilation?.challenge_spec.evaluation.scorer_image ?? "",
+      /^ghcr\.io\/andymolecule\/repro-scorer@sha256:[a-f0-9]{64}$/,
+    );
+    assert.equal(
+      result.reviewSummary?.recommended_action,
+      "approve_after_review",
+    );
+  } finally {
+    process.env = originalEnv;
+  }
+});
+
+test("managed authoring can build an executable opaque exact-match contract for review", async () => {
+  const originalEnv = { ...process.env };
+  process.env.AGORA_MANAGED_AUTHORING_COMPILER_BACKEND = "openai_compatible";
+  process.env.AGORA_MANAGED_AUTHORING_MODEL = "gpt-5-mini";
+  process.env.AGORA_MANAGED_AUTHORING_API_KEY = "sk-test";
+  process.env.AGORA_MANAGED_AUTHORING_BASE_URL = "https://compiler.example/v1";
+
+  try {
+    const result = await compileManagedAuthoringPostingSession(
+      {
+        intent: {
+          ...baseIntent,
+          title: "Reference PDF match",
+          description:
+            "Participants submit a PDF artifact and Agora compares it against a hidden reference document.",
+          payout_condition:
+            "Exact match against the hidden reference document wins.",
+          domain: "other",
+          solver_instructions:
+            "Submit a deterministic PDF document artifact.",
+        },
+        uploadedArtifacts: [
+          {
+            id: "source-data",
+            uri: "ipfs://bafysourcepdf",
+            file_name: "source_data.pdf",
+            mime_type: "application/pdf",
+          },
+          {
+            id: "reference-output",
+            uri: "ipfs://bafyreferencepdf",
+            file_name: "reference_output.pdf",
+            mime_type: "application/pdf",
+          },
+        ],
+      },
+      {
+        ...buildDryRunDependencies(),
+        fetchImpl: async (url: string | URL | Request, _init?: RequestInit) => {
+          const requestUrl =
+            typeof url === "string"
+              ? url
+              : url instanceof URL
+                ? url.toString()
+                : url.url;
+          if (requestUrl.includes("ghcr.io/v2/")) {
+            return new Response(null, {
+              status: 200,
+              headers: {
+                "docker-content-digest":
+                  "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+              },
+            });
+          }
+
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      runtime_family: "reproducibility",
+                      metric: "exact_match",
+                      confidence_score: 0.4,
+                      reason_codes: ["no_supported_runtime_signal"],
+                      warnings: [
+                        "Challenge description does not fit a managed template cleanly.",
+                      ],
+                    }),
+                  },
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        },
+      },
+    );
+
+    assert.equal(result.state, "needs_review");
+    assert.equal(result.compilation?.runtime_family, "semi_custom");
+    assert.equal(result.compilation?.dry_run.status, "validated");
+    assert.equal(
+      result.compilation?.challenge_spec.evaluation.evaluator_contract
+        ?.submission.kind,
+      "opaque_file",
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.evaluation.evaluator_contract
+        ?.execution?.template,
+      "official_exact_match_v1",
+    );
+    assert.match(
+      result.compilation?.challenge_spec.evaluation.scorer_image ?? "",
+      /^ghcr\.io\/andymolecule\/repro-scorer@sha256:[a-f0-9]{64}$/,
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.submission_contract.kind,
+      "opaque_file",
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.submission_contract.kind === "opaque_file"
+        ? result.compilation.challenge_spec.submission_contract.file.extension
+        : null,
+      ".pdf",
+    );
+    assert.equal(
+      result.compilation?.challenge_spec.submission_contract.kind === "opaque_file"
+        ? result.compilation.challenge_spec.submission_contract.file.mime
+        : null,
+      "application/pdf",
+    );
+    assert.equal(
+      result.reviewSummary?.recommended_action,
+      "approve_after_review",
+    );
   } finally {
     process.env = originalEnv;
   }
@@ -347,7 +1050,12 @@ test("managed authoring returns clarification questions for unsupported threshol
   );
 
   assert.equal(result.state, "needs_clarification");
+  assert.equal(result.authoringIr.routing.mode, "not_ready");
   assert.equal(result.clarificationQuestions?.length, 1);
+  assert.equal(
+    result.authoringIr.clarification.open_questions[0]?.id,
+    "threshold-policy",
+  );
   assert.match(
     result.clarificationQuestions?.[0]?.next_step ?? "",
     /remove the explicit RMSE\/MAE threshold/i,

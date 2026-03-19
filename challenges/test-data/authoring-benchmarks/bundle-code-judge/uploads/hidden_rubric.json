@@ -1,0 +1,8 @@
+{
+  "required_files": ["main.py", "config.json", "README.md"],
+  "checks": [
+    "bundle must contain the required files",
+    "output manifest must match the expected schema",
+    "execution path must be deterministic"
+  ]
+}

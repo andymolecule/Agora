@@ -9,17 +9,21 @@ Documentation index and reading order for the Agora repository.
 | 1 | [Product Guide](product.md) | What is Agora and why does it exist? | Everyone |
 | 2 | [Principles](principles.md) | What properties must Agora preserve? | Founders, engineers, reviewers |
 | 3 | [Architecture](architecture.md) | How does the system fit together? | Engineers, reviewers |
-| 4 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
-| 5 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
-| 6 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
-| 7 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
-| 8 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
+| 4 | [Challenge Authoring IR](challenge-authoring-ir.md) | What typed contract should posting converge toward before compile/publish? | Product, frontend, backend |
+| 5 | [Authoring Callbacks](authoring-callbacks.md) | How do external hosts verify and process authoring lifecycle callbacks safely? | Integrations, backend |
+| 6 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
+| 7 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
+| 8 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
+| 9 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
+| 10 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
 
 ## Start Here
 
 - **New to Agora?** Start with [Product Guide](product.md).
 - **Need the high-level north star?** Read [Principles](principles.md).
 - **Building features?** Read [Architecture](architecture.md), then the relevant layer doc.
+- **Working on posting or challenge onboarding?** Read [Challenge Authoring IR](challenge-authoring-ir.md).
+- **Building or reviewing external host integrations?** Read [Authoring Callbacks](authoring-callbacks.md).
 - **Working on contracts or settlement?** Read [Protocol](protocol.md).
 - **Working on submission privacy or sealing?** Read [Submission Privacy](submission-privacy.md).
 - **Debugging data issues?** Read [Data and Indexing](data-and-indexing.md).
@@ -40,6 +44,8 @@ Documentation index and reading order for the Agora repository.
 | Product concepts, user flows | [product.md](product.md) |
 | Product principles, trust-model language, positioning guardrails | [principles.md](principles.md) |
 | System topology, component boundaries | [architecture.md](architecture.md) |
+| Open-ended challenge authoring contract | [challenge-authoring-ir.md](challenge-authoring-ir.md) |
+| External host callback verification and replay rules | [authoring-callbacks.md](authoring-callbacks.md) |
 | Submission sealing, privacy boundary, key model | [submission-privacy.md](submission-privacy.md) |
 | Contract lifecycle, settlement, YAML schema | [protocol.md](protocol.md) |
 | DB schema, projections, indexer behavior | [data-and-indexing.md](data-and-indexing.md) |
@@ -58,6 +64,8 @@ Documentation index and reading order for the Agora repository.
 - **[cli-reference.md](cli-reference.md)** — Complete reference for every `agora` CLI command
 - **[testing.md](testing.md)** — Test layers, verification scripts, and E2E test configuration
 - **[glossary.md](glossary.md)** — Key terms used across Agora documentation and code
+- **[challenge-authoring-ir.md](challenge-authoring-ir.md)** — Target typed contract between poster language and final challenge spec
+- **[authoring-callbacks.md](authoring-callbacks.md)** — Callback contract, replay window, idempotency, and host verification rules
 
 ## Support Docs
 

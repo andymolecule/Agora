@@ -716,7 +716,8 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
       "/api/submissions": {
         post: {
           operationId: "registerSubmission",
-          summary: "Register a confirmed on-chain submission with metadata",
+          summary:
+            "Register a confirmed on-chain submission against a reserved intent",
           requestBody: {
             required: true,
             content: {
@@ -730,35 +731,6 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           responses: {
             "200": {
               description: "Submission registered.",
-              content: {
-                "application/json": {
-                  schema: {
-                    $ref: "#/components/schemas/SubmissionRegistrationResponse",
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-      "/api/submissions/attach-metadata": {
-        post: {
-          operationId: "attachSubmissionMetadata",
-          summary:
-            "Idempotently attach metadata to a confirmed on-chain submission",
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  $ref: "#/components/schemas/SubmissionRegistrationRequest",
-                },
-              },
-            },
-          },
-          responses: {
-            "200": {
-              description: "Submission metadata attached.",
               content: {
                 "application/json": {
                   schema: {
@@ -1337,7 +1309,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 expiresAt: isoDateTimeSchema(),
                 matchedSubmissionId: { ...uuidSchema(), nullable: true },
               },
-              required: ["resultHash", "expiresAt"],
+              required: ["intentId", "resultHash", "expiresAt", "matchedSubmissionId"],
             },
           },
           required: ["data"],
@@ -1360,6 +1332,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           properties: {
             challengeId: uuidSchema(),
             challengeAddress: addressSchema(),
+            intentId: uuidSchema(),
             resultCid: { type: "string" },
             txHash: {
               type: "string",
@@ -1370,7 +1343,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               enum: ["plain_v0", "sealed_submission_v2"],
             },
           },
-          required: ["resultCid", "txHash"],
+          required: ["intentId", "resultCid", "txHash"],
           anyOf: [
             { required: ["challengeId"] },
             { required: ["challengeAddress"] },
