@@ -46,7 +46,7 @@ Before the layers, it helps to anchor the nouns that recur everywhere:
 | On-chain submission | Challenge contract submission slot | `on_chain_sub_id` |
 | Score job | Worker task to evaluate one submission | `score_jobs.id` |
 | Proof bundle | Reproducibility artifact for a scored run | `proof_bundles.cid` |
-| Published challenge link | Draft-to-challenge publish outcome record | `published_challenge_links.draft_id` |
+| Published draft metadata | Draft-to-challenge publish outcome stored on the draft row | `authoring_drafts.published_challenge_id` |
 
 ## Three Primary Flows
 
@@ -178,8 +178,8 @@ Agora does not have one scorer image anymore. It has a small official scorer ima
 
 | Image | Code | Used by |
 |-------|------|---------|
-| `ghcr.io/andymolecule/gems-match-scorer:v1` | `containers/gems-match-scorer/score.py` | `reproducibility` plus executable semi-custom `exact_artifact_match` and `structured_record_score` |
-| `ghcr.io/andymolecule/gems-tabular-scorer:v1` | `containers/gems-tabular-scorer/score.py` | `tabular_regression`, `tabular_classification`, executable semi-custom `structured_table_score` |
+| `ghcr.io/andymolecule/gems-match-scorer:v1` | `containers/gems-match-scorer/score.py` | `reproducibility` |
+| `ghcr.io/andymolecule/gems-tabular-scorer:v1` | `containers/gems-tabular-scorer/score.py` | `tabular_regression`, `tabular_classification` |
 | `ghcr.io/andymolecule/gems-ranking-scorer:v1` | `containers/gems-ranking-scorer/score.py` | `ranking`, `docking` |
 
 The important architectural rule is not “one scorer.” It is “one small official scorer image set with pinned digests and deterministic runtime contracts.”
@@ -195,12 +195,8 @@ One nuance:
 ```mermaid
 flowchart LR
     R1["reproducibility"] --> I1["gems-match-scorer"]
-    R2["exact_artifact_match"] --> I1
-    R3["structured_record_score"] --> I1
-
     T1["tabular_regression"] --> I2["gems-tabular-scorer"]
     T2["tabular_classification"] --> I2
-    T3["structured_table_score"] --> I2
 
     K1["ranking"] --> I3["gems-ranking-scorer"]
     K2["docking"] --> I3
@@ -220,7 +216,7 @@ All official scorers receive a staged input directory:
 Common mount patterns today:
 
 ```text
-tabular managed / semi-custom:
+tabular managed:
   ground_truth.csv
   submission.csv
 
@@ -269,7 +265,7 @@ gems-ranking-scorer
 The bottom-line rule is:
 
 - managed prediction / ranking / docking use dedicated metric scorers
-- exact-match and structured-record semi-custom paths reuse the reproducibility scorer
+- explicit custom scorer workflows can still reuse these official images when the publishable spec points at them directly
 
 ### What it outputs
 
@@ -451,7 +447,7 @@ ScoringPipelineResult
 
 This layer is where spec-derived scoring config is resolved. It prefers cached DB config on the challenge row and falls back to the IPFS spec CID only when needed.
 
-It also keeps managed, semi-custom, and expert scoring on one execution rail: once the image, mount plan, contracts, and policies are resolved, the pipeline does not care where they came from.
+It keeps managed Gems challenges and explicit custom scorer challenges on one execution rail: once the image, mount plan, contracts, and policies are resolved, the pipeline does not care whether the spec came from guided authoring or a custom workflow.
 
 ---
 
@@ -530,7 +526,7 @@ Every poll interval:
   │     ├── scorer image
   │     ├── evaluation bundle CID
   │     ├── mount config
-  │     └── semi-custom runner family override if needed
+  │     └── custom runner family override if needed
   │
   ├── resolve submission source
   │     ├── plain_v0 → use CID directly
@@ -706,15 +702,12 @@ authoring_drafts
   authoring_ir_json
   uploaded_artifacts_json
   compilation_json
+  source_callback_url
+  published_spec_cid
+  published_challenge_id
 
 authoring_source_links
   provider + external_id -> draft_id
-
-published_challenge_links
-  draft_id -> challenge_id / spec cid / published spec / return_to
-
-authoring_callback_targets
-  draft_id -> callback_url / registered_at
 
 authoring_callback_deliveries
   durable callback outbox / retry queue
@@ -741,27 +734,23 @@ challenge_payouts
   payout allocations and claim state
 ```
 
-### Canonical rows vs merged read models
+### Canonical rows and focused side tables
 
 One important implementation detail for new engineers:
 
-- canonical write models stay split
-- read models are sometimes merged for convenience
+- `authoring_drafts` is the canonical draft aggregate
+- only the truly multi-row concerns stay separate
 
-Example:
+Today that means:
 
 ```text
 authoring_drafts
   + authoring_source_links
-  + authoring_callback_targets
-  + published_challenge_links
-        │
-        ▼
-AuthoringDraftViewRow
-  merged read model for API shaping
+  + authoring_callback_deliveries
+  + authoring_sponsor_budget_reservations
 ```
 
-That means not every field visible in an API draft payload lives on the same table.
+Callback registration and publish outcome now live directly on `authoring_drafts`, so the API draft payload is much closer to the real write model than it was during the split-table phase.
 
 ### Source of truth rules
 
@@ -773,8 +762,8 @@ That means not every field visible in an API draft payload lives on the same tab
 | scorer image / evaluation plan | challenge spec + runtime family / evaluator contract | cache + query convenience |
 | draft state | `authoring_drafts` | canonical |
 | external source identity | `authoring_source_links` | canonical |
-| publish outcome | `published_challenge_links` | canonical |
-| callback target registration | `authoring_callback_targets` | canonical |
+| publish outcome | `authoring_drafts.published_*` | canonical |
+| callback target registration | `authoring_drafts.source_callback_*` | canonical |
 | callback retry queue | `authoring_callback_deliveries` | canonical |
 | submission registration | strict `submission_intents -> submissions` link | canonical |
 | proof bundle replay metadata | IPFS proof bundle + `proof_bundles` row | pinned artifact + projection |
@@ -858,25 +847,17 @@ Submission flow:
 
 Direct authoring:
   GET  /api/authoring/health
-  POST /api/authoring/drafts
-  POST /api/authoring/drafts/:id/compile
+  POST /api/authoring/drafts/submit
   POST /api/authoring/drafts/:id/publish
 
-Internal review:
-  GET  /api/authoring/review/drafts
-  POST /api/authoring/review/drafts/:id/decision
-  POST /api/authoring/review/sweep-expired
-
 External authoring / partner integration:
-  POST /api/authoring/external/sources
+  POST /api/authoring/external/drafts/submit
   GET  /api/authoring/external/drafts/:id
   GET  /api/authoring/external/drafts/:id/card
-  POST /api/authoring/external/drafts/:id/clarify
-  POST /api/authoring/external/drafts/:id/compile
   POST /api/authoring/external/drafts/:id/publish
   POST /api/authoring/external/drafts/:id/webhook
   POST /api/authoring/callbacks/sweep
-  POST /api/integrations/beach/drafts/import
+  POST /api/integrations/beach/drafts/submit
 
 Other active surfaces:
   GET  /api/me/portfolio
@@ -901,19 +882,17 @@ Sealed submission privacy is an anti-copy boundary while the challenge is open, 
 
 ## Layer 9: The Authoring Pipeline (Draft → Challenge Spec)
 
-### Two entry points, same destination
+### One workflow, two wrappers
 
 ```text
-External partner or agent authoring
-  /api/authoring/external/sources
-  /api/integrations/beach/drafts/import
-  /api/authoring/external/drafts/:id/publish
+Direct managed submit
+  /api/authoring/drafts/submit
 
-Direct web authoring (secondary for Beach/OpenClaw)
-  /post UI
-  └── POST /api/authoring/drafts
+External partner submit
+  /api/authoring/external/drafts/submit
+  /api/integrations/beach/drafts/submit
 
-Both converge into:
+Both wrappers converge into the same flow:
   intent_json
   + uploaded_artifacts_json
   + source/origin context
@@ -922,34 +901,17 @@ Both converge into:
   buildManagedAuthoringIr(...)
         │
         ▼
-  authoring_ir_json
-    routing.mode:
-      - not_ready
-      - managed_supported
-      - semi_custom
-      - expert_mode_required
-        │
-        ▼
   compileManagedAuthoringDraftOutcome(...)
-    outcome.state:
-      - ready
-      - needs_review
-      - needs_clarification
-    assessment:
-      - feasible
-      - publishable
-      - requires_review
-      - missing and suggestions
         │
         ▼
   persisted draft state:
     draft
       -> compiling
-      -> ready | needs_review | needs_clarification | failed
+      -> ready | needs_clarification | failed
       -> published
 ```
 
-### Direct vs partner authoring sequence
+### Submit sequence
 
 ```mermaid
 sequenceDiagram
@@ -959,43 +921,37 @@ sequenceDiagram
     participant IR as IR builder
     participant CMP as compiler and dry-run
 
-    U->>API: create or update draft
+    U->>API: submit draft context + artifacts + intent
     API->>IR: buildManagedAuthoringIr(...)
     IR-->>API: authoring_ir_json
     API->>DB: persist draft snapshot
-    U->>API: compile draft
     API->>CMP: compileManagedAuthoringDraftOutcome(...)
-    CMP-->>API: ready or needs_review or needs_clarification
+    CMP-->>API: ready or needs_clarification or failed
     API->>DB: persist compilation result and draft state
 ```
 
-### Review and publish branch
+### Publish branch
 
 ```mermaid
 flowchart TD
     Draft["authoring_drafts row"]
-    Compile["compileManagedAuthoringDraftOutcome(...)"]
-    Review["Internal review queue"]
+    Submit["submit"]
     Publish["publish -> pin spec -> sponsor approve -> create challenge"]
-    Link["published_challenge_links"]
-    Callback["callback target + outbox"]
+    DraftMeta["draft row publish + callback metadata"]
+    Callback["callback outbox"]
 
-    Draft --> Compile
-    Compile -->|"ready"| Publish
-    Compile -->|"needs_review"| Review
-    Compile -->|"needs_clarification"| Draft
-    Review -->|"approve"| Publish
-    Review -->|"reject / request changes"| Draft
-    Publish --> Link
+    Draft --> Submit
+    Submit -->|"ready"| Publish
+    Submit -->|"needs_clarification or failed"| Draft
+    Publish --> DraftMeta
     Draft --> Callback
-    Review --> Callback
-    Publish --> Callback
+    DraftMeta --> Callback
 ```
 
 Important distinction:
 
-- `routing.mode` is the IR’s interpretation of what kind of evaluator path the draft needs
-- `outcome.state` is the compile/review result
+- `routing.mode` is still the IR’s interpretation of what kind of evaluator path the draft may need
+- `outcome.state` is the submit/compile result
 - `authoring_drafts.state` is the persisted workflow state in the database
 - for Beach/OpenClaw, the partner route is now the primary publish path; it does not need to bounce back out to a browser wallet because Agora can use its internal sponsor signer for the MVP agent-native flow
 - the browser-based direct authoring path still exists, but it is now the exception path for human intervention rather than the core external integration model
@@ -1011,32 +967,16 @@ Important distinction:
 
 2. **Managed proposal generation**
 
-- always runs a heuristic proposal path
-- may optionally use the `openai_compatible` managed authoring compiler backend
-- proposes runtime family, metric, confidence, and reason codes
+- reads poster intent plus artifact metadata
+- proposes one supported Gems runtime family and metric
+- returns reason codes, warnings, and any missing-input questions needed before compile can succeed
 
-3. **Scoreability and review gating**
+3. **Scoreability and compile gating**
 
-- `managed_supported` + strong confidence + successful dry-run → `ready`
-- `managed_supported` + weaker confidence → `needs_review`
-- `semi_custom` + executable official template → typed contract + dry-run + `needs_review`
-- `semi_custom` + non-executable contract → typed contract but publish-blocked
-- `expert_mode_required` → not a current managed/semi-custom execution path
+- supported Gems proposal + successful dry-run → `ready`
+- missing intent fields or ambiguous artifact roles → `needs_clarification`
+- unsupported evaluator shape → `failed` with an explicit custom-scorer next step
 - unresolved ambiguity → `needs_clarification`
-
-Current semi-custom archetype registry:
-
-- `exact_artifact_match`
-- `structured_table_score`
-- `structured_record_score`
-- `bundle_or_code_judge`
-- `opaque_file_judge`
-
-Current executable semi-custom templates:
-
-- `official_table_metric_v1`
-- `official_exact_match_v1`
-- `official_structured_record_v1`
 
 So the architecture already distinguishes between:
 
@@ -1048,7 +988,7 @@ So the architecture already distinguishes between:
 
 ## Layer 10: The External Partner Callback System
 
-**Files:** `apps/api/src/lib/authoring-drafts.ts`, `packages/db/src/queries/authoring-callback-targets.ts`, `packages/db/src/queries/authoring-callback-deliveries.ts`
+**Files:** `apps/api/src/lib/authoring-drafts.ts`, `packages/db/src/queries/authoring-drafts.ts`, `packages/db/src/queries/authoring-callback-deliveries.ts`
 
 ### What it does
 
@@ -1061,7 +1001,7 @@ Draft state changes
       │
       ▼
 Resolve callback target
-  authoring_callback_targets
+  authoring_drafts.source_callback_url
       │
       ▼
 Build event payload
@@ -1151,26 +1091,15 @@ and only exposes verification/public replay surfaces once the challenge is no lo
 
 ### Posting Flow (Guided Interview)
 
-The posting UI is a guided authoring shell over the same draft backend:
+The posting UI is a guided authoring shell over the same submit backend:
 
 ```text
 /post
   ├── local guided reducer / prompt state
-  ├── create direct draft
-  ├── compile draft
+  ├── submit draft
   ├── show compilation + confirmation contract
   ├── wallet approval / pin-spec / challenge creation
   └── optional return-to handoff for hosted partner flows
-```
-
-There is also an internal review surface:
-
-```text
-/authoring-review
-  ├── lists drafts in needs_review
-  ├── proxies through Next.js /api/authoring-review/*
-  ├── which forwards to API /api/authoring/review/*
-  └── uses AGORA_AUTHORING_REVIEW_TOKEN
 ```
 
 ### Parallel top-layer clients
@@ -1229,7 +1158,7 @@ flowchart TD
     MCP["MCP Server / Agent Runtime"]
     Partner["External Partner (Beach, etc.)"]
 
-    API["API (Hono)\nREST + authoring + submissions + review"]
+    API["API (Hono)\nREST + authoring + submissions"]
     DB["Supabase\nprojections + drafts + jobs"]
     Chain["Base contracts\nAgoraFactory + AgoraChallenge"]
     Indexer["Chain indexer"]
@@ -1308,9 +1237,9 @@ That single path touches almost every layer described above:
 
 2. **Submission registration is now strict.** A scoreable submission must have a registered `submission_intent` and a strict FK-backed link into `submissions`. The old reconcile-later model is gone from the live architecture.
 
-3. **The draft aggregate is cleaner than before.** Draft state, source identity, callback targets, callback deliveries, and publish outcomes are no longer stuffed into one thick all-purpose draft row. The split into `authoring_drafts`, `authoring_source_links`, `authoring_callback_targets`, `authoring_callback_deliveries`, and `published_challenge_links` materially reduced structural entropy.
+3. **The draft aggregate is cleaner than before.** The earlier split proved which concerns were truly 1:many and which were just 1:1 metadata. The current shape keeps `authoring_source_links`, `authoring_callback_deliveries`, and sponsor reservations as real side tables, while collapsing callback registration and publish outcome back onto `authoring_drafts`.
 
-4. **The authoring layer is broader without jumping straight to arbitrary code.** Managed runtimes, executable semi-custom templates, and typed-but-non-executable semi-custom archetypes are distinct concepts now.
+4. **The assisted authoring flow is smaller.** Managed and partner-assisted posting now converge on `submit -> publish` without a separate review queue or a separate compile endpoint.
 
 5. **Public fairness boundaries are explicit.** Open challenges keep leaderboard and verification surfaces closed, and the code treats effective on-chain lifecycle semantics as the visibility boundary.
 
@@ -1320,17 +1249,17 @@ That single path touches almost every layer described above:
 
 2. **`challenge_type` still exists as a compatibility/display concept.** Runtime identity has shifted toward `runtime_family` plus evaluator contract/archetype, but some compatibility fields still remain in the data model and UI surface.
 
-3. **The authoring subsystem is cleaner but still cognitively dense.** The routes are thinner than before, but the authoring IR, compilation, dry-run, review, partner import, and callback paths still span multiple focused modules.
+3. **The authoring subsystem is cleaner but still cognitively dense.** The routes are thinner than before, but the authoring IR, compilation, dry-run, partner intake, and callback paths still span multiple focused modules.
 
 4. **Proof pinning and on-chain posting are recoverable, not transactional.** The system has retry and reconciliation logic, but proof publication and score posting are still a multi-step workflow rather than a single atomic commit.
 
-5. **Some semi-custom archetypes remain typed-only.** `bundle_or_code_judge` and `opaque_file_judge` are valid routing outputs, but they are not first-class executable official templates yet. Expanding them carelessly would be an easy way to reintroduce complexity.
+5. **The explicit custom scorer workflow is still a separate path.** The assisted authoring flow only targets supported Gems runtimes. Anything broader should fail clearly and move to the custom scorer workflow instead of silently widening the managed surface.
 
 ---
 
 ## Design Thinking: When Does Deterministic Scoring Work?
 
-Agora is strongest when the poster can state an objective payout condition as an explicit, typed rule. The current architecture supports a broader set of deterministic problems than it did earlier, but it still does not support every “interesting challenge.”
+Agora is strongest when the poster can state an objective payout condition as an explicit, typed rule. The current assisted authoring flow supports supported Gems runtimes only, while broader deterministic evaluators still belong to the explicit custom scorer workflow.
 
 ### The fundamental question
 
@@ -1339,8 +1268,7 @@ Can the poster express the winner condition as a deterministic contract that the
 If yes, Agora can usually support it through:
 
 - a managed runtime family
-- an executable semi-custom evaluator template
-- or expert mode with a custom scorer image
+- or an explicit custom scorer workflow when the managed path is too narrow
 
 If no, the challenge is not yet a fit for the current deterministic settlement model.
 
@@ -1350,9 +1278,9 @@ If no, the challenge is not yet a fit for the current deterministic settlement m
 
 | Example | Evaluation artifact | Current path |
 |---------|---------------------|--------------|
-| reproduce a published data table | hidden CSV reference | managed `reproducibility` or semi-custom `exact_artifact_match` |
-| match an exact JSON output | hidden JSON reference | executable semi-custom `exact_artifact_match` |
-| reproduce a binary document or generated file | hidden binary/PDF | executable semi-custom `exact_artifact_match` |
+| reproduce a published data table | hidden CSV reference | managed `reproducibility` |
+| match an exact JSON output | hidden JSON reference | explicit custom scorer workflow |
+| reproduce a binary document or generated file | hidden binary/PDF | explicit custom scorer workflow |
 
 Why it works:
 
@@ -1368,7 +1296,7 @@ Why it works:
 | numeric predictions against hidden labels | hidden CSV labels | managed `tabular_regression` |
 | class labels against hidden truth | hidden CSV labels | managed `tabular_classification` |
 | ranked candidates against hidden relevance | hidden ranking CSV | managed `ranking` or `docking` |
-| table-shaped deterministic semi-custom scoring | hidden CSV + typed contract | executable semi-custom `structured_table_score` |
+| deterministic table scoring with a custom rule | hidden CSV + custom evaluator | explicit custom scorer workflow |
 
 Why it works:
 
@@ -1382,9 +1310,9 @@ Why it works:
 
 | Example | Evaluation artifact | Current path |
 |---------|---------------------|--------------|
-| incident report with required sections | hidden rubric JSON | executable semi-custom `structured_record_score` |
-| structured protocol compliance | hidden rubric JSON | executable semi-custom `structured_record_score` |
-| bundle/code package requiring custom deterministic checks | typed archetype only | `bundle_or_code_judge` (typed, not executable by official template yet) |
+| incident report with required sections | hidden rubric JSON | explicit custom scorer workflow |
+| structured protocol compliance | hidden rubric JSON | explicit custom scorer workflow |
+| bundle/code package requiring deterministic checks | hidden harness or rubric | explicit custom scorer workflow |
 
 Why it works:
 
@@ -1397,22 +1325,22 @@ Why it works:
 
 | Example | Why it is hard | Current support |
 |---------|----------------|-----------------|
-| discover a new molecule | needs simulation or search evaluation | expert/custom scorer only |
-| run hidden model inference over submitted code | needs arbitrary execution against hidden environment | expert/custom scorer only |
-| evaluate a code bundle with a bespoke hidden test harness | needs custom judge runtime | typed archetype exists, official template not yet |
+| discover a new molecule | needs simulation or search evaluation | explicit custom scorer workflow |
+| run hidden model inference over submitted code | needs arbitrary execution against hidden environment | explicit custom scorer workflow |
+| evaluate a code bundle with a bespoke hidden test harness | needs a custom judge runtime | explicit custom scorer workflow |
 
-This is the frontier. The current managed and semi-custom layers are intentionally constrained to avoid turning the platform into arbitrary code execution by default.
+This is the frontier. The assisted Gems path is intentionally constrained so the platform does not drift into arbitrary code execution by default.
 
 ### Summary: What the scorer can and cannot evaluate
 
 ```text
 Poster has...                     Current architecture path
 ───────────────────────────────   ───────────────────────────────────────────
-Exact reference artifact          Managed or semi-custom exact match
-Hidden labels / hidden scores     Managed metric scorer or structured table score
-Deterministic rubric              Structured record score
-Custom deterministic judge        Expert mode today; limited typed archetypes exist
-Open-ended search problem         Not a first-class managed/semi-custom path
+Exact reference artifact          Managed reproducibility or explicit custom scorer workflow
+Hidden labels / hidden scores     Managed metric scorer
+Deterministic rubric              Explicit custom scorer workflow
+Custom deterministic judge        Explicit custom scorer workflow
+Open-ended search problem         Not a first-class assisted Gems path
 ```
 
 ### Design implication

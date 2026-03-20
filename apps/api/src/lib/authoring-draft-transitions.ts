@@ -9,22 +9,19 @@ import type {
   ChallengeSpecOutput,
 } from "@agora/common";
 import {
-  type AuthoringDraftViewRow,
-  type PublishedChallengeLinkRow,
+  type AuthoringDraftRow,
   createAuthoringDraft,
-  getAuthoringDraftViewById,
+  getAuthoringDraftById,
   updateAuthoringDraft,
-  upsertAuthoringCallbackTarget,
-  upsertPublishedChallengeLink,
 } from "@agora/db";
 import { buildExpiry } from "./authoring-draft-payloads.js";
 
-async function reloadDraftViewOrThrow(
-  db: Parameters<typeof getAuthoringDraftViewById>[0],
+async function reloadDraftOrThrow(
+  db: Parameters<typeof getAuthoringDraftById>[0],
   draftId: string,
-  getAuthoringDraftViewByIdImpl: typeof getAuthoringDraftViewById = getAuthoringDraftViewById,
+  getAuthoringDraftByIdImpl: typeof getAuthoringDraftById = getAuthoringDraftById,
 ) {
-  const draft = await getAuthoringDraftViewByIdImpl(db, draftId);
+  const draft = await getAuthoringDraftByIdImpl(db, draftId);
   if (!draft) {
     throw new Error(
       `Authoring draft ${draftId} could not be reloaded. Next step: retry the request and inspect the draft storage path.`,
@@ -44,7 +41,7 @@ export async function createDraft(input: {
   expiresInMs: number;
   failureMessage?: string | null;
   createAuthoringDraftImpl?: typeof createAuthoringDraft;
-  getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
+  getAuthoringDraftByIdImpl?: typeof getAuthoringDraftById;
 }) {
   const draft = await (input.createAuthoringDraftImpl ?? createAuthoringDraft)(
     input.db,
@@ -60,23 +57,19 @@ export async function createDraft(input: {
     },
   );
 
-  return reloadDraftViewOrThrow(
-    input.db,
-    draft.id,
-    input.getAuthoringDraftViewByIdImpl,
-  );
+  return reloadDraftOrThrow(input.db, draft.id, input.getAuthoringDraftByIdImpl);
 }
 
 export async function refreshDraftIr(input: {
   db: Parameters<typeof updateAuthoringDraft>[0];
-  session: Pick<AuthoringDraftViewRow, "id" | "updated_at">;
+  session: Pick<AuthoringDraftRow, "id" | "updated_at">;
   state: AuthoringDraftState;
   intentJson?: ChallengeIntentOutput | null;
   authoringIrJson: ChallengeAuthoringIrOutput;
   uploadedArtifactsJson: AuthoringArtifactOutput[];
   expiresInMs: number;
   updateAuthoringDraftImpl?: typeof updateAuthoringDraft;
-  getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
+  getAuthoringDraftByIdImpl?: typeof getAuthoringDraftById;
 }) {
   await (input.updateAuthoringDraftImpl ?? updateAuthoringDraft)(input.db, {
     id: input.session.id,
@@ -90,22 +83,22 @@ export async function refreshDraftIr(input: {
     expires_at: buildExpiry(input.expiresInMs),
   });
 
-  return reloadDraftViewOrThrow(
+  return reloadDraftOrThrow(
     input.db,
     input.session.id,
-    input.getAuthoringDraftViewByIdImpl,
+    input.getAuthoringDraftByIdImpl,
   );
 }
 
 export async function markDraftCompiling(input: {
   db: Parameters<typeof updateAuthoringDraft>[0];
-  session: Pick<AuthoringDraftViewRow, "id" | "updated_at">;
+  session: Pick<AuthoringDraftRow, "id" | "updated_at">;
   posterAddress?: string | null;
   intentJson: ChallengeIntentOutput;
   authoringIrJson: ChallengeAuthoringIrOutput;
   expiresInMs: number;
   updateAuthoringDraftImpl?: typeof updateAuthoringDraft;
-  getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
+  getAuthoringDraftByIdImpl?: typeof getAuthoringDraftById;
 }) {
   await (input.updateAuthoringDraftImpl ?? updateAuthoringDraft)(input.db, {
     id: input.session.id,
@@ -119,16 +112,16 @@ export async function markDraftCompiling(input: {
     expires_at: buildExpiry(input.expiresInMs),
   });
 
-  return reloadDraftViewOrThrow(
+  return reloadDraftOrThrow(
     input.db,
     input.session.id,
-    input.getAuthoringDraftViewByIdImpl,
+    input.getAuthoringDraftByIdImpl,
   );
 }
 
 export async function completeDraftCompilation(input: {
   db: Parameters<typeof updateAuthoringDraft>[0];
-  session: Pick<AuthoringDraftViewRow, "id" | "updated_at">;
+  session: Pick<AuthoringDraftRow, "id" | "updated_at">;
   state: AuthoringDraftState;
   posterAddress?: string | null;
   intentJson: ChallengeIntentOutput;
@@ -137,7 +130,7 @@ export async function completeDraftCompilation(input: {
   compilationJson: CompilationResultOutput | null;
   expiresInMs: number;
   updateAuthoringDraftImpl?: typeof updateAuthoringDraft;
-  getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
+  getAuthoringDraftByIdImpl?: typeof getAuthoringDraftById;
 }) {
   await (input.updateAuthoringDraftImpl ?? updateAuthoringDraft)(input.db, {
     id: input.session.id,
@@ -152,16 +145,16 @@ export async function completeDraftCompilation(input: {
     expires_at: buildExpiry(input.expiresInMs),
   });
 
-  return reloadDraftViewOrThrow(
+  return reloadDraftOrThrow(
     input.db,
     input.session.id,
-    input.getAuthoringDraftViewByIdImpl,
+    input.getAuthoringDraftByIdImpl,
   );
 }
 
 export async function failDraft(input: {
   db: Parameters<typeof updateAuthoringDraft>[0];
-  session: Pick<AuthoringDraftViewRow, "id" | "updated_at">;
+  session: Pick<AuthoringDraftRow, "id" | "updated_at">;
   posterAddress?: string | null;
   intentJson?: ChallengeIntentOutput | null;
   authoringIrJson?: ChallengeAuthoringIrOutput | null;
@@ -170,7 +163,7 @@ export async function failDraft(input: {
   message: string;
   expiresInMs: number;
   updateAuthoringDraftImpl?: typeof updateAuthoringDraft;
-  getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
+  getAuthoringDraftByIdImpl?: typeof getAuthoringDraftById;
 }) {
   await (input.updateAuthoringDraftImpl ?? updateAuthoringDraft)(input.db, {
     id: input.session.id,
@@ -185,20 +178,20 @@ export async function failDraft(input: {
     expires_at: buildExpiry(input.expiresInMs),
   });
 
-  return reloadDraftViewOrThrow(
+  return reloadDraftOrThrow(
     input.db,
     input.session.id,
-    input.getAuthoringDraftViewByIdImpl,
+    input.getAuthoringDraftByIdImpl,
   );
 }
 
 export async function approveDraftForPublish(input: {
   db: Parameters<typeof updateAuthoringDraft>[0];
-  session: Pick<AuthoringDraftViewRow, "id">;
+  session: Pick<AuthoringDraftRow, "id">;
   compilationJson: CompilationResultOutput;
   expiresInMs: number;
   updateAuthoringDraftImpl?: typeof updateAuthoringDraft;
-  getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
+  getAuthoringDraftByIdImpl?: typeof getAuthoringDraftById;
 }) {
   await (input.updateAuthoringDraftImpl ?? updateAuthoringDraft)(input.db, {
     id: input.session.id,
@@ -207,16 +200,16 @@ export async function approveDraftForPublish(input: {
     expires_at: buildExpiry(input.expiresInMs),
   });
 
-  return reloadDraftViewOrThrow(
+  return reloadDraftOrThrow(
     input.db,
     input.session.id,
-    input.getAuthoringDraftViewByIdImpl,
+    input.getAuthoringDraftByIdImpl,
   );
 }
 
 export async function publishDraft(input: {
   db: Parameters<typeof updateAuthoringDraft>[0];
-  session: Pick<AuthoringDraftViewRow, "id">;
+  session: Pick<AuthoringDraftRow, "id">;
   posterAddress?: string | null;
   compilationJson: CompilationResultOutput;
   publishedSpecJson: ChallengeSpecOutput;
@@ -225,45 +218,42 @@ export async function publishDraft(input: {
   returnTo?: string | null;
   expiresInMs: number;
   updateAuthoringDraftImpl?: typeof updateAuthoringDraft;
-  upsertPublishedChallengeLinkImpl?: typeof upsertPublishedChallengeLink;
-  getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
+  getAuthoringDraftByIdImpl?: typeof getAuthoringDraftById;
 }) {
   await (input.updateAuthoringDraftImpl ?? updateAuthoringDraft)(input.db, {
     id: input.session.id,
     poster_address: input.posterAddress,
     state: "published",
     compilation_json: input.compilationJson,
+    published_challenge_id: input.challengeId ?? null,
+    published_spec_json: input.publishedSpecJson,
+    published_spec_cid: input.publishedSpecCid,
+    published_return_to: input.returnTo ?? null,
+    published_at: new Date().toISOString(),
     failure_message: null,
     expires_at: buildExpiry(input.expiresInMs),
   });
 
-  await (
-    input.upsertPublishedChallengeLinkImpl ?? upsertPublishedChallengeLink
-  )(input.db, {
-    draft_id: input.session.id,
-    challenge_id: input.challengeId ?? null,
-    published_spec_json: input.publishedSpecJson,
-    published_spec_cid: input.publishedSpecCid,
-    return_to: input.returnTo ?? null,
-  });
-
-  return reloadDraftViewOrThrow(
+  return reloadDraftOrThrow(
     input.db,
     input.session.id,
-    input.getAuthoringDraftViewByIdImpl,
+    input.getAuthoringDraftByIdImpl,
   );
 }
 
 export function resolvePublishedDraftReturnSource(input: {
-  publishedLink: Pick<PublishedChallengeLinkRow, "return_to"> | null;
+  draft:
+    | Pick<AuthoringDraftRow, "published_return_to">
+    | null
+    | undefined;
   originExternalUrl?: string | null;
 }) {
-  if (!input.publishedLink?.return_to) {
+  if (!input.draft?.published_return_to) {
     return null;
   }
   if (
     input.originExternalUrl &&
-    input.publishedLink.return_to === input.originExternalUrl
+    input.draft.published_return_to === input.originExternalUrl
   ) {
     return "origin_external_url" as const;
   }
@@ -272,23 +262,23 @@ export function resolvePublishedDraftReturnSource(input: {
 
 export async function registerDraftCallback(input: {
   db: Parameters<typeof updateAuthoringDraft>[0];
-  session: Pick<AuthoringDraftViewRow, "id">;
+  session: Pick<AuthoringDraftRow, "id" | "updated_at">;
   callbackUrl: string;
   registeredAt?: string;
-  upsertAuthoringCallbackTargetImpl?: typeof upsertAuthoringCallbackTarget;
-  getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
+  updateAuthoringDraftImpl?: typeof updateAuthoringDraft;
+  getAuthoringDraftByIdImpl?: typeof getAuthoringDraftById;
 }) {
-  await (
-    input.upsertAuthoringCallbackTargetImpl ?? upsertAuthoringCallbackTarget
-  )(input.db, {
-    draft_id: input.session.id,
-    callback_url: input.callbackUrl,
-    registered_at: input.registeredAt ?? new Date().toISOString(),
+  await (input.updateAuthoringDraftImpl ?? updateAuthoringDraft)(input.db, {
+    id: input.session.id,
+    expected_updated_at: input.session.updated_at,
+    source_callback_url: input.callbackUrl,
+    source_callback_registered_at:
+      input.registeredAt ?? new Date().toISOString(),
   });
 
-  return reloadDraftViewOrThrow(
+  return reloadDraftOrThrow(
     input.db,
     input.session.id,
-    input.getAuthoringDraftViewByIdImpl,
+    input.getAuthoringDraftByIdImpl,
   );
 }

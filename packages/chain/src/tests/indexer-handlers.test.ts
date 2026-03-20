@@ -26,11 +26,11 @@ test("enqueueChallengeFinalizedCallback creates a durable partner callback for f
     db: {} as never,
     challengeId: "7e6d7395-bec8-44b6-9d3e-5dd4518ab201",
     contractAddress: "0x2222222222222222222222222222222222222222",
-    getPublishedChallengeLinkByChallengeIdImpl: async () =>
+    getPublishedDraftMetadataByChallengeIdImpl: async () =>
       ({
         draft_id: "68dff5c6-336a-47fa-a4de-41e6386bd2e4",
       }) as never,
-    getAuthoringDraftViewByIdImpl: async () =>
+    getAuthoringDraftByIdImpl: async () =>
       ({
         id: "68dff5c6-336a-47fa-a4de-41e6386bd2e4",
         source_callback_url: "https://hooks.beach.science/agora",

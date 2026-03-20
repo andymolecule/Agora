@@ -55,7 +55,6 @@ export type GuidedCompileState =
   | "ready_to_compile"
   | "compiling"
   | "needs_clarification"
-  | "needs_review"
   | "ready";
 
 export type GuidedComposerState = {
@@ -171,7 +170,6 @@ const guidedCompileStateSchema = z.enum([
   "ready_to_compile",
   "compiling",
   "needs_clarification",
-  "needs_review",
   "ready",
 ]);
 const distributionValueSchema = z.enum([
@@ -863,10 +861,6 @@ export function hydrateGuidedStateFromAuthoringDraft(
     case "ready":
     case "published":
       nextState.compileState = "ready";
-      nextState.activePromptId = null;
-      break;
-    case "needs_review":
-      nextState.compileState = "needs_review";
       nextState.activePromptId = null;
       break;
     case "needs_clarification":

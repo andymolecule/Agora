@@ -62,17 +62,9 @@ export const safePublicHttpsUrlSchema = z
 export const EXTERNAL_SOURCE_PROVIDER_VALUES = [
   "direct",
   "beach_science",
-  "github",
-  "slack",
-  "lab_portal",
 ] as const;
 
-export const AUTHORING_PARTNER_PROVIDER_VALUES = [
-  "beach_science",
-  "github",
-  "slack",
-  "lab_portal",
-] as const;
+export const AUTHORING_PARTNER_PROVIDER_VALUES = ["beach_science"] as const;
 
 export const externalSourceProviderSchema = z.enum(
   EXTERNAL_SOURCE_PROVIDER_VALUES,
@@ -134,33 +126,34 @@ export const authoringSourceRawContextSchema = z
     }
   }, `Authoring source raw_context must stay under ${AUTHORING_SOURCE_MAX_RAW_CONTEXT_BYTES} bytes. Next step: trim provider debug payloads and retry.`);
 
-export const createAuthoringSourceDraftRequestSchema = z
-  .object({
-    title: z
-      .string()
-      .trim()
-      .min(1)
-      .max(AUTHORING_SOURCE_MAX_TITLE_LENGTH)
-      .optional(),
-    external_id: z
-      .string()
-      .trim()
-      .min(1)
-      .max(AUTHORING_SOURCE_MAX_EXTERNAL_ID_LENGTH)
-      .optional(),
-    // Hosted providers can omit this to disable implicit post-publish return links.
-    external_url: safePublicHttpsUrlSchema.optional(),
-    raw_context: authoringSourceRawContextSchema.optional(),
-    messages: z
-      .array(externalSourceMessageSchema)
-      .min(1)
-      .max(AUTHORING_SOURCE_MAX_MESSAGES),
-    artifacts: z
-      .array(externalSourceArtifactRefSchema)
-      .max(AUTHORING_SOURCE_MAX_ARTIFACTS)
-      .default([]),
-  })
-  .superRefine((value, ctx) => {
+export const authoringSourceDraftFieldsSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1)
+    .max(AUTHORING_SOURCE_MAX_TITLE_LENGTH)
+    .optional(),
+  external_id: z
+    .string()
+    .trim()
+    .min(1)
+    .max(AUTHORING_SOURCE_MAX_EXTERNAL_ID_LENGTH)
+    .optional(),
+  // Hosted providers can omit this to disable implicit post-publish return links.
+  external_url: safePublicHttpsUrlSchema.optional(),
+  raw_context: authoringSourceRawContextSchema.optional(),
+  messages: z
+    .array(externalSourceMessageSchema)
+    .min(1)
+    .max(AUTHORING_SOURCE_MAX_MESSAGES),
+  artifacts: z
+    .array(externalSourceArtifactRefSchema)
+    .max(AUTHORING_SOURCE_MAX_ARTIFACTS)
+    .default([]),
+});
+
+export const createAuthoringSourceDraftRequestSchema =
+  authoringSourceDraftFieldsSchema.superRefine((value, ctx) => {
     const seenUrls = new Set<string>();
     for (const artifact of value.artifacts) {
       if (seenUrls.has(artifact.source_url)) {

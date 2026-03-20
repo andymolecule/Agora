@@ -4,7 +4,7 @@ import {
   consumeAuthoringSponsorBudgetReservation,
   createSupabaseClient,
   getChallengeByTxHash,
-  getPublishedChallengeLinkByDraftId,
+  getPublishedDraftMetadataByDraftId,
   listStaleAuthoringSponsorBudgetReservations,
   releaseAuthoringSponsorBudgetReservation,
 } from "../packages/db/dist/index.js";
@@ -29,7 +29,7 @@ await assertRuntimeDatabaseSchema(
   REQUIRED_RUNTIME_SCHEMA_CHECKS.filter((check) =>
     new Set([
       "challenge_source_attribution_columns",
-      "published_challenge_links_table",
+      "authoring_drafts_table",
       "authoring_sponsor_budget_reservations_table",
     ]).has(check.id),
   ),
@@ -50,17 +50,20 @@ const released = [];
 const pending = [];
 
 for (const row of rows) {
-  const publishedLink = await getPublishedChallengeLinkByDraftId(db, row.draft_id);
-  if (publishedLink?.challenge_id) {
+  const publishedDraftMetadata = await getPublishedDraftMetadataByDraftId(
+    db,
+    row.draft_id,
+  );
+  if (publishedDraftMetadata?.challenge_id) {
     await consumeAuthoringSponsorBudgetReservation(db, {
       draftId: row.draft_id,
-      challengeId: publishedLink.challenge_id,
+      challengeId: publishedDraftMetadata.challenge_id,
       txHash: row.tx_hash,
     });
     consumed.push({
       draftId: row.draft_id,
-      challengeId: publishedLink.challenge_id,
-      reason: "published_link",
+      challengeId: publishedDraftMetadata.challenge_id,
+      reason: "published_draft_metadata",
     });
     continue;
   }

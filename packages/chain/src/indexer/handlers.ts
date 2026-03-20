@@ -17,10 +17,10 @@ import {
   type createSupabaseClient,
   deleteChallengeById,
   deleteSubmissionsFromOnChainSubId,
-  getAuthoringDraftViewById,
+  getAuthoringDraftById,
   getChallengeById,
   getIndexerCursor,
-  getPublishedChallengeLinkByChallengeId,
+  getPublishedDraftMetadataByChallengeId,
   getSubmissionByChainId,
   findSubmissionIntentByMatch,
   ensureScoreJobForRegisteredSubmission,
@@ -302,21 +302,21 @@ export async function enqueueChallengeFinalizedCallback(input: {
   db: DbClient;
   challengeId: string;
   contractAddress: string;
-  getPublishedChallengeLinkByChallengeIdImpl?: typeof getPublishedChallengeLinkByChallengeId;
-  getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
+  getPublishedDraftMetadataByChallengeIdImpl?: typeof getPublishedDraftMetadataByChallengeId;
+  getAuthoringDraftByIdImpl?: typeof getAuthoringDraftById;
   getChallengeByIdImpl?: typeof getChallengeById;
   createAuthoringCallbackDeliveryImpl?: typeof createAuthoringCallbackDelivery;
 }) {
   const link = await (
-    input.getPublishedChallengeLinkByChallengeIdImpl ??
-    getPublishedChallengeLinkByChallengeId
+    input.getPublishedDraftMetadataByChallengeIdImpl ??
+    getPublishedDraftMetadataByChallengeId
   )(input.db, input.challengeId);
   if (!link?.draft_id) {
     return;
   }
 
   const draft = await (
-    input.getAuthoringDraftViewByIdImpl ?? getAuthoringDraftViewById
+    input.getAuthoringDraftByIdImpl ?? getAuthoringDraftById
   )(input.db, link.draft_id);
   if (!draft?.source_callback_url) {
     return;

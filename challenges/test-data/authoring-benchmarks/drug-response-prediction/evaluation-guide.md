@@ -39,6 +39,5 @@ When running the benchmark, record:
 
 - which prompt variant you used
 - whether the first follow-up question felt like the right next question
-- whether the compile result was `ready` or `needs_review`
-- whether the review summary, if present, was reasonable
+- whether the compile result was `ready`
 - whether any clarification asked a domain-relevant question or merely echoed the form schema

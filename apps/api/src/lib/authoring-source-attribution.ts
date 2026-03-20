@@ -1,5 +1,5 @@
 import type { ChallengeSpecOutput, ExternalSourceProviderOutput } from "@agora/common";
-import type { AuthoringDraftViewRow } from "@agora/db";
+import type { AuthoringDraftRow } from "@agora/db";
 
 export interface AuthoringDraftSourceAttribution {
   provider: Exclude<ExternalSourceProviderOutput, "direct">;
@@ -25,7 +25,7 @@ function firstStringValue(
 }
 
 export function getAuthoringDraftSourceAttribution(
-  draft: Pick<AuthoringDraftViewRow, "authoring_ir_json">,
+  draft: Pick<AuthoringDraftRow, "authoring_ir_json">,
 ): AuthoringDraftSourceAttribution | null {
   const origin = draft.authoring_ir_json?.origin;
   if (!origin || origin.provider === "direct") {

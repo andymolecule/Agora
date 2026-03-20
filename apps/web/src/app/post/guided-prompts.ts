@@ -109,7 +109,7 @@ export const GUIDED_PROMPTS: Record<
     prompt: "When should submissions close?",
     inputKind: "select",
     options: [...GUIDED_SUBMISSION_WINDOW_OPTIONS],
-    helper: "The deadline is locked when you generate the review contract.",
+    helper: "The deadline is locked when you generate the challenge contract.",
   },
   disputeWindow: {
     id: "disputeWindow",

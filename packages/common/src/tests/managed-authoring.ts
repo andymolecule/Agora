@@ -3,8 +3,7 @@ import { createAuthoringSourceDraftRequestSchema } from "../schemas/authoring-so
 import {
   authoringDraftSchema,
   challengeAuthoringIrSchema,
-  compileManagedAuthoringDraftRequestSchema,
-  createAuthoringDraftRequestSchema,
+  submitManagedAuthoringDraftRequestSchema,
 } from "../schemas/managed-authoring.js";
 
 const baseIntent = {
@@ -34,30 +33,16 @@ const baseArtifacts = [
   },
 ];
 
-const validRequest = createAuthoringDraftRequestSchema.parse({
+const validSubmitRequest = submitManagedAuthoringDraftRequestSchema.parse({
   poster_address: "0x00000000000000000000000000000000000000aa",
   intent: baseIntent,
   uploaded_artifacts: baseArtifacts,
 });
 
-assert.equal(validRequest.uploaded_artifacts.length, 2);
-assert.equal(validRequest.intent?.dispute_window_hours, 168);
+assert.equal(validSubmitRequest.uploaded_artifacts?.length, 2);
+assert.equal(validSubmitRequest.intent?.dispute_window_hours, 168);
 
-const testnetWindow = createAuthoringDraftRequestSchema.parse({
-  intent: {
-    ...baseIntent,
-    dispute_window_hours: 0,
-  },
-  uploaded_artifacts: baseArtifacts,
-});
-
-assert.equal(
-  testnetWindow.intent?.dispute_window_hours,
-  0,
-  "managed authoring should preserve explicit testnet dispute windows",
-);
-
-const duplicateUri = compileManagedAuthoringDraftRequestSchema.safeParse({
+const duplicateUri = submitManagedAuthoringDraftRequestSchema.safeParse({
   poster_address: "0x00000000000000000000000000000000000000aa",
   intent: baseIntent,
   uploaded_artifacts: [
@@ -76,7 +61,7 @@ assert.equal(
   "managed authoring should reject duplicate artifact URIs",
 );
 
-const unsupportedUri = createAuthoringDraftRequestSchema.safeParse({
+const unsupportedUri = submitManagedAuthoringDraftRequestSchema.safeParse({
   intent: baseIntent,
   uploaded_artifacts: [
     {
@@ -93,7 +78,7 @@ assert.equal(
   "managed authoring should only accept pinned or hosted artifact URIs",
 );
 
-const tooManyArtifacts = createAuthoringDraftRequestSchema.safeParse({
+const tooManyArtifacts = submitManagedAuthoringDraftRequestSchema.safeParse({
   intent: baseIntent,
   uploaded_artifacts: Array.from({ length: 13 }, (_value, index) => ({
     id: `artifact-${index}`,
@@ -108,7 +93,7 @@ assert.equal(
   "managed authoring should cap uploaded artifacts per draft",
 );
 
-const tooManyTags = createAuthoringDraftRequestSchema.safeParse({
+const tooManyTags = submitManagedAuthoringDraftRequestSchema.safeParse({
   intent: {
     ...baseIntent,
     tags: Array.from({ length: 13 }, (_value, index) => `tag-${index}`),
@@ -123,7 +108,7 @@ assert.equal(
 );
 
 const authoringIr = challengeAuthoringIrSchema.parse({
-  version: 1,
+  version: 2,
   origin: {
     provider: "direct",
     external_id: null,
@@ -132,93 +117,69 @@ const authoringIr = challengeAuthoringIrSchema.parse({
     raw_context: null,
   },
   source: {
-    poster_messages: [],
-    uploaded_artifact_ids: [],
-  },
-  problem: {
-    raw_brief: "",
-    normalized_summary: null,
-    domain_hints: [],
-    hard_constraints: [],
-  },
-  objective: {
-    solver_goal: null,
-    winning_definition: null,
-    comparator: null,
-    primary_metric: null,
-    minimum_threshold: null,
-    secondary_constraints: [],
-  },
-  artifacts: [],
-  submission: {
-    solver_deliverable: null,
-    artifact_kind: null,
-    schema_requirements: null,
-    validation_rules: [],
-  },
-  evaluation: {
-    scoreability: "not_objective_yet",
-    evaluator_candidates: [],
-    selected_evaluator: null,
-    runtime_family: null,
-    metric: null,
-    semi_custom_contract: null,
-    compute_hints: [],
-    privacy_requirements: [],
-  },
-  economics: {
-    reward_total: null,
-    distribution: null,
-    submission_deadline: null,
-    dispute_window_hours: null,
-  },
-  ambiguity: {
-    classes: ["objective_missing", "deadline_unclear"],
-    alternative_interpretations: [],
-    confidence_by_section: {
-      problem: 0,
-      objective: 0,
-      artifacts: 0,
-      submission: 0,
-      evaluation: 0,
-      economics: 0.33,
-    },
-  },
-  routing: {
-    mode: "not_ready",
-    confidence_score: 0.4,
-    blocking_reasons: ["objective_missing"],
-    recommended_next_action: "State the exact score rule and retry.",
-  },
-  clarification: {
-    open_questions: [
+    title: "KRAS docking challenge",
+    poster_messages: [
       {
-        id: "winning-definition",
-        prompt: "How should Agora determine the winner?",
-        reason_code: "objective_missing",
-        next_step: "Add a deterministic winning rule.",
-        blocks_publish: true,
+        id: "msg-1",
+        role: "poster",
+        content: "Predict docking scores for these ligands.",
+        created_at: "2026-03-18T00:00:00.000Z",
       },
     ],
+    uploaded_artifact_ids: ["target", "ligands"],
+  },
+  intent: {
+    current: baseIntent,
+    missing_fields: [],
+  },
+  evaluation: {
+    runtime_family: "docking",
+    metric: "spearman",
+    artifact_assignments: [
+      {
+        artifact_id: "target",
+        artifact_index: 0,
+        role: "target_structure",
+        visibility: "public",
+      },
+      {
+        artifact_id: "ligands",
+        artifact_index: 1,
+        role: "ligand_set",
+        visibility: "public",
+      },
+    ],
+    rejection_reasons: [],
+    compile_error_codes: [],
+    compile_error_message: "none",
+  },
+  clarification: {
+    open_questions: [],
     resolved_assumptions: [],
-    contradictions: [],
   },
 });
 
 const authoringDraft = authoringDraftSchema.parse({
   id: "f5567c15-8e0b-4afe-8d0c-7f511b592c05",
-  state: "draft",
-  intent: baseIntent,
+  state: "needs_clarification",
+  intent: null,
   authoring_ir: authoringIr,
   uploaded_artifacts: baseArtifacts,
-  clarification_questions: [],
+  clarification_questions: [
+    {
+      id: "hidden-labels",
+      prompt: "Which file contains the hidden docking scores?",
+      reason_code: "artifact_roles_missing",
+      next_step: "Upload or identify the hidden evaluation artifact.",
+    },
+  ],
   expires_at: "2026-12-31T00:00:00.000Z",
 });
 
 assert.equal(
-  authoringDraft.authoring_ir?.clarification.open_questions[0]?.blocks_publish,
-  true,
-  "authoring drafts should accept persisted authoring IR state",
+  authoringDraft.authoring_ir?.evaluation.runtime_family,
+  "docking",
+  "authoring drafts should accept persisted intake state",
 );
 
 const sourceDraft = createAuthoringSourceDraftRequestSchema.parse({
@@ -260,22 +221,5 @@ assert.equal(
     ],
   }).success,
   false,
-  "external source drafts should reject non-HTTPS external URLs",
+  "external draft URLs must stay on https origins",
 );
-assert.equal(
-  createAuthoringSourceDraftRequestSchema.safeParse({
-    title: "Credentialed host draft",
-    external_url: "https://user:pass@beach.science/thread/42",
-    messages: [
-      {
-        id: "msg-1",
-        role: "poster",
-        content: "We need a deterministic scoring contract for this dataset.",
-      },
-    ],
-  }).success,
-  false,
-  "external source drafts should reject credentialed host URLs",
-);
-
-console.log("managed authoring schema guardrails passed");

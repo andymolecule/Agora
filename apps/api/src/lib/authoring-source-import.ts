@@ -2,11 +2,12 @@ import type {
   AuthoringPartnerProviderOutput,
   CreateAuthoringSourceDraftRequestOutput,
 } from "@agora/common";
+import { AgoraError } from "@agora/common";
 import type { AgoraLogger } from "@agora/common/server-observability";
 import {
   createAuthoringDraft,
   createSupabaseClient,
-  getAuthoringDraftViewById,
+  getAuthoringDraftById,
   getAuthoringSourceLink,
   updateAuthoringDraft,
   upsertAuthoringSourceLink,
@@ -17,12 +18,22 @@ import { createDraft, refreshDraftIr } from "./authoring-draft-transitions.js";
 import { buildDraftUpdatedState } from "./authoring-drafts.js";
 import { buildManagedAuthoringIr } from "./managed-authoring-ir.js";
 
-export async function createExternalAuthoringDraft(input: {
+function externalDraftBusyError() {
+  return new AgoraError(
+    "Authoring draft is already compiling. Next step: wait for the current compile to finish or retry once the latest draft state is available.",
+    {
+      status: 409,
+      code: "AUTHORING_DRAFT_BUSY",
+    },
+  );
+}
+
+export async function upsertExternalAuthoringDraftFromSource(input: {
   provider: AuthoringPartnerProviderOutput;
   body: CreateAuthoringSourceDraftRequestOutput;
   createSupabaseClientImpl?: typeof createSupabaseClient;
   createAuthoringDraftImpl?: typeof createAuthoringDraft;
-  getAuthoringDraftViewByIdImpl?: typeof getAuthoringDraftViewById;
+  getAuthoringDraftByIdImpl?: typeof getAuthoringDraftById;
   getAuthoringSourceLinkImpl?: typeof getAuthoringSourceLink;
   updateAuthoringDraftImpl?: typeof updateAuthoringDraft;
   upsertAuthoringSourceLinkImpl?: typeof upsertAuthoringSourceLink;
@@ -33,8 +44,8 @@ export async function createExternalAuthoringDraft(input: {
     input.createSupabaseClientImpl ?? createSupabaseClient;
   const createAuthoringDraftImpl =
     input.createAuthoringDraftImpl ?? createAuthoringDraft;
-  const getAuthoringDraftViewByIdImpl =
-    input.getAuthoringDraftViewByIdImpl ?? getAuthoringDraftViewById;
+  const getAuthoringDraftByIdImpl =
+    input.getAuthoringDraftByIdImpl ?? getAuthoringDraftById;
   const getAuthoringSourceLinkImpl =
     input.getAuthoringSourceLinkImpl ?? getAuthoringSourceLink;
   const updateAuthoringDraftImpl =
@@ -60,11 +71,14 @@ export async function createExternalAuthoringDraft(input: {
         });
 
   if (existingLink && externalId) {
-    const existingDraft = await getAuthoringDraftViewByIdImpl(
+    const existingDraft = await getAuthoringDraftByIdImpl(
       db,
       existingLink.draft_id,
     );
     if (existingDraft && existingDraft.state !== "published") {
+      if (existingDraft.state === "compiling") {
+        throw externalDraftBusyError();
+      }
       const authoringIr = buildManagedAuthoringIr({
         intent: existingDraft.intent_json,
         uploadedArtifacts,
@@ -87,7 +101,7 @@ export async function createExternalAuthoringDraft(input: {
         uploadedArtifactsJson: uploadedArtifacts,
         expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
         updateAuthoringDraftImpl,
-        getAuthoringDraftViewByIdImpl,
+        getAuthoringDraftByIdImpl,
       });
       await upsertAuthoringSourceLinkImpl(db, {
         provider: input.provider,
@@ -127,7 +141,7 @@ export async function createExternalAuthoringDraft(input: {
     uploadedArtifactsJson: uploadedArtifacts,
     expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
     createAuthoringDraftImpl,
-    getAuthoringDraftViewByIdImpl,
+    getAuthoringDraftByIdImpl,
   });
 
   if (externalId) {
@@ -145,7 +159,7 @@ export async function createExternalAuthoringDraft(input: {
       provider: input.provider,
       draftId: session.id,
       externalId,
-      ambiguityClasses: authoringIr.ambiguity.classes,
+      questionCount: authoringIr.clarification.open_questions.length,
     },
     "Created authoring draft from external source",
   );

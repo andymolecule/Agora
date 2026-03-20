@@ -33,7 +33,7 @@
       "value_column": "prediction"
     }
   },
-  "acceptable_compile_states": ["ready", "needs_review"],
+  "acceptable_compile_states": ["ready"],
   "disallowed_outcomes": {
     "runtime_families": [
       "docking",
@@ -41,13 +41,13 @@
       "ranking",
       "tabular_classification"
     ],
-    "recommended_actions": ["send_to_expert_mode"]
+    "recommended_actions": []
   },
   "prompt_variants": [
     {
       "id": "direct-poster-brief",
       "file": "prompt-variants/direct-poster-brief.md",
-      "acceptable_compile_states": ["ready", "needs_review"],
+      "acceptable_compile_states": ["ready"],
       "expected_follow_up_topics": [
         "winning condition",
         "reward",
@@ -59,7 +59,7 @@
     {
       "id": "ambiguous-biology-brief",
       "file": "prompt-variants/ambiguous-biology-brief.md",
-      "acceptable_compile_states": ["ready", "needs_review"],
+      "acceptable_compile_states": ["ready"],
       "expected_follow_up_topics": [
         "winning condition",
         "confirm hidden labels remain private",
@@ -71,7 +71,7 @@
     {
       "id": "minimal-slack-style-brief",
       "file": "prompt-variants/minimal-slack-style-brief.md",
-      "acceptable_compile_states": ["needs_review", "ready"],
+      "acceptable_compile_states": ["ready"],
       "expected_follow_up_topics": [
         "what a winning result means",
         "which uploaded file contains hidden labels",

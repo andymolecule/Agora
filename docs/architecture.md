@@ -655,25 +655,19 @@ erDiagram
 | `GET` | `/api/stats` | — | — | Aggregate counts |
 | `GET` | `/api/indexer-health` | — | — | Indexer lag monitoring |
 | `GET` | `/api/worker-health` | — | — | Worker readiness + runtime alignment |
-| `GET` | `/api/authoring/health` | — | — | Managed authoring backlog + review SLA health |
-| `POST` | `/api/authoring/drafts` | Rate limit | — | Create a managed authoring draft |
-| `POST` | `/api/authoring/drafts/:id/compile` | Rate limit | — | Compile a managed draft into a challenge spec candidate |
+| `GET` | `/api/authoring/health` | — | — | Managed authoring backlog health |
+| `POST` | `/api/authoring/drafts/submit` | Rate limit | — | Upsert and compile a managed authoring draft in one call |
 | `POST` | `/api/authoring/drafts/:id/publish` | Rate limit | — | Publish a managed draft on-chain |
-| `GET` | `/api/authoring/review/drafts` | Review token | — | List review queue drafts |
-| `POST` | `/api/authoring/review/drafts/:id/decision` | Review token | — | Approve / reject / escalate a review draft |
 | `GET` | `/api/analytics` | — | — | Platform analytics with freshness/indexer status |
 | `GET` | `/api/pin-spec` | — | — | Pin-spec auth nonce |
 | `POST` | `/api/pin-spec` | Signed auth | — | Pin challenge spec to IPFS |
-| `POST` | `/api/authoring/external/sources` | Partner bearer | — | Create an external/partner-managed authoring draft |
+| `POST` | `/api/authoring/external/drafts/submit` | Partner bearer | — | Upsert and compile an external/partner-managed authoring draft |
 | `GET` | `/api/authoring/external/drafts/:id` | Partner bearer | — | Read external draft state |
 | `GET` | `/api/authoring/external/drafts/:id/card` | Partner bearer | — | Read compact draft card view |
-| `POST` | `/api/authoring/external/drafts/:id/clarify` | Partner bearer | — | Append clarification messages/artifacts |
-| `POST` | `/api/authoring/external/drafts/:id/compile` | Partner bearer | — | Compile an external draft |
 | `POST` | `/api/authoring/external/drafts/:id/publish` | Partner bearer | — | Sponsor and publish an external draft |
 | `POST` | `/api/authoring/external/drafts/:id/webhook` | Partner bearer | — | Register/update a callback URL for draft events |
 | `POST` | `/api/authoring/callbacks/sweep` | Review token | — | Sweep pending authoring callback deliveries |
-| `POST` | `/api/authoring/review/sweep-expired` | Review token | — | Purge expired managed-authoring drafts |
-| `POST` | `/api/integrations/beach/drafts/import` | Partner bearer | — | Import a Beach thread into the external authoring flow |
+| `POST` | `/api/integrations/beach/drafts/submit` | Partner bearer | — | Submit a Beach thread plus intent into the external authoring flow |
 | `POST` | `/api/verify` | Rate limit | Paid | Re-run scorer verification |
 
 > **Note:** MCP sessions are handled by the separate MCP server on port 3001, not the API.

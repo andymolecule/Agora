@@ -21,7 +21,7 @@ export function resolveAuthoringDraftPosterAddress(input: {
 export function getAuthoringDraftOwnershipError(input: {
   draftPosterAddress?: string | null;
   requesterAddress?: string | null;
-  action: "compile" | "publish";
+  action: "compile" | "publish" | "submit";
 }): AuthoringDraftOwnershipError | null {
   const draftPosterAddress = normalizePosterAddress(input.draftPosterAddress);
   if (!draftPosterAddress) {

@@ -20,7 +20,7 @@ import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
   type: "json",
 };
 import {
-  type AuthoringDraftViewRow,
+  type AuthoringDraftRow,
   attachAuthoringSponsorBudgetReservationTx,
   buildChallengeInsert,
   consumeAuthoringSponsorBudgetReservation,
@@ -77,7 +77,7 @@ function resolveSponsorBudgetWindow(now = new Date()) {
 
 export async function enforceAuthoringSponsorMonthlyBudget(input: {
   db: Parameters<typeof publishDraft>[0]["db"];
-  draft: AuthoringDraftViewRow;
+  draft: AuthoringDraftRow;
   spec: ChallengeSpecOutput;
   sponsorMonthlyBudgetUsdc?: number | null;
   sumRewardAmountForSourceProviderImpl?: typeof sumRewardAmountForSourceProvider;
@@ -187,7 +187,7 @@ function assertCreationMatchesSpec(input: {
 
 export async function sponsorAndPublishAuthoringDraft(input: {
   db: Parameters<typeof publishDraft>[0]["db"];
-  draft: AuthoringDraftViewRow;
+  draft: AuthoringDraftRow;
   spec: ChallengeSpecOutput;
   specCid: string;
   sponsorPrivateKey: `0x${string}`;
@@ -197,12 +197,9 @@ export async function sponsorAndPublishAuthoringDraft(input: {
   updateAuthoringDraftImpl?: Parameters<
     typeof publishDraft
   >[0]["updateAuthoringDraftImpl"];
-  upsertPublishedChallengeLinkImpl?: Parameters<
+  getAuthoringDraftByIdImpl?: Parameters<
     typeof publishDraft
-  >[0]["upsertPublishedChallengeLinkImpl"];
-  getAuthoringDraftViewByIdImpl?: Parameters<
-    typeof publishDraft
-  >[0]["getAuthoringDraftViewByIdImpl"];
+  >[0]["getAuthoringDraftByIdImpl"];
 }) {
   if (!input.draft.compilation_json) {
     throw new Error(
@@ -421,8 +418,7 @@ export async function sponsorAndPublishAuthoringDraft(input: {
       returnTo: input.returnTo ?? null,
       expiresInMs: input.expiresInMs,
       updateAuthoringDraftImpl: input.updateAuthoringDraftImpl,
-      upsertPublishedChallengeLinkImpl: input.upsertPublishedChallengeLinkImpl,
-      getAuthoringDraftViewByIdImpl: input.getAuthoringDraftViewByIdImpl,
+      getAuthoringDraftByIdImpl: input.getAuthoringDraftByIdImpl,
     });
     if (budgetReserved) {
       await consumeAuthoringSponsorBudgetReservation(input.db, {

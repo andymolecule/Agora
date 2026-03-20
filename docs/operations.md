@@ -202,7 +202,7 @@ Expected results:
 - `/healthz` returns `{"ok":true,"service":"api","runtimeVersion":"..."}` for API liveness plus deployed version.
 - API responses include `x-request-id`; if you pass one in the request header, the API preserves it for end-to-end correlation.
 - `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and `sealing.workerReady=true` for the active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
-- `/api/authoring/health` returns `status: ok|warning|critical` and exposes managed-authoring backlog metrics such as expired drafts, stale compiling drafts, and the oldest review wait time.
+- `/api/authoring/health` returns `status: ok|warning|critical` and exposes managed-authoring backlog metrics such as expired drafts and stale compiling drafts.
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"` whenever sealing is configured successfully.
 
 Existing testnet DBs:
@@ -338,7 +338,7 @@ Check every 15-30 minutes during first launch window:
 3. `indexed_events` block number continues advancing.
 4. `agora doctor` passes all required checks.
 5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version. If `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`, this also implies the executor passed the worker readiness checks.
-6. Managed authoring health: `curl <API_URL>/api/authoring/health` stays `ok` during normal operation. `warning` means expired drafts need sweeping or review backlog is aging; `critical` means review SLA is breached.
+6. Managed authoring health: `curl <API_URL>/api/authoring/health` stays `ok` during normal operation. `warning` or `critical` means expired drafts or stale compiling drafts need attention.
 7. Web proxy health: `curl <WEB_URL>/api/healthz` and `curl <WEB_URL>/api/worker-health` succeed without the `AGORA_API_URL` proxy-misconfiguration error.
 8. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
 
@@ -356,7 +356,7 @@ Expected results:
 
 - API health returns `{"ok":true,"runtimeVersion":"..."}`.
 - Indexer health is `ok` or `warning`, not `critical`.
-- Authoring draft health is `ok` during steady state. A temporary `warning` is acceptable during active moderation, but expired drafts should be swept and long-lived review backlog should be investigated.
+- Authoring draft health is `ok` during steady state. If it moves to `warning` or `critical`, inspect expired drafts and stale compiling drafts.
 - `agora doctor` passes RPC/Supabase/factory checks.
 - If sealing is enabled, `/api/submissions/public-key` returns `sealed_submission_v2` whenever the public sealing key is configured.
 - If active scoring challenges use official Agora scorer images and those GHCR images are not pullable, the worker should stay alive but report `ready=false`, a `latestError`, and zero healthy workers for the active runtime version.
@@ -530,12 +530,9 @@ agora reindex --from-block <block_number>
 ### Managed Authoring Backlog
 
 1. Check `GET /api/authoring/health`.
-2. If `sessions.expired > 0`, sweep expired drafts with:
-   `curl -X POST -H "x-agora-review-token: <token>" <API_URL>/api/authoring/review/sweep-expired`
-3. If `sessions.stale_compiling > 0`, inspect recent API logs for interrupted compile requests, then ask the poster to retry from the draft.
-4. If `oldest_needs_review_age_ms` breaches the warning or critical threshold, review the queued drafts or send them to Expert Mode.
-5. If the sweep route returns `401` or `503`, verify `AGORA_AUTHORING_REVIEW_TOKEN` is configured consistently on the API and internal review surface.
-6. If drafts are stuck after sponsor-funded publish attempts, run `pnpm recover:authoring-publishes -- --stale-minutes=30` before retrying the publish flow.
+2. If `drafts.expired > 0`, confirm they are abandoned sessions. The current submit flow recreates or refreshes drafts on the next poster or agent submit, so there is no separate review sweep route anymore.
+3. If `drafts.stale_compiling > 0`, inspect recent API logs for interrupted compile requests, then ask the poster or agent to resubmit the draft through `POST /api/authoring/drafts/submit` or `POST /api/authoring/external/drafts/submit`.
+4. If drafts are stuck after sponsor-funded publish attempts, run `pnpm recover:authoring-publishes -- --stale-minutes=30` before retrying the publish flow.
 
 ### Authoring Callback Backlog
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  authoringSourceDraftFieldsSchema,
   authoringSourceRawContextSchema,
   externalSourceArtifactRefSchema,
   externalSourceMessageSchema,
@@ -169,6 +170,8 @@ export const challengeIntentSchema = z.object({
     .default("UTC"),
 });
 
+export const partialChallengeIntentSchema = challengeIntentSchema.partial();
+
 export const confirmationContractSchema = z.object({
   solver_submission: z.string().trim().min(1),
   scoring_summary: z.string().trim().min(1),
@@ -230,7 +233,7 @@ const authoringArtifactSchemaV1 = z.object({
 });
 
 export const challengeAuthoringIrSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   origin: z.object({
     provider: externalSourceProviderSchema,
     external_id: z.string().trim().min(1).nullable().optional(),
@@ -239,6 +242,7 @@ export const challengeAuthoringIrSchema = z.object({
     raw_context: authoringSourceRawContextSchema.nullable().optional(),
   }),
   source: z.object({
+    title: z.string().trim().min(1).nullable().optional(),
     poster_messages: z.array(
       z.object({
         id: z.string().trim().min(1),
@@ -251,115 +255,51 @@ export const challengeAuthoringIrSchema = z.object({
       .array(z.string().trim().min(1))
       .max(AUTHORING_MAX_ARTIFACTS),
   }),
-  problem: z.object({
-    raw_brief: z.string().trim(),
-    normalized_summary: z.string().trim().min(1).nullable(),
-    domain_hints: z.array(z.string().trim().min(1)),
-    hard_constraints: z.array(z.string().trim().min(1)),
-  }),
-  objective: z.object({
-    solver_goal: z.string().trim().min(1).nullable(),
-    winning_definition: z.string().trim().min(1).nullable(),
-    comparator: authoringComparatorSchema.nullable(),
-    primary_metric: z.string().trim().min(1).nullable(),
-    minimum_threshold: z.string().trim().min(1).nullable(),
-    secondary_constraints: z.array(z.string().trim().min(1)),
-  }),
-  artifacts: z.array(authoringArtifactSchemaV1),
-  submission: z.object({
-    solver_deliverable: z.string().trim().min(1).nullable(),
-    artifact_kind: z.string().trim().min(1).nullable(),
-    schema_requirements: z.record(z.string(), z.unknown()).nullable(),
-    validation_rules: z.array(z.string().trim().min(1)),
+  intent: z.object({
+    current: partialChallengeIntentSchema,
+    missing_fields: z.array(z.string().trim().min(1)),
   }),
   evaluation: z.object({
-    scoreability: authoringScoreabilitySchema,
-    evaluator_candidates: z.array(
-      z.object({
-        id: z.string().trim().min(1),
-        kind: z.enum(["managed_template", "semi_custom", "expert"]),
-        confidence: z.number().min(0).max(1),
-        notes: z.array(z.string().trim().min(1)),
-      }),
-    ),
-    selected_evaluator: z.string().trim().min(1).nullable(),
     runtime_family: z.string().trim().min(1).nullable(),
     metric: z.string().trim().min(1).nullable(),
-    semi_custom_contract: semiCustomEvaluatorContractSchema.nullable(),
-    compute_hints: z.array(z.string().trim().min(1)),
-    privacy_requirements: z.array(z.string().trim().min(1)),
-  }),
-  economics: z.object({
-    reward_total: z.string().trim().min(1).nullable(),
-    distribution: distributionSchema.nullable(),
-    submission_deadline: z.string().datetime({ offset: true }).nullable(),
-    dispute_window_hours: z.number().int().nonnegative().nullable(),
-  }),
-  ambiguity: z.object({
-    classes: z.array(authoringAmbiguityClassSchema),
-    alternative_interpretations: z.array(z.string().trim().min(1)),
-    confidence_by_section: z.object({
-      problem: z.number().min(0).max(1),
-      objective: z.number().min(0).max(1),
-      artifacts: z.number().min(0).max(1),
-      submission: z.number().min(0).max(1),
-      evaluation: z.number().min(0).max(1),
-      economics: z.number().min(0).max(1),
-    }),
-  }),
-  routing: z.object({
-    mode: authoringRoutingModeSchema,
-    confidence_score: z.number().min(0).max(1),
-    blocking_reasons: z.array(z.string().trim().min(1)),
-    recommended_next_action: z.string().trim().min(1).nullable(),
+    artifact_assignments: z.array(
+      z.object({
+        artifact_id: z.string().trim().min(1),
+        artifact_index: z.number().int().min(0),
+        role: z.string().trim().min(1),
+        visibility: z.enum(["public", "private"]),
+      }),
+    ),
+    rejection_reasons: z.array(z.string().trim().min(1)),
+    compile_error_codes: z.array(z.string().trim().min(1)),
+    compile_error_message: z.string().trim().min(1).nullable(),
   }),
   clarification: z.object({
     open_questions: z.array(authoringOpenQuestionSchema),
     resolved_assumptions: z.array(z.string().trim().min(1)),
-    contradictions: z.array(z.string().trim().min(1)),
   }),
 });
 
-export const clarifyAuthoringDraftRequestSchema = z
-  .object({
-    messages: z.array(externalSourceMessageSchema).default([]),
-    artifacts: z
-      .array(externalSourceArtifactRefSchema)
-      .max(AUTHORING_MAX_ARTIFACTS)
-      .default([]),
-    raw_context: authoringSourceRawContextSchema.optional(),
-  })
-  .superRefine((value, ctx) => {
-    const hasChanges =
-      value.messages.length > 0 ||
-      value.artifacts.length > 0 ||
-      value.raw_context !== undefined;
-    if (!hasChanges) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          "Authoring draft clarification must include a new message, artifact, or raw_context update. Next step: send the new clarification payload and retry.",
-      });
-    }
-
-    const seenUrls = new Set<string>();
-    for (const artifact of value.artifacts) {
-      if (seenUrls.has(artifact.source_url)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["artifacts"],
-          message:
-            "Duplicate source_url is not allowed. Next step: remove the duplicate external artifact URL and retry.",
-        });
-        return;
+export const submitAuthoringSourceDraftRequestSchema =
+  authoringSourceDraftFieldsSchema
+    .extend({
+      intent: challengeIntentSchema,
+    })
+    .superRefine((value, ctx) => {
+      const seenUrls = new Set<string>();
+      for (const artifact of value.artifacts) {
+        if (seenUrls.has(artifact.source_url)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["artifacts"],
+            message:
+              "Duplicate source_url is not allowed. Next step: remove the duplicate external artifact URL and retry.",
+          });
+          return;
+        }
+        seenUrls.add(artifact.source_url);
       }
-      seenUrls.add(artifact.source_url);
-    }
-  });
-
-export const compileAuthoringDraftRequestSchema = z.object({
-  intent: challengeIntentSchema.optional(),
-});
+    });
 
 export const registerAuthoringDraftWebhookRequestSchema = z.object({
   callback_url: safePublicHttpsUrlSchema,
@@ -372,9 +312,6 @@ export const publishExternalAuthoringDraftRequestSchema = z.object({
 export const authoringDraftAssessmentSchema = z.object({
   feasible: z.boolean(),
   publishable: z.boolean(),
-  requires_review: z.boolean(),
-  confidence: z.enum(["high", "medium", "low"]),
-  confidence_score: z.number().min(0).max(1),
   runtime_family: z.string().trim().min(1).nullable(),
   metric: z.string().trim().min(1).nullable(),
   evaluator_archetype: z.string().trim().min(1).nullable(),
@@ -383,13 +320,6 @@ export const authoringDraftAssessmentSchema = z.object({
   suggestions: z.array(z.string().trim().min(1)).default([]),
   proposed_reward: z.string().trim().min(1).nullable(),
   proposed_deadline: z.string().datetime({ offset: true }).nullable(),
-});
-
-export const authoringReviewSummarySchema = z.object({
-  summary: z.string().trim().min(1),
-  reason_codes: z.array(z.string().trim().min(1)).default([]),
-  confidence_score: z.number().min(0).max(1),
-  recommended_action: z.enum(["approve_after_review", "send_to_expert_mode"]),
 });
 
 export const dryRunPreviewSchema = z.object({
@@ -405,7 +335,6 @@ export const compilationResultSchema = z.object({
   resolved_artifacts: z.array(challengeArtifactSchema).min(1),
   submission_contract: submissionContractSchema,
   dry_run: dryRunPreviewSchema,
-  confidence_score: z.number().min(0).max(1),
   reason_codes: z.array(z.string().trim().min(1)).default([]),
   warnings: z.array(z.string().trim().min(1)).default([]),
   confirmation_contract: confirmationContractSchema,
@@ -417,7 +346,6 @@ export const AUTHORING_DRAFT_STATES = [
   "compiling",
   "ready",
   "needs_clarification",
-  "needs_review",
   "published",
   "failed",
 ] as const;
@@ -437,8 +365,6 @@ export const authoringDraftCardSchema = z.object({
   ambiguity_classes: z.array(authoringAmbiguityClassSchema),
   clarification_count: z.number().int().nonnegative(),
   next_question: clarificationQuestionSchema.nullable(),
-  review_recommended_action:
-    authoringReviewSummarySchema.shape.recommended_action.nullable(),
   published_challenge_id: z.string().uuid().nullable(),
   published_spec_cid: z.string().trim().min(1).nullable(),
   callback_registered: z.boolean(),
@@ -502,7 +428,6 @@ export const authoringDraftStateCountsSchema = z.object({
   compiling: z.number().int().nonnegative(),
   ready: z.number().int().nonnegative(),
   needs_clarification: z.number().int().nonnegative(),
-  needs_review: z.number().int().nonnegative(),
   published: z.number().int().nonnegative(),
   failed: z.number().int().nonnegative(),
 });
@@ -515,14 +440,9 @@ export const authoringDraftHealthSchema = z.object({
     counts: authoringDraftStateCountsSchema,
     expired: z.number().int().nonnegative(),
     stale_compiling: z.number().int().nonnegative(),
-    oldest_needs_review_at: z.string().datetime({ offset: true }).nullable(),
-    oldest_needs_review_age_ms: z.number().int().nonnegative().nullable(),
   }),
   thresholds: z.object({
     stale_compiling_ms: z.number().int().positive(),
-    review_warning_ms: z.number().int().positive(),
-    review_critical_ms: z.number().int().positive(),
-    review_queue_warning_count: z.number().int().positive(),
   }),
 });
 
@@ -545,7 +465,6 @@ export const authoringDraftSchema = z
       .default([]),
     compilation: compilationResultSchema.nullable().optional(),
     clarification_questions: z.array(clarificationQuestionSchema).default([]),
-    review_summary: authoringReviewSummarySchema.nullable().optional(),
     approved_confirmation: confirmationContractSchema.nullable().optional(),
     published_challenge_id: z.string().uuid().nullable().optional(),
     published_spec_cid: z.string().trim().min(1).nullable().optional(),
@@ -569,39 +488,14 @@ export const authoringDraftSchema = z
     }
   });
 
-export const createAuthoringDraftRequestSchema = z
+export const submitManagedAuthoringDraftRequestSchema = z
   .object({
+    draft_id: z.string().uuid().optional(),
     poster_address: z
       .string()
       .regex(/^0x[a-fA-F0-9]{40}$/)
       .optional(),
-    intent: challengeIntentSchema.optional(),
-    uploaded_artifacts: z
-      .array(authoringArtifactSchema)
-      .max(AUTHORING_MAX_ARTIFACTS)
-      .default([]),
-  })
-  .superRefine((value, ctx) => {
-    const duplicate = findDuplicateAuthoringArtifacts(value.uploaded_artifacts);
-    if (duplicate) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["uploaded_artifacts"],
-        message:
-          duplicate.kind === "id"
-            ? `Duplicate uploaded artifact id "${duplicate.value}" is not allowed. Next step: remove the duplicate and retry.`
-            : `Duplicate uploaded artifact uri "${duplicate.value}" is not allowed. Next step: remove the duplicate and retry.`,
-      });
-    }
-  });
-
-export const compileManagedAuthoringDraftRequestSchema = z
-  .object({
-    poster_address: z
-      .string()
-      .regex(/^0x[a-fA-F0-9]{40}$/)
-      .optional(),
-    intent: challengeIntentSchema.optional(),
+    intent: partialChallengeIntentSchema.optional(),
     uploaded_artifacts: z
       .array(authoringArtifactSchema)
       .max(AUTHORING_MAX_ARTIFACTS)
@@ -633,22 +527,14 @@ export const publishManagedAuthoringDraftRequestSchema = z.object({
   return_to: safePublicHttpsUrlSchema.optional(),
 });
 
-export const reviewManagedAuthoringDraftDecisionRequestSchema =
-  z.discriminatedUnion("action", [
-    z.object({
-      action: z.literal("approve"),
-    }),
-    z.object({
-      action: z.literal("reject"),
-      message: z.string().trim().min(1),
-    }),
-    z.object({
-      action: z.literal("send_to_expert_mode"),
-    }),
-  ]);
-
 export type ChallengeIntentInput = z.input<typeof challengeIntentSchema>;
 export type ChallengeIntentOutput = z.output<typeof challengeIntentSchema>;
+export type PartialChallengeIntentInput = z.input<
+  typeof partialChallengeIntentSchema
+>;
+export type PartialChallengeIntentOutput = z.output<
+  typeof partialChallengeIntentSchema
+>;
 export type AuthoringArtifactInput = z.input<typeof authoringArtifactSchema>;
 export type AuthoringArtifactOutput = z.output<typeof authoringArtifactSchema>;
 export type ChallengeAuthoringIrInput = z.input<
@@ -668,20 +554,17 @@ export type ClarificationQuestionOutput = z.output<
 >;
 export type DryRunPreviewOutput = z.output<typeof dryRunPreviewSchema>;
 export type CompilationResultOutput = z.output<typeof compilationResultSchema>;
-export type AuthoringReviewSummaryOutput = z.output<
-  typeof authoringReviewSummarySchema
+export type SubmitAuthoringSourceDraftRequestInput = z.input<
+  typeof submitAuthoringSourceDraftRequestSchema
 >;
-export type ClarifyAuthoringDraftRequestInput = z.input<
-  typeof clarifyAuthoringDraftRequestSchema
+export type SubmitAuthoringSourceDraftRequestOutput = z.output<
+  typeof submitAuthoringSourceDraftRequestSchema
 >;
-export type ClarifyAuthoringDraftRequestOutput = z.output<
-  typeof clarifyAuthoringDraftRequestSchema
+export type SubmitManagedAuthoringDraftRequestInput = z.input<
+  typeof submitManagedAuthoringDraftRequestSchema
 >;
-export type CompileAuthoringDraftRequestInput = z.input<
-  typeof compileAuthoringDraftRequestSchema
->;
-export type CompileAuthoringDraftRequestOutput = z.output<
-  typeof compileAuthoringDraftRequestSchema
+export type SubmitManagedAuthoringDraftRequestOutput = z.output<
+  typeof submitManagedAuthoringDraftRequestSchema
 >;
 export type RegisterAuthoringDraftWebhookRequestInput = z.input<
   typeof registerAuthoringDraftWebhookRequestSchema
@@ -723,7 +606,4 @@ export type AuthoringDraftHealthOutput = z.output<
 >;
 export type AuthoringDraftSweepResultOutput = z.output<
   typeof authoringDraftSweepResultSchema
->;
-export type ReviewManagedAuthoringDraftDecisionInput = z.input<
-  typeof reviewManagedAuthoringDraftDecisionRequestSchema
 >;

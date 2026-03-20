@@ -13,7 +13,6 @@ alter table posting_sessions
         'compiling',
         'ready',
         'needs_clarification',
-        'needs_review',
         'published',
         'failed'
       )

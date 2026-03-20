@@ -547,17 +547,10 @@ export function GuidedComposer({
               <div className="mt-0.5 text-sm text-emerald-700">
                 {isCompiling
                   ? "Compiling your challenge into a scoring contract..."
-                  : "Generate the review contract when you are ready."}
+                  : "Generate the challenge contract when you are ready."}
               </div>
             </div>
           </div>
-        </div>
-      ) : null}
-
-      {state.compileState === "needs_review" ? (
-        <div className="rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Agora compiled a contract, but an operator must review it before you
-          can publish.
         </div>
       ) : null}
 

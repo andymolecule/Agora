@@ -1,12 +1,12 @@
 {
   "id": "structured-report-validation",
-  "managed_support": "semi_custom_executable",
+  "managed_support": "custom_workflow_required",
   "intent_family": "structured_record_score",
   "artifacts_root": "uploads",
   "prompt_variants_root": "prompt-variants",
   "solver_submissions_root": "solver-submissions",
   "compile_invariants": {
-    "runtime_family": "semi_custom",
+    "runtime_family": "custom_workflow_required",
     "evaluator_archetype": "structured_record_score",
     "metric": "validation_score",
     "artifact_roles": [
@@ -27,7 +27,7 @@
       "mime": "application/json"
     }
   },
-  "acceptable_compile_states": ["needs_review"],
+  "acceptable_compile_states": ["failed"],
   "disallowed_outcomes": {
     "runtime_families": [
       "tabular_regression",
@@ -36,13 +36,13 @@
       "docking",
       "reproducibility"
     ],
-    "recommended_actions": ["send_to_expert_mode"]
+    "recommended_actions": []
   },
   "prompt_variants": [
     {
       "id": "direct-poster-brief",
       "file": "prompt-variants/direct-poster-brief.md",
-      "acceptable_compile_states": ["needs_review"],
+      "acceptable_compile_states": ["failed"],
       "expected_follow_up_topics": [
         "scoring rubric",
         "required JSON fields",
@@ -53,7 +53,7 @@
     {
       "id": "thread-summary-brief",
       "file": "prompt-variants/thread-summary-brief.md",
-      "acceptable_compile_states": ["needs_review"],
+      "acceptable_compile_states": ["failed"],
       "expected_follow_up_topics": [
         "what counts as a valid report",
         "what stays hidden",
@@ -63,7 +63,7 @@
     {
       "id": "minimal-ops-brief",
       "file": "prompt-variants/minimal-ops-brief.md",
-      "acceptable_compile_states": ["needs_review"],
+      "acceptable_compile_states": ["failed"],
       "expected_follow_up_topics": [
         "JSON submission format",
         "deterministic judging rule",

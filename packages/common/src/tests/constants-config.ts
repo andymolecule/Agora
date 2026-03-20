@@ -280,33 +280,23 @@ try {
   assert.equal(authoringReviewRuntime.token, "review-token");
 
   const authoringPartnerRuntime = readAuthoringPartnerRuntimeConfig({
-    AGORA_AUTHORING_PARTNER_KEYS:
-      "beach_science:beach-secret,github:github-secret",
+    AGORA_AUTHORING_PARTNER_KEYS: "beach_science:beach-secret",
     AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS:
       "beach_science:beach-callback-secret",
     AGORA_AUTHORING_PARTNER_RETURN_ORIGINS:
-      "beach_science:https://beach.science|https://staging.beach.science,github:https://github.com",
+      "beach_science:https://beach.science|https://staging.beach.science",
   });
   assert.equal(
     authoringPartnerRuntime.partnerKeys.beach_science,
     "beach-secret",
   );
-  assert.equal(authoringPartnerRuntime.partnerKeys.github, "github-secret");
   assert.equal(
     authoringPartnerRuntime.callbackSecrets.beach_science,
     "beach-callback-secret",
   );
-  assert.equal(
-    authoringPartnerRuntime.callbackSecrets.github,
-    "github-secret",
-    "partner bearer keys should remain the callback signing fallback when no explicit callback secret is configured",
-  );
   assert.deepEqual(authoringPartnerRuntime.returnOrigins.beach_science, [
     "https://beach.science",
     "https://staging.beach.science",
-  ]);
-  assert.deepEqual(authoringPartnerRuntime.returnOrigins.github, [
-    "https://github.com",
   ]);
   assert.throws(
     () =>
@@ -343,20 +333,26 @@ try {
   const authoringSponsorRuntime = readAuthoringSponsorRuntimeConfig({
     AGORA_AUTHORING_SPONSOR_PRIVATE_KEY:
       "0x1111111111111111111111111111111111111111111111111111111111111111",
-    AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: "beach_science:500,github:125",
+    AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: "beach_science:500",
   });
   assert.equal(
     authoringSponsorRuntime.privateKey,
     "0x1111111111111111111111111111111111111111111111111111111111111111",
   );
   assert.equal(authoringSponsorRuntime.monthlyBudgetsUsdc.beach_science, 500);
-  assert.equal(authoringSponsorRuntime.monthlyBudgetsUsdc.github, 125);
   assert.throws(
     () =>
       readAuthoringSponsorRuntimeConfig({
         AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: "beach_science:not-a-number",
       }),
     /positive USDC budget/i,
+  );
+  assert.throws(
+    () =>
+      readAuthoringSponsorRuntimeConfig({
+        AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: "github:125",
+      }),
+    /Invalid AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS provider/,
   );
 
   const blankCliRuntime = readCliRuntimeConfig({

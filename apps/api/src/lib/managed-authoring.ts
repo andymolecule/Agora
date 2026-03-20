@@ -1,7 +1,6 @@
 import {
   AgoraError,
   type AuthoringArtifactOutput,
-  type AuthoringReviewSummaryOutput,
   type ChallengeAuthoringIrOutput,
   type ChallengeIntentOutput,
   type ChallengeSpecOutput,
@@ -10,33 +9,23 @@ import {
   type ConfirmationContractOutput,
   type DryRunPreviewOutput,
   PROTOCOL_FEE_PERCENT,
-  SEMI_CUSTOM_RUNTIME_FAMILY_ID,
   canonicalizeChallengeSpec,
   challengeSpecSchemaForChain,
   createCsvTableSubmissionContract,
-  createSubmissionContractFromSemiCustomEvaluatorContract,
   getChallengeCompatibilityType,
   getManagedRuntimeMetric,
   lookupManagedRuntimeFamily,
   readApiServerRuntimeConfig,
-  resolveOfficialImageToDigest,
-  resolveSemiCustomExecutionOfficialImage,
-  resolveSemiCustomExecutionPlan,
   validateChallengeScoreability,
 } from "@agora/common";
 import type { getText } from "@agora/ipfs";
 import type { executeScoringPipeline } from "@agora/scorer";
-import {
-  buildManagedReviewSummaryFromCompilation,
-  buildSemiCustomReviewSummary,
-} from "./authoring-draft-review-summary.js";
 import {
   type CompilerArtifactAssignment,
   type SupportedRuntimeFamily,
   compileManagedAuthoringProposal,
 } from "./managed-authoring-compiler.js";
 import {
-  executeAuthoringDryRun,
   executeManagedAuthoringDryRun,
 } from "./managed-authoring-dry-run.js";
 import {
@@ -50,23 +39,18 @@ interface ParsedThreshold {
   value: number;
 }
 
-const MIN_CONFIDENCE_SCORE = 0.75;
-// Challenge type stays "custom" to avoid widening the public challenge-type
-// taxonomy. Runtime family is the canonical discriminator for semi-custom.
-const SEMI_CUSTOM_CHALLENGE_TYPE: ChallengeSpecOutput["type"] = "custom";
-
 const CLARIFICATION_ERROR_CODES = new Set([
   "MANAGED_ARTIFACTS_INCOMPLETE",
   "MANAGED_ARTIFACTS_AMBIGUOUS",
   "MANAGED_ARTIFACT_ASSIGNMENTS_INVALID",
   "MANAGED_THRESHOLD_UNSUPPORTED",
+  "MANAGED_COMPILER_NEEDS_INPUT",
 ]);
 
 export interface ManagedAuthoringDraftOutcome {
-  state: "ready" | "needs_clarification" | "needs_review";
+  state: "ready" | "needs_clarification" | "failed";
   compilation?: CompilationResultOutput;
   clarificationQuestions?: ClarificationQuestionOutput[];
-  reviewSummary?: AuthoringReviewSummaryOutput;
   authoringIr: ChallengeAuthoringIrOutput;
   message?: string;
 }
@@ -653,193 +637,6 @@ function buildConfirmationContract(input: {
   };
 }
 
-function buildSemiCustomDryRunPreview(): DryRunPreviewOutput {
-  return {
-    status: "skipped",
-    summary:
-      "Agora captured a typed semi-custom evaluator contract, but dry-run execution is skipped until a semi-custom scorer path is configured.",
-  };
-}
-
-function buildSemiCustomConfirmationContract(input: {
-  challengeSpec: ChallengeSpecOutput;
-  dryRun: DryRunPreviewOutput;
-}): ConfirmationContractOutput {
-  const evaluatorContract = input.challengeSpec.evaluation.evaluator_contract;
-  const submissionContract = input.challengeSpec.submission_contract;
-  const comparatorLabel = evaluatorContract
-    ? {
-        maximize: "higher is better",
-        minimize: "lower is better",
-        closest_match: "closest match wins",
-        pass_fail: "pass/fail rule decides eligibility",
-        custom: "the typed evaluator contract defines the comparison rule",
-      }[evaluatorContract.scoring.comparator]
-    : "the typed evaluator contract defines the comparison rule";
-
-  const solverSubmission =
-    submissionContract.kind === "csv_table"
-      ? `Solvers upload a CSV with columns: ${submissionContract.columns.required.join(", ")}.`
-      : submissionContract.file.extension
-        ? `Solvers upload a ${submissionContract.file.extension} file that matches the typed evaluator contract.`
-        : "Solvers upload the required deterministic artifact described by the evaluator contract.";
-
-  return {
-    solver_submission: solverSubmission,
-    scoring_summary: evaluatorContract
-      ? `Agora will score submissions with ${evaluatorContract.scoring.metric} using the ${evaluatorContract.archetype} evaluator contract. ${evaluatorContract.scoring.deterministic_rule} Comparator: ${comparatorLabel}.${input.challengeSpec.minimum_score !== undefined ? ` Submissions below ${input.challengeSpec.minimum_score} are ineligible for payout.` : ""}`
-      : "Agora will score submissions with the typed semi-custom evaluator contract once the execution path is configured.",
-    public_private_summary: input.challengeSpec.artifacts.map((artifact) => {
-      const accessLabel =
-        artifact.visibility === "private"
-          ? "hidden for evaluation"
-          : "visible to solvers";
-      return `${artifact.file_name ?? artifact.role}: ${accessLabel}`;
-    }),
-    reward_summary: buildRewardSummary({
-      rewardTotal: input.challengeSpec.reward.total,
-      distribution: input.challengeSpec.reward.distribution,
-    }),
-    deadline_summary: formatDeadline(
-      input.challengeSpec.deadline,
-      input.challengeSpec.tags
-        ?.find((tag) => tag.startsWith("tz:"))
-        ?.slice(3) ?? "UTC",
-    ),
-    dry_run_summary: input.dryRun.summary,
-  };
-}
-
-async function buildSemiCustomCompilation(input: {
-  intent: ChallengeIntentOutput;
-  authoringIr: ChallengeAuthoringIrOutput;
-  fetchImpl?: typeof fetch;
-  executeScoringPipelineImpl?: typeof executeScoringPipeline;
-  getTextImpl?: typeof getText;
-}): Promise<CompilationResultOutput> {
-  const evaluatorContract = input.authoringIr.evaluation.semi_custom_contract;
-  if (!evaluatorContract) {
-    throw new AgoraError(
-      "Agora identified a semi-custom evaluator path, but the typed evaluator contract is missing. Next step: add the missing scoring contract details and retry.",
-      {
-        code: "SEMI_CUSTOM_CONTRACT_MISSING",
-        status: 422,
-      },
-    );
-  }
-
-  const submissionContract =
-    createSubmissionContractFromSemiCustomEvaluatorContract(evaluatorContract);
-  const apiRuntime = readApiServerRuntimeConfig();
-  const executionPlan = resolveSemiCustomExecutionPlan(evaluatorContract);
-  const scorerImage = executionPlan
-    ? await resolveOfficialImageToDigest(
-        resolveSemiCustomExecutionOfficialImage(executionPlan.template),
-        {
-          fetchImpl: input.fetchImpl,
-        },
-      )
-    : undefined;
-  const challengeSpec = challengeSpecSchemaForChain(apiRuntime.chainId).parse({
-    schema_version: 3,
-    id: `draft-${Date.now()}`,
-    title: input.intent.title,
-    domain: input.intent.domain as ChallengeSpecOutput["domain"],
-    type: SEMI_CUSTOM_CHALLENGE_TYPE,
-    description: input.intent.description,
-    evaluation: {
-      runtime_family: SEMI_CUSTOM_RUNTIME_FAMILY_ID,
-      metric: evaluatorContract.scoring.metric,
-      ...(scorerImage ? { scorer_image: scorerImage } : {}),
-      evaluator_contract: evaluatorContract,
-    },
-    artifacts: input.authoringIr.artifacts.map((artifact) => ({
-      role: artifact.selected_role ?? artifact.id,
-      visibility: artifact.visibility ?? "public",
-      uri: artifact.uri,
-      ...(artifact.file_name ? { file_name: artifact.file_name } : {}),
-      ...(artifact.mime_type ? { mime_type: artifact.mime_type } : {}),
-    })),
-    submission_contract: submissionContract,
-    reward: {
-      total: input.intent.reward_total,
-      distribution: input.intent.distribution,
-    },
-    deadline: input.intent.deadline,
-    ...(typeof input.intent.dispute_window_hours === "number"
-      ? { dispute_window_hours: input.intent.dispute_window_hours }
-      : {}),
-    tags: [...input.intent.tags, `tz:${input.intent.timezone}`],
-  });
-  const canonicalSpec = await canonicalizeChallengeSpec(challengeSpec, {
-    fetchImpl: input.fetchImpl,
-    resolveOfficialPresetDigests: true,
-  });
-  const executable = validateChallengeScoreability(canonicalSpec).ok;
-  const dryRun = executable
-    ? await executeAuthoringDryRun(
-        {
-          challengeSpec: canonicalSpec,
-          timeoutMs: readManagedAuthoringRuntimeConfig().dryRunTimeoutMs,
-        },
-        {
-          executeScoringPipelineImpl: input.executeScoringPipelineImpl,
-          getTextImpl: input.getTextImpl,
-        },
-      )
-    : buildSemiCustomDryRunPreview();
-
-  return {
-    challenge_type: SEMI_CUSTOM_CHALLENGE_TYPE,
-    runtime_family: SEMI_CUSTOM_RUNTIME_FAMILY_ID,
-    metric: evaluatorContract.scoring.metric,
-    resolved_artifacts: canonicalSpec.artifacts,
-    submission_contract: canonicalSpec.submission_contract,
-    dry_run: dryRun,
-    confidence_score: input.authoringIr.routing.confidence_score,
-    reason_codes: ["semi_custom_contract_built"],
-    warnings: executable
-      ? []
-      : [
-          "Semi-custom evaluator contract is typed and reviewable, but the scorer execution path is not configured yet.",
-        ],
-    confirmation_contract: buildSemiCustomConfirmationContract({
-      challengeSpec: canonicalSpec,
-      dryRun,
-    }),
-    challenge_spec: canonicalSpec,
-  };
-}
-
-async function buildSemiCustomDraftReviewOutcome(input: {
-  intent: ChallengeIntentOutput;
-  authoringIr: ChallengeAuthoringIrOutput;
-  fetchImpl?: typeof fetch;
-  executeScoringPipelineImpl?: typeof executeScoringPipeline;
-  getTextImpl?: typeof getText;
-  triggerMessage?: string | null;
-  message: string;
-}): Promise<ManagedAuthoringDraftOutcome> {
-  const compilation = await buildSemiCustomCompilation({
-    intent: input.intent,
-    authoringIr: input.authoringIr,
-    fetchImpl: input.fetchImpl,
-    executeScoringPipelineImpl: input.executeScoringPipelineImpl,
-    getTextImpl: input.getTextImpl,
-  });
-  return {
-    state: "needs_review",
-    compilation,
-    reviewSummary: buildSemiCustomReviewSummary({
-      authoringIr: input.authoringIr,
-      executable: validateChallengeScoreability(compilation.challenge_spec).ok,
-      triggerMessage: input.triggerMessage,
-    }),
-    authoringIr: input.authoringIr,
-    message: input.message,
-  };
-}
-
 async function compileManagedAuthoringDraft(
   input: {
     intent: ChallengeIntentOutput;
@@ -850,11 +647,6 @@ async function compileManagedAuthoringDraft(
     executeScoringPipelineImpl?: typeof executeScoringPipeline;
     getTextImpl?: typeof getText;
   } = {},
-  options: {
-    allowLowConfidence: boolean;
-  } = {
-    allowLowConfidence: false,
-  },
 ): Promise<DraftCompilation> {
   if (input.uploadedArtifacts.length === 0) {
     throw new AgoraError(
@@ -871,33 +663,22 @@ async function compileManagedAuthoringDraft(
     uploadedArtifacts: input.uploadedArtifacts,
     fetchImpl: dependencies.fetchImpl,
   });
-  if (
-    !options.allowLowConfidence &&
-    proposal.confidenceScore < MIN_CONFIDENCE_SCORE
-  ) {
+
+  const assigned = assignArtifactsFromProposal({
+    runtimeFamily: proposal.runtimeFamily,
+    uploadedArtifacts: input.uploadedArtifacts,
+    artifactAssignments: proposal.artifactAssignments,
+  });
+  if (!assigned) {
     throw new AgoraError(
-      "Agora could not confidently compile this challenge into a managed runtime. Next step: rename the uploaded files to clarify their roles or use Expert Mode.",
+      "Agora could not assign the uploaded files to the required Gems scorer roles. Next step: rename the files to make their roles obvious and resubmit.",
       {
-        code: "MANAGED_COMPILATION_LOW_CONFIDENCE",
+        code: "MANAGED_ARTIFACTS_AMBIGUOUS",
         status: 422,
-        details: {
-          confidenceScore: proposal.confidenceScore,
-          reasonCodes: proposal.reasonCodes,
-        },
+        details: { runtimeFamily: proposal.runtimeFamily },
       },
     );
   }
-
-  const assigned =
-    assignArtifactsFromProposal({
-      runtimeFamily: proposal.runtimeFamily,
-      uploadedArtifacts: input.uploadedArtifacts,
-      artifactAssignments: proposal.artifactAssignments,
-    }) ??
-    assignArtifactsHeuristically({
-      runtimeFamily: proposal.runtimeFamily,
-      uploadedArtifacts: input.uploadedArtifacts,
-    });
 
   const runtimeFamily = lookupManagedRuntimeFamily(proposal.runtimeFamily);
   if (!runtimeFamily) {
@@ -995,7 +776,6 @@ async function compileManagedAuthoringDraft(
       resolved_artifacts: canonicalSpec.artifacts,
       submission_contract: canonicalSpec.submission_contract,
       dry_run: dryRun,
-      confidence_score: proposal.confidenceScore,
       reason_codes: proposal.reasonCodes,
       warnings: proposal.warnings,
       confirmation_contract: confirmationContract,
@@ -1031,53 +811,7 @@ export async function compileManagedAuthoringDraftOutcome(
   } = {},
 ): Promise<ManagedAuthoringDraftOutcome> {
   try {
-    const result = await compileManagedAuthoringDraft(input, dependencies, {
-      allowLowConfidence: true,
-    });
-
-    if (result.proposal.confidenceScore < MIN_CONFIDENCE_SCORE) {
-      if (result.proposal.reasonCodes.includes("no_supported_runtime_signal")) {
-        const semiCustomAuthoringIr = buildManagedAuthoringIr({
-          intent: input.intent,
-          uploadedArtifacts: input.uploadedArtifacts,
-          origin: { provider: "direct" },
-          confidenceScore: result.proposal.confidenceScore,
-        });
-        if (semiCustomAuthoringIr.routing.mode === "semi_custom") {
-          return buildSemiCustomDraftReviewOutcome({
-            intent: input.intent,
-            authoringIr: semiCustomAuthoringIr,
-            fetchImpl: dependencies.fetchImpl,
-            executeScoringPipelineImpl: dependencies.executeScoringPipelineImpl,
-            getTextImpl: dependencies.getTextImpl,
-            triggerMessage:
-              "The compiler could not find a strong managed runtime fit.",
-            message:
-              "Agora captured a deterministic draft, but it needs a semi-custom evaluator instead of a current managed template.",
-          });
-        }
-      }
-
-      const authoringIr = buildManagedAuthoringIr({
-        intent: input.intent,
-        uploadedArtifacts: input.uploadedArtifacts,
-        origin: { provider: "direct" },
-        runtimeFamily: result.proposal.runtimeFamily,
-        metric: result.proposal.metric,
-        confidenceScore: result.proposal.confidenceScore,
-        routingMode: "managed_supported",
-      });
-      return {
-        state: "needs_review",
-        compilation: result.compilation,
-        reviewSummary: buildManagedReviewSummaryFromCompilation(
-          result.compilation,
-        ),
-        authoringIr,
-        message:
-          "Agora compiled a managed challenge contract, but it wants operator review before this draft can publish.",
-      };
-    }
+    const result = await compileManagedAuthoringDraft(input, dependencies);
 
     const authoringIr = buildManagedAuthoringIr({
       intent: input.intent,
@@ -1085,15 +819,15 @@ export async function compileManagedAuthoringDraftOutcome(
       origin: { provider: "direct" },
       runtimeFamily: result.proposal.runtimeFamily,
       metric: result.proposal.metric,
-      confidenceScore: result.proposal.confidenceScore,
-      routingMode: "managed_supported",
+      artifactAssignments: result.proposal.artifactAssignments,
+      resolvedAssumptions: result.proposal.reasonCodes,
     });
     return {
       state: "ready",
       compilation: result.compilation,
       authoringIr,
       message:
-        "Agora mapped your files, chose a managed runtime, and prepared a review contract.",
+        "Agora mapped your files, chose a supported Gems runtime, and prepared a publishable challenge contract.",
     };
   } catch (error) {
     if (
@@ -1112,8 +846,13 @@ export async function compileManagedAuthoringDraftOutcome(
           typeof error.details?.metric === "string"
             ? error.details.metric
             : null,
-        confidenceScore: 0.4,
-        error,
+        clarificationQuestions: Array.isArray(error.details?.questions)
+          ? (error.details.questions as ClarificationQuestionOutput[])
+          : undefined,
+        compileError: {
+          code: error.code,
+          message: error.message,
+        },
       });
       return {
         state: "needs_clarification",
@@ -1126,27 +865,24 @@ export async function compileManagedAuthoringDraftOutcome(
       };
     }
 
-    const semiCustomAuthoringIr = buildManagedAuthoringIr({
-      intent: input.intent,
-      uploadedArtifacts: input.uploadedArtifacts,
-      origin: { provider: "direct" },
-      confidenceScore: 0.55,
-    });
-    if (
-      semiCustomAuthoringIr.routing.mode === "semi_custom" &&
-      error instanceof AgoraError &&
-      error.code === "MANAGED_COMPILATION_LOW_CONFIDENCE"
-    ) {
-      return buildSemiCustomDraftReviewOutcome({
+    if (error instanceof AgoraError && error.code === "MANAGED_COMPILER_UNSUPPORTED") {
+      const authoringIr = buildManagedAuthoringIr({
         intent: input.intent,
-        authoringIr: semiCustomAuthoringIr,
-        fetchImpl: dependencies.fetchImpl,
-        executeScoringPipelineImpl: dependencies.executeScoringPipelineImpl,
-        getTextImpl: dependencies.getTextImpl,
-        triggerMessage: error.message,
-        message:
-          "Agora could not compile this draft into a current managed runtime, but it still looks deterministic enough for a semi-custom evaluator path.",
+        uploadedArtifacts: input.uploadedArtifacts,
+        origin: { provider: "direct" },
+        rejectionReasons: Array.isArray(error.details?.reasonCodes)
+          ? (error.details.reasonCodes as string[])
+          : [],
+        compileError: {
+          code: error.code,
+          message: error.message,
+        },
       });
+      return {
+        state: "failed",
+        authoringIr,
+        message: error.message,
+      };
     }
     throw error;
   }

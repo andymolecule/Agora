@@ -8,7 +8,7 @@ import {
   lookupManagedRuntimeFamily,
 } from "@agora/common";
 import {
-  type AuthoringDraftViewRow,
+  type AuthoringDraftRow,
   AuthoringDraftWriteConflictError,
 } from "@agora/db";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
@@ -40,9 +40,23 @@ function buildStubArtifactFromSourceUrl(input: {
   };
 }
 
+function createSubmitIntent() {
+  return {
+    title: "Drug response challenge",
+    description: "Predict held-out drug response values.",
+    payout_condition: "Highest R2 wins.",
+    reward_total: "10",
+    distribution: "winner_take_all" as const,
+    deadline: "2026-03-19T00:00:00.000Z",
+    domain: "other" as const,
+    tags: [],
+    timezone: "UTC",
+  };
+}
+
 function createSession(
-  overrides: Partial<AuthoringDraftViewRow> = {},
-): AuthoringDraftViewRow {
+  overrides: Partial<AuthoringDraftRow> = {},
+): AuthoringDraftRow {
   const uploadedArtifacts = overrides.uploaded_artifacts_json ?? [
     buildStubArtifactFromSourceUrl({
       sourceUrl: "https://cdn.beach.science/uploads/dataset.csv",
@@ -112,14 +126,6 @@ function createTestRouter(
 ) {
   return createAuthoringSourcesRouter({
     normalizeExternalArtifactsForDraft: normalizeExternalArtifactsStub,
-    upsertAuthoringCallbackTarget: async () =>
-      ({
-        draft_id: "68dff5c6-336a-47fa-a4de-41e6386bd2e4",
-        callback_url: "https://hooks.beach.science/agora",
-        registered_at: "2026-03-18T00:05:00.000Z",
-        created_at: "2026-03-18T00:05:00.000Z",
-        updated_at: "2026-03-18T00:05:00.000Z",
-      }) as never,
     getAuthoringSourceLink: async () => null as never,
     upsertAuthoringSourceLink: async (_db, payload) =>
       ({
@@ -135,9 +141,9 @@ function createTestRouter(
 }
 
 function applyUpdate(
-  session: AuthoringDraftViewRow,
+  session: AuthoringDraftRow,
   patch: Record<string, unknown>,
-): AuthoringDraftViewRow {
+): AuthoringDraftRow {
   return {
     ...session,
     ...patch,
@@ -145,43 +151,26 @@ function applyUpdate(
       typeof patch.updated_at === "string"
         ? patch.updated_at
         : "2026-03-18T01:00:00.000Z",
-  } as AuthoringDraftViewRow;
+  } as AuthoringDraftRow;
 }
 
 function partnerConfig() {
   return {
     partnerKeys: {
       beach_science: "beach-secret",
-      github: "github-secret",
     },
     callbackSecrets: {
       beach_science: "beach-secret",
-      github: "github-secret",
     },
     returnOrigins: {
       beach_science: ["https://beach.science"],
-      github: ["https://github.com"],
     },
-  };
-}
-
-function createCompileIntent() {
-  return {
-    title: "Drug response challenge",
-    description: "Predict held-out drug response values.",
-    payout_condition: "Highest R2 wins.",
-    reward_total: "10",
-    distribution: "winner_take_all" as const,
-    deadline: "2026-03-19T00:00:00.000Z",
-    domain: "other" as const,
-    tags: [],
-    timezone: "UTC",
   };
 }
 
 function createReadyCompileOutcome(input: {
-  intent: ReturnType<typeof createCompileIntent>;
-  uploadedArtifacts: AuthoringDraftViewRow["uploaded_artifacts_json"];
+  intent: ReturnType<typeof createSubmitIntent>;
+  uploadedArtifacts: AuthoringDraftRow["uploaded_artifacts_json"];
 }) {
   const submissionContract = createCsvTableSubmissionContract({
     requiredColumns: ["id", "prediction"],
@@ -200,8 +189,13 @@ function createReadyCompileOutcome(input: {
       uploadedArtifacts: input.uploadedArtifacts,
       runtimeFamily: "tabular_regression",
       metric: "r2",
-      confidenceScore: 0.92,
       routingMode: "managed_supported",
+      origin: {
+        provider: "beach_science",
+        external_id: "thread-42",
+        external_url: "https://beach.science/thread/42",
+        ingested_at: "2026-03-18T00:00:00.000Z",
+      },
     }),
     compilation: {
       challenge_type: "prediction" as const,
@@ -221,7 +215,6 @@ function createReadyCompileOutcome(input: {
         status: "validated" as const,
         summary: "validated",
       },
-      confidence_score: 0.92,
       reason_codes: [],
       warnings: [],
       confirmation_contract: {
@@ -267,7 +260,40 @@ function createReadyCompileOutcome(input: {
   };
 }
 
-test("authoring source route returns a specific error when auth is missing", async () => {
+function createSubmitBody(overrides: Record<string, unknown> = {}) {
+  return {
+    title: "Beach thread title",
+    external_id: "thread-42",
+    external_url: "https://beach.science/thread/42",
+    raw_context: {
+      revision: "rev-7",
+    },
+    messages: [
+      {
+        id: "msg-1",
+        role: "poster",
+        content:
+          "We need a challenge that rewards the best deterministic prediction.",
+      },
+      {
+        id: "msg-2",
+        role: "participant",
+        content: "Solvers should upload a CSV with id and prediction.",
+      },
+    ],
+    artifacts: [
+      {
+        source_url: "https://cdn.beach.science/uploads/dataset.csv?download=1",
+        mime_type: "text/csv",
+        size_bytes: 1024,
+      },
+    ],
+    intent: createSubmitIntent(),
+    ...overrides,
+  };
+}
+
+test("authoring source submit returns a specific error when auth is missing", async () => {
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
     createAuthoringDraft: async () => ({}) as never,
@@ -276,18 +302,10 @@ test("authoring source route returns a specific error when auth is missing", asy
   });
 
   const response = await router.request(
-    new Request("http://localhost/external/sources", {
+    new Request("http://localhost/external/drafts/submit", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        messages: [
-          {
-            id: "msg-1",
-            role: "poster",
-            content: "We want a deterministic challenge.",
-          },
-        ],
-      }),
+      body: JSON.stringify(createSubmitBody()),
     }),
   );
 
@@ -298,7 +316,7 @@ test("authoring source route returns a specific error when auth is missing", asy
   );
 });
 
-test("authoring source route returns a specific error for malformed bearer auth", async () => {
+test("authoring source submit returns a specific error for malformed bearer auth", async () => {
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
     createAuthoringDraft: async () => ({}) as never,
@@ -307,21 +325,13 @@ test("authoring source route returns a specific error for malformed bearer auth"
   });
 
   const response = await router.request(
-    new Request("http://localhost/external/sources", {
+    new Request("http://localhost/external/drafts/submit", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: "Token beach-secret",
       },
-      body: JSON.stringify({
-        messages: [
-          {
-            id: "msg-1",
-            role: "poster",
-            content: "We want a deterministic challenge.",
-          },
-        ],
-      }),
+      body: JSON.stringify(createSubmitBody()),
     }),
   );
 
@@ -332,15 +342,13 @@ test("authoring source route returns a specific error for malformed bearer auth"
   );
 });
 
-test("authoring source route creates a partner-owned draft with source context and a host card", async () => {
-  let capturedPayload: Record<string, unknown> | null = null;
+test("authoring source submit creates a partner-owned compiled draft", async () => {
   const quotaCalls: string[] = [];
   let storedSession = createSession();
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
     createAuthoringDraft: async (_db, payload) => {
-      capturedPayload = payload as Record<string, unknown>;
       storedSession = createSession({
         state: payload.state,
         intent_json: payload.intent_json ?? null,
@@ -350,93 +358,76 @@ test("authoring source route creates a partner-owned draft with source context a
       });
       return storedSession as never;
     },
-    getAuthoringDraftViewById: async () => storedSession as never,
+    getAuthoringDraftById: async () => storedSession as never,
+    updateAuthoringDraft: async (_db, patch) => {
+      storedSession = applyUpdate(
+        storedSession,
+        patch as Record<string, unknown>,
+      );
+      return storedSession as never;
+    },
+    compileManagedAuthoringDraftOutcome: async ({
+      intent,
+      uploadedArtifacts,
+    }) =>
+      createReadyCompileOutcome({
+        intent: intent as ReturnType<typeof createSubmitIntent>,
+        uploadedArtifacts,
+      }),
     readAuthoringPartnerRuntimeConfig: partnerConfig,
     consumeWriteQuota: allowPartnerQuota(quotaCalls) as never,
   });
 
   const response = await router.request(
-    new Request("http://localhost/external/sources", {
+    new Request("http://localhost/external/drafts/submit", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: "Bearer beach-secret",
       },
-      body: JSON.stringify({
-        title: "Beach thread title",
-        external_id: "thread-42",
-        external_url: "https://beach.science/thread/42",
-        raw_context: {
-          revision: "rev-7",
-        },
-        messages: [
-          {
-            id: "msg-1",
-            role: "poster",
-            content:
-              "We need a challenge that rewards the best deterministic prediction.",
-          },
-          {
-            id: "msg-2",
-            role: "participant",
-            content: "Solvers should upload a CSV with id and prediction.",
-          },
-        ],
-        artifacts: [
-          {
-            source_url:
-              "https://cdn.beach.science/uploads/dataset.csv?download=1",
-            mime_type: "text/csv",
-            size_bytes: 1024,
-          },
-        ],
-      }),
+      body: JSON.stringify(createSubmitBody()),
     }),
   );
 
   assert.equal(response.status, 200);
   assert.deepEqual(quotaCalls, [
-    "partner:beach_science|/api/authoring/external/sources",
+    "partner:beach_science|/api/authoring/external/drafts/submit",
   ]);
+  assert.equal(storedSession.state, "ready");
+  assert.equal(storedSession.intent_json?.reward_total, "10");
   assert.equal(
-    (
-      capturedPayload?.authoring_ir_json as {
-        origin?: { provider?: string; external_id?: string | null };
-      }
-    ).origin?.provider,
+    storedSession.authoring_ir_json?.origin.provider,
     "beach_science",
-  );
-  assert.equal(
-    (capturedPayload as { clarification_questions?: unknown })
-      ?.clarification_questions,
-    undefined,
   );
 
   const payload = (await response.json()) as {
     data: {
-      draft: {
-        authoring_ir?: { origin?: { external_id?: string | null } };
+      card: { state: string; provider: string };
+      assessment: {
+        feasible: boolean;
+        publishable: boolean;
+        runtime_family: string | null;
+        metric: string | null;
       };
-      card: {
-        draft_id: string;
-        provider: string;
-        clarification_count: number;
-      };
+      draft: { authoring_ir?: { origin?: { external_id?: string | null } } };
     };
   };
+  assert.equal(payload.data.card.state, "ready");
+  assert.equal(payload.data.card.provider, "beach_science");
+  assert.equal(payload.data.assessment.feasible, true);
+  assert.equal(payload.data.assessment.publishable, true);
+  assert.equal(payload.data.assessment.runtime_family, "tabular_regression");
+  assert.equal(payload.data.assessment.metric, "r2");
   assert.equal(
     payload.data.draft.authoring_ir?.origin?.external_id,
     "thread-42",
   );
-  assert.equal(payload.data.card.draft_id, createSession().id);
-  assert.equal(payload.data.card.provider, "beach_science");
-  assert.equal(payload.data.card.clarification_count > 0, true);
 });
 
-test("authoring source route refreshes an existing linked draft instead of creating a duplicate", async () => {
+test("authoring source submit refreshes an existing linked draft instead of creating a duplicate", async () => {
   let storedSession = createSession({
     state: "ready",
-    intent_json: createCompileIntent(),
+    intent_json: createSubmitIntent(),
   });
   let createCalled = false;
 
@@ -446,7 +437,7 @@ test("authoring source route refreshes an existing linked draft instead of creat
       createCalled = true;
       return storedSession as never;
     },
-    getAuthoringDraftViewById: async () => storedSession as never,
+    getAuthoringDraftById: async () => storedSession as never,
     getAuthoringSourceLink: async () =>
       ({
         provider: "beach_science",
@@ -461,44 +452,43 @@ test("authoring source route refreshes an existing linked draft instead of creat
       );
       return storedSession as never;
     },
-    upsertAuthoringSourceLink: async () =>
-      ({
-        provider: "beach_science",
-        external_id: "thread-42",
-        draft_id: storedSession.id,
-        external_url: "https://beach.science/thread/42",
-        created_at: "2026-03-18T00:00:00.000Z",
-        updated_at: "2026-03-18T01:00:00.000Z",
-      }) as never,
+    compileManagedAuthoringDraftOutcome: async ({
+      intent,
+      uploadedArtifacts,
+    }) =>
+      createReadyCompileOutcome({
+        intent: intent as ReturnType<typeof createSubmitIntent>,
+        uploadedArtifacts,
+      }),
     readAuthoringPartnerRuntimeConfig: partnerConfig,
     consumeWriteQuota: allowPartnerQuota() as never,
   });
 
   const response = await router.request(
-    new Request("http://localhost/external/sources", {
+    new Request("http://localhost/external/drafts/submit", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: "Bearer beach-secret",
       },
-      body: JSON.stringify({
-        title: "Updated Beach thread title",
-        external_id: "thread-42",
-        external_url: "https://beach.science/thread/42",
-        messages: [
-          {
-            id: "msg-1",
-            role: "poster",
-            content: "Updated deterministic challenge framing.",
-          },
-        ],
-      }),
+      body: JSON.stringify(
+        createSubmitBody({
+          title: "Updated Beach thread title",
+          messages: [
+            {
+              id: "msg-1",
+              role: "poster",
+              content: "Updated deterministic challenge framing.",
+            },
+          ],
+        }),
+      ),
     }),
   );
 
   assert.equal(response.status, 200);
   assert.equal(createCalled, false);
-  assert.equal(storedSession.state, "draft");
+  assert.equal(storedSession.state, "ready");
   assert.equal(
     storedSession.authoring_ir_json?.source.poster_messages[0]?.content,
     "Updated deterministic challenge framing.",
@@ -508,10 +498,10 @@ test("authoring source route refreshes an existing linked draft instead of creat
     data: { draft: { id: string; state: string } };
   };
   assert.equal(payload.data.draft.id, storedSession.id);
-  assert.equal(payload.data.draft.state, "draft");
+  assert.equal(payload.data.draft.state, "ready");
 });
 
-test("authoring source route returns artifact normalization failures without creating a draft", async () => {
+test("authoring source submit returns artifact normalization failures without creating a draft", async () => {
   let createCalled = false;
 
   const router = createTestRouter({
@@ -534,27 +524,13 @@ test("authoring source route returns artifact normalization failures without cre
   });
 
   const response = await router.request(
-    new Request("http://localhost/external/sources", {
+    new Request("http://localhost/external/drafts/submit", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: "Bearer beach-secret",
       },
-      body: JSON.stringify({
-        messages: [
-          {
-            id: "msg-1",
-            role: "poster",
-            content: "We want a deterministic challenge.",
-          },
-        ],
-        artifacts: [
-          {
-            source_url: "https://cdn.beach.science/uploads/dataset.csv",
-            mime_type: "text/csv",
-          },
-        ],
-      }),
+      body: JSON.stringify(createSubmitBody()),
     }),
   );
 
@@ -575,14 +551,14 @@ test("authoring source draft routes hide drafts owned by another provider", asyn
         {
           id: "msg-1",
           role: "poster",
-          content: "GitHub-originated thread",
+          content: "Direct-originated thread",
           created_at: "2026-03-18T00:00:00.000Z",
         },
       ],
       origin: {
-        provider: "github",
+        provider: "direct",
         external_id: "issue-1",
-        external_url: "https://github.com/example/repo/issues/1",
+        external_url: null,
         ingested_at: "2026-03-18T00:00:00.000Z",
       },
     }),
@@ -590,7 +566,7 @@ test("authoring source draft routes hide drafts owned by another provider", asyn
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getAuthoringDraftViewById: async () => storedSession as never,
+    getAuthoringDraftById: async () => storedSession as never,
     readAuthoringPartnerRuntimeConfig: partnerConfig,
     consumeWriteQuota: allowPartnerQuota() as never,
   });
@@ -611,383 +587,34 @@ test("authoring source draft routes hide drafts owned by another provider", asyn
   );
 });
 
-test("authoring source draft clarify appends transcript context and dispatches callbacks", async () => {
-  let storedSession = createSession({
-    source_callback_url: "https://hooks.beach.science/agora",
-    source_callback_registered_at: "2026-03-18T00:05:00.000Z",
-  });
-  const quotaCalls: string[] = [];
-  const deliveredEvents: Array<{ event: string; state: string }> = [];
-
-  const router = createTestRouter({
-    createSupabaseClient: () => ({}) as never,
-    getAuthoringDraftViewById: async () => storedSession as never,
-    updateAuthoringDraft: async (_db, patch) => {
-      storedSession = applyUpdate(
-        storedSession,
-        patch as Record<string, unknown>,
-      );
-      return storedSession as never;
-    },
-    readAuthoringPartnerRuntimeConfig: partnerConfig,
-    consumeWriteQuota: allowPartnerQuota(quotaCalls) as never,
-    deliverAuthoringDraftLifecycleEvent: async ({ event, session }) => {
-      deliveredEvents.push({ event, state: session.state });
-      return true;
-    },
-  });
-
-  const response = await router.request(
-    new Request(
-      `http://localhost/external/drafts/${storedSession.id}/clarify`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: "Bearer beach-secret",
-        },
-        body: JSON.stringify({
-          raw_context: { revision: "rev-8" },
-          messages: [
-            {
-              id: "msg-2",
-              role: "participant",
-              content:
-                "Reward should be 50 USDC and the winner must maximize R2.",
-            },
-          ],
-          artifacts: [
-            {
-              source_url: "https://cdn.beach.science/uploads/hidden.csv",
-              mime_type: "text/csv",
-            },
-          ],
-        }),
-      },
-    ),
-  );
-
-  assert.equal(response.status, 200);
-  assert.deepEqual(quotaCalls, [
-    "partner:beach_science|/api/authoring/external/drafts/clarify",
-  ]);
-  assert.equal(storedSession.state, "draft");
-  assert.equal(storedSession.uploaded_artifacts_json.length, 2);
-  assert.equal(
-    storedSession.authoring_ir_json?.origin.raw_context?.revision,
-    "rev-8",
-  );
-  assert.equal(
-    storedSession.authoring_ir_json?.source.poster_messages.length,
-    2,
-  );
-  assert.deepEqual(deliveredEvents, [
-    { event: "draft_updated", state: "draft" },
-  ]);
-
-  const payload = (await response.json()) as {
-    data: {
-      card: { callback_registered: boolean; clarification_count: number };
-    };
-  };
-  assert.equal(payload.data.card.callback_registered, true);
-  assert.equal(payload.data.card.clarification_count > 0, true);
-});
-
-test("authoring source draft clarify treats duplicate message ids and artifact urls as idempotent", async () => {
-  let storedSession = createSession();
-
-  const router = createTestRouter({
-    createSupabaseClient: () => ({}) as never,
-    getAuthoringDraftViewById: async () => storedSession as never,
-    updateAuthoringDraft: async (_db, patch) => {
-      storedSession = applyUpdate(
-        storedSession,
-        patch as Record<string, unknown>,
-      );
-      return storedSession as never;
-    },
-    readAuthoringPartnerRuntimeConfig: partnerConfig,
-    consumeWriteQuota: allowPartnerQuota() as never,
-  });
-
-  const response = await router.request(
-    new Request(
-      `http://localhost/external/drafts/${storedSession.id}/clarify`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: "Bearer beach-secret",
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              id: "msg-1",
-              role: "poster",
-              content: "We want a deterministic challenge.",
-            },
-          ],
-          artifacts: [
-            {
-              source_url: "https://cdn.beach.science/uploads/dataset.csv",
-              suggested_filename: "renamed.csv",
-              mime_type: "text/plain",
-            },
-          ],
-        }),
-      },
-    ),
-  );
-
-  assert.equal(response.status, 200);
-  assert.equal(
-    storedSession.authoring_ir_json?.source.poster_messages.length,
-    1,
-  );
-  assert.equal(storedSession.uploaded_artifacts_json.length, 1);
-  assert.equal(
-    storedSession.uploaded_artifacts_json[0]?.file_name,
-    "dataset.csv",
-  );
-});
-
-test("authoring source draft clarify returns a conflict when the draft changed concurrently", async () => {
-  const storedSession = createSession();
-
-  const router = createTestRouter({
-    createSupabaseClient: () => ({}) as never,
-    getAuthoringDraftViewById: async () => storedSession as never,
-    updateAuthoringDraft: async () => {
-      throw new AuthoringDraftWriteConflictError("stale");
-    },
-    readAuthoringPartnerRuntimeConfig: partnerConfig,
-    consumeWriteQuota: allowPartnerQuota() as never,
-  });
-
-  const response = await router.request(
-    new Request(
-      `http://localhost/external/drafts/${storedSession.id}/clarify`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: "Bearer beach-secret",
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              id: "msg-2",
-              role: "participant",
-              content: "Reward should be 50 USDC.",
-            },
-          ],
-        }),
-      },
-    ),
-  );
-
-  assert.equal(response.status, 409);
-  assert.equal(
-    ((await response.json()) as { code: string }).code,
-    "AUTHORING_DRAFT_CONFLICT",
-  );
-});
-
-test("authoring source draft clarify stays successful when callback delivery throws", async () => {
-  let storedSession = createSession({
-    source_callback_url: "https://hooks.beach.science/agora",
-    source_callback_registered_at: "2026-03-18T00:05:00.000Z",
-  });
-
-  const router = createTestRouter({
-    createSupabaseClient: () => ({}) as never,
-    getAuthoringDraftViewById: async () => storedSession as never,
-    updateAuthoringDraft: async (_db, patch) => {
-      storedSession = applyUpdate(
-        storedSession,
-        patch as Record<string, unknown>,
-      );
-      return storedSession as never;
-    },
-    readAuthoringPartnerRuntimeConfig: partnerConfig,
-    consumeWriteQuota: allowPartnerQuota() as never,
-    deliverAuthoringDraftLifecycleEvent: async () => {
-      throw new Error("callback unavailable");
-    },
-  });
-
-  const response = await router.request(
-    new Request(
-      `http://localhost/external/drafts/${storedSession.id}/clarify`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: "Bearer beach-secret",
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              id: "msg-2",
-              role: "participant",
-              content:
-                "Reward should be 50 USDC and the winner must maximize R2.",
-            },
-          ],
-        }),
-      },
-    ),
-  );
-
-  assert.equal(response.status, 200);
-  assert.equal(storedSession.state, "draft");
-});
-
-test("authoring source draft compile reuses stored artifacts and dispatches compile callbacks", async () => {
-  let storedSession = createSession({
-    source_callback_url: "https://hooks.beach.science/agora",
-    source_callback_registered_at: "2026-03-18T00:05:00.000Z",
-  });
-  const quotaCalls: string[] = [];
-  const deliveredEvents: string[] = [];
-
-  const router = createTestRouter({
-    createSupabaseClient: () => ({}) as never,
-    getAuthoringDraftViewById: async () => storedSession as never,
-    updateAuthoringDraft: async (_db, patch) => {
-      storedSession = applyUpdate(
-        storedSession,
-        patch as Record<string, unknown>,
-      );
-      return storedSession as never;
-    },
-    compileManagedAuthoringDraftOutcome: async ({
-      intent,
-      uploadedArtifacts,
-    }) =>
-      createReadyCompileOutcome({
-        intent: intent as ReturnType<typeof createCompileIntent>,
-        uploadedArtifacts,
-      }),
-    readAuthoringPartnerRuntimeConfig: partnerConfig,
-    consumeWriteQuota: allowPartnerQuota(quotaCalls) as never,
-    deliverAuthoringDraftLifecycleEvent: async ({ event }) => {
-      deliveredEvents.push(event);
-      return true;
-    },
-  });
-
-  const response = await router.request(
-    new Request(
-      `http://localhost/external/drafts/${storedSession.id}/compile`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: "Bearer beach-secret",
-        },
-        body: JSON.stringify({
-          intent: createCompileIntent(),
-        }),
-      },
-    ),
-  );
-
-  assert.equal(response.status, 200);
-  assert.deepEqual(quotaCalls, [
-    "partner:beach_science|/api/authoring/external/drafts/compile",
-  ]);
-  assert.equal(storedSession.state, "ready");
-  assert.equal(storedSession.intent_json?.reward_total, "10");
-  assert.equal(
-    storedSession.authoring_ir_json?.origin.provider,
-    "beach_science",
-  );
-  assert.deepEqual(deliveredEvents, ["draft_compiled"]);
-
-  const payload = (await response.json()) as {
-    data: {
-      card: { state: string; title: string | null };
-      assessment: {
-        feasible: boolean;
-        publishable: boolean;
-        requires_review: boolean;
-        runtime_family: string | null;
-        metric: string | null;
-      };
-    };
-  };
-  assert.equal(payload.data.card.state, "ready");
-  assert.equal(payload.data.card.title, "Drug response challenge");
-  assert.equal(payload.data.assessment.feasible, true);
-  assert.equal(payload.data.assessment.publishable, true);
-  assert.equal(payload.data.assessment.requires_review, false);
-  assert.equal(payload.data.assessment.runtime_family, "tabular_regression");
-  assert.equal(payload.data.assessment.metric, "r2");
-});
-
-test("authoring source draft compile rejects expired drafts", async () => {
-  const storedSession = createSession({
-    expires_at: "2020-01-01T00:00:00.000Z",
-  });
-
-  const router = createTestRouter({
-    createSupabaseClient: () => ({}) as never,
-    getAuthoringDraftViewById: async () => storedSession as never,
-    readAuthoringPartnerRuntimeConfig: partnerConfig,
-    consumeWriteQuota: allowPartnerQuota() as never,
-  });
-
-  const response = await router.request(
-    new Request(
-      `http://localhost/external/drafts/${storedSession.id}/compile`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: "Bearer beach-secret",
-        },
-        body: JSON.stringify({
-          intent: createCompileIntent(),
-        }),
-      },
-    ),
-  );
-
-  assert.equal(response.status, 410);
-  assert.equal(
-    ((await response.json()) as { code: string }).code,
-    "AUTHORING_DRAFT_EXPIRED",
-  );
-});
-
-test("authoring source draft compile returns busy when a compile is already in progress", async () => {
+test("authoring source submit returns busy when the linked draft is already compiling", async () => {
   const storedSession = createSession({
     state: "compiling",
   });
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getAuthoringDraftViewById: async () => storedSession as never,
+    getAuthoringDraftById: async () => storedSession as never,
+    getAuthoringSourceLink: async () =>
+      ({
+        provider: "beach_science",
+        external_id: "thread-42",
+        draft_id: storedSession.id,
+        external_url: "https://beach.science/thread/42",
+      }) as never,
     readAuthoringPartnerRuntimeConfig: partnerConfig,
     consumeWriteQuota: allowPartnerQuota() as never,
   });
 
   const response = await router.request(
-    new Request(
-      `http://localhost/external/drafts/${storedSession.id}/compile`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: "Bearer beach-secret",
-        },
-        body: JSON.stringify({
-          intent: createCompileIntent(),
-        }),
+    new Request("http://localhost/external/drafts/submit", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer beach-secret",
       },
-    ),
+      body: JSON.stringify(createSubmitBody()),
+    }),
   );
 
   assert.equal(response.status, 409);
@@ -997,7 +624,47 @@ test("authoring source draft compile returns busy when a compile is already in p
   );
 });
 
-test("authoring source draft compile stays successful when callback delivery throws", async () => {
+test("authoring source submit returns a conflict when the draft changed concurrently", async () => {
+  const storedSession = createSession({
+    intent_json: createSubmitIntent(),
+  });
+
+  const router = createTestRouter({
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringDraftById: async () => storedSession as never,
+    getAuthoringSourceLink: async () =>
+      ({
+        provider: "beach_science",
+        external_id: "thread-42",
+        draft_id: storedSession.id,
+        external_url: "https://beach.science/thread/42",
+      }) as never,
+    updateAuthoringDraft: async () => {
+      throw new AuthoringDraftWriteConflictError("stale");
+    },
+    readAuthoringPartnerRuntimeConfig: partnerConfig,
+    consumeWriteQuota: allowPartnerQuota() as never,
+  });
+
+  const response = await router.request(
+    new Request("http://localhost/external/drafts/submit", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer beach-secret",
+      },
+      body: JSON.stringify(createSubmitBody()),
+    }),
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(
+    ((await response.json()) as { code: string }).code,
+    "AUTHORING_DRAFT_CONFLICT",
+  );
+});
+
+test("authoring source submit stays successful when callback delivery throws", async () => {
   let storedSession = createSession({
     source_callback_url: "https://hooks.beach.science/agora",
     source_callback_registered_at: "2026-03-18T00:05:00.000Z",
@@ -1005,7 +672,20 @@ test("authoring source draft compile stays successful when callback delivery thr
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getAuthoringDraftViewById: async () => storedSession as never,
+    createAuthoringDraft: async (_db, payload) => {
+      storedSession = createSession({
+        state: payload.state,
+        intent_json: payload.intent_json ?? null,
+        authoring_ir_json: payload.authoring_ir_json ?? null,
+        uploaded_artifacts_json: payload.uploaded_artifacts_json ?? [],
+        expires_at: payload.expires_at,
+        source_callback_url: storedSession.source_callback_url,
+        source_callback_registered_at:
+          storedSession.source_callback_registered_at,
+      });
+      return storedSession as never;
+    },
+    getAuthoringDraftById: async () => storedSession as never,
     updateAuthoringDraft: async (_db, patch) => {
       storedSession = applyUpdate(
         storedSession,
@@ -1018,7 +698,7 @@ test("authoring source draft compile stays successful when callback delivery thr
       uploadedArtifacts,
     }) =>
       createReadyCompileOutcome({
-        intent: intent as ReturnType<typeof createCompileIntent>,
+        intent: intent as ReturnType<typeof createSubmitIntent>,
         uploadedArtifacts,
       }),
     readAuthoringPartnerRuntimeConfig: partnerConfig,
@@ -1029,19 +709,14 @@ test("authoring source draft compile stays successful when callback delivery thr
   });
 
   const response = await router.request(
-    new Request(
-      `http://localhost/external/drafts/${storedSession.id}/compile`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: "Bearer beach-secret",
-        },
-        body: JSON.stringify({
-          intent: createCompileIntent(),
-        }),
+    new Request("http://localhost/external/drafts/submit", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer beach-secret",
       },
-    ),
+      body: JSON.stringify(createSubmitBody()),
+    }),
   );
 
   assert.equal(response.status, 200);
@@ -1049,7 +724,7 @@ test("authoring source draft compile stays successful when callback delivery thr
 });
 
 test("authoring source draft publish uses the internal sponsor path and returns challenge refs", async () => {
-  const intent = createCompileIntent();
+  const intent = createSubmitIntent();
   const readyOutcome = createReadyCompileOutcome({
     intent,
     uploadedArtifacts: createSession().uploaded_artifacts_json,
@@ -1057,13 +732,12 @@ test("authoring source draft publish uses the internal sponsor path and returns 
   let storedSession = createSession({
     state: "ready",
     intent_json: intent,
-    authoring_ir_json: buildManagedAuthoringIr({
-      intent,
-      uploadedArtifacts: createSession().uploaded_artifacts_json,
-      runtimeFamily: "tabular_regression",
-      metric: "r2",
-      confidenceScore: 0.92,
-      routingMode: "managed_supported",
+      authoring_ir_json: buildManagedAuthoringIr({
+        intent,
+        uploadedArtifacts: createSession().uploaded_artifacts_json,
+        runtimeFamily: "tabular_regression",
+        metric: "r2",
+        routingMode: "managed_supported",
       sourceMessages: [
         {
           id: "msg-1",
@@ -1089,8 +763,7 @@ test("authoring source draft publish uses the internal sponsor path and returns 
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getAuthoringDraftViewById: async () => storedSession as never,
-    getPublishedChallengeLinkByDraftId: async () => null as never,
+    getAuthoringDraftById: async () => storedSession as never,
     canonicalizeChallengeSpec: async (spec) => spec as never,
     pinJSON: async () => "ipfs://challenge-spec-42",
     sponsorAndPublishAuthoringDraft: async ({
@@ -1219,20 +892,13 @@ test("authoring source draft webhook registration persists callback metadata", a
 
   const router = createTestRouter({
     createSupabaseClient: () => ({}) as never,
-    getAuthoringDraftViewById: async () => storedSession as never,
-    upsertAuthoringCallbackTarget: async (_db, payload) => {
+    getAuthoringDraftById: async () => storedSession as never,
+    updateAuthoringDraft: async (_db, payload) => {
       storedSession = applyUpdate(storedSession, {
-        source_callback_url: payload.callback_url,
-        source_callback_registered_at: payload.registered_at,
+        source_callback_url: payload.source_callback_url,
+        source_callback_registered_at: payload.source_callback_registered_at,
       });
-      return {
-        draft_id: storedSession.id,
-        callback_url: storedSession.source_callback_url ?? payload.callback_url,
-        registered_at:
-          storedSession.source_callback_registered_at ?? payload.registered_at,
-        created_at: "2026-03-18T00:05:00.000Z",
-        updated_at: "2026-03-18T00:05:00.000Z",
-      } as never;
+      return storedSession as never;
     },
     readAuthoringPartnerRuntimeConfig: partnerConfig,
     consumeWriteQuota: allowPartnerQuota(quotaCalls) as never,

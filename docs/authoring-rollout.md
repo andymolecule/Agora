@@ -26,7 +26,7 @@ Operators and engineers deploying Agora after the phase-1 to phase-7 authoring r
 ## Summary
 
 - Fresh environments: apply all migrations.
-- Existing environments: the important migration window is `017` through `033`.
+- Existing environments: the important migration window is `017` through `035`.
 - `020_strict_submission_intents.sql` is guarded and will stop if legacy submissions still lack a matching intent. Preflight it first.
 - API, indexer, and worker orchestrator should be redeployed together after env + schema changes.
 - Beach/OpenClaw integration is Agora-hosted on the backend: Beach/OpenClaw only need a bearer token and optional webhook endpoint; Agora owns the sponsor signer for the MVP publish path.
@@ -47,10 +47,9 @@ This rollout introduced four operationally relevant changes:
 - `submissions` now require `submission_intent_id`
 - on-chain-first / reconcile-later scoring is no longer the intended path
 
-3. Split draft storage
-- canonical draft state now lives in `authoring_drafts`
-- callback registration targets now live in `authoring_callback_targets`
-- publish outcome now lives in `published_challenge_links`
+3. Tightened draft storage
+- canonical draft state lives in `authoring_drafts`
+- callback registration metadata and publish outcome now live on the draft row itself
 - callback retry outbox lives in `authoring_callback_deliveries`
 
 4. New operator env/config surface
@@ -89,6 +88,8 @@ Existing environment already running Agora:
   - `031_drop_legacy_challenge_runtime_caches.sql`
   - `032_scope_score_job_claims_by_chain.sql`
   - `033_atomic_replace_challenge_payouts.sql`
+  - `034_merge_authoring_draft_metadata.sql`
+  - `035_narrow_authoring_callback_delivery_provider.sql`
 
 ### Migration Notes
 
@@ -158,6 +159,16 @@ Existing environment already running Agora:
 
 `033_atomic_replace_challenge_payouts.sql`
 - adds the atomic payout replacement function used by settlement/indexer reconciliation
+
+`034_merge_authoring_draft_metadata.sql`
+- moves callback registration and publish outcome back onto `authoring_drafts`
+- backfills those fields from the old split tables
+- drops `authoring_callback_targets` and `published_challenge_links`
+
+`035_narrow_authoring_callback_delivery_provider.sql`
+- fail-loud cleanup for already-migrated environments
+- narrows `authoring_callback_deliveries.provider` to `beach_science`
+- raises if legacy provider rows still exist instead of silently mutating them
 
 ---
 
@@ -229,8 +240,10 @@ Recommended order for existing environments:
 17. apply `031`
 18. apply `032`
 19. apply `033`
-20. reload PostgREST schema cache
-21. run `pnpm schema:verify`
+20. apply `034`
+21. apply `035`
+22. reload PostgREST schema cache
+23. run `pnpm schema:verify`
 
 If your deployment path relies on Supabase-managed PostgREST metadata, reload schema visibility before restarting API/worker services.
 
@@ -249,22 +262,14 @@ Expected database state:
 
 - `submissions.submission_intent_id` exists and is non-null
 - `authoring_drafts` exists
-- `authoring_callback_targets` exists
-- `published_challenge_links` exists
+- `authoring_drafts.source_callback_url` exists
+- `authoring_drafts.published_spec_cid` exists
 - `authoring_callback_deliveries` exists and points to `authoring_drafts`
 
 Useful SQL checks:
 
 ```sql
 select count(*) from authoring_drafts;
-```
-
-```sql
-select count(*) from authoring_callback_targets;
-```
-
-```sql
-select count(*) from published_challenge_links;
 ```
 
 ```sql
@@ -427,19 +432,18 @@ Beach does not need:
 
 ### Backend Entry Points
 
-Import Beach thread:
+Submit Beach thread:
 
-- `POST /api/integrations/beach/drafts/import`
+- `POST /api/integrations/beach/drafts/submit`
 
 Then use generic partner draft lifecycle:
 
 - `GET /api/authoring/external/drafts/:id`
-- `POST /api/authoring/external/drafts/:id/clarify`
-- `POST /api/authoring/external/drafts/:id/compile`
+- `POST /api/authoring/external/drafts/submit`
 - `POST /api/authoring/external/drafts/:id/publish`
 - `POST /api/authoring/external/drafts/:id/webhook`
 
-Compile responses now include a structured `assessment` object so OpenClaw can tell whether the draft is feasible, immediately publishable, review-gated, or still missing deterministic inputs.
+Submit responses now include a structured `assessment` object so OpenClaw can tell whether the draft is feasible, immediately publishable, review-gated, or rejected.
 
 ### Callback Sweep
 
@@ -475,15 +479,13 @@ Authoring-specific checks:
 
 1. create a direct draft in `/post`
 2. compile a direct draft
-3. import a Beach draft through `/api/integrations/beach/drafts/import`
-4. clarify it through `/api/authoring/external/drafts/:id/clarify`
-5. compile it through `/api/authoring/external/drafts/:id/compile`
-6. confirm the compile response `assessment` is sensible for the draft state
-7. publish it through `/api/authoring/external/drafts/:id/publish`
-8. register a webhook through `/api/authoring/external/drafts/:id/webhook`
-9. confirm `challenge_created` callbacks or polling-visible challenge refs after publish
-10. publish a hosted draft and confirm return-to behavior if humans are in the loop
-11. run callback sweep and confirm pending deliveries drain, including `challenge_finalized` when applicable
+3. submit a Beach draft through `/api/integrations/beach/drafts/submit`
+4. confirm the submit response `assessment` is sensible for the draft state
+5. publish it through `/api/authoring/external/drafts/:id/publish`
+6. register a webhook through `/api/authoring/external/drafts/:id/webhook`
+7. confirm `challenge_created` callbacks or polling-visible challenge refs after publish
+8. publish a hosted draft and confirm return-to behavior if humans are in the loop
+9. run callback sweep and confirm pending deliveries drain, including `challenge_finalized` when applicable
 
 Useful local regression command:
 
@@ -500,9 +502,9 @@ node --import tsx --test \
 
 ## Known Operational Caveats
 
-- `020_strict_submission_intents.sql` is destructive on unmatched submissions.
+- `020_strict_submission_intents.sql` now raises and stops on unmatched submissions instead of deleting them implicitly.
 - `021_split_authoring_drafts.sql` copies forward from `posting_sessions`; it does not drop the old table itself.
-- `024_move_authoring_callback_targets.sql` finishes the callback registration split by moving callback target metadata out of `authoring_drafts`.
+- `034_merge_authoring_draft_metadata.sql` collapses callback registration and publish outcome back into `authoring_drafts`; older split tables are intentionally removed.
 - callback delivery is durable and signed, but still depends on the sweep endpoint being run.
 - internal-operator sealed-submission privacy is still not the current runtime model; public/API privacy is the enforced boundary today.
 
@@ -512,7 +514,7 @@ node --import tsx --test \
 
 If you are deploying the latest code to an existing environment, the minimum safe cutover set is:
 
-1. apply `017` through `033`
+1. apply `017` through `034`
 2. set the new authoring env vars
 3. redeploy API + indexer + worker orchestrator together
 4. run `pnpm schema:verify`

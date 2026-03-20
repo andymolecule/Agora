@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AuthoringDraftViewRow } from "@agora/db";
+import type { AuthoringDraftRow } from "@agora/db";
 import { enforceAuthoringSponsorMonthlyBudget } from "../src/lib/authoring-sponsored-publish.js";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 
-function createDraft(): AuthoringDraftViewRow {
+function createDraft(): AuthoringDraftRow {
   return {
     id: "68dff5c6-336a-47fa-a4de-41e6386bd2e4",
     poster_address: null,
@@ -35,7 +35,6 @@ function createDraft(): AuthoringDraftViewRow {
       uploadedArtifacts: [],
       runtimeFamily: "tabular_regression",
       metric: "r2",
-      confidenceScore: 0.9,
       routingMode: "managed_supported",
       sourceMessages: [
         {

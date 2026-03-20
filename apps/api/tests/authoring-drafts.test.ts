@@ -3,7 +3,7 @@ import { createHash, createHmac } from "node:crypto";
 import test from "node:test";
 import type {
   AuthoringCallbackDeliveryRow,
-  AuthoringDraftViewRow,
+  AuthoringDraftRow,
 } from "@agora/db";
 import {
   deliverAuthoringDraftLifecycleEvent,
@@ -14,8 +14,8 @@ import {
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 
 function createSession(
-  overrides: Partial<AuthoringDraftViewRow> = {},
-): AuthoringDraftViewRow {
+  overrides: Partial<AuthoringDraftRow> = {},
+): AuthoringDraftRow {
   const uploadedArtifacts = overrides.uploaded_artifacts_json ?? [
     {
       id: "artifact-1",
@@ -354,7 +354,6 @@ test("sweepPendingAuthoringDraftLifecycleEvents delivers due callbacks and marks
         ambiguity_classes: [],
         clarification_count: 0,
         next_question: null,
-        review_recommended_action: null,
         published_spec_cid: null,
         callback_registered: true,
         expires_at: "2026-03-25T00:00:00.000Z",
@@ -447,7 +446,6 @@ test("sweepPendingAuthoringDraftLifecycleEvents reschedules failed callbacks unt
         ambiguity_classes: ["objective_missing"],
         clarification_count: 1,
         next_question: null,
-        review_recommended_action: null,
         published_spec_cid: null,
         callback_registered: true,
         expires_at: "2026-03-25T00:00:00.000Z",

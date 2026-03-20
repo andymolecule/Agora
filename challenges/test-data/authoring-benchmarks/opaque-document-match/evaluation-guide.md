@@ -2,26 +2,20 @@
 
 ## Intent
 
-This benchmark checks that Agora can keep a deterministic exact-match task in a
-generic semi-custom path even when the submission is an opaque file instead of
-CSV or JSON.
+This benchmark checks that Agora cleanly rejects a deterministic opaque exact-match task from the assisted Gems path and points the poster toward the explicit custom scorer workflow.
 
 ## What Should Happen
 
-- The draft should route to `semi_custom`.
-- The evaluator archetype should be `exact_artifact_match`.
+- The draft should fail out of the managed Gems path.
 - Agora should keep the role vocabulary generic:
   - `source_packet.pdf` -> `public_inputs`
   - `reference_output.pdf` -> `hidden_reference`
-- The submission contract should stay `opaque_file` with PDF metadata.
-- The review action should remain `approve_after_review`.
-- The dry run should validate because `official_exact_match_v1` now supports
-  opaque-file exact-match execution.
+- The submission contract expectations should stay `opaque_file` with PDF metadata.
+- The final outcome should be a clean managed-runtime rejection with an explicit custom-scorer next step.
 
 ## What Should Not Happen
 
 - It should not collapse into the managed `reproducibility` family.
-- It should not require Expert Mode.
 - It should not relabel the source packet as hidden just because both files are
   PDFs.
 
@@ -37,4 +31,4 @@ Bad follow-up behavior would include:
 
 - treating the task as a prediction challenge
 - assuming a CSV submission
-- asking for a custom Docker image when the exact-match path already fits
+- pretending the assisted Gems path can publish the challenge directly

@@ -71,6 +71,32 @@ for (const benchmarkCase of benchmarkCases) {
         `${benchmarkLabel} should stay within prompt-variant acceptable states`,
       );
 
+      if (
+        benchmarkCase.benchmark.managed_support === "custom_workflow_required"
+      ) {
+        assert.equal(
+          result.state,
+          "failed",
+          `${benchmarkLabel} should fail cleanly into the explicit custom workflow path`,
+        );
+        assert.equal(
+          result.compilation,
+          undefined,
+          `${benchmarkLabel} should not produce a managed compilation result`,
+        );
+        assert.equal(
+          result.authoringIr.evaluation.rejection_reasons.includes(
+            "custom_scorer_workflow_required",
+          ) ||
+            result.authoringIr.evaluation.compile_error_codes.includes(
+              "MANAGED_COMPILER_UNSUPPORTED",
+            ),
+          true,
+          `${benchmarkLabel} should record the managed-runtime rejection`,
+        );
+        return;
+      }
+
       if (!result.compilation) {
         throw new Error(
           `Benchmark ${benchmarkLabel} did not produce a compilation result.`,
@@ -103,18 +129,19 @@ for (const benchmarkCase of benchmarkCases) {
         benchmarkCase.benchmark.compile_invariants.evaluator_archetype;
       if (evaluatorArchetype) {
         assert.equal(
-          result.authoringIr.evaluation.semi_custom_contract?.archetype,
-          evaluatorArchetype,
+          result.compilation.challenge_spec.evaluation.evaluator_contract
+            ?.archetype ?? null,
+          evaluatorArchetype ?? null,
         );
       }
 
-      for (const resolvedArtifact of result.authoringIr.artifacts) {
+      for (const resolvedArtifact of result.compilation.resolved_artifacts) {
         const invariant = findArtifactInvariant(
           benchmarkCase.benchmark.id,
           resolvedArtifact.file_name,
           benchmarkCase.benchmark.compile_invariants.artifact_roles,
         );
-        assert.equal(resolvedArtifact.selected_role, invariant.role);
+        assert.equal(resolvedArtifact.role, invariant.role);
         assert.equal(resolvedArtifact.visibility, invariant.visibility);
       }
 
@@ -151,22 +178,7 @@ for (const benchmarkCase of benchmarkCases) {
         assert.equal(submissionContract.file.mime, submissionInvariant.mime);
       }
 
-      if (result.reviewSummary) {
-        assert.equal(
-          benchmarkCase.benchmark.disallowed_outcomes.recommended_actions.includes(
-            result.reviewSummary.recommended_action,
-          ),
-          false,
-          `${benchmarkLabel} should not recommend a disallowed next action`,
-        );
-      }
-
-      if (benchmarkCase.benchmark.managed_support === "semi_custom_executable") {
-        assert.equal(result.compilation.dry_run.status, "validated");
-      }
-      if (benchmarkCase.benchmark.managed_support === "semi_custom_typed") {
-        assert.equal(result.compilation.dry_run.status, "skipped");
-      }
+      assert.equal(result.compilation.dry_run.status, "validated");
     } finally {
       process.env = originalEnv;
     }

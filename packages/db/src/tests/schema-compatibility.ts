@@ -78,26 +78,13 @@ const checks: RuntimeSchemaCheck[] = [
     id: "authoring_drafts_table",
     table: "authoring_drafts",
     select:
-      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,expires_at",
-    nextStep: "apply migration",
-  },
-  {
-    id: "authoring_callback_targets_table",
-    table: "authoring_callback_targets",
-    select: "draft_id,callback_url,registered_at",
+      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,source_callback_url,source_callback_registered_at,published_challenge_id,published_spec_json,published_spec_cid,published_return_to,published_at,expires_at",
     nextStep: "apply migration",
   },
   {
     id: "authoring_source_links_table",
     table: "authoring_source_links",
     select: "provider,external_id,draft_id,external_url",
-    nextStep: "apply migration",
-  },
-  {
-    id: "published_challenge_links_table",
-    table: "published_challenge_links",
-    select:
-      "draft_id,challenge_id,published_spec_json,published_spec_cid,return_to,published_at",
     nextStep: "apply migration",
   },
   {

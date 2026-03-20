@@ -1,7 +1,8 @@
 import {
   authoringSourceRawContextSchema,
-  createAuthoringSourceDraftRequestSchema,
+  challengeIntentSchema,
   safePublicHttpsUrlSchema,
+  submitAuthoringSourceDraftRequestSchema,
 } from "@agora/common";
 import { z } from "zod";
 
@@ -53,32 +54,34 @@ const beachThreadArtifactSchema = z.object({
     .optional(),
 });
 
-export const beachDraftImportRequestSchema = z
-  .object({
-    thread: z.object({
-      id: z.string().trim().min(1).max(BEACH_MAX_THREAD_ID_LENGTH),
-      url: safePublicHttpsUrlSchema,
-      title: z
-        .string()
-        .trim()
-        .min(1)
-        .max(BEACH_MAX_THREAD_TITLE_LENGTH)
-        .optional(),
-      poster_agent_handle: z
-        .string()
-        .trim()
-        .min(1)
-        .max(BEACH_MAX_HANDLE_LENGTH)
-        .optional(),
-    }),
-    messages: z.array(beachThreadMessageSchema).min(1).max(BEACH_MAX_MESSAGES),
-    artifacts: z
-      .array(beachThreadArtifactSchema)
-      .max(BEACH_MAX_ARTIFACTS)
-      .default([]),
-    raw_context: authoringSourceRawContextSchema.optional(),
-  })
-  .superRefine((value, ctx) => {
+const beachDraftSubmitFieldsSchema = z.object({
+  thread: z.object({
+    id: z.string().trim().min(1).max(BEACH_MAX_THREAD_ID_LENGTH),
+    url: safePublicHttpsUrlSchema,
+    title: z
+      .string()
+      .trim()
+      .min(1)
+      .max(BEACH_MAX_THREAD_TITLE_LENGTH)
+      .optional(),
+    poster_agent_handle: z
+      .string()
+      .trim()
+      .min(1)
+      .max(BEACH_MAX_HANDLE_LENGTH)
+      .optional(),
+  }),
+  messages: z.array(beachThreadMessageSchema).min(1).max(BEACH_MAX_MESSAGES),
+  artifacts: z
+    .array(beachThreadArtifactSchema)
+    .max(BEACH_MAX_ARTIFACTS)
+    .default([]),
+  raw_context: authoringSourceRawContextSchema.optional(),
+  intent: challengeIntentSchema,
+});
+
+export const beachDraftSubmitRequestSchema =
+  beachDraftSubmitFieldsSchema.superRefine((value, ctx) => {
     const posterHandle = value.thread.poster_agent_handle?.trim().toLowerCase();
     const hasPosterMessage = value.messages.some((message) => {
       if (message.kind === "system") {
@@ -103,12 +106,12 @@ export const beachDraftImportRequestSchema = z
     }
   });
 
-export type BeachDraftImportRequestOutput = z.output<
-  typeof beachDraftImportRequestSchema
+export type BeachDraftSubmitRequestOutput = z.output<
+  typeof beachDraftSubmitFieldsSchema
 >;
 
-export function normalizeBeachDraftImportRequest(
-  input: BeachDraftImportRequestOutput,
+export function normalizeBeachDraftSubmitRequest(
+  input: BeachDraftSubmitRequestOutput,
 ) {
   const posterHandle = input.thread.poster_agent_handle?.trim().toLowerCase();
   const normalizedRawContext = {
@@ -123,11 +126,12 @@ export function normalizeBeachDraftImportRequest(
       : {}),
   };
 
-  return createAuthoringSourceDraftRequestSchema.parse({
+  return submitAuthoringSourceDraftRequestSchema.parse({
     title: input.thread.title,
     external_id: input.thread.id,
     external_url: input.thread.url,
     raw_context: normalizedRawContext,
+    intent: input.intent,
     messages: input.messages.map((message) => {
       const role =
         message.kind === "system"

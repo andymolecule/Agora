@@ -15,7 +15,7 @@ create table if not exists authoring_callback_deliveries (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint authoring_callback_deliveries_provider_check
-    check (provider in ('beach_science', 'github', 'slack', 'lab_portal')),
+    check (provider in ('beach_science')),
   constraint authoring_callback_deliveries_event_check
     check (
       event in (

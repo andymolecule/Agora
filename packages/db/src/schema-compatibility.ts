@@ -98,16 +98,9 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     id: "authoring_drafts_table",
     table: "authoring_drafts",
     select:
-      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,expires_at",
+      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,source_callback_url,source_callback_registered_at,published_challenge_id,published_spec_json,published_spec_cid,published_return_to,published_at,expires_at",
     nextStep:
-      "Apply migrations 017_posting_session_authoring_ir.sql, 021_split_authoring_drafts.sql, and 024_move_authoring_callback_targets.sql, then reload the PostgREST schema cache before restarting services.",
-  },
-  {
-    id: "authoring_callback_targets_table",
-    table: "authoring_callback_targets",
-    select: "draft_id,callback_url,registered_at",
-    nextStep:
-      "Apply migration 024_move_authoring_callback_targets.sql, then reload the PostgREST schema cache before restarting services.",
+      "Apply migrations 017_posting_session_authoring_ir.sql, 021_split_authoring_drafts.sql, and 034_merge_authoring_draft_metadata.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
     id: "authoring_source_links_table",
@@ -115,14 +108,6 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     select: "provider,external_id,draft_id,external_url",
     nextStep:
       "Apply migration 025_create_authoring_source_links.sql, then reload the PostgREST schema cache before restarting services.",
-  },
-  {
-    id: "published_challenge_links_table",
-    table: "published_challenge_links",
-    select:
-      "draft_id,challenge_id,published_spec_json,published_spec_cid,return_to,published_at",
-    nextStep:
-      "Apply migration 021_split_authoring_drafts.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
     id: "authoring_sponsor_budget_reservations_table",

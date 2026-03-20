@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  type AgoraAuthoringPartnerRuntimeConfig,
-  type AuthoringDraftOutput,
   computeSpecHash,
   createCsvTableSubmissionContract,
+  getPinSpecAuthorizationTypedData,
   lookupManagedRuntimeFamily,
 } from "@agora/common";
-import type { AuthoringDraftViewRow } from "@agora/db";
-import { resolveAuthoringDraftReturnUrl } from "../src/lib/authoring-drafts.js";
+import {
+  type AuthoringDraftRow,
+  AuthoringDraftWriteConflictError,
+} from "@agora/db";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 import { createAuthoringDraftRoutes } from "../src/routes/authoring-drafts.js";
 
@@ -34,9 +35,39 @@ function createIntent() {
   };
 }
 
-function createReadySession(
-  overrides: Partial<AuthoringDraftViewRow> = {},
-): AuthoringDraftViewRow {
+function createArtifacts() {
+  return [
+    {
+      id: "train",
+      uri: "ipfs://train",
+      file_name: "train.csv",
+      mime_type: "text/csv",
+      size_bytes: 1024,
+      detected_columns: ["id", "feature_a", "label"],
+    },
+    {
+      id: "features",
+      uri: "ipfs://features",
+      file_name: "evaluation_features.csv",
+      mime_type: "text/csv",
+      size_bytes: 1024,
+      detected_columns: ["id", "feature_a"],
+    },
+    {
+      id: "labels",
+      uri: "ipfs://labels",
+      file_name: "hidden_labels.csv",
+      mime_type: "text/csv",
+      size_bytes: 1024,
+      detected_columns: ["id", "label"],
+    },
+  ];
+}
+
+function createCompilation(
+  intent = createIntent(),
+  uploadedArtifacts = createArtifacts(),
+) {
   const runtimeFamily = lookupManagedRuntimeFamily("tabular_regression");
   if (!runtimeFamily) {
     throw new Error("missing runtime family fixture");
@@ -47,51 +78,96 @@ function createReadySession(
     idColumn: "id",
     valueColumn: "prediction",
   });
-  const intent = overrides.intent_json ?? createIntent();
-  const uploadedArtifacts = overrides.uploaded_artifacts_json ?? [
-    {
-      id: "train",
-      uri: "ipfs://train",
-      file_name: "train.csv",
-      mime_type: "text/csv",
-      size_bytes: 1024,
-      detected_columns: ["id", "feature_a", "label"],
-    },
-  ];
-  const challengeSpec = {
-    schema_version: 3 as const,
-    id: "draft-1",
-    title: intent.title,
-    description: intent.description,
-    domain: intent.domain,
-    type: "prediction" as const,
-    evaluation: {
-      runtime_family: "tabular_regression" as const,
-      metric: "r2",
-      scorer_image: runtimeFamily.scorerImage,
-      evaluation_bundle: "ipfs://bundle",
-    },
-    artifacts: [
+
+  return {
+    challenge_type: "prediction",
+    runtime_family: "tabular_regression",
+    metric: "r2",
+    resolved_artifacts: [
       {
-        role: "training_data" as const,
+        role: "training_data",
         visibility: "public" as const,
         uri: uploadedArtifacts[0]?.uri ?? "ipfs://train",
       },
+      {
+        role: "evaluation_features",
+        visibility: "public" as const,
+        uri: uploadedArtifacts[1]?.uri ?? "ipfs://features",
+      },
+      {
+        role: "hidden_labels",
+        visibility: "private" as const,
+        uri: uploadedArtifacts[2]?.uri ?? "ipfs://labels",
+      },
     ],
     submission_contract: submissionContract,
-    reward: {
-      total: intent.reward_total,
-      distribution: intent.distribution,
+    dry_run: {
+      status: "validated" as const,
+      summary: "validated",
     },
-    deadline: intent.deadline,
-    dispute_window_hours: intent.dispute_window_hours,
-    tags: [],
+    reason_codes: ["matched_tabular_regression"],
+    warnings: [],
+    confirmation_contract: {
+      solver_submission: "CSV with id,prediction",
+      scoring_summary: "Highest R2 wins.",
+      public_private_summary: ["Dataset is public"],
+      reward_summary: "10 USDC winner take all",
+      deadline_summary: "Deadline in UTC",
+      dry_run_summary: "validated",
+    },
+    challenge_spec: {
+      schema_version: 3 as const,
+      id: "draft-1",
+      title: intent.title,
+      description: intent.description,
+      domain: intent.domain,
+      type: "prediction" as const,
+      evaluation: {
+        runtime_family: "tabular_regression" as const,
+        metric: "r2",
+        scorer_image: runtimeFamily.scorerImage,
+        evaluation_bundle: "ipfs://bundle",
+      },
+      artifacts: [
+        {
+          role: "training_data" as const,
+          visibility: "public" as const,
+          uri: uploadedArtifacts[0]?.uri ?? "ipfs://train",
+        },
+        {
+          role: "evaluation_features" as const,
+          visibility: "public" as const,
+          uri: uploadedArtifacts[1]?.uri ?? "ipfs://features",
+        },
+        {
+          role: "hidden_labels" as const,
+          visibility: "private" as const,
+          uri: uploadedArtifacts[2]?.uri ?? "ipfs://labels",
+        },
+      ],
+      submission_contract: submissionContract,
+      reward: {
+        total: intent.reward_total,
+        distribution: intent.distribution,
+      },
+      deadline: intent.deadline,
+      dispute_window_hours: intent.dispute_window_hours,
+      tags: [],
+    },
   };
+}
 
+function createDraft(
+  overrides: Partial<AuthoringDraftRow> = {},
+): AuthoringDraftRow {
+  const intent = overrides.intent_json ?? createIntent();
+  const uploadedArtifacts =
+    overrides.uploaded_artifacts_json ?? createArtifacts();
   return {
     id: overrides.id ?? "68dff5c6-336a-47fa-a4de-41e6386bd2e4",
-    poster_address: overrides.poster_address ?? null,
-    state: overrides.state ?? "ready",
+    poster_address:
+      overrides.poster_address ?? "0x00000000000000000000000000000000000000aa",
+    state: overrides.state ?? "draft",
     intent_json: intent,
     authoring_ir_json:
       overrides.authoring_ir_json ??
@@ -100,48 +176,35 @@ function createReadySession(
         uploadedArtifacts,
         runtimeFamily: "tabular_regression",
         metric: "r2",
-        confidenceScore: 0.92,
-        routingMode: "managed_supported",
+        artifactAssignments: [
+          {
+            artifactIndex: 0,
+            role: "training_data",
+            visibility: "public",
+          },
+          {
+            artifactIndex: 1,
+            role: "evaluation_features",
+            visibility: "public",
+          },
+          {
+            artifactIndex: 2,
+            role: "hidden_labels",
+            visibility: "private",
+          },
+        ],
         origin: {
-          provider: "beach_science",
-          external_id: "thread-42",
-          external_url: "https://beach.science/thread/42",
+          provider: "direct",
           ingested_at: "2026-03-19T00:00:00.000Z",
         },
       }),
     uploaded_artifacts_json: uploadedArtifacts,
-    compilation_json: overrides.compilation_json ?? {
-      challenge_type: "prediction",
-      runtime_family: "tabular_regression",
-      metric: "r2",
-      resolved_artifacts: [
-        {
-          role: "training_data",
-          visibility: "public",
-          uri: uploadedArtifacts[0]?.uri ?? "ipfs://train",
-        },
-      ],
-      submission_contract: submissionContract,
-      dry_run: {
-        status: "validated",
-        summary: "validated",
-      },
-      confidence_score: 0.92,
-      reason_codes: [],
-      warnings: [],
-      confirmation_contract: {
-        solver_submission: "CSV with id,prediction",
-        scoring_summary: "Highest R2 wins.",
-        public_private_summary: ["Dataset is public"],
-        reward_summary: "10 USDC winner take all",
-        deadline_summary: "Deadline in UTC",
-        dry_run_summary: "validated",
-      },
-      challenge_spec: challengeSpec,
-    },
+    compilation_json: overrides.compilation_json ?? null,
     published_challenge_id: overrides.published_challenge_id ?? null,
     published_spec_json: overrides.published_spec_json ?? null,
     published_spec_cid: overrides.published_spec_cid ?? null,
+    published_return_to: overrides.published_return_to ?? null,
+    published_at: overrides.published_at ?? null,
     source_callback_url: overrides.source_callback_url ?? null,
     source_callback_registered_at:
       overrides.source_callback_registered_at ?? null,
@@ -152,366 +215,166 @@ function createReadySession(
   };
 }
 
-function createNonExecutableSemiCustomSession(
-  overrides: Partial<AuthoringDraftViewRow> = {},
-): AuthoringDraftViewRow {
-  const intent = overrides.intent_json ?? createIntent();
-  const uploadedArtifacts = overrides.uploaded_artifacts_json ?? [
-    {
-      id: "train",
-      uri: "ipfs://train",
-      file_name: "train.csv",
-      mime_type: "text/csv",
-      size_bytes: 1024,
-      detected_columns: ["id", "feature_a", "label"],
-    },
-  ];
-
-  const challengeSpec = {
-    schema_version: 3 as const,
-    id: "draft-semi-custom",
-    title: intent.title,
-    description: intent.description,
-    domain: intent.domain,
-    type: "custom" as const,
-    evaluation: {
-      runtime_family: "semi_custom" as const,
-      metric: "validation_score",
-      evaluator_contract: {
-        version: "v1" as const,
-        archetype: "structured_record_score" as const,
-        summary: "Score a JSON report against a deterministic rubric.",
-        artifact_roles: {
-          solver_visible: ["training_data"],
-          hidden: ["hidden_labels"],
-        },
-        submission: {
-          kind: "json_file" as const,
-          schema_requirements: {
-            expected_kind: "json_file",
-          },
-          validation_rules: ["Submission must be valid JSON."],
-        },
-        scoring: {
-          metric: "validation_score",
-          comparator: "maximize" as const,
-          deterministic_rule:
-            "Validate the structured report against the hidden rubric.",
-          minimum_threshold: null,
-        },
-        notes: [],
-      },
-    },
-    artifacts: [
-      {
-        role: "training_data" as const,
-        visibility: "public" as const,
-        uri: uploadedArtifacts[0]?.uri ?? "ipfs://train",
-      },
-    ],
-    submission_contract: {
-      version: "v1" as const,
-      kind: "opaque_file" as const,
-      file: {
-        extension: ".bin",
-        mime: "application/octet-stream",
-        max_bytes: 10_000_000,
-      },
-    },
-    reward: {
-      total: intent.reward_total,
-      distribution: intent.distribution,
-    },
-    deadline: intent.deadline,
-    dispute_window_hours: intent.dispute_window_hours,
-    tags: [],
-  };
-
-  return {
-    ...createReadySession(overrides),
-    state: overrides.state ?? "needs_review",
-    authoring_ir_json:
-      overrides.authoring_ir_json ??
-      buildManagedAuthoringIr({
-        intent,
-        uploadedArtifacts,
-        confidenceScore: 0.55,
-        origin: {
-          provider: "beach_science",
-          external_id: "thread-42",
-          external_url: "https://beach.science/thread/42",
-          ingested_at: "2026-03-19T00:00:00.000Z",
-        },
-      }),
-    compilation_json:
-      overrides.compilation_json ??
-      ({
-        challenge_type: "custom",
-        runtime_family: "semi_custom",
-        metric: "validation_score",
-        resolved_artifacts: challengeSpec.artifacts,
-        submission_contract: challengeSpec.submission_contract,
-        dry_run: {
-          status: "skipped",
-          summary:
-            "Semi-custom evaluator contract is typed but not executable.",
-        },
-        confidence_score: 0.55,
-        reason_codes: ["semi_custom_contract_built"],
-        warnings: [
-          "Semi-custom evaluator contract is typed and reviewable, but the scorer execution path is not configured yet.",
-        ],
-        confirmation_contract: {
-          solver_submission: "JSON file",
-          scoring_summary: "Deterministic JSON rubric",
-          public_private_summary: ["Training data is public"],
-          reward_summary: "10 USDC winner take all",
-          deadline_summary: "Deadline in UTC",
-          dry_run_summary:
-            "Semi-custom evaluator contract is typed but not executable.",
-        },
-        challenge_spec: challengeSpec,
-      } as AuthoringDraftViewRow["compilation_json"]),
-  };
-}
-
-function createRouterForPublish(input: {
-  session: AuthoringDraftViewRow;
-  deliveredEvents?: string[];
-}) {
-  let storedSession = input.session;
-  let publishedLink: {
-    draft_id: string;
-    challenge_id: string | null;
-    published_spec_json: NonNullable<
-      AuthoringDraftViewRow["published_spec_json"]
-    >;
-    published_spec_cid: string;
-    return_to: string | null;
-    published_at: string;
-    created_at: string;
-    updated_at: string;
-  } | null = storedSession.published_spec_cid
-    ? {
-        draft_id: storedSession.id,
-        challenge_id: null,
-        published_spec_json:
-          storedSession.published_spec_json ??
-          storedSession.compilation_json?.challenge_spec ??
-          null,
-        published_spec_cid: storedSession.published_spec_cid,
-        return_to: null,
-        published_at: "2026-03-19T01:00:00.000Z",
-        created_at: "2026-03-19T01:00:00.000Z",
-        updated_at: "2026-03-19T01:00:00.000Z",
-      }
-    : null;
-  const partnerRuntimeConfig: AgoraAuthoringPartnerRuntimeConfig = {
-    partnerKeys: { beach_science: "partner-key" },
-    callbackSecrets: { beach_science: "callback-secret" },
-    returnOrigins: { beach_science: ["https://beach.science"] },
-  };
-
-  return createAuthoringDraftRoutes({
+test("managed draft submit creates a clarification draft when required fields are missing", async () => {
+  let storedDraft: AuthoringDraftRow | null = null;
+  const router = createAuthoringDraftRoutes({
     createSupabaseClient: () => ({}) as never,
-    getAuthoringDraftViewById: async () =>
-      ({
-        ...storedSession,
-        published_spec_json:
-          publishedLink?.published_spec_json ??
-          storedSession.published_spec_json,
-        published_spec_cid:
-          publishedLink?.published_spec_cid ?? storedSession.published_spec_cid,
-      }) as never,
-    getPublishedChallengeLinkByDraftId: async () => publishedLink as never,
-    updateAuthoringDraft: async (_db, patch) => {
-      storedSession = {
-        ...storedSession,
-        ...patch,
-        updated_at: "2026-03-19T01:00:00.000Z",
-      } as AuthoringDraftViewRow;
-      return storedSession as never;
+    createAuthoringDraft: async (_db, payload) => {
+      storedDraft = createDraft({
+        state: payload.state,
+        intent_json: payload.intent_json ?? null,
+        authoring_ir_json: payload.authoring_ir_json ?? null,
+        uploaded_artifacts_json: payload.uploaded_artifacts_json ?? [],
+      });
+      return storedDraft as never;
     },
-    upsertPublishedChallengeLink: async (_db, payload) => {
-      publishedLink = {
-        draft_id: payload.draft_id,
-        challenge_id: payload.challenge_id ?? null,
-        published_spec_json: payload.published_spec_json,
-        published_spec_cid: payload.published_spec_cid,
-        return_to: payload.return_to ?? null,
-        published_at: payload.published_at ?? "2026-03-19T01:00:00.000Z",
-        created_at: "2026-03-19T01:00:00.000Z",
-        updated_at: "2026-03-19T01:00:00.000Z",
-      };
-      return publishedLink as never;
-    },
-    pinJSON: async () => "bafy-published-spec" as never,
-    getPublicClient: () =>
-      ({
-        verifyTypedData: async () => true,
-      }) as never,
-    consumeNonce: async () => true,
-    canonicalizeChallengeSpec: async (spec) => spec,
-    readApiServerRuntimeConfig: () => ({
-      nodeEnv: "test",
-      apiPort: 3000,
-      chainId: 84532,
-      corsOrigins: [],
-    }),
-    readAuthoringReviewRuntimeConfig: () => ({
-      token: "review-token",
-    }),
-    deliverAuthoringDraftLifecycleEvent: async ({ event }) => {
-      input.deliveredEvents?.push(event);
-      return true;
-    },
+    getAuthoringDraftById: async () => storedDraft as never,
     requireWriteQuota: allowQuota() as never,
-    resolveAuthoringDraftReturnUrl: (resolveInput) =>
-      resolveAuthoringDraftReturnUrl({
-        ...resolveInput,
-        runtimeConfig: partnerRuntimeConfig,
-      }),
   });
-}
-
-function buildPublishRequestBody(session: AuthoringDraftViewRow) {
-  const spec = session.compilation_json?.challenge_spec;
-  if (!spec) {
-    throw new Error("publish fixture requires a compiled challenge spec");
-  }
-
-  return {
-    auth: {
-      address: "0x00000000000000000000000000000000000000aa",
-      nonce: "publish-nonce-1234",
-      signature: `0x${"11".repeat(65)}`,
-      specHash: computeSpecHash(spec),
-    },
-  };
-}
-
-test("authoring draft publish accepts an explicit allowlisted return_to", async () => {
-  const draft = createReadySession();
-  const router = createRouterForPublish({ session: draft });
 
   const response = await router.request(
-    new Request(`http://localhost/drafts/${draft.id}/publish`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        ...buildPublishRequestBody(draft),
-        return_to: "https://beach.science/thread/42?tab=publish",
-      }),
-    }),
-  );
-
-  assert.equal(response.status, 200);
-  const payload = (await response.json()) as {
-    data: {
-      returnTo: string | null;
-      returnToSource: "requested" | "origin_external_url" | null;
-      draft: AuthoringDraftOutput;
-    };
-  };
-  assert.equal(
-    payload.data.returnTo,
-    "https://beach.science/thread/42?tab=publish",
-  );
-  assert.equal(payload.data.returnToSource, "requested");
-  assert.equal(payload.data.draft.state, "published");
-  assert.equal(
-    payload.data.draft.approved_confirmation?.scoring_summary,
-    "Highest R2 wins.",
-  );
-});
-
-test("authoring draft publish falls back to the stored origin external_url", async () => {
-  const draft = createReadySession();
-  const router = createRouterForPublish({ session: draft });
-
-  const response = await router.request(
-    new Request(`http://localhost/drafts/${draft.id}/publish`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(buildPublishRequestBody(draft)),
-    }),
-  );
-
-  assert.equal(response.status, 200);
-  const payload = (await response.json()) as {
-    data: {
-      returnTo: string | null;
-      returnToSource: "requested" | "origin_external_url" | null;
-      draft: AuthoringDraftOutput;
-    };
-  };
-  assert.equal(payload.data.returnTo, "https://beach.science/thread/42");
-  assert.equal(payload.data.returnToSource, "origin_external_url");
-  assert.equal(
-    payload.data.draft.approved_confirmation?.scoring_summary,
-    "Highest R2 wins.",
-  );
-});
-
-test("authoring draft publish rejects return_to for direct drafts", async () => {
-  const draft = createReadySession({
-    authoring_ir_json: buildManagedAuthoringIr({
-      intent: createIntent(),
-      uploadedArtifacts: [
-        {
-          id: "train",
-          uri: "ipfs://train",
-          file_name: "train.csv",
-          mime_type: "text/csv",
-          size_bytes: 1024,
-          detected_columns: ["id", "feature_a", "label"],
-        },
-      ],
-      runtimeFamily: "tabular_regression",
-      metric: "r2",
-      confidenceScore: 0.92,
-      routingMode: "managed_supported",
-      origin: {
-        provider: "direct",
-        external_id: null,
-        external_url: null,
-        ingested_at: "2026-03-19T00:00:00.000Z",
-      },
-    }),
-  });
-  const router = createRouterForPublish({ session: draft });
-
-  const response = await router.request(
-    new Request(`http://localhost/drafts/${draft.id}/publish`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        ...buildPublishRequestBody(draft),
-        return_to: "https://beach.science/thread/42",
-      }),
-    }),
-  );
-
-  assert.equal(response.status, 400);
-  assert.equal(
-    ((await response.json()) as { code: string }).code,
-    "AUTHORING_RETURN_URL_NOT_ALLOWED",
-  );
-});
-
-test("authoring review approval rejects non-scoreable semi-custom drafts", async () => {
-  const draft = createNonExecutableSemiCustomSession();
-  const router = createRouterForPublish({ session: draft });
-
-  const response = await router.request(
-    new Request(`http://localhost/review/drafts/${draft.id}/decision`, {
+    new Request("http://localhost/drafts/submit", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-agora-review-token": "review-token",
       },
       body: JSON.stringify({
-        action: "approve",
+        poster_address: "0x00000000000000000000000000000000000000aa",
+        intent: {
+          title: "Only a title",
+        },
+        uploaded_artifacts: createArtifacts(),
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  const payload = (await response.json()) as {
+    data: {
+      draft: { state: string; clarification_questions: Array<{ id: string }> };
+    };
+  };
+  assert.equal(payload.data.draft.state, "needs_clarification");
+  assert.equal(
+    payload.data.draft.clarification_questions[0]?.id,
+    "challenge-description",
+  );
+});
+
+test("managed draft submit compiles a ready draft on the happy path", async () => {
+  let storedDraft: AuthoringDraftRow | null = null;
+  const readyIntent = createIntent();
+  const readyArtifacts = createArtifacts();
+  const readyCompilation = createCompilation(readyIntent, readyArtifacts);
+  const readyAuthoringIr = buildManagedAuthoringIr({
+    intent: readyIntent,
+    uploadedArtifacts: readyArtifacts,
+    runtimeFamily: "tabular_regression",
+    metric: "r2",
+    artifactAssignments: [
+      {
+        artifactIndex: 0,
+        role: "training_data",
+        visibility: "public",
+      },
+      {
+        artifactIndex: 1,
+        role: "evaluation_features",
+        visibility: "public",
+      },
+      {
+        artifactIndex: 2,
+        role: "hidden_labels",
+        visibility: "private",
+      },
+    ],
+  });
+
+  const router = createAuthoringDraftRoutes({
+    createSupabaseClient: () => ({}) as never,
+    createAuthoringDraft: async (_db, payload) => {
+      storedDraft = createDraft({
+        state: payload.state,
+        intent_json: payload.intent_json ?? null,
+        authoring_ir_json: payload.authoring_ir_json ?? null,
+        uploaded_artifacts_json: payload.uploaded_artifacts_json ?? [],
+      });
+      return storedDraft as never;
+    },
+    getAuthoringDraftById: async () => storedDraft as never,
+    updateAuthoringDraft: async (_db, patch) => {
+      storedDraft = {
+        ...(storedDraft ?? createDraft()),
+        ...patch,
+        updated_at: "2026-03-19T01:00:00.000Z",
+      } as AuthoringDraftRow;
+      return storedDraft as never;
+    },
+    compileManagedAuthoringDraftOutcome: async () => ({
+      state: "ready",
+      authoringIr: readyAuthoringIr,
+      compilation: readyCompilation,
+      message: "ready",
+    }),
+    requireWriteQuota: allowQuota() as never,
+  });
+
+  const response = await router.request(
+    new Request("http://localhost/drafts/submit", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        poster_address: "0x00000000000000000000000000000000000000aa",
+        intent: readyIntent,
+        uploaded_artifacts: readyArtifacts,
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  const payload = (await response.json()) as {
+    data: {
+      draft: {
+        state: string;
+        compilation: { runtime_family: string; metric: string };
+      };
+    };
+  };
+  assert.equal(payload.data.draft.state, "ready");
+  assert.equal(
+    payload.data.draft.compilation.runtime_family,
+    "tabular_regression",
+  );
+  assert.equal(payload.data.draft.compilation.metric, "r2");
+});
+
+test("managed draft submit returns a conflict when the draft changed concurrently", async () => {
+  const storedDraft = createDraft({
+    intent_json: createIntent(),
+  });
+
+  const router = createAuthoringDraftRoutes({
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringDraftById: async () => storedDraft as never,
+    updateAuthoringDraft: async () => {
+      throw new AuthoringDraftWriteConflictError("stale");
+    },
+    requireWriteQuota: allowQuota() as never,
+  });
+
+  const response = await router.request(
+    new Request("http://localhost/drafts/submit", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        draft_id: storedDraft.id,
+        poster_address: storedDraft.poster_address,
+        intent: createIntent(),
+        uploaded_artifacts: createArtifacts(),
       }),
     }),
   );
@@ -519,27 +382,137 @@ test("authoring review approval rejects non-scoreable semi-custom drafts", async
   assert.equal(response.status, 409);
   assert.equal(
     ((await response.json()) as { code: string }).code,
-    "AUTHORING_REVIEW_NOT_SCOREABLE",
+    "AUTHORING_DRAFT_CONFLICT",
   );
 });
 
-test("authoring draft publish rejects non-scoreable ready drafts", async () => {
-  const draft = createNonExecutableSemiCustomSession({
-    state: "ready",
+test("managed draft submit returns failed draft data when compile throws", async () => {
+  let storedDraft: AuthoringDraftRow | null = null;
+
+  const router = createAuthoringDraftRoutes({
+    createSupabaseClient: () => ({}) as never,
+    createAuthoringDraft: async (_db, payload) => {
+      storedDraft = createDraft({
+        state: payload.state,
+        intent_json: payload.intent_json ?? null,
+        authoring_ir_json: payload.authoring_ir_json ?? null,
+        uploaded_artifacts_json: payload.uploaded_artifacts_json ?? [],
+      });
+      return storedDraft as never;
+    },
+    getAuthoringDraftById: async () => storedDraft as never,
+    updateAuthoringDraft: async (_db, patch) => {
+      storedDraft = {
+        ...(storedDraft ?? createDraft()),
+        ...patch,
+        updated_at: "2026-03-19T01:00:00.000Z",
+      } as AuthoringDraftRow;
+      return storedDraft as never;
+    },
+    compileManagedAuthoringDraftOutcome: async () => {
+      throw new Error("compiler exploded");
+    },
+    requireWriteQuota: allowQuota() as never,
   });
-  const router = createRouterForPublish({ session: draft });
 
   const response = await router.request(
-    new Request(`http://localhost/drafts/${draft.id}/publish`, {
+    new Request("http://localhost/drafts/submit", {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(buildPublishRequestBody(draft)),
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        poster_address: "0x00000000000000000000000000000000000000aa",
+        intent: createIntent(),
+        uploaded_artifacts: createArtifacts(),
+      }),
     }),
   );
 
-  assert.equal(response.status, 409);
-  assert.equal(
-    ((await response.json()) as { code: string }).code,
-    "AUTHORING_DRAFT_NOT_SCOREABLE",
+  assert.equal(response.status, 422);
+  const payload = (await response.json()) as {
+    error: { code: string; message: string };
+    data: { draft: { state: string; failure_message: string | null } };
+  };
+  assert.equal(payload.error.code, "AUTHORING_DRAFT_COMPILE_FAILED");
+  assert.equal(payload.error.message, "compiler exploded");
+  assert.equal(payload.data.draft.state, "failed");
+  assert.equal(payload.data.draft.failure_message, "compiler exploded");
+});
+
+test("managed draft publish pins and returns the canonical spec", async () => {
+  let storedDraft = createDraft({
+    state: "ready",
+    compilation_json: createCompilation(),
+  });
+
+  const router = createAuthoringDraftRoutes({
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringDraftById: async () => storedDraft as never,
+    updateAuthoringDraft: async (_db, patch) => {
+      storedDraft = {
+        ...storedDraft,
+        ...patch,
+        updated_at: "2026-03-19T01:00:00.000Z",
+      } as AuthoringDraftRow;
+      return storedDraft as never;
+    },
+    getPublicClient: () =>
+      ({
+        verifyTypedData: async (input: unknown) => {
+          assert.deepEqual(input, {
+            address: storedDraft.poster_address as `0x${string}`,
+            ...getPinSpecAuthorizationTypedData({
+              chainId: 8453,
+              wallet: storedDraft.poster_address as `0x${string}`,
+              specHash: computeSpecHash(
+                storedDraft.compilation_json?.challenge_spec ??
+                  createCompilation().challenge_spec,
+              ),
+              nonce: "nonce-12345678",
+            }),
+            signature: "0x1234",
+          });
+          return true;
+        },
+      }) as never,
+    consumeNonce: async () => true,
+    pinJSON: async () => "ipfs://spec-cid" as never,
+    readApiServerRuntimeConfig: () =>
+      ({
+        chainId: 8453,
+      }) as never,
+    canonicalizeChallengeSpec: async (spec) => spec,
+    deliverAuthoringDraftLifecycleEvent: async () => undefined,
+    requireWriteQuota: allowQuota() as never,
+  });
+
+  const specHash = computeSpecHash(
+    storedDraft.compilation_json?.challenge_spec ??
+      createCompilation().challenge_spec,
   );
+
+  const response = await router.request(
+    new Request(`http://localhost/drafts/${storedDraft.id}/publish`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        auth: {
+          address: storedDraft.poster_address,
+          nonce: "nonce-12345678",
+          signature: "0x1234",
+          specHash,
+        },
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  const payload = (await response.json()) as {
+    data: { draft: { state: string }; specCid: string };
+  };
+  assert.equal(payload.data.draft.state, "published");
+  assert.equal(payload.data.specCid, "ipfs://spec-cid");
 });

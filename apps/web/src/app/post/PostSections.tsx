@@ -1,7 +1,6 @@
 "use client";
 
 import type {
-  AuthoringReviewSummaryOutput,
   CompilationResultOutput,
 } from "@agora/common";
 import {
@@ -197,8 +196,8 @@ export function ExpertModePanel() {
           <div className="mt-3 space-y-3 text-sm leading-6 text-warm-700">
             <p>Custom scorer image or runtime settings.</p>
             <p>
-              Managed authoring asks for operator review or cannot compile
-              safely.
+              Managed authoring cannot confidently map the draft onto a
+              supported Gems runtime.
             </p>
             <p>
               Poster-authored specs, artifacts, or thresholds need full control.
@@ -235,10 +234,6 @@ export function ReviewStep({
   onTitleDraftChange,
   onSaveTitle,
   onBeginTitleEdit,
-  isReviewQueued,
-  reviewSummary,
-  shouldSuggestExpertMode,
-  onOpenExpertMode,
   deadlineWindowMessage,
   onRefreshCompiledDeadline,
   publicArtifacts,
@@ -251,10 +246,6 @@ export function ReviewStep({
   onTitleDraftChange: (value: string) => void;
   onSaveTitle: () => void;
   onBeginTitleEdit: () => void;
-  isReviewQueued: boolean;
-  reviewSummary: AuthoringReviewSummaryOutput | null;
-  shouldSuggestExpertMode: boolean;
-  onOpenExpertMode: () => void;
   deadlineWindowMessage: string | null;
   onRefreshCompiledDeadline: () => void;
   publicArtifacts: CompilationResultOutput["resolved_artifacts"];
@@ -306,32 +297,6 @@ export function ReviewStep({
           </div>
         )}
       </div>
-
-      {isReviewQueued && reviewSummary ? (
-        <PostNotice tone="warning">
-          <div className="space-y-3">
-            <div className="font-semibold">
-              Operator review required before publish
-            </div>
-            <div>{reviewSummary.summary}</div>
-            {shouldSuggestExpertMode ? (
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={onOpenExpertMode}
-                  className="inline-flex items-center gap-2 rounded-[2px] border border-amber-400 bg-white px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-wider text-amber-900 transition hover:border-warm-900 hover:text-warm-900 motion-reduce:transition-none"
-                >
-                  Open expert mode
-                </button>
-                <span className="text-xs text-amber-900/80">
-                  This draft may need a poster-authored spec instead of the
-                  managed pipeline.
-                </span>
-              </div>
-            ) : null}
-          </div>
-        </PostNotice>
-      ) : null}
 
       {deadlineWindowMessage ? (
         <DeadlineRefreshNotice
@@ -451,19 +416,6 @@ export function ReviewStep({
           </PostNotice>
         ) : null}
       </div>
-
-      {isReviewQueued && reviewSummary?.reason_codes.length ? (
-        <div className="flex flex-wrap gap-2">
-          {reviewSummary.reason_codes.map((code) => (
-            <span
-              key={code}
-              className="rounded-[2px] border border-warm-300 bg-warm-50 px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-warm-600"
-            >
-              {code}
-            </span>
-          ))}
-        </div>
-      ) : null}
 
       <details className="rounded-[2px] border border-warm-300">
         <summary className="cursor-pointer px-4 py-3 font-mono text-xs font-bold uppercase tracking-wider text-warm-500">
@@ -597,8 +549,6 @@ export function PostingActionBar({
   step,
   isCompiling,
   compileReady,
-  isReviewQueued,
-  reviewMode,
   needsDeadlineRefresh,
   isConnected,
   isWrongChain,
@@ -609,7 +559,6 @@ export function PostingActionBar({
   onBack,
   onCompile,
   onContinueToPublish,
-  onOpenExpertMode,
   onOpenConnect,
   onOpenChain,
   onRefreshContract,
@@ -619,8 +568,6 @@ export function PostingActionBar({
   step: PostStep;
   isCompiling: boolean;
   compileReady: boolean;
-  isReviewQueued: boolean;
-  reviewMode: "operator_review" | "semi_custom" | null;
   needsDeadlineRefresh: boolean;
   isConnected: boolean;
   isWrongChain: boolean;
@@ -631,7 +578,6 @@ export function PostingActionBar({
   onBack: () => void;
   onCompile: () => void;
   onContinueToPublish: () => void;
-  onOpenExpertMode: () => void;
   onOpenConnect: () => void;
   onOpenChain: () => void;
   onRefreshContract: () => void;
@@ -644,13 +590,9 @@ export function PostingActionBar({
         {step === 1
           ? "Lock answers, then compile."
           : step === 2
-            ? reviewMode === "semi_custom"
-              ? "Managed publish is not available for this evaluator yet."
-              : isReviewQueued
-                ? "Waiting for operator review."
-                : needsDeadlineRefresh
-                  ? "Refresh the contract before you continue."
-                  : "Review the contract, then continue."
+            ? needsDeadlineRefresh
+              ? "Refresh the contract before you continue."
+              : "Review the contract, then continue."
             : needsDeadlineRefresh
               ? "Refresh the contract before you publish."
               : "Fund and publish your challenge."}
@@ -679,7 +621,7 @@ export function PostingActionBar({
           </button>
         ) : null}
 
-        {step === 2 && !isReviewQueued ? (
+        {step === 2 ? (
           needsDeadlineRefresh ? (
             <button
               type="button"
@@ -697,22 +639,6 @@ export function PostingActionBar({
               Continue to publish
             </button>
           )
-        ) : null}
-
-        {step === 2 && reviewMode === "semi_custom" ? (
-          <button
-            type="button"
-            onClick={onOpenExpertMode}
-            className="btn-primary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
-          >
-            Open Expert Mode
-          </button>
-        ) : null}
-
-        {step === 2 && isReviewQueued && reviewMode !== "semi_custom" ? (
-          <div className="rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-2.5 font-mono text-xs font-bold uppercase tracking-wider text-amber-900">
-            Awaiting review
-          </div>
         ) : null}
 
         {step === 3 ? (

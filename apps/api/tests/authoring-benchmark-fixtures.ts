@@ -4,14 +4,14 @@ import type { AuthoringArtifactOutput, ChallengeIntentOutput } from "@agora/comm
 
 const BENCHMARK_ROOT = path.resolve(
   process.cwd(),
-  "../../challenges/test-data/authoring-benchmarks",
+  "challenges/test-data/authoring-benchmarks",
 );
 
-type BenchmarkCompileState = "ready" | "needs_review" | "needs_clarification";
+type BenchmarkCompileState = "ready" | "needs_clarification";
 
 type BenchmarkJson = {
   id: string;
-  managed_support: "supported" | "semi_custom_executable" | "semi_custom_typed";
+  managed_support: "supported" | "custom_workflow_required";
   intent_family: string;
   artifacts_root: string;
   prompt_variants_root: string;
@@ -234,21 +234,33 @@ export function buildAuthoringBenchmarkDependencies(
   const compilerResponse =
     benchmarkCase.benchmark.managed_support === "supported"
       ? {
+          outcome: "supported",
           runtime_family:
             benchmarkCase.benchmark.compile_invariants.runtime_family,
           metric,
-          confidence_score: 0.91,
           reason_codes: ["benchmark_managed_fit"],
           warnings: [],
+          missing_fields: [],
+          questions: [],
+          artifact_assignments: benchmarkCase.benchmark.compile_invariants.artifact_roles.map(
+            (artifact, artifactIndex) => ({
+              artifact_index: artifactIndex,
+              role: artifact.role,
+              visibility: artifact.visibility,
+            }),
+          ),
         }
       : {
-          runtime_family: "reproducibility",
-          metric: "exact_match",
-          confidence_score: 0.4,
-          reason_codes: ["no_supported_runtime_signal"],
+          outcome: "unsupported",
+          runtime_family: null,
+          metric: null,
+          reason_codes: ["custom_scorer_workflow_required"],
           warnings: [
-            "Challenge description does not fit a managed template cleanly.",
+            "Challenge description needs the explicit custom scorer workflow.",
           ],
+          missing_fields: [],
+          questions: [],
+          artifact_assignments: [],
         };
 
   return {
@@ -270,14 +282,13 @@ export function buildAuthoringBenchmarkDependencies(
         });
       }
 
-      if (requestUrl.endsWith("/chat/completions")) {
+      if (requestUrl.endsWith("/messages")) {
         return new Response(
           JSON.stringify({
-            choices: [
+            content: [
               {
-                message: {
-                  content: JSON.stringify(compilerResponse),
-                },
+                type: "tool_use",
+                input: compilerResponse,
               },
             ],
           }),

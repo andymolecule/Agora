@@ -20,7 +20,7 @@ import type { AgoraLogger } from "@agora/common/server-observability";
 import {
   type AuthoringCallbackDeliveryRow,
   AuthoringCallbackDeliveryWriteConflictError,
-  type AuthoringDraftViewRow,
+  type AuthoringDraftRow,
   createAuthoringCallbackDelivery,
   createSupabaseClient,
   listDueAuthoringCallbackDeliveries,
@@ -29,7 +29,6 @@ import {
 import {
   buildAuthoringDraftAssessment,
   getAuthoringDraftClarificationQuestions,
-  getAuthoringDraftReviewSummary,
   toAuthoringDraftPayload,
 } from "./authoring-draft-payloads.js";
 
@@ -125,7 +124,7 @@ async function sendAuthoringCallbackEventAttempt(input: {
 
 function buildAuthoringDraftLifecyclePayload(input: {
   event: AuthoringDraftLifecycleEventOutput["event"];
-  session: AuthoringDraftViewRow;
+  session: AuthoringDraftRow;
 }) {
   return authoringDraftLifecycleEventSchema.parse({
     event: input.event,
@@ -139,7 +138,7 @@ function buildAuthoringDraftLifecyclePayload(input: {
 
 function buildChallengeLifecyclePayload(input: {
   event: ChallengeLifecycleEventOutput["event"];
-  session: AuthoringDraftViewRow;
+  session: AuthoringDraftRow;
   challenge: AuthoringCallbackChallengeOutput;
 }) {
   return challengeLifecycleEventSchema.parse({
@@ -197,7 +196,7 @@ async function queueAuthoringCallbackEventRetry(input: {
 
 async function deliverAuthoringCallbackEvent(input: {
   payload: AuthoringCallbackEventOutput;
-  session: AuthoringDraftViewRow;
+  session: AuthoringDraftRow;
   fetchImpl?: typeof fetch;
   logger?: AgoraLogger;
   retryDelayMs?: number;
@@ -304,7 +303,7 @@ async function deliverAuthoringCallbackEvent(input: {
 }
 
 function firstPosterMessage(
-  session: Pick<AuthoringDraftViewRow, "authoring_ir_json">,
+  session: Pick<AuthoringDraftRow, "authoring_ir_json">,
 ) {
   return (
     session.authoring_ir_json?.source.poster_messages.find(
@@ -313,22 +312,18 @@ function firstPosterMessage(
   );
 }
 
-function draftTitle(session: AuthoringDraftViewRow) {
+function draftTitle(session: AuthoringDraftRow) {
   return (
     session.intent_json?.title ??
     session.compilation_json?.challenge_spec.title ??
-    session.authoring_ir_json?.problem.normalized_summary ??
+    session.authoring_ir_json?.source.title ??
     firstPosterMessage(session)
   );
 }
 
-function draftSummary(session: AuthoringDraftViewRow) {
+function draftSummary(session: AuthoringDraftRow) {
   const clarificationQuestions =
     getAuthoringDraftClarificationQuestions(session);
-  const reviewSummary = getAuthoringDraftReviewSummary(session);
-  if (session.state === "needs_review") {
-    return reviewSummary?.summary ?? null;
-  }
   if (session.state === "failed") {
     return session.failure_message;
   }
@@ -340,14 +335,13 @@ function draftSummary(session: AuthoringDraftViewRow) {
   }
 
   return (
-    session.authoring_ir_json?.objective.winning_definition ??
-    session.authoring_ir_json?.routing.recommended_next_action ??
+    session.authoring_ir_json?.clarification.open_questions[0]?.next_step ??
     null
   );
 }
 
 function draftProvider(
-  session: Pick<AuthoringDraftViewRow, "authoring_ir_json">,
+  session: Pick<AuthoringDraftRow, "authoring_ir_json">,
 ): AuthoringDraftCardOutput["provider"] {
   return session.authoring_ir_json?.origin.provider ?? "direct";
 }
@@ -365,7 +359,7 @@ function normalizeAllowedReturnOrigin(url: string) {
 }
 
 export function resolveAuthoringDraftReturnUrl(input: {
-  session: Pick<AuthoringDraftViewRow, "authoring_ir_json">;
+  session: Pick<AuthoringDraftRow, "authoring_ir_json">;
   requestedReturnTo?: string | null;
   runtimeConfig?: AgoraAuthoringPartnerRuntimeConfig;
 }) {
@@ -447,12 +441,11 @@ export function resolveAuthoringDraftReturnUrl(input: {
 }
 
 export function buildAuthoringDraftCard(
-  session: AuthoringDraftViewRow,
+  session: AuthoringDraftRow,
 ): AuthoringDraftCardOutput {
   const provider = draftProvider(session);
   const clarificationQuestions =
     getAuthoringDraftClarificationQuestions(session);
-  const reviewSummary = getAuthoringDraftReviewSummary(session);
   return authoringDraftCardSchema.parse({
     draft_id: session.id,
     provider,
@@ -462,11 +455,10 @@ export function buildAuthoringDraftCard(
     reward_total: session.intent_json?.reward_total ?? null,
     distribution: session.intent_json?.distribution ?? null,
     submission_deadline: session.intent_json?.deadline ?? null,
-    routing_mode: session.authoring_ir_json?.routing.mode ?? null,
-    ambiguity_classes: session.authoring_ir_json?.ambiguity.classes ?? [],
+    routing_mode: null,
+    ambiguity_classes: [],
     clarification_count: clarificationQuestions.length,
     next_question: clarificationQuestions[0] ?? null,
-    review_recommended_action: reviewSummary?.recommended_action ?? null,
     published_challenge_id: session.published_challenge_id ?? null,
     published_spec_cid: session.published_spec_cid ?? null,
     callback_registered:
@@ -478,7 +470,7 @@ export function buildAuthoringDraftCard(
   });
 }
 
-export function buildAuthoringDraftResponse(session: AuthoringDraftViewRow) {
+export function buildAuthoringDraftResponse(session: AuthoringDraftRow) {
   return {
     draft: toAuthoringDraftPayload(session),
     card: buildAuthoringDraftCard(session),
@@ -488,7 +480,7 @@ export function buildAuthoringDraftResponse(session: AuthoringDraftViewRow) {
 
 export async function deliverAuthoringDraftLifecycleEvent(input: {
   event: AuthoringDraftLifecycleEventOutput["event"];
-  session: AuthoringDraftViewRow;
+  session: AuthoringDraftRow;
   fetchImpl?: typeof fetch;
   logger?: AgoraLogger;
   retryDelayMs?: number;
@@ -515,7 +507,7 @@ export async function deliverAuthoringDraftLifecycleEvent(input: {
 
 export async function deliverChallengeLifecycleEvent(input: {
   event: ChallengeLifecycleEventOutput["event"];
-  session: AuthoringDraftViewRow;
+  session: AuthoringDraftRow;
   challenge: AuthoringCallbackChallengeOutput;
   fetchImpl?: typeof fetch;
   logger?: AgoraLogger;
@@ -681,7 +673,7 @@ export function buildExpiredDraftError() {
 }
 
 export function draftBelongsToProvider(
-  session: Pick<AuthoringDraftViewRow, "authoring_ir_json" | "state">,
+  session: Pick<AuthoringDraftRow, "authoring_ir_json" | "state">,
   provider: ExternalSourceProviderOutput,
 ) {
   return session.authoring_ir_json?.origin.provider === provider;

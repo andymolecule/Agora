@@ -2,6 +2,7 @@ import type {
   AuthoringDraftState,
   ChallengeAuthoringIrOutput,
   ChallengeIntentOutput,
+  ChallengeSpecOutput,
   CompilationResultOutput,
 } from "@agora/common";
 import type { AuthoringArtifactOutput } from "@agora/common";
@@ -21,7 +22,6 @@ const AUTHORING_DRAFT_STATE_VALUES: AuthoringDraftState[] = [
   "compiling",
   "ready",
   "needs_clarification",
-  "needs_review",
   "published",
   "failed",
 ];
@@ -33,6 +33,13 @@ export interface AuthoringDraftInsert {
   authoring_ir_json?: ChallengeAuthoringIrOutput | null;
   uploaded_artifacts_json?: AuthoringArtifactOutput[];
   compilation_json?: CompilationResultOutput | null;
+  source_callback_url?: string | null;
+  source_callback_registered_at?: string | null;
+  published_challenge_id?: string | null;
+  published_spec_json?: ChallengeSpecOutput | null;
+  published_spec_cid?: string | null;
+  published_return_to?: string | null;
+  published_at?: string | null;
   failure_message?: string | null;
   expires_at: string;
 }
@@ -45,8 +52,26 @@ export interface AuthoringDraftRow {
   authoring_ir_json: ChallengeAuthoringIrOutput | null;
   uploaded_artifacts_json: AuthoringArtifactOutput[];
   compilation_json: CompilationResultOutput | null;
+  source_callback_url: string | null;
+  source_callback_registered_at: string | null;
+  published_challenge_id: string | null;
+  published_spec_json: ChallengeSpecOutput | null;
+  published_spec_cid: string | null;
+  published_return_to: string | null;
+  published_at: string | null;
   failure_message: string | null;
   expires_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PublishedDraftMetadataRow {
+  draft_id: string;
+  challenge_id: string | null;
+  published_spec_json: ChallengeSpecOutput;
+  published_spec_cid: string;
+  return_to: string | null;
+  published_at: string;
   created_at: string;
   updated_at: string;
 }
@@ -55,8 +80,6 @@ export interface AuthoringDraftHealthSnapshot {
   counts: AuthoringDraftStateCounts;
   expired: number;
   staleCompiling: number;
-  oldestNeedsReviewAt: string | null;
-  oldestNeedsReviewAgeMs: number | null;
 }
 
 function createEmptyAuthoringDraftStateCounts(): AuthoringDraftStateCounts {
@@ -65,7 +88,6 @@ function createEmptyAuthoringDraftStateCounts(): AuthoringDraftStateCounts {
     compiling: 0,
     ready: 0,
     needs_clarification: 0,
-    needs_review: 0,
     published: 0,
     failed: 0,
   };
@@ -76,6 +98,25 @@ function normalizeDraftAddress(address?: string | null) {
     return null;
   }
   return address.toLowerCase();
+}
+
+function toPublishedDraftMetadataRow(
+  draft: AuthoringDraftRow,
+): PublishedDraftMetadataRow | null {
+  if (!draft.published_spec_json || !draft.published_spec_cid) {
+    return null;
+  }
+
+  return {
+    draft_id: draft.id,
+    challenge_id: draft.published_challenge_id ?? null,
+    published_spec_json: draft.published_spec_json,
+    published_spec_cid: draft.published_spec_cid,
+    return_to: draft.published_return_to ?? null,
+    published_at: draft.published_at ?? draft.updated_at,
+    created_at: draft.created_at,
+    updated_at: draft.updated_at,
+  };
 }
 
 async function readAuthoringDraftCount(
@@ -109,6 +150,14 @@ export async function createAuthoringDraft(
       authoring_ir_json: payload.authoring_ir_json ?? null,
       uploaded_artifacts_json: payload.uploaded_artifacts_json ?? [],
       compilation_json: payload.compilation_json ?? null,
+      source_callback_url: payload.source_callback_url ?? null,
+      source_callback_registered_at:
+        payload.source_callback_registered_at ?? null,
+      published_challenge_id: payload.published_challenge_id ?? null,
+      published_spec_json: payload.published_spec_json ?? null,
+      published_spec_cid: payload.published_spec_cid ?? null,
+      published_return_to: payload.published_return_to ?? null,
+      published_at: payload.published_at ?? null,
       failure_message: payload.failure_message ?? null,
       expires_at: payload.expires_at,
       updated_at: new Date().toISOString(),
@@ -151,6 +200,13 @@ export async function updateAuthoringDraft(
     authoring_ir_json?: ChallengeAuthoringIrOutput | null;
     uploaded_artifacts_json?: AuthoringArtifactOutput[];
     compilation_json?: CompilationResultOutput | null;
+    source_callback_url?: string | null;
+    source_callback_registered_at?: string | null;
+    published_challenge_id?: string | null;
+    published_spec_json?: ChallengeSpecOutput | null;
+    published_spec_cid?: string | null;
+    published_return_to?: string | null;
+    published_at?: string | null;
     failure_message?: string | null;
     expires_at?: string;
   },
@@ -176,6 +232,27 @@ export async function updateAuthoringDraft(
   }
   if (input.compilation_json !== undefined) {
     patch.compilation_json = input.compilation_json;
+  }
+  if (input.source_callback_url !== undefined) {
+    patch.source_callback_url = input.source_callback_url;
+  }
+  if (input.source_callback_registered_at !== undefined) {
+    patch.source_callback_registered_at = input.source_callback_registered_at;
+  }
+  if (input.published_challenge_id !== undefined) {
+    patch.published_challenge_id = input.published_challenge_id;
+  }
+  if (input.published_spec_json !== undefined) {
+    patch.published_spec_json = input.published_spec_json;
+  }
+  if (input.published_spec_cid !== undefined) {
+    patch.published_spec_cid = input.published_spec_cid;
+  }
+  if (input.published_return_to !== undefined) {
+    patch.published_return_to = input.published_return_to;
+  }
+  if (input.published_at !== undefined) {
+    patch.published_at = input.published_at;
   }
   if (input.failure_message !== undefined) {
     patch.failure_message = input.failure_message;
@@ -231,6 +308,34 @@ export async function listAuthoringDraftsByState(
   }
 
   return (data as AuthoringDraftRow[] | null) ?? [];
+}
+
+export async function getPublishedDraftMetadataByDraftId(
+  db: AgoraDbClient,
+  draftId: string,
+): Promise<PublishedDraftMetadataRow | null> {
+  const draft = await getAuthoringDraftById(db, draftId);
+  return draft ? toPublishedDraftMetadataRow(draft) : null;
+}
+
+export async function getPublishedDraftMetadataByChallengeId(
+  db: AgoraDbClient,
+  challengeId: string,
+): Promise<PublishedDraftMetadataRow | null> {
+  const { data, error } = await db
+    .from("authoring_drafts")
+    .select("*")
+    .eq("published_challenge_id", challengeId)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(
+      `Failed to read published draft metadata by challenge id: ${error.message}`,
+    );
+  }
+
+  const draft = (data as AuthoringDraftRow | null) ?? null;
+  return draft ? toPublishedDraftMetadataRow(draft) : null;
 }
 
 export async function purgeExpiredAuthoringDrafts(
@@ -292,52 +397,21 @@ export async function readAuthoringDraftHealthSnapshot(
       .gt("expires_at", nowIso)
       .lte("updated_at", staleCompilingBeforeIso),
   );
-  const oldestNeedsReviewPromise = db
-    .from("authoring_drafts")
-    .select("updated_at")
-    .eq("state", "needs_review")
-    .gt("expires_at", nowIso)
-    .order("updated_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
 
-  const [countsByState, expired, staleCompiling, oldestNeedsReviewResult] =
-    await Promise.all([
-      Promise.all(countPromises),
-      expiredPromise,
-      staleCompilingPromise,
-      oldestNeedsReviewPromise,
-    ]);
-
-  if (
-    oldestNeedsReviewResult.error &&
-    oldestNeedsReviewResult.error.code !== "PGRST116"
-  ) {
-    throw new Error(
-      `Failed to read authoring draft review queue health: ${oldestNeedsReviewResult.error.message}`,
-    );
-  }
+  const [countsByState, expired, staleCompiling] = await Promise.all([
+    Promise.all(countPromises),
+    expiredPromise,
+    staleCompilingPromise,
+  ]);
 
   const counts = createEmptyAuthoringDraftStateCounts();
   for (const [state, count] of countsByState) {
     counts[state] = count;
   }
 
-  const oldestNeedsReviewAt =
-    (oldestNeedsReviewResult.data as { updated_at?: string } | null)
-      ?.updated_at ?? null;
-  const oldestNeedsReviewAgeMs = oldestNeedsReviewAt
-    ? Math.max(
-        0,
-        new Date(nowIso).getTime() - new Date(oldestNeedsReviewAt).getTime(),
-      )
-    : null;
-
   return {
     counts,
     expired,
     staleCompiling,
-    oldestNeedsReviewAt,
-    oldestNeedsReviewAgeMs,
   };
 }

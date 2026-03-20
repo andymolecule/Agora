@@ -5,22 +5,18 @@ import { z } from "zod";
 
 const benchmarkRoot = path.resolve(
   process.cwd(),
-  "../../challenges/test-data/authoring-benchmarks",
+  "challenges/test-data/authoring-benchmarks",
 );
 
 const compileStateSchema = z.enum([
   "ready",
-  "needs_review",
   "needs_clarification",
+  "failed",
 ]);
 
 const benchmarkSchema = z.object({
   id: z.string().min(1),
-  managed_support: z.enum([
-    "supported",
-    "semi_custom_executable",
-    "semi_custom_typed",
-  ]),
+  managed_support: z.enum(["supported", "custom_workflow_required"]),
   intent_family: z.string().min(1),
   artifacts_root: z.string().min(1),
   prompt_variants_root: z.string().min(1),
@@ -84,8 +80,8 @@ assert.ok(
   "authoring benchmark corpus should cover more than one narrow benchmark family",
 );
 
-let sawSemiCustomExecutable = false;
-let sawSemiCustomTyped = false;
+let sawSupported = false;
+let sawCustomWorkflowRequired = false;
 
 for (const benchmarkId of benchmarkEntries) {
   const benchmarkDir = path.join(benchmarkRoot, benchmarkId);
@@ -147,18 +143,18 @@ for (const benchmarkId of benchmarkEntries) {
     );
   }
 
-  sawSemiCustomExecutable ||=
-    benchmark.managed_support === "semi_custom_executable";
-  sawSemiCustomTyped ||= benchmark.managed_support === "semi_custom_typed";
+  sawSupported ||= benchmark.managed_support === "supported";
+  sawCustomWorkflowRequired ||=
+    benchmark.managed_support === "custom_workflow_required";
 }
 
 assert.ok(
-  sawSemiCustomExecutable,
-  "authoring benchmark corpus should include an executable semi-custom benchmark",
+  sawSupported,
+  "authoring benchmark corpus should include at least one supported Gems benchmark",
 );
 assert.ok(
-  sawSemiCustomTyped,
-  "authoring benchmark corpus should include a typed-only semi-custom benchmark",
+  sawCustomWorkflowRequired,
+  "authoring benchmark corpus should include at least one explicit custom-workflow benchmark",
 );
 
 console.log("authoring benchmark corpus validation passed");

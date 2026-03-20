@@ -9,7 +9,7 @@ This benchmark exists to cover a broad non-ML use case:
 - solvers submit one JSON artifact
 - payout is determined by exact match against the hidden reference
 
-It should land in the semi-custom executable path rather than a managed ML family.
+It should fail out of the assisted Gems path and point the poster toward the explicit custom scorer workflow rather than a managed ML family.
 
 ## Benchmark Goal
 
@@ -29,8 +29,7 @@ poster speaks in operational language, not runtime-family vocabulary.
 
 This benchmark passes when:
 
-- the draft routes to `semi_custom`
-- the evaluator archetype is `exact_artifact_match`
+- the draft does not route to a managed Gems runtime
 - the artifact roles stay generic: `public_inputs` and `hidden_reference`
-- the submission contract is a JSON file contract
-- the review action remains publishable after review, not Expert Mode
+- the submission contract expectations remain JSON-shaped
+- the failure points to the explicit custom scorer workflow

@@ -1,6 +1,6 @@
 # Bundle Code Judge
 
-Typed-only semi-custom benchmark for deterministic bundle or code submissions.
+Benchmark for deterministic bundle or code submissions that should fall out of the assisted Gems path and into the explicit custom scorer workflow.
 
 This benchmark covers challenges where:
 - solvers submit one packaged `.zip` bundle
@@ -8,9 +8,7 @@ This benchmark covers challenges where:
 - the scoring rule is deterministic, but there is no configured execution template yet
 
 Use this benchmark to check that authoring:
-- routes the draft to `semi_custom`
-- selects the `bundle_or_code_judge` evaluator archetype
+- rejects the draft from the managed Gems path
 - keeps artifact roles generic (`public_inputs`, `hidden_reference`)
-- preserves the packaged submission contract as an opaque `.zip` file
-
-This is intentionally not executable yet. The expected outcome is operator review, not immediate publish approval.
+- preserves the packaged submission contract as an opaque `.zip` file in the custom workflow contract
+- points the poster toward the explicit custom scorer workflow instead of pretending the challenge is publishable

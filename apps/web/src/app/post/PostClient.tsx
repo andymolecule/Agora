@@ -193,49 +193,22 @@ async function pinDataFile(file: File) {
   return (await response.json()) as { cid: string };
 }
 
-async function createAuthoringDraft(input: {
-  posterAddress?: `0x${string}`;
-  intent: ManagedIntentState;
-  uploads: UploadedArtifact[];
-}) {
-  const response = await fetch("/api/authoring/drafts", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      poster_address: input.posterAddress,
-      intent: buildPostingIntent(input.intent),
-      uploaded_artifacts: buildPostingArtifactsFromGuidedState(input.uploads),
-    }),
-  });
-
-  if (!response.ok) {
-    throw await toAuthoringDraftRequestError(response);
-  }
-
-  const payload = (await response.json()) as {
-    data: { draft: AuthoringDraftOutput };
-  };
-  return payload.data.draft;
-}
-
-async function compileAuthoringDraft(input: {
+async function submitAuthoringDraft(input: {
   draftId: string;
   posterAddress?: `0x${string}`;
   intent: ManagedIntentState;
   uploads: UploadedArtifact[];
 }) {
-  const response = await fetch(
-    `/api/authoring/drafts/${input.draftId}/compile`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        poster_address: input.posterAddress,
-        intent: buildPostingIntent(input.intent),
-        uploaded_artifacts: buildPostingArtifactsFromGuidedState(input.uploads),
-      }),
-    },
-  );
+  const response = await fetch("/api/authoring/drafts/submit", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      draft_id: input.draftId || undefined,
+      poster_address: input.posterAddress,
+      intent: buildPostingIntent(input.intent),
+      uploaded_artifacts: buildPostingArtifactsFromGuidedState(input.uploads),
+    }),
+  });
 
   if (!response.ok) {
     throw await toAuthoringDraftRequestError(response);
@@ -279,7 +252,6 @@ function clearCompiledSessionData(
     state: "draft",
     compilation: null,
     clarification_questions: [],
-    review_summary: null,
     failure_message: null,
   };
 }
@@ -341,14 +313,6 @@ export function PostClient() {
 
   const compilation = getCompilation(session);
   const clarificationQuestions = session?.clarification_questions ?? [];
-  const reviewSummary = session?.review_summary ?? null;
-  const isReviewQueued = session?.state === "needs_review";
-  const isSemiCustomReview =
-    session?.state === "needs_review" &&
-    !compilation &&
-    session.authoring_ir?.routing.mode === "semi_custom";
-  const shouldSuggestExpertMode =
-    reviewSummary?.recommended_action === "send_to_expert_mode";
   const rewardInput =
     compilation?.challenge_spec.reward.total ?? managedIntent.rewardTotal;
   const deadlineWindowState =
@@ -439,12 +403,6 @@ export function PostClient() {
         if (restoredSession.state === "ready") {
           dispatch({ type: "set_compile_state", compileState: "ready" });
           setStep(2);
-        } else if (restoredSession.state === "needs_review") {
-          dispatch({
-            type: "set_compile_state",
-            compileState: "needs_review",
-          });
-          setStep(2);
         } else if (restoredSession.state === "needs_clarification") {
           dispatch({
             type: "apply_clarification",
@@ -469,10 +427,10 @@ export function PostClient() {
           getAuthoringDraftRequestStatus(error) === 404
             ? hostedDraftId
               ? "This linked draft is no longer available. Next step: reopen the host workflow and create a fresh handoff."
-              : "Your saved review contract expired. Next step: regenerate the contract from your draft answers."
+              : "Your saved compiled draft expired. Next step: regenerate it from your draft answers."
             : hostedDraftId
               ? "Could not restore the linked draft. Next step: reopen the host workflow and try the publish handoff again."
-              : "Could not restore the saved review contract. Next step: regenerate it from your draft answers.",
+              : "Could not restore the saved compiled draft. Next step: regenerate it from your draft answers.",
         );
       });
 
@@ -480,88 +438,6 @@ export function PostClient() {
       cancelled = true;
     };
   }, [guidedState.draftId, hostedDraftId, session?.id]);
-
-  useEffect(() => {
-    if (
-      !session?.id ||
-      session.state !== "needs_review" ||
-      isSemiCustomReview
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    const intervalId = window.setInterval(async () => {
-      try {
-        const refreshedSession = await getAuthoringDraft(session.id);
-        if (cancelled) {
-          return;
-        }
-        setErrorMessage(null);
-        if (refreshedSession.state === "needs_review") {
-          return;
-        }
-
-        setSession(refreshedSession);
-
-        if (refreshedSession.state === "ready") {
-          dispatch({ type: "set_compile_state", compileState: "ready" });
-          setStatusMessage(
-            "Operator review approved this draft. You can continue to publish now.",
-          );
-          setErrorMessage(null);
-          setStep(2);
-          return;
-        }
-
-        if (refreshedSession.state === "needs_clarification") {
-          dispatch({
-            type: "apply_clarification",
-            field: clarificationTargetFromQuestions(
-              refreshedSession.clarification_questions ?? [],
-            ),
-          });
-          setStatusMessage(
-            "Agora needs a little more context before it can lock the challenge contract.",
-          );
-          setErrorMessage(null);
-          setStep(1);
-          return;
-        }
-
-        if (refreshedSession.state === "failed") {
-          dispatch({
-            type: "set_compile_state",
-            compileState: compileReady ? "ready_to_compile" : "idle",
-          });
-          setStatusMessage(null);
-          setErrorMessage(
-            refreshedSession.failure_message ??
-              "This draft could not be approved for managed publishing.",
-          );
-          setStep(1);
-        }
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        if (getAuthoringDraftRequestStatus(error) === 404) {
-          clearRemoteAuthoringDraft(
-            "This review contract is no longer available. Next step: regenerate it from the draft answers before publishing.",
-          );
-          return;
-        }
-        setErrorMessage(
-          "Could not refresh operator review status. Next step: wait a moment and refresh the page.",
-        );
-      }
-    }, 10_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [compileReady, isSemiCustomReview, session?.id, session?.state]);
 
   /* ── Handlers ─────────────────────────────────────────── */
 
@@ -739,19 +615,8 @@ export function PostClient() {
         "Compiling your challenge into a deterministic scoring contract...",
       );
 
-      let existingDraftId = guidedStateRef.current.draftId;
-      if (!existingDraftId) {
-        const createdSession = await createAuthoringDraft({
-          posterAddress: address as `0x${string}` | undefined,
-          intent: managedIntent,
-          uploads: guidedStateRef.current.uploads,
-        });
-        existingDraftId = createdSession.id;
-        dispatch({ type: "set_draft_id", draftId: createdSession.id });
-      }
-
-      const compiledSession = await compileAuthoringDraft({
-        draftId: existingDraftId,
+      const compiledSession = await submitAuthoringDraft({
+        draftId: guidedStateRef.current.draftId ?? "",
         posterAddress: address as `0x${string}` | undefined,
         intent: managedIntent,
         uploads: guidedStateRef.current.uploads,
@@ -770,19 +635,19 @@ export function PostClient() {
         setStatusMessage(
           "Agora needs a little more context before it can lock the challenge contract.",
         );
-      } else if (compiledSession.state === "needs_review") {
-        dispatchCompileState("needs_review");
-        setStep(2);
-        setStatusMessage(
-          compiledSession.authoring_ir?.routing.mode === "semi_custom"
-            ? "This draft is deterministic enough for a semi-custom evaluator, but it does not fit a current managed template."
-            : "Agora compiled a contract and queued it for operator review before publish.",
+      } else if (compiledSession.state === "failed") {
+        dispatchCompileState(compileReady ? "ready_to_compile" : "idle");
+        setStep(1);
+        setStatusMessage(null);
+        setErrorMessage(
+          compiledSession.failure_message ??
+            "Agora could not compile this challenge into a supported Gems contract.",
         );
       } else {
         dispatchCompileState("ready");
         setStep(2);
         setStatusMessage(
-          "Agora mapped your files, chose a managed runtime, and prepared a review contract.",
+          "Agora mapped your files, chose a managed runtime, and prepared a publishable contract.",
         );
       }
     } catch (error) {
@@ -1097,41 +962,11 @@ export function PostClient() {
             setTitleDraft(managedIntent.title);
             setEditingTitle(true);
           }}
-          isReviewQueued={isReviewQueued}
-          reviewSummary={reviewSummary}
-          shouldSuggestExpertMode={shouldSuggestExpertMode}
-          onOpenExpertMode={() => handleSetPostingMode("expert")}
           deadlineWindowMessage={deadlineWindowMessage}
           onRefreshCompiledDeadline={handleRefreshCompiledDeadline}
           publicArtifacts={publicArtifacts}
           privateArtifacts={privateArtifacts}
         />
-      ) : null}
-
-      {!expertMode && step === 2 && isSemiCustomReview ? (
-        <PostNotice tone="warning">
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <div className="font-mono text-xs font-bold uppercase tracking-wider">
-                Semi-Custom Evaluator Needed
-              </div>
-              <p>
-                {reviewSummary?.summary ??
-                  "This draft is deterministic enough to continue, but it does not map cleanly to a current managed runtime family."}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleSetPostingMode("expert")}
-                className="btn-primary inline-flex items-center gap-2 rounded-[2px] px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider"
-              >
-                Open Expert Mode
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        </PostNotice>
       ) : null}
 
       {/* ── Step 3: Publish ────────────────────────────── */}
@@ -1159,14 +994,6 @@ export function PostClient() {
           step={step}
           isCompiling={isCompiling}
           compileReady={compileReady}
-          isReviewQueued={isReviewQueued}
-          reviewMode={
-            isSemiCustomReview
-              ? "semi_custom"
-              : isReviewQueued
-                ? "operator_review"
-                : null
-          }
           needsDeadlineRefresh={needsDeadlineRefresh}
           isConnected={isConnected}
           isWrongChain={isWrongChain}
@@ -1179,7 +1006,6 @@ export function PostClient() {
             void handleCompile();
           }}
           onContinueToPublish={() => setStep(3)}
-          onOpenExpertMode={() => handleSetPostingMode("expert")}
           onOpenConnect={() => openConnectModal?.()}
           onOpenChain={() => openChainModal?.()}
           onRefreshContract={handleRefreshCompiledDeadline}

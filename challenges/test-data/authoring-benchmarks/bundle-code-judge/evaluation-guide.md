@@ -1,11 +1,10 @@
 # Evaluation Guide
 
 Expected compile outcome:
-- state: `needs_review`
-- runtime family: `semi_custom`
-- evaluator archetype: `bundle_or_code_judge`
-- submission contract: opaque `.zip` bundle
-- recommended action: not `approve_after_review`
+- state: `failed`
+- no managed runtime family is chosen
+- the submission contract stays conceptually opaque `.zip` bundle oriented
+- the failure points the poster toward the explicit custom scorer workflow
 
 Why it stays typed-only:
 - the draft is deterministic enough to type
@@ -21,5 +20,5 @@ What the guided flow should clarify:
 What counts as a pass:
 - no managed runtime family is chosen
 - no ML-specific artifact roles leak into the draft
-- the bundle submission contract resolves to `.zip` / `application/zip`
-- the draft stays review-gated instead of pretending it is executable
+- the bundle submission contract expectations remain `.zip` / `application/zip`
+- the draft fails cleanly instead of pretending it is executable
