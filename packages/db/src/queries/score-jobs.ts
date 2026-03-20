@@ -39,12 +39,17 @@ export interface ScoreJobRow {
 export async function claimNextJob(
   db: AgoraDbClient,
   workerId: string,
+  options: { chainId?: number } = {},
 ): Promise<ScoreJobRow | null> {
   const { jobLeaseMs } = readWorkerTimingConfig();
-  const { data, error } = await db.rpc("claim_next_score_job", {
+  const params: Record<string, unknown> = {
     p_worker_id: workerId,
     p_lease_ms: jobLeaseMs,
-  });
+  };
+  if (typeof options.chainId === "number") {
+    params.p_chain_id = options.chainId;
+  }
+  const { data, error } = await db.rpc("claim_next_score_job", params);
 
   if (error) {
     throw new Error(`Failed to claim score job: ${error.message}`);

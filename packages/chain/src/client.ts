@@ -1,18 +1,16 @@
-import { CHAIN_IDS, loadConfig, resolveRuntimePrivateKey } from "@agora/common";
+import { loadConfig, resolveRuntimePrivateKey } from "@agora/common";
 import {
   http,
-  type Chain,
   type HttpTransport,
   createPublicClient,
   createWalletClient,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { base, baseSepolia } from "viem/chains";
+import { resolveAgoraViemChain } from "./viem-chain.js";
 
-function resolveChain(): Chain {
+function resolveChain() {
   const config = loadConfig();
-  const chainId = config.AGORA_CHAIN_ID;
-  return chainId === CHAIN_IDS.baseMainnet ? base : baseSepolia;
+  return resolveAgoraViemChain(config.AGORA_CHAIN_ID);
 }
 
 export function createAgoraPublicClient() {

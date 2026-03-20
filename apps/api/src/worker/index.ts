@@ -592,7 +592,9 @@ export async function startWorker() {
           lastFinalizeSweepAt = now;
         }
 
-        const job = await claimNextJob(db, runtimeWorkerId);
+        const job = await claimNextJob(db, runtimeWorkerId, {
+          chainId: config.AGORA_CHAIN_ID,
+        });
 
         if (job) {
           claimedJob = true;

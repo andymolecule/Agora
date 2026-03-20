@@ -7,7 +7,7 @@ test("claimNextJob is a function that accepts db + workerId", () => {
   assert.equal(
     claimNextJob.length,
     2,
-    "claimNextJob should accept 2 arguments (db, workerId)",
+    "claimNextJob should keep db + workerId as the required arguments",
   );
 });
 
@@ -32,6 +32,30 @@ test("claimNextJob calls db.rpc with correct function name and params", async ()
   );
   assert.equal(calls[0].params.p_worker_id, "worker-test-123");
   assert.equal(calls[0].params.p_lease_ms, 3_600_000);
+  assert.equal(
+    "p_chain_id" in calls[0].params,
+    false,
+    "should omit chain filtering when no chainId is provided",
+  );
+});
+
+test("claimNextJob forwards an explicit chain filter when provided", async () => {
+  const calls: Array<{ fn: string; params: Record<string, unknown> }> = [];
+
+  const mockDb = {
+    rpc(fn: string, params: Record<string, unknown>) {
+      calls.push({ fn, params });
+      return Promise.resolve({ data: [], error: null });
+    },
+  };
+
+  const result = await claimNextJob(mockDb as never, "worker-test-123", {
+    chainId: 31337,
+  });
+
+  assert.equal(result, null);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].params.p_chain_id, 31337);
 });
 
 test("claimNextJob returns job row when RPC returns data", async () => {

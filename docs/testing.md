@@ -205,6 +205,8 @@ AGORA_E2E_ENABLE_TIME_TRAVEL="1"         # allow evm_increaseTime on Anvil
 AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS="600"
 ```
 
+For the full post-deadline path, run this against local Anvil with `AGORA_CHAIN_ID=31337` and `AGORA_E2E_ENABLE_TIME_TRAVEL=1`. Public RPC environments can validate challenge creation, submission intent binding, and open-gate enforcement, but they cannot fast-forward deadline/dispute windows.
+
 ### Running
 
 ```bash

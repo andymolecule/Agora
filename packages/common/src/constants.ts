@@ -1,6 +1,7 @@
 export const CHAIN_IDS = {
   baseMainnet: 8453,
   baseSepolia: 84532,
+  localAnvil: 31337,
 } as const;
 
 export const DEFAULT_CHAIN_ID = CHAIN_IDS.baseSepolia;

@@ -1,6 +1,5 @@
 import {
   ACTIVE_CONTRACT_VERSION,
-  CHAIN_IDS,
   CHALLENGE_STATUS,
   type ChallengeStatus,
   loadConfig,
@@ -16,9 +15,9 @@ import {
   parseEventLogs,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { base, baseSepolia } from "viem/chains";
 import { getPublicClient, getWalletClient } from "./client.js";
 import { readContractStrict } from "./contract-read.js";
+import { resolveAgoraViemChain } from "./viem-chain.js";
 
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
@@ -156,10 +155,8 @@ export async function submitChallengeResultWithPrivateKey(
 ) {
   await assertSupportedChallengeVersion(challengeAddress);
   const config = loadConfig();
-  const chainId = config.AGORA_CHAIN_ID;
-  const chain = chainId === CHAIN_IDS.baseMainnet ? base : baseSepolia;
   const walletClient = createWalletClient({
-    chain,
+    chain: resolveAgoraViemChain(config.AGORA_CHAIN_ID),
     transport: http(config.AGORA_RPC_URL),
     account: privateKeyToAccount(privateKey),
   });
@@ -254,10 +251,8 @@ export async function claimPayoutWithPrivateKey(
 ) {
   await assertSupportedChallengeVersion(challengeAddress);
   const config = loadConfig();
-  const chainId = config.AGORA_CHAIN_ID;
-  const chain = chainId === CHAIN_IDS.baseMainnet ? base : baseSepolia;
   const walletClient = createWalletClient({
-    chain,
+    chain: resolveAgoraViemChain(config.AGORA_CHAIN_ID),
     transport: http(config.AGORA_RPC_URL),
     account: privateKeyToAccount(privateKey),
   });

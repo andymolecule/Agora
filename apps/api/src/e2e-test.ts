@@ -24,6 +24,7 @@ import {
 } from "@agora/chain/indexer/handlers";
 import {
   OFFICIAL_SCORER_IMAGES,
+  SCORE_JOB_STATUS,
   SUBMISSION_RESULT_FORMAT,
   createCsvTableSubmissionContract,
   hasSubmissionSealWorkerConfig,
@@ -33,9 +34,10 @@ import {
   sealSubmission,
 } from "@agora/common";
 import {
-  claimNextJob,
   createSupabaseClient,
+  getScoreJobBySubmissionId,
   getSubmissionById,
+  requeueJobWithoutAttemptPenalty,
 } from "@agora/db";
 import { pinFile, pinJSON } from "@agora/ipfs";
 import { createApp } from "./app.js";
@@ -267,6 +269,80 @@ async function waitFor<T>(
   throw new Error(`Timed out waiting for ${description}.`);
 }
 
+async function claimScoreJobForWorker(input: {
+  db: ReturnType<typeof createSupabaseClient>;
+  jobId: string;
+  workerId: string;
+}) {
+  const nowIso = new Date().toISOString();
+  const { data, error } = await input.db
+    .from("score_jobs")
+    .update({
+      status: SCORE_JOB_STATUS.running,
+      locked_at: nowIso,
+      run_started_at: nowIso,
+      locked_by: input.workerId,
+      updated_at: nowIso,
+    })
+    .eq("id", input.jobId)
+    .eq("status", SCORE_JOB_STATUS.queued)
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to claim score job for E2E: ${error.message}`);
+  }
+
+  return data;
+}
+
+async function waitForSubmissionScoreJob(input: {
+  db: ReturnType<typeof createSupabaseClient>;
+  submissionId: string;
+  workerId: string;
+}) {
+  return waitFor("score job", async () => {
+    let job = await getScoreJobBySubmissionId(input.db, input.submissionId);
+    if (!job) {
+      return null;
+    }
+
+    const nextAttemptAtMs = job.next_attempt_at
+      ? Date.parse(job.next_attempt_at)
+      : null;
+    const isDelayed =
+      nextAttemptAtMs !== null && Number.isFinite(nextAttemptAtMs)
+        ? nextAttemptAtMs > Date.now()
+        : false;
+
+    if (
+      job.status === SCORE_JOB_STATUS.failed ||
+      (job.status === SCORE_JOB_STATUS.queued && isDelayed)
+    ) {
+      await requeueJobWithoutAttemptPenalty(
+        input.db,
+        job.id,
+        job.attempts,
+        "Lifecycle E2E reclaimed the score job for local deterministic processing.",
+      );
+      job = await getScoreJobBySubmissionId(input.db, input.submissionId);
+      if (!job) {
+        return null;
+      }
+    }
+
+    if (job.status !== SCORE_JOB_STATUS.queued) {
+      return null;
+    }
+
+    return claimScoreJobForWorker({
+      db: input.db,
+      jobId: job.id,
+      workerId: input.workerId,
+    });
+  });
+}
+
 function readNumber(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -404,6 +480,7 @@ async function assertPredictionPublicApis(input: {
           challenge?: {
             id?: string;
             type?: string;
+            challenge_type?: string;
             status?: string;
             submissions_count?: unknown;
           };
@@ -415,7 +492,8 @@ async function assertPredictionPublicApis(input: {
       if (detailChallenge?.id !== input.challengeId) {
         throw new Error("Prediction detail route returned the wrong challenge.");
       }
-      if (detailChallenge?.type !== "prediction") {
+      const detailType = detailChallenge?.challenge_type ?? detailChallenge?.type;
+      if (detailType !== "prediction") {
         throw new Error("Prediction detail route lost the challenge type.");
       }
       if (detailChallenge?.status !== "finalized") {
@@ -613,11 +691,15 @@ async function runLifecycleScenario(input: {
     );
   }
   const intentBody = (await intentResponse.json()) as {
-    data?: { resultHash?: `0x${string}` };
+    data?: { intentId?: string; resultHash?: `0x${string}` };
   };
   const resultHash = intentBody.data?.resultHash;
+  const intentId = intentBody.data?.intentId;
   if (!resultHash) {
     throw new Error("Submission intent route succeeded without a result hash.");
+  }
+  if (!intentId) {
+    throw new Error("Submission intent route succeeded without an intent id.");
   }
 
   const submitTxHash = await submitChallengeResult(challengeAddress, resultHash);
@@ -630,6 +712,7 @@ async function runLifecycleScenario(input: {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         challengeId: challenge.id,
+        intentId,
         resultCid: submissionCid,
         txHash: submitTxHash,
         resultFormat: useSealedSubmission
@@ -677,9 +760,11 @@ async function runLifecycleScenario(input: {
   });
   console.log("6. startScoring projected:", startTxHash);
 
-  const scoreJob = await waitFor("score job", async () =>
-    claimNextJob(db, `lifecycle-e2e-${prepared.label}`),
-  );
+  const scoreJob = await waitForSubmissionScoreJob({
+    db,
+    submissionId,
+    workerId: `lifecycle-e2e-${prepared.label}`,
+  });
   await processJob(db, scoreJob, (_level, message) =>
     console.log(`[worker] ${message}`),
   );
