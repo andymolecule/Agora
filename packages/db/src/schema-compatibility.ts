@@ -66,6 +66,13 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
       "Apply migration 007_cache_challenge_scoring_config.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
+    id: "challenge_evaluation_plan_column",
+    table: "challenges",
+    select: "evaluation_plan_json",
+    nextStep:
+      "Apply migration 029_add_challenge_evaluation_plan.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
     id: "challenge_factory_id_column",
     table: "challenges",
     select: "factory_challenge_id",
@@ -123,6 +130,14 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
       "draft_id,challenge_id,published_spec_json,published_spec_cid,return_to,published_at",
     nextStep:
       "Apply migration 021_split_authoring_drafts.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
+    id: "authoring_sponsor_budget_reservations_table",
+    table: "authoring_sponsor_budget_reservations",
+    select:
+      "draft_id,provider,period_start,period_end,amount_usdc,status,tx_hash,challenge_id,released_at,consumed_at",
+    nextStep:
+      "Apply migration 028_add_authoring_sponsor_budget_reservations.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
     id: "authoring_callback_deliveries_table",

@@ -70,7 +70,7 @@ assert.equal(insertWithManagedRuntime.runtime_family, "tabular_regression");
 assert.equal(insertWithManagedRuntime.challenge_type, "prediction");
 assert.equal(
   insertWithManagedRuntime.evaluation_json.scorer_image,
-  "ghcr.io/andymolecule/regression-scorer:v1",
+  "ghcr.io/andymolecule/gems-tabular-scorer:v1",
 );
 assert.equal(
   insertWithManagedRuntime.evaluation_json.evaluation_bundle,
@@ -79,6 +79,14 @@ assert.equal(
 assert.equal(insertWithManagedRuntime.artifacts_json.length, 2);
 assert.equal(
   insertWithManagedRuntime.submission_contract_json?.kind,
+  "csv_table",
+);
+assert.equal(
+  insertWithManagedRuntime.evaluation_plan_json.scorer_image,
+  "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+);
+assert.equal(
+  insertWithManagedRuntime.evaluation_plan_json.submission_contract?.kind,
   "csv_table",
 );
 assert.equal(insertWithManagedRuntime.scoring_env_json, null);
@@ -150,6 +158,10 @@ const customInsert = await buildChallengeInsert({
 assert.equal(customInsert.runtime_family, "expert_custom");
 assert.equal(
   customInsert.evaluation_json.scorer_image,
+  customSpec.evaluation.scorer_image,
+);
+assert.equal(
+  customInsert.evaluation_plan_json.scorer_image,
   customSpec.evaluation.scorer_image,
 );
 assert.equal(customInsert.submission_contract_json?.kind, "opaque_file");

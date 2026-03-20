@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import {
   CHALLENGE_STATUS,
   EXPERT_RUNTIME_FAMILY_ID,
+  type ChallengeEvalRow,
   getAgoraRuntimeIdentity,
   getAgoraRuntimeVersion,
   hasSubmissionSealPublicConfig,
@@ -11,6 +12,7 @@ import {
   isOfficialScorerImage,
   loadConfig,
   readWorkerTimingConfig,
+  resolveChallengeEvaluation,
   resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeyPem,
   runSubmissionSealSelfCheck,
@@ -186,7 +188,7 @@ async function preflightOfficialScoringImagesForWorker(
 ) {
   const { data, error } = await db
     .from("challenges")
-    .select("runtime_family, evaluation_json")
+    .select("runtime_family, evaluation_json, evaluation_plan_json")
     .eq("status", CHALLENGE_STATUS.scoring);
 
   if (error) {
@@ -199,14 +201,15 @@ async function preflightOfficialScoringImagesForWorker(
     new Set(
       (data ?? [])
         .filter((row) => row.runtime_family !== EXPERT_RUNTIME_FAMILY_ID)
-        .map((row) =>
-          row.evaluation_json &&
-          typeof row.evaluation_json === "object" &&
-          "scorer_image" in row.evaluation_json &&
-          typeof row.evaluation_json.scorer_image === "string"
-            ? row.evaluation_json.scorer_image
-            : null,
-        )
+        .map((row) => {
+          try {
+            return resolveChallengeEvaluation(
+              row as ChallengeEvalRow,
+            ).image;
+          } catch {
+            return null;
+          }
+        })
         .filter(
           (value): value is string =>
             typeof value === "string" &&

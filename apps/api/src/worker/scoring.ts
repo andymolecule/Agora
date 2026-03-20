@@ -9,6 +9,7 @@ import {
   isProductionRuntime,
   loadConfig,
   resolveChallengeEvaluation,
+  resolveChallengeRuntimeConfig,
   resolveRuntimeFamilyLimits,
   resolveSubmissionLimits,
   resolveSubmissionOpenPrivateKeys,
@@ -186,11 +187,12 @@ export async function scoreSubmissionAndBuildProof(
   };
   const config = loadConfig();
   const isProduction = isProductionRuntime(config);
+  const cachedRuntimeConfig = resolveChallengeRuntimeConfig(challenge);
   const scoringSpecConfig = await resolveScoringRuntimeConfig({
-    env: challenge.scoring_env_json,
-    submissionContract: challenge.submission_contract_json,
-    evaluationContract: evalPlan.semiCustomExecution?.evaluation_contract,
-    policies: evalPlan.semiCustomExecution?.policies,
+    env: cachedRuntimeConfig.env,
+    submissionContract: cachedRuntimeConfig.submissionContract,
+    evaluationContract: cachedRuntimeConfig.evaluationContract,
+    policies: cachedRuntimeConfig.policies,
     specCid: challenge.spec_cid,
     onLegacyFallback: async (specCid) => {
       log(

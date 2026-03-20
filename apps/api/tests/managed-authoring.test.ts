@@ -76,7 +76,7 @@ function buildDryRunDependencies() {
           selected_metric: "rmse",
         },
         containerImageDigest:
-          "ghcr.io/andymolecule/regression-scorer@sha256:1234",
+          "ghcr.io/andymolecule/gems-tabular-scorer@sha256:1234",
         log: "",
         outputPath: "/tmp/output/score.json",
       },
@@ -103,7 +103,7 @@ function buildDockingDryRunDependencies() {
           selected_metric_value: 0.97,
           selected_metric: "spearman",
         },
-        containerImageDigest: "ghcr.io/andymolecule/docking-scorer@sha256:1234",
+        containerImageDigest: "ghcr.io/andymolecule/gems-ranking-scorer@sha256:1234",
         log: "",
         outputPath: "/tmp/output/score.json",
       },
@@ -144,7 +144,7 @@ function buildStructuredRecordDryRunDependencies() {
           checks_total: 7,
         },
         containerImageDigest:
-          "ghcr.io/andymolecule/repro-scorer@sha256:1234",
+          "ghcr.io/andymolecule/gems-match-scorer@sha256:1234",
         log: "",
         outputPath: "/tmp/output/score.json",
       },
@@ -565,7 +565,7 @@ test("managed authoring can build an executable semi-custom table contract for r
     );
     assert.equal(
       result.compilation?.challenge_spec.evaluation.scorer_image,
-      "ghcr.io/andymolecule/regression-scorer@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "ghcr.io/andymolecule/gems-tabular-scorer@sha256:2222222222222222222222222222222222222222222222222222222222222222",
     );
     assert.equal(
       result.reviewSummary?.recommended_action,
@@ -655,7 +655,7 @@ test("managed authoring can build an executable semi-custom exact-match contract
     );
     assert.equal(
       result.compilation?.challenge_spec.evaluation.scorer_image,
-      "ghcr.io/andymolecule/repro-scorer@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "ghcr.io/andymolecule/gems-match-scorer@sha256:4444444444444444444444444444444444444444444444444444444444444444",
     );
     assert.equal(
       result.reviewSummary?.recommended_action,
@@ -763,7 +763,7 @@ test("managed authoring can build an executable JSON exact-match contract for re
     );
     assert.match(
       result.compilation?.challenge_spec.evaluation.scorer_image ?? "",
-      /^ghcr\.io\/andymolecule\/repro-scorer@sha256:[a-f0-9]{64}$/,
+      /^ghcr\.io\/andymolecule\/gems-match-scorer@sha256:[a-f0-9]{64}$/,
     );
     assert.equal(
       result.compilation?.challenge_spec.submission_contract.kind,
@@ -902,7 +902,7 @@ test("managed authoring can build an executable structured-record contract for r
     );
     assert.match(
       result.compilation?.challenge_spec.evaluation.scorer_image ?? "",
-      /^ghcr\.io\/andymolecule\/repro-scorer@sha256:[a-f0-9]{64}$/,
+      /^ghcr\.io\/andymolecule\/gems-match-scorer@sha256:[a-f0-9]{64}$/,
     );
     assert.equal(
       result.reviewSummary?.recommended_action,
@@ -1010,7 +1010,7 @@ test("managed authoring can build an executable opaque exact-match contract for 
     );
     assert.match(
       result.compilation?.challenge_spec.evaluation.scorer_image ?? "",
-      /^ghcr\.io\/andymolecule\/repro-scorer@sha256:[a-f0-9]{64}$/,
+      /^ghcr\.io\/andymolecule\/gems-match-scorer@sha256:[a-f0-9]{64}$/,
     );
     assert.equal(
       result.compilation?.challenge_spec.submission_contract.kind,

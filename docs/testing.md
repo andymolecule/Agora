@@ -137,6 +137,17 @@ Validates that all official scorer images are:
 
 Requires a running Docker daemon.
 
+### `pnpm recover:authoring-publishes -- --stale-minutes=30`
+
+Reconciles stale authoring sponsor-budget reservations after API/indexer interruptions:
+- consumes reservations when a published link or challenge projection already exists
+- releases reservations only when no challenge transaction was ever attached
+- leaves tx-backed reservations pending for operator review if the challenge projection is still missing
+
+### `pnpm smoke:lifecycle`
+
+Runs the TypeScript lifecycle smoke harness in `apps/api/src/e2e-test.ts` after first asserting runtime schema compatibility.
+
 ### `pnpm abi:check`
 
 Verifies ABI sync between Foundry output and `@agora/common` ABI exports.
@@ -156,7 +167,9 @@ Wallet/session hardening checks now live in:
 
 ## End-to-End Test
 
-`scripts/e2e-test.sh` runs the complete challenge lifecycle on a live testnet:
+`pnpm smoke:lifecycle` is the preferred entrypoint for the complete challenge lifecycle smoke test on a live environment. It wraps the TypeScript harness in `apps/api/src/e2e-test.ts`.
+
+`scripts/e2e-test.sh` remains available as the CLI-driven shell harness. Both cover the same lifecycle:
 
 1. Create challenge YAML fixture
 2. Post challenge on-chain
@@ -185,7 +198,7 @@ AGORA_PINATA_JWT
 AGORA_PRIVATE_KEY
 
 # Optional overrides
-AGORA_E2E_SCORER_IMAGE="ghcr.io/andymolecule/repro-scorer:v1"
+AGORA_E2E_SCORER_IMAGE="ghcr.io/andymolecule/gems-match-scorer:v1"
 AGORA_E2E_DEADLINE_MINUTES="10"
 AGORA_E2E_DISPUTE_WINDOW_HOURS="0"      # 0 for same-session testing
 AGORA_E2E_ENABLE_TIME_TRAVEL="1"         # allow evm_increaseTime on Anvil
@@ -195,7 +208,10 @@ AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS="600"
 ### Running
 
 ```bash
-# Full E2E
+# Preferred smoke entrypoint
+pnpm smoke:lifecycle
+
+# CLI-driven shell harness
 ./scripts/e2e-test.sh
 
 # Fast mode (shorter deadline, no dispute window)

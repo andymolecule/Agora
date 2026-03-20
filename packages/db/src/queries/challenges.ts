@@ -2,8 +2,10 @@ import {
   CHALLENGE_STATUS,
   type ChallengeArtifact,
   type ChallengeEvaluation,
+  type ChallengeEvaluationPlanCacheRow,
   type ChallengeSpecOutput,
   type ChallengeStatus,
+  buildChallengeEvaluationPlanCache,
   SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
   defaultMinimumScoreForEvaluation,
@@ -29,6 +31,7 @@ export interface ChallengeInsert {
   runtime_family: string;
   spec_cid: string;
   evaluation_json: ChallengeEvaluation;
+  evaluation_plan_json: ChallengeEvaluationPlanCacheRow;
   artifacts_json: ChallengeArtifact[];
   submission_contract_json?: ChallengeSpecOutput["submission_contract"] | null;
   scoring_env_json?: Record<string, string> | null;
@@ -76,6 +79,7 @@ export async function buildChallengeInsert(
   }
   const resolvedEvalPlan = resolveChallengeEvaluation(canonicalSpec);
   const scoringEnv = resolveScoringEnvironmentFromSpec(canonicalSpec);
+  const evaluationPlan = buildChallengeEvaluationPlanCache(canonicalSpec);
 
   return {
     chain_id: input.chainId,
@@ -106,6 +110,7 @@ export async function buildChallengeInsert(
         ? { evaluator_contract: resolvedEvalPlan.evaluatorContract }
         : {}),
     },
+    evaluation_plan_json: evaluationPlan,
     artifacts_json: canonicalSpec.artifacts,
     submission_contract_json: canonicalSpec.submission_contract,
     scoring_env_json: scoringEnv ?? null,
@@ -143,6 +148,11 @@ export async function upsertChallenge(
     .select("*")
     .single();
   if (error) {
+    if (error.message.includes("evaluation_plan_json")) {
+      throw new Error(
+        "Failed to upsert challenge: challenges.evaluation_plan_json is missing from the runtime schema. Next step: apply migrations 029_add_challenge_evaluation_plan.sql and 030_make_challenge_runtime_caches_optional.sql, reload the PostgREST schema cache, and retry.",
+      );
+    }
     throw new Error(`Failed to upsert challenge: ${error.message}`);
   }
   return data;
@@ -173,6 +183,21 @@ export async function getChallengeByContractAddress(
     throw new Error(
       `Failed to fetch challenge by contract address: ${error.message}`,
     );
+  }
+  return data;
+}
+
+export async function getChallengeByTxHash(
+  db: AgoraDbClient,
+  txHash: string,
+) {
+  const { data, error } = await db
+    .from("challenges")
+    .select("*")
+    .eq("tx_hash", txHash)
+    .maybeSingle();
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Failed to fetch challenge by tx hash: ${error.message}`);
   }
   return data;
 }

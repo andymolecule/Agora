@@ -248,7 +248,7 @@ description: "Predict docking scores for the supplied ligand set against the tar
 evaluation:
   runtime_family: docking
   metric: spearman
-  scorer_image: ghcr.io/andymolecule/docking-scorer:v1@sha256:...
+  scorer_image: ghcr.io/andymolecule/gems-ranking-scorer:v1@sha256:...
   evaluation_bundle: ipfs://QmReferenceScores
 artifacts:
   - role: target_structure

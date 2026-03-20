@@ -20,7 +20,7 @@ const challenge: ChallengeRow = {
   evaluation_json: {
     runtime_family: "reproducibility",
     metric: "exact_match",
-    scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
+    scorer_image: "ghcr.io/andymolecule/gems-match-scorer:v1",
     evaluation_bundle: "ipfs://bundle",
   },
 };
@@ -69,7 +69,7 @@ test("infra scorer failures requeue without consuming attempts", async () => {
     handlePreviouslyPostedScoreTx: async () => false,
     scoreSubmissionAndBuildProof: async () => {
       throw new Error(
-        'Failed to pull scorer image ghcr.io/andymolecule/repro-scorer:v1. Error response from daemon: Head "https://ghcr.io/v2/andymolecule/repro-scorer/manifests/v1": denied',
+        'Failed to pull scorer image ghcr.io/andymolecule/gems-match-scorer:v1. Error response from daemon: Head "https://ghcr.io/v2/andymolecule/gems-match-scorer/manifests/v1": denied',
       );
     },
     requeueJobWithoutAttemptPenalty: async (
@@ -90,7 +90,7 @@ test("infra scorer failures requeue without consuming attempts", async () => {
     jobId: job.id,
     attempts: job.attempts,
     reason:
-      'scorer_infrastructure: Failed to pull scorer image ghcr.io/andymolecule/repro-scorer:v1. Error response from daemon: Head "https://ghcr.io/v2/andymolecule/repro-scorer/manifests/v1": denied',
+      'scorer_infrastructure: Failed to pull scorer image ghcr.io/andymolecule/gems-match-scorer:v1. Error response from daemon: Head "https://ghcr.io/v2/andymolecule/gems-match-scorer/manifests/v1": denied',
     delayMs: getWorkerInfraRetryDelayMs(),
   });
 });

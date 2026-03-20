@@ -19,7 +19,7 @@ const challenge: ChallengeRow = {
   evaluation_json: {
     runtime_family: "reproducibility",
     metric: "exact_match",
-    scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
+    scorer_image: "ghcr.io/andymolecule/gems-match-scorer:v1",
     evaluation_bundle: "ipfs://bundle",
   },
 };

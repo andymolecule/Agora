@@ -96,9 +96,9 @@ flowchart TB
     end
 
     subgraph Containers["Short-lived scorer containers"]
-        Repro["repro-scorer"]
-        Regr["regression-scorer"]
-        Dock["docking-scorer"]
+        Repro["gems-match-scorer"]
+        Regr["gems-tabular-scorer"]
+        Dock["gems-ranking-scorer"]
     end
 
     Browser --> API
@@ -178,9 +178,9 @@ Agora does not have one scorer image anymore. It has a small official scorer ima
 
 | Image | Code | Used by |
 |-------|------|---------|
-| `ghcr.io/andymolecule/repro-scorer:v1` | `containers/repro-scorer/score.py` | `reproducibility` plus executable semi-custom `exact_artifact_match` and `structured_record_score` |
-| `ghcr.io/andymolecule/regression-scorer:v1` | `containers/regression-scorer/score.py` | `tabular_regression`, `tabular_classification`, executable semi-custom `structured_table_score` |
-| `ghcr.io/andymolecule/docking-scorer:v1` | `containers/docking-scorer/score.py` | `ranking`, `docking` |
+| `ghcr.io/andymolecule/gems-match-scorer:v1` | `containers/repro-scorer/score.py` | `reproducibility` plus executable semi-custom `exact_artifact_match` and `structured_record_score` |
+| `ghcr.io/andymolecule/gems-tabular-scorer:v1` | `containers/regression-scorer/score.py` | `tabular_regression`, `tabular_classification`, executable semi-custom `structured_table_score` |
+| `ghcr.io/andymolecule/gems-ranking-scorer:v1` | `containers/docking-scorer/score.py` | `ranking`, `docking` |
 
 The important architectural rule is not “one scorer.” It is “one small official scorer image set with pinned digests and deterministic runtime contracts.”
 
@@ -188,15 +188,15 @@ The important architectural rule is not “one scorer.” It is “one small off
 
 ```mermaid
 flowchart LR
-    R1["reproducibility"] --> I1["repro-scorer"]
+    R1["reproducibility"] --> I1["gems-match-scorer"]
     R2["exact_artifact_match"] --> I1
     R3["structured_record_score"] --> I1
 
-    T1["tabular_regression"] --> I2["regression-scorer"]
+    T1["tabular_regression"] --> I2["gems-tabular-scorer"]
     T2["tabular_classification"] --> I2
     T3["structured_table_score"] --> I2
 
-    K1["ranking"] --> I3["docking-scorer"]
+    K1["ranking"] --> I3["gems-ranking-scorer"]
     K2["docking"] --> I3
 ```
 
@@ -240,13 +240,13 @@ The runtime config tells the image:
 The three official scorer images cover different deterministic workloads:
 
 ```text
-repro-scorer
+gems-match-scorer
   ├── csv_table exact/tolerant row matching
   ├── json_file deep equality
   ├── json_record rubric validation
   └── opaque_file byte-for-byte matching
 
-regression-scorer
+gems-tabular-scorer
   ├── r2
   ├── rmse
   ├── mae
@@ -255,7 +255,7 @@ regression-scorer
   ├── accuracy
   └── f1
 
-docking-scorer
+gems-ranking-scorer
   ├── spearman ranking
   └── ndcg ranking
 ```

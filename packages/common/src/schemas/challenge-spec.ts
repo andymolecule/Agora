@@ -28,9 +28,14 @@ import {
   safePublicHttpsUrlSchema,
 } from "./authoring-source.js";
 import {
+  type SemiCustomEvaluatorContractOutput,
   resolveSemiCustomExecutionPlan,
   semiCustomEvaluatorContractSchema,
 } from "./evaluator-contract.js";
+import {
+  type CsvTableEvaluationContractOutput,
+  type ScorerRuntimePoliciesOutput,
+} from "./scorer-runtime.js";
 import {
   type SubmissionContractOutput,
   submissionContractSchema,
@@ -399,10 +404,31 @@ export interface ChallengeEvaluationCacheRow {
   > | null;
 }
 
+export interface ChallengeEvaluationPlanCacheRow {
+  runtime_family: string;
+  metric: string;
+  scorer_image?: string | null;
+  evaluation_bundle?: string | null;
+  evaluator_contract?: SemiCustomEvaluatorContractOutput | null;
+  semi_custom_runner_family?: string | null;
+  mount?:
+    | {
+        evaluation_bundle_name?: string | null;
+        submission_file_name: string;
+      }
+    | null;
+  env?: Record<string, string> | null;
+  submission_contract?: SubmissionContractOutput | null;
+  evaluation_contract?: CsvTableEvaluationContractOutput | null;
+  policies?: ScorerRuntimePoliciesOutput | null;
+}
+
 export interface ChallengeEvalRow {
+  evaluation_plan_json?: ChallengeEvaluationPlanCacheRow | null;
   evaluation_json?: ChallengeEvaluationCacheRow | null;
   artifacts_json?: ChallengeArtifact[] | null;
   submission_contract_json?: SubmissionContractOutput | null;
+  scoring_env_json?: Record<string, string> | null;
 }
 
 export interface ResolvedChallengeEvaluation {
@@ -416,6 +442,13 @@ export interface ResolvedChallengeEvaluation {
     evaluationBundleName?: string;
     submissionFileName: string;
   };
+}
+
+export interface ResolvedChallengeRuntimeConfig {
+  env?: Record<string, string>;
+  submissionContract?: SubmissionContractOutput;
+  evaluationContract?: CsvTableEvaluationContractOutput;
+  policies?: Partial<ScorerRuntimePoliciesOutput>;
 }
 
 export function challengeSpecSchemaForChain(chainId: number) {
@@ -437,6 +470,93 @@ export function parseChallengeSpecDocument(raw: string): unknown {
     normalized.deadline = normalized.deadline.toISOString();
   }
   return normalized;
+}
+
+function mountFromPlan(
+  mount:
+    | ChallengeEvaluationPlanCacheRow["mount"]
+    | undefined,
+): {
+  evaluationBundleName?: string;
+  submissionFileName: string;
+} | null {
+  if (
+    !mount ||
+    typeof mount.submission_file_name !== "string" ||
+    mount.submission_file_name.trim().length === 0
+  ) {
+    return null;
+  }
+
+  return {
+    ...(typeof mount.evaluation_bundle_name === "string" &&
+    mount.evaluation_bundle_name.trim().length > 0
+      ? { evaluationBundleName: mount.evaluation_bundle_name }
+      : {}),
+    submissionFileName: mount.submission_file_name,
+  };
+}
+
+function resolveEvaluationBundleFromArtifacts(
+  artifacts: ChallengeArtifact[] | null | undefined,
+  evaluatorContract?: SemiCustomEvaluatorContractOutput | null,
+) {
+  const semiCustomExecution = resolveSemiCustomExecutionPlan(evaluatorContract);
+  if (!semiCustomExecution) {
+    return undefined;
+  }
+
+  return artifacts?.find(
+    (artifact) =>
+      artifact.role === semiCustomExecution.evaluation_artifact_role,
+  )?.uri;
+}
+
+export function buildChallengeEvaluationPlanCache(spec: ChallengeSpecOutput) {
+  const resolvedEvaluation = resolveChallengeEvaluation(spec);
+  const scoringEnv = resolveScoringEnvironmentFromSpec(spec);
+
+  return {
+    runtime_family: resolvedEvaluation.runtimeFamily,
+    metric: resolvedEvaluation.metric,
+    ...(resolvedEvaluation.image
+      ? { scorer_image: resolvedEvaluation.image }
+      : {}),
+    ...(resolvedEvaluation.evaluationBundleCid
+      ? { evaluation_bundle: resolvedEvaluation.evaluationBundleCid }
+      : {}),
+    ...(resolvedEvaluation.evaluatorContract
+      ? { evaluator_contract: resolvedEvaluation.evaluatorContract }
+      : {}),
+    ...(resolvedEvaluation.semiCustomExecution?.runner_runtime_family
+      ? {
+          semi_custom_runner_family:
+            resolvedEvaluation.semiCustomExecution.runner_runtime_family,
+        }
+      : {}),
+    mount: {
+      ...(resolvedEvaluation.mount.evaluationBundleName
+        ? {
+            evaluation_bundle_name:
+              resolvedEvaluation.mount.evaluationBundleName,
+          }
+        : {}),
+      submission_file_name: resolvedEvaluation.mount.submissionFileName,
+    },
+    ...(scoringEnv ? { env: scoringEnv } : {}),
+    ...(spec.submission_contract
+      ? { submission_contract: spec.submission_contract }
+      : {}),
+    ...(resolvedEvaluation.semiCustomExecution?.evaluation_contract
+      ? {
+          evaluation_contract:
+            resolvedEvaluation.semiCustomExecution.evaluation_contract,
+        }
+      : {}),
+    ...(resolvedEvaluation.semiCustomExecution?.policies
+      ? { policies: resolvedEvaluation.semiCustomExecution.policies }
+      : {}),
+  } satisfies ChallengeEvaluationPlanCacheRow;
 }
 
 export async function canonicalizeChallengeSpec(
@@ -503,13 +623,38 @@ export function resolveChallengeEvaluation(
       mount:
         semiCustomExecution?.mount ??
         resolveRuntimeFamilyMount(spec.evaluation.runtime_family),
+      };
+  }
+
+  const evaluationPlan = spec.evaluation_plan_json;
+  if (evaluationPlan) {
+    const semiCustomExecution = resolveSemiCustomExecutionPlan(
+      evaluationPlan.evaluator_contract,
+    );
+    const evaluationBundleCid =
+      evaluationPlan.evaluation_bundle ??
+      resolveEvaluationBundleFromArtifacts(
+        spec.artifacts_json,
+        evaluationPlan.evaluator_contract,
+      );
+    return {
+      runtimeFamily: evaluationPlan.runtime_family,
+      image: evaluationPlan.scorer_image ?? "",
+      metric: evaluationPlan.metric,
+      evaluationBundleCid,
+      evaluatorContract: evaluationPlan.evaluator_contract ?? undefined,
+      semiCustomExecution,
+      mount:
+        mountFromPlan(evaluationPlan.mount) ??
+        semiCustomExecution?.mount ??
+        resolveRuntimeFamilyMount(evaluationPlan.runtime_family),
     };
   }
 
   const evaluation = spec.evaluation_json;
   if (!evaluation) {
     throw new Error(
-      "Challenge is missing evaluation_json. Next step: rebuild the challenge projection and retry.",
+      "Challenge is missing evaluation_plan_json. Next step: rebuild the challenge projection and retry.",
     );
   }
 
@@ -533,6 +678,55 @@ export function resolveChallengeEvaluation(
     mount:
       semiCustomExecution?.mount ??
       resolveRuntimeFamilyMount(evaluation.runtime_family),
+  };
+}
+
+export function resolveChallengeRuntimeConfig(
+  row: ChallengeEvalRow,
+): ResolvedChallengeRuntimeConfig {
+  const evaluationPlan = row.evaluation_plan_json;
+  if (evaluationPlan) {
+    const semiCustomExecution = resolveSemiCustomExecutionPlan(
+      evaluationPlan.evaluator_contract,
+    );
+    return {
+      env:
+        evaluationPlan.env ??
+        row.scoring_env_json ??
+        resolveRuntimeFamilyRuntimeDefaults(evaluationPlan.runtime_family)?.env ??
+        undefined,
+      submissionContract:
+        evaluationPlan.submission_contract ??
+        row.submission_contract_json ??
+        undefined,
+      evaluationContract:
+        evaluationPlan.evaluation_contract ??
+        semiCustomExecution?.evaluation_contract ??
+        undefined,
+      policies:
+        evaluationPlan.policies ?? semiCustomExecution?.policies ?? undefined,
+    };
+  }
+
+  const evaluation = row.evaluation_json;
+  if (!evaluation) {
+    return {
+      env: row.scoring_env_json ?? undefined,
+      submissionContract: row.submission_contract_json ?? undefined,
+    };
+  }
+
+  const semiCustomExecution = resolveSemiCustomExecutionPlan(
+    evaluation.evaluator_contract,
+  );
+  return {
+    env:
+      row.scoring_env_json ??
+      resolveRuntimeFamilyRuntimeDefaults(evaluation.runtime_family)?.env ??
+      undefined,
+    submissionContract: row.submission_contract_json ?? undefined,
+    evaluationContract: semiCustomExecution?.evaluation_contract,
+    policies: semiCustomExecution?.policies,
   };
 }
 

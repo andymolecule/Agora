@@ -12,6 +12,7 @@ import {
   type SubmissionContractOutput,
   loadConfig,
   resolveChallengeEvaluation,
+  resolveChallengeRuntimeConfig,
   resolveSubmissionOpenPrivateKeys,
 } from "@agora/common";
 import {
@@ -97,9 +98,12 @@ export async function oracleScore(
 
   // 2. Run scorer container
   const config = loadConfig();
+  const cachedRuntimeConfig = resolveChallengeRuntimeConfig(challenge);
   const scoringSpecConfig = await resolveScoringRuntimeConfig({
-    env: challenge.scoring_env_json,
-    submissionContract: challenge.submission_contract_json,
+    env: cachedRuntimeConfig.env,
+    submissionContract: cachedRuntimeConfig.submissionContract,
+    evaluationContract: cachedRuntimeConfig.evaluationContract,
+    policies: cachedRuntimeConfig.policies,
     specCid: challenge.spec_cid,
     onLegacyFallback: (specCid) => {
       warnLegacyScoringConfigFallback({

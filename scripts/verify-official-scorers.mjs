@@ -7,7 +7,7 @@ import {
   resolveOfficialImageToDigest,
 } from "../packages/common/dist/index.js";
 
-const images = Object.values(OFFICIAL_SCORER_IMAGES);
+const images = Array.from(new Set(Object.values(OFFICIAL_SCORER_IMAGES)));
 
 if (images.length === 0) {
   throw new Error(

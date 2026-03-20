@@ -60,7 +60,7 @@ Notes:
 - `pnpm scorers:verify` requires a running Docker daemon.
 - It verifies the production invariant, not just digest resolution: official scorer images must be anonymously resolvable from GHCR and anonymously pullable with Docker.
 - The shipped official runtime-family catalog is intentionally narrow: `reproducibility`, `tabular_regression`, `tabular_classification`, `docking`, and `ranking`. Placeholder families should not be reintroduced unless a real published scorer artifact exists for them.
-- If you are upgrading an existing environment onto the latest authoring and strict submission model instead of resetting from scratch, follow [Authoring Rollout](authoring-rollout.md) for the `017` through `027` migration window before redeploying services.
+- If you are upgrading an existing environment onto the latest authoring, strict submission, sponsor-budget reservation, and evaluation-plan model instead of resetting from scratch, follow [Authoring Rollout](authoring-rollout.md) and apply the `017` through `030` migration window before redeploying services.
 
 Railway deployment checks before production cutover:
 
@@ -105,7 +105,7 @@ flowchart TB
     E --> F["6. Set AGORA_INDEXER_START_BLOCK<br/>to factory deploy block"]
     F --> G["7. Restart all services<br/>(API, Indexer, Worker Orchestrator, Executor, MCP)"]
     G --> H["8. Run preflight<br/>(scripts/preflight-testnet.sh)"]
-    H --> I["9. Smoke test<br/>(scripts/e2e-test.sh)"]
+    H --> I["9. Smoke test<br/>(pnpm smoke:lifecycle)"]
     I --> J{"All checks pass?"}
     J -->|Yes| K["✓ Live"]
     J -->|No| L["Rollback:<br/>restore DB snapshot,<br/>redeploy previous release"]
@@ -178,6 +178,11 @@ This section covers non-code work for deployment across hosted systems.
 ### Image Registry
 
 - Publish scorer images under the Agora namespace (`ghcr.io/andymolecule/*`).
+- The current official package set is:
+  - `gems-match-scorer`
+  - `gems-tabular-scorer`
+  - `gems-ranking-scorer`
+  - `gems-generated-scorer`
 - Use the `Publish Scorers` GitHub Actions workflow to build and publish official scorer images from `containers/`.
 - The scorer publish workflow now verifies both digest resolution and unauthenticated `docker pull` after publishing. A release is not healthy until both pass.
 - If the repo owner and GHCR namespace differ, provide `GHCR_PAT` (with `write:packages`) and, if needed, `GHCR_USERNAME` to the workflow so it can push into the org package namespace.
@@ -199,9 +204,11 @@ This section covers non-code work for deployment across hosted systems.
 ### Worker Recovery Scripts
 
 - `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` requeues stale `running` jobs and retries failed jobs after an infra outage.
+- `pnpm recover:authoring-publishes -- --stale-minutes=30` reconciles stale sponsor-budget reservations for authoring publishes after API or indexer interruptions.
 - `agora clean-failed-jobs` skips terminal failed jobs such as invalid submissions, missing off-chain submission metadata, and invalid challenge scoring configs. It is dry-run by default.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
+- `pnpm smoke:lifecycle` runs the authoring/post/submit/score/finalize lifecycle smoke flow against a prepared environment.
 - `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that API and web match the expected deployed revision and that the worker is healthy on the active API runtime. Use `--expected-api` and `--expected-web` only when you intentionally want to verify different revisions.
 - `Monitor Scoring Runtime` GitHub Actions runs on a schedule and fails visibly when `/api/worker-health` reports zero healthy workers on the active runtime or sealing readiness is unavailable.
 

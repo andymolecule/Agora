@@ -25,8 +25,8 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 - Scoreable submissions require a pre-registered `submission_intent` and a linked `submissions.submission_intent_id`
 - Fairness-sensitive visibility checks use chain `status()` rather than projected status
 - Public leaderboard, win rate, and earned USDC derive from finalized `challenge_payouts` rows
-- Worker scoring reads cached `submission_contract_json` and `scoring_env_json` from the DB first; IPFS spec fetch is legacy fallback only
-- Authoring state is now split by concern: `authoring_drafts` for canonical draft state, `authoring_source_links` for stable external source identity, `authoring_callback_targets` for registered host callback URLs, `published_challenge_links` for publish outcome, and `authoring_callback_deliveries` for callback retry
+- Worker scoring reads cached `evaluation_plan_json` from the DB first; `submission_contract_json` and `scoring_env_json` remain compatibility caches, and IPFS spec fetch is legacy fallback only
+- Authoring state is now split by concern: `authoring_drafts` for canonical draft state, `authoring_source_links` for stable external source identity, `authoring_callback_targets` for registered host callback URLs, `published_challenge_links` for publish outcome, `authoring_sponsor_budget_reservations` for sponsor-capacity accounting, and `authoring_callback_deliveries` for callback retry
 - Published challenges can now carry external-source attribution (`source_provider`, `source_external_id`, `source_external_url`, `source_agent_handle`) for Beach/OpenClaw lineage and sponsor-budget accounting
 
 ---
@@ -86,6 +86,7 @@ erDiagram
         int dispute_window_hours
         string spec_cid
         string runtime_family
+        jsonb evaluation_plan_json
         jsonb evaluation_json
         jsonb artifacts_json
         jsonb submission_contract_json
@@ -301,7 +302,7 @@ erDiagram
 
 ### Table Descriptions
 
-- **challenges** — Projected from `ChallengeCreated` events + IPFS spec parsing. Key fields: `contract_address` (unique on-chain identity), `status` (projected lifecycle state), `reward_amount` (USDC, 6 decimals), `deadline` (UTC timestamp), `spec_cid` (IPFS pointer to challenge YAML), `runtime_family` (managed runtime selection), `evaluation_json` (resolved scorer image + metric metadata), `artifacts_json` (public/private artifact cache), `submission_contract_json` (cached solver artifact contract), and `scoring_env_json` (cached resolved scoring env such as tolerance). `challenge_type` remains a compatibility and display field, but execution behavior should key off `runtime_family` plus the evaluator contract.
+- **challenges** — Projected from `ChallengeCreated` events + IPFS spec parsing. Key fields: `contract_address` (unique on-chain identity), `status` (projected lifecycle state), `reward_amount` (USDC, 6 decimals), `deadline` (UTC timestamp), `spec_cid` (IPFS pointer to challenge YAML), `runtime_family` (managed runtime selection), `evaluation_plan_json` (canonical cached scoring plan: scorer image, bundle, mount, env, contracts, and policy metadata), `evaluation_json` (legacy compatibility cache for image + metric metadata), `artifacts_json` (public/private artifact cache), `submission_contract_json` (compatibility cache for solver artifact contract), and `scoring_env_json` (compatibility cache for resolved scoring env such as tolerance). `challenge_type` remains a compatibility and display field, but execution behavior should key off `evaluation_plan_json` and the resolved evaluation plan helpers.
 
 - **submissions** — Projected from `Submitted` + `Scored` events. Key fields: `on_chain_sub_id` (contract-level submission index), `result_hash` (keccak256 of result CID, anchored on-chain), `submission_intent_id` (required link to the pre-registered submission intent), `result_cid` (IPFS pointer to the registered submission file), `score` (WAD-scaled score string), and `scored` (boolean, set true when `Scored` event is indexed). Additional columns: `result_format` (enum: `plain_v0` for direct/public payloads or `sealed_submission_v2` for sealed envelopes), `proof_bundle_cid` (IPFS CID of the proof bundle), `proof_bundle_hash` (on-chain hash of the proof bundle), and `scored_at` (timestamp when the score was posted). For `sealed_submission_v2`, `result_cid` points to the sealed envelope, not the plaintext replay artifact.
 
@@ -321,6 +322,7 @@ erDiagram
 - **authoring_source_links** — Canonical source-identity index for external imports. Maps `(provider, external_id)` to the current draft so repeated Beach/OpenClaw imports refresh the same draft instead of creating duplicates.
 - **authoring_callback_targets** — Registered callback target per external authoring draft. Stores the latest host callback URL and registration timestamp without pushing that transport metadata onto the draft row itself.
 - **published_challenge_links** — Publish outcome attached to an authoring draft. Stores the published challenge id, final pinned spec, approved `return_to`, and publish timestamp without pushing publish-only state back onto the draft row.
+- **authoring_sponsor_budget_reservations** — Reservation ledger for sponsor-budget enforcement during authoring publishes. Rows move from `reserved` to `consumed` once the publish is projected, or to `released` when the publish never submitted a challenge transaction. This keeps budget enforcement atomic without requiring the chain to know about off-chain draft ids.
 - **authoring_callback_deliveries** — Durable callback outbox for external authoring hosts. Stores signed payloads, retry timing, attempt counts, terminal delivery timestamp, and last error for sweep-based retries.
 - **challenges.source_* columns** — Optional attribution copied from the published challenge spec. These fields preserve the originating external host/provider identity and agent handle for reporting, callback correlation, and sponsor-budget enforcement.
 
@@ -426,7 +428,7 @@ flowchart TB
 - **Fairness-sensitive visibility checks** (e.g., leaderboard during `Open` status) use chain `status()`, not projected status. This prevents premature leaderboard exposure due to indexer lag.
 - **Public global reputation** surfaces use finalized challenges only. Win rate and earned USDC derive from `challenge_payouts` rows where the parent challenge is finalized.
 - **Effective vs persisted status:** The contract `status()` view returns `Scoring` after the deadline even if the persisted storage slot is still `Open`. Off-chain consumers should use `status()` for visibility decisions. The DB projection may conservatively lag until the `StatusChanged(Open, Scoring)` event is indexed.
-- **Strict submission registration:** clients must pre-register `submission_intents` before they submit on-chain. The API and indexer only attach on-chain submissions to already-registered intents, and scoring requires that durable link. On-chain submissions without a prior intent are invalid operationally and must be investigated instead of reconciled later.
+- **Strict submission registration:** clients must pre-register `submission_intents` before they submit on-chain. That durable reservation remains the prerequisite for a scoreable submission, but explicit API submit-confirmation is no longer the only reconciliation path: the indexer can now recover the projected `submissions` row directly from the reserved intent when the on-chain `solver` + `result_hash` match. Truly unmatched on-chain submissions still remain operationally invalid and must be investigated.
 
 - **Worker coordination:** The worker only claims `score_jobs` after the challenge enters `Scoring` at deadline and only when its `runtime_version` matches the active row in `worker_runtime_control`. Jobs move: `queued` → `running` → `scored` | `failed` | `skipped`. `skipped` indicates the submission exceeded per-challenge or per-solver scoring limits. The worker and API coordinate through Supabase: `score_jobs` drives scoring work, `worker_runtime_state` carries heartbeat/readiness/runtime-version state, `worker_runtime_control` fences mixed-runtime workers during deploys, the executor runs scorer containers, and `submission_intents` act as the required registration record for every scoreable submission.
 

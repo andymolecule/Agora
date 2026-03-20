@@ -593,8 +593,11 @@ export function buildDoctorCommand() {
       }
 
       try {
+        const officialImages = Array.from(
+          new Set(Object.values(OFFICIAL_SCORER_IMAGES)),
+        );
         const resolved = await Promise.all(
-          Object.values(OFFICIAL_SCORER_IMAGES).map((image) =>
+          officialImages.map((image) =>
             resolveOfficialImageToDigest(image, { env: {} }).then((digest) => ({
               image,
               digest,
@@ -625,13 +628,16 @@ export function buildDoctorCommand() {
         });
       } else {
         try {
-          for (const image of Object.values(OFFICIAL_SCORER_IMAGES)) {
+          const officialImages = Array.from(
+            new Set(Object.values(OFFICIAL_SCORER_IMAGES)),
+          );
+          for (const image of officialImages) {
             pullOfficialImageAnonymously(image);
           }
           checks.push({
             name: "Official scorer docker pull",
             status: "ok",
-            detail: Object.values(OFFICIAL_SCORER_IMAGES).join(", "),
+            detail: officialImages.join(", "),
           });
         } catch (error) {
           checks.push({

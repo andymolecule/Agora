@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import {
+  buildChallengeEvaluationPlanCache,
   canonicalizeChallengeSpec,
   challengeSpecSchema,
   parseChallengeSpecDocument,
   resolveChallengeEvaluation,
+  resolveChallengeRuntimeConfig,
   validateChallengeScoreability,
   validateChallengeSpec,
 } from "../schemas/challenge-spec.js";
@@ -78,6 +80,19 @@ const resolved = resolveChallengeEvaluation(result.data);
 assert.equal(resolved.runtimeFamily, "tabular_regression");
 assert.equal(resolved.metric, "r2");
 assert.equal(resolved.evaluationBundleCid, "ipfs://QmHiddenLabels");
+const evaluationPlanCache = buildChallengeEvaluationPlanCache(result.data);
+const resolvedFromPlan = resolveChallengeEvaluation({
+  evaluation_plan_json: evaluationPlanCache,
+});
+assert.equal(resolvedFromPlan.runtimeFamily, "tabular_regression");
+assert.equal(
+  resolvedFromPlan.image,
+  "ghcr.io/placeholder/will-be-overridden:v1",
+);
+const runtimeConfigFromPlan = resolveChallengeRuntimeConfig({
+  evaluation_plan_json: evaluationPlanCache,
+});
+assert.equal(runtimeConfigFromPlan.submissionContract?.kind, "csv_table");
 
 const scoreability = validateChallengeScoreability(result.data);
 assert.equal(scoreability.ok, true, "sample spec should be scoreable");
@@ -87,7 +102,7 @@ const canonicalized = await canonicalizeChallengeSpec(result.data, {
 });
 assert.equal(
   canonicalized.evaluation.scorer_image,
-  "ghcr.io/andymolecule/regression-scorer:v1",
+  "ghcr.io/andymolecule/gems-tabular-scorer:v1",
   "managed challenges should canonicalize their scorer image from the registry",
 );
 
@@ -184,7 +199,7 @@ const executableStructuredRecordSemiCustomSpec = challengeSpecSchema.safeParse({
     runtime_family: "semi_custom",
     metric: "validation_score",
     scorer_image:
-      "ghcr.io/andymolecule/repro-scorer@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "ghcr.io/andymolecule/gems-match-scorer@sha256:2222222222222222222222222222222222222222222222222222222222222222",
     evaluator_contract: {
       version: "v1",
       archetype: "structured_record_score",
@@ -325,7 +340,7 @@ const executableSemiCustomSpec = challengeSpecSchema.safeParse({
     runtime_family: "semi_custom",
     metric: "rmse",
     scorer_image:
-      "ghcr.io/andymolecule/regression-scorer@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "ghcr.io/andymolecule/gems-tabular-scorer@sha256:1111111111111111111111111111111111111111111111111111111111111111",
     evaluator_contract: {
       version: "v1",
       archetype: "structured_table_score",
@@ -386,7 +401,7 @@ const executableSemiCustomResolved = resolveChallengeEvaluation(
 assert.equal(executableSemiCustomResolved.runtimeFamily, "semi_custom");
 assert.equal(
   executableSemiCustomResolved.image,
-  "ghcr.io/andymolecule/regression-scorer@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "ghcr.io/andymolecule/gems-tabular-scorer@sha256:1111111111111111111111111111111111111111111111111111111111111111",
 );
 assert.equal(
   executableSemiCustomResolved.evaluationBundleCid,
@@ -413,7 +428,7 @@ const executableExactMatchSemiCustomSpec = challengeSpecSchema.safeParse({
     runtime_family: "semi_custom",
     metric: "exact_match",
     scorer_image:
-      "ghcr.io/andymolecule/repro-scorer@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "ghcr.io/andymolecule/gems-match-scorer@sha256:3333333333333333333333333333333333333333333333333333333333333333",
     evaluator_contract: {
       version: "v1",
       archetype: "exact_artifact_match",
@@ -466,7 +481,7 @@ const executableExactMatchResolved = resolveChallengeEvaluation(
 assert.equal(executableExactMatchResolved.runtimeFamily, "semi_custom");
 assert.equal(
   executableExactMatchResolved.image,
-  "ghcr.io/andymolecule/repro-scorer@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+  "ghcr.io/andymolecule/gems-match-scorer@sha256:3333333333333333333333333333333333333333333333333333333333333333",
 );
 assert.equal(
   executableExactMatchResolved.semiCustomExecution?.runner_runtime_family,
@@ -489,7 +504,7 @@ const executableJsonExactMatchSemiCustomSpec = challengeSpecSchema.safeParse({
     runtime_family: "semi_custom",
     metric: "exact_match",
     scorer_image:
-      "ghcr.io/andymolecule/repro-scorer@sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "ghcr.io/andymolecule/gems-match-scorer@sha256:5555555555555555555555555555555555555555555555555555555555555555",
     evaluator_contract: {
       version: "v1",
       archetype: "exact_artifact_match",
@@ -593,7 +608,7 @@ const executableOpaqueExactMatchSemiCustomSpec = challengeSpecSchema.safeParse({
     runtime_family: "semi_custom",
     metric: "exact_match",
     scorer_image:
-      "ghcr.io/andymolecule/repro-scorer@sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "ghcr.io/andymolecule/gems-match-scorer@sha256:7777777777777777777777777777777777777777777777777777777777777777",
     evaluator_contract: {
       version: "v1",
       archetype: "exact_artifact_match",

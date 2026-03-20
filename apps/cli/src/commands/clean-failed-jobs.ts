@@ -3,6 +3,7 @@ import {
   EXPERT_RUNTIME_FAMILY_ID,
   isMetadataBlockedScoreJobError,
   isTerminalScoreJobError,
+  resolveChallengeEvaluation,
   validateExpertScorerImage,
   validateScorerImage,
 } from "@agora/common";
@@ -35,6 +36,7 @@ interface FailedJobWithContext {
     title: string | null;
     status: string;
     runtime_family: string;
+    evaluation_plan_json?: Record<string, unknown> | null;
     evaluation_json:
       | {
           scorer_image?: string | null;
@@ -76,7 +78,17 @@ function classifyFailedJob(
     job.challenges?.runtime_family &&
     job.challenges.runtime_family.trim().length > 0
   ) {
-    const scorerImage = job.challenges.evaluation_json?.scorer_image;
+    const scorerImage = (() => {
+      try {
+        return resolveChallengeEvaluation({
+          runtime_family: job.challenges?.runtime_family ?? "",
+          evaluation_plan_json: job.challenges?.evaluation_plan_json,
+          evaluation_json: job.challenges?.evaluation_json,
+        }).image;
+      } catch {
+        return job.challenges?.evaluation_json?.scorer_image;
+      }
+    })();
     const integrityError =
       job.challenges.runtime_family === EXPERT_RUNTIME_FAMILY_ID
         ? validateExpertScorerImage(scorerImage ?? "")
@@ -147,7 +159,7 @@ export function buildCleanFailedJobsCommand() {
         let query = db
           .from("score_jobs")
           .select(
-            "id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at, submissions(id, result_cid, solver_address), challenges(id, title, status, runtime_family, evaluation_json)",
+            "id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at, submissions(id, result_cid, solver_address), challenges(id, title, status, runtime_family, evaluation_json, evaluation_plan_json)",
           )
           .eq("status", "failed")
           .order("updated_at", { ascending: false });

@@ -135,9 +135,9 @@ flowchart LR
 
 Architecture boundary:
 
-- Clients now pre-register `submission_intents` before the on-chain submit. API submit confirmation and the indexer only attach on-chain submissions to already-registered intents, and only then create or revive `score_jobs`.
+- Clients now pre-register `submission_intents` before the on-chain submit. API submit confirmation still provides the fast path, but the indexer can also recover a `submissions` row directly from the reserved intent when the on-chain `solver` + `result_hash` match, and then create or revive the corresponding `score_jobs`.
 - Worker polls `score_jobs` but only claims jobs after the challenge enters `Scoring` at deadline, and only when the worker runtime matches the active scoring runtime version declared by the API.
-- Scorer is the Docker container itself (for example `ghcr.io/andymolecule/repro-scorer:v1`) — stateless, sandboxed, no network access. The orchestrator stages inputs; the executor service runs the container.
+- Scorer is the Docker container itself (for example `ghcr.io/andymolecule/gems-match-scorer:v1`) — stateless, sandboxed, no network access. The orchestrator stages inputs; the executor service runs the container.
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
 - Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` remains the active scoring runtime fence while API and worker-orchestrator roll forward together on Railway.
@@ -523,6 +523,7 @@ agora reindex --from-block <block_number>
    - Runtime version mismatch -> compare `/healthz.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then restart the Railway worker orchestrator so it redeploys on the active API revision.
    - RPC errors -> check `AGORA_RPC_URL` reachability.
    - All jobs stuck in `failed` or `running` after an infra incident -> recover them with `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` after the worker is healthy again.
+   - Authoring publishes stuck around sponsor-budget reservation state after an API/indexer interruption -> run `pnpm recover:authoring-publishes -- --stale-minutes=30` and inspect any `pending` rows before retrying publish.
    - Terminal validation/configuration rows lingering in `failed` -> inspect with `agora clean-failed-jobs` and skip only the rows that are truly unrecoverable.
 4. If the worker orchestrator process itself crashed: redeploy or restart the Railway worker service. If the executor crashed, restart the executor service on its host and re-check `/healthz`.
 
@@ -534,6 +535,7 @@ agora reindex --from-block <block_number>
 3. If `sessions.stale_compiling > 0`, inspect recent API logs for interrupted compile requests, then ask the poster to retry from the draft.
 4. If `oldest_needs_review_age_ms` breaches the warning or critical threshold, review the queued drafts or send them to Expert Mode.
 5. If the sweep route returns `401` or `503`, verify `AGORA_AUTHORING_REVIEW_TOKEN` is configured consistently on the API and internal review surface.
+6. If drafts are stuck after sponsor-funded publish attempts, run `pnpm recover:authoring-publishes -- --stale-minutes=30` before retrying the publish flow.
 
 ### Authoring Callback Backlog
 

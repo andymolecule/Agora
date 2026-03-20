@@ -33,7 +33,7 @@ scoring, and the worker reads that contract from the DB cache first.
 
 The built-in runtime family is:
 - `CSV Comparison`
-- official container: `ghcr.io/andymolecule/repro-scorer:v1`
+- official container: `ghcr.io/andymolecule/gems-match-scorer:v1`
 
 ## Files
 

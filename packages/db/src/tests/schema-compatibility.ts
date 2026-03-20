@@ -56,6 +56,12 @@ const checks: RuntimeSchemaCheck[] = [
     nextStep: "apply migration",
   },
   {
+    id: "challenge_evaluation_plan_column",
+    table: "challenges",
+    select: "evaluation_plan_json",
+    nextStep: "apply migration",
+  },
+  {
     id: "challenge_runtime_v3_columns",
     table: "challenges",
     select: "runtime_family,evaluation_json,artifacts_json",
@@ -92,6 +98,13 @@ const checks: RuntimeSchemaCheck[] = [
     table: "published_challenge_links",
     select:
       "draft_id,challenge_id,published_spec_json,published_spec_cid,return_to,published_at",
+    nextStep: "apply migration",
+  },
+  {
+    id: "authoring_sponsor_budget_reservations_table",
+    table: "authoring_sponsor_budget_reservations",
+    select:
+      "draft_id,provider,period_start,period_end,amount_usdc,status,tx_hash,challenge_id,released_at,consumed_at",
     nextStep: "apply migration",
   },
   {

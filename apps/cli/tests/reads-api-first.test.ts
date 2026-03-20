@@ -110,7 +110,7 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
               evaluation: {
                 runtime_family: "tabular_regression",
                 metric: "r2",
-                scorer_image: "ghcr.io/andymolecule/regression-scorer:v1",
+                scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
               },
               submission_contract: {
                 version: "v1",
@@ -287,7 +287,7 @@ test("status and get commands expose solver-specific submission limits and claim
               evaluation: {
                 runtime_family: "tabular_regression",
                 metric: "r2",
-                scorer_image: "ghcr.io/andymolecule/regression-scorer:v1",
+                scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
               },
               refs: {
                 challengeId,

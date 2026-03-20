@@ -8,7 +8,7 @@ on:
     paths:
       - "containers/**"
       - ".github/workflows/publish-scorers.yml"
-      - "packages/common/src/presets.ts"
+      - "packages/common/src/runtime-families.ts"
       - "scripts/verify-official-scorers.mjs"
 
 permissions:
@@ -25,12 +25,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: repro-scorer
+          - name: gems-match-scorer
             context: containers/repro-scorer
-          - name: regression-scorer
+          - name: gems-tabular-scorer
             context: containers/regression-scorer
-          - name: docking-scorer
+          - name: gems-ranking-scorer
             context: containers/docking-scorer
+          - name: gems-generated-scorer
+            context: containers/gems-generated-scorer
 
     steps:
       - name: Checkout
@@ -81,6 +83,7 @@ jobs:
 
       - name: Verify official scorer images are public and pullable
         run: |
-          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/repro-scorer:v1
-          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/regression-scorer:v1
-          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/docking-scorer:v1
+          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/gems-match-scorer:v1
+          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/gems-tabular-scorer:v1
+          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/gems-ranking-scorer:v1
+          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/gems-generated-scorer:v1

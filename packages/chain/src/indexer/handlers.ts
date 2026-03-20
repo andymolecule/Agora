@@ -2,6 +2,7 @@ import {
   type AgoraConfig,
   CHALLENGE_LIMITS,
   CHALLENGE_STATUS,
+  type ChallengeStatus,
   SUBMISSION_RESULT_FORMAT,
   buildChallengeCursorKey,
   challengeLifecycleEventSchema,
@@ -21,6 +22,8 @@ import {
   getIndexerCursor,
   getPublishedChallengeLinkByChallengeId,
   getSubmissionByChainId,
+  findSubmissionIntentByMatch,
+  ensureScoreJobForRegisteredSubmission,
   isEventIndexed,
   markChallengePayoutClaimed,
   markEventIndexed,
@@ -61,6 +64,7 @@ const SPEC_FETCH_RETRY_BASE_MS = 500;
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 type DbClient = ReturnType<typeof createSupabaseClient>;
+type SubmissionRow = Awaited<ReturnType<typeof getSubmissionByChainId>>;
 
 export interface ParsedLog {
   eventName: string;
@@ -113,6 +117,131 @@ function parseRequiredAddress(value: unknown, field: string): `0x${string}` {
     return value as `0x${string}`;
   }
   throw new Error(`Invalid event arg '${field}': expected address string`);
+}
+
+export async function projectOnChainSubmissionFromRegistration(input: {
+  db: DbClient;
+  challenge: ChallengeListRow;
+  onChainSubmissionId: number;
+  onChainSubmission: {
+    solver: string;
+    resultHash: string;
+    proofBundleHash: string;
+    score: bigint;
+    scored: boolean;
+    submittedAt: bigint;
+  };
+  txHash: string;
+  scoredAt?: string | null;
+  existingSubmission: SubmissionRow;
+  findSubmissionIntentByMatchImpl?: typeof findSubmissionIntentByMatch;
+  upsertSubmissionOnChainImpl?: typeof upsertSubmissionOnChain;
+  ensureScoreJobForRegisteredSubmissionImpl?: typeof ensureScoreJobForRegisteredSubmission;
+}) {
+  const existingSubmission = input.existingSubmission;
+  const findIntent =
+    input.findSubmissionIntentByMatchImpl ?? findSubmissionIntentByMatch;
+  const upsert =
+    input.upsertSubmissionOnChainImpl ?? upsertSubmissionOnChain;
+  const ensureScoreJob =
+    input.ensureScoreJobForRegisteredSubmissionImpl ??
+    ensureScoreJobForRegisteredSubmission;
+
+  let registration = null;
+  if (
+    existingSubmission?.submission_intent_id &&
+    existingSubmission.result_cid
+  ) {
+    registration = {
+      submission_intent_id: existingSubmission.submission_intent_id,
+      result_cid: existingSubmission.result_cid,
+      result_format:
+        existingSubmission.result_format ?? SUBMISSION_RESULT_FORMAT.plainV0,
+      trace_id: existingSubmission.trace_id ?? null,
+    };
+  } else {
+    const intent = await findIntent(input.db, {
+      challengeId: input.challenge.id,
+      solverAddress: input.onChainSubmission.solver,
+      resultHash: input.onChainSubmission.resultHash,
+    });
+    if (!intent) {
+      indexerLogger.warn(
+        {
+          event: "indexer.submission.unregistered",
+          challengeId: input.challenge.id,
+          onChainSubmissionId: input.onChainSubmissionId,
+          solver: input.onChainSubmission.solver,
+        },
+        "Observed on-chain submission without a registered submission intent; skipping projection refresh",
+      );
+      return null;
+    }
+
+    registration = {
+      submission_intent_id: intent.id,
+      result_cid: intent.result_cid,
+      result_format: intent.result_format,
+      trace_id: existingSubmission?.trace_id ?? intent.trace_id ?? null,
+    };
+
+    indexerLogger.info(
+      {
+        event: "indexer.submission.recovered_from_intent",
+        challengeId: input.challenge.id,
+        onChainSubmissionId: input.onChainSubmissionId,
+        intentId: intent.id,
+        solver: input.onChainSubmission.solver,
+      },
+      "Recovered submission projection from the reserved submission intent",
+    );
+  }
+
+  const submissionRow = await upsert(input.db, {
+    submission_intent_id: registration.submission_intent_id,
+    challenge_id: input.challenge.id,
+    on_chain_sub_id: input.onChainSubmissionId,
+    solver_address: input.onChainSubmission.solver,
+    result_hash: input.onChainSubmission.resultHash,
+    result_cid: registration.result_cid,
+    result_format: registration.result_format,
+    proof_bundle_hash: input.onChainSubmission.proofBundleHash,
+    score: input.onChainSubmission.scored
+      ? input.onChainSubmission.score.toString()
+      : null,
+    scored: input.onChainSubmission.scored,
+    submitted_at: new Date(
+      Number(input.onChainSubmission.submittedAt) * 1000,
+    ).toISOString(),
+    ...(input.scoredAt !== undefined
+      ? { scored_at: input.scoredAt }
+      : input.onChainSubmission.scored
+        ? {}
+        : { scored_at: null }),
+    tx_hash: input.txHash,
+    trace_id: registration.trace_id,
+  });
+
+  await ensureScoreJob(
+    input.db,
+    {
+      id: input.challenge.id,
+      status: input.challenge.status as ChallengeStatus,
+      max_submissions_total: input.challenge.max_submissions_total,
+      max_submissions_per_solver: input.challenge.max_submissions_per_solver,
+    },
+    {
+      id: submissionRow.id,
+      challenge_id: submissionRow.challenge_id,
+      on_chain_sub_id: submissionRow.on_chain_sub_id,
+      solver_address: submissionRow.solver_address,
+      scored: submissionRow.scored,
+      trace_id: submissionRow.trace_id,
+    },
+    registration.trace_id,
+  );
+
+  return submissionRow;
 }
 
 function parseStatusValue(value: unknown, field: string) {
@@ -538,39 +667,13 @@ export async function reconcileChallengeProjection(input: {
       challenge.id,
       subIndex,
     );
-    if (
-      !existingSubmission?.submission_intent_id ||
-      !existingSubmission.result_cid
-    ) {
-      indexerLogger.warn(
-        {
-          event: "indexer.submission.unregistered",
-          challengeId: challenge.id,
-          onChainSubmissionId: subIndex,
-          solver: submission.solver,
-        },
-        "Observed on-chain submission without a registered submission intent; skipping projection refresh",
-      );
-      continue;
-    }
-    await upsertSubmissionOnChain(db, {
-      submission_intent_id: existingSubmission.submission_intent_id,
-      challenge_id: challenge.id,
-      on_chain_sub_id: subIndex,
-      solver_address: submission.solver,
-      result_hash: submission.resultHash,
-      result_cid: existingSubmission.result_cid,
-      result_format:
-        existingSubmission.result_format ?? SUBMISSION_RESULT_FORMAT.plainV0,
-      proof_bundle_hash: submission.proofBundleHash,
-      score: submission.scored ? submission.score.toString() : null,
-      scored: submission.scored,
-      submitted_at: new Date(
-        Number(submission.submittedAt) * 1000,
-      ).toISOString(),
-      ...(submission.scored ? {} : { scored_at: null }),
-      tx_hash: challenge.tx_hash,
-      trace_id: existingSubmission.trace_id ?? null,
+    await projectOnChainSubmissionFromRegistration({
+      db,
+      challenge,
+      onChainSubmissionId: subIndex,
+      onChainSubmission: submission,
+      txHash: challenge.tx_hash,
+      existingSubmission,
     });
   }
 
@@ -854,40 +957,14 @@ export async function processChallengeLog(input: {
         challenge.id,
         Number(submissionId),
       );
-      if (
-        !existingSubmission?.submission_intent_id ||
-        !existingSubmission.result_cid
-      ) {
-        indexerLogger.warn(
-          {
-            event: "indexer.submission.unregistered",
-            challengeId: challenge.id,
-            submissionId: Number(submissionId),
-            solver: submission.solver,
-          },
-          "Observed on-chain submission without a registered submission intent; skipping projection refresh",
-        );
-      } else {
-        await upsertSubmissionOnChain(db, {
-          submission_intent_id: existingSubmission.submission_intent_id,
-          challenge_id: challenge.id,
-          on_chain_sub_id: Number(submissionId),
-          solver_address: submission.solver,
-          result_hash: submission.resultHash,
-          result_cid: existingSubmission.result_cid,
-          result_format:
-            existingSubmission.result_format ??
-            SUBMISSION_RESULT_FORMAT.plainV0,
-          proof_bundle_hash: submission.proofBundleHash,
-          score: submission.scored ? submission.score.toString() : null,
-          scored: submission.scored,
-          submitted_at: new Date(
-            Number(submission.submittedAt) * 1000,
-          ).toISOString(),
-          tx_hash: txHash,
-          trace_id: existingSubmission.trace_id ?? null,
-        });
-      }
+      await projectOnChainSubmissionFromRegistration({
+        db,
+        challenge,
+        onChainSubmissionId: Number(submissionId),
+        onChainSubmission: submission,
+        txHash,
+        existingSubmission,
+      });
     }
 
     if (log.eventName === "Scored") {
@@ -920,41 +997,20 @@ export async function processChallengeLog(input: {
         challenge.id,
         Number(submissionId),
       );
-      if (
-        !existingSubmission?.submission_intent_id ||
-        !existingSubmission.result_cid
-      ) {
-        indexerLogger.warn(
-          {
-            event: "indexer.submission.scored_without_registration",
-            challengeId: challenge.id,
-            submissionId: Number(submissionId),
-            solver: submission.solver,
-          },
-          "Observed scored on-chain submission without a registered submission intent; skipping projection refresh",
-        );
-      } else {
-        await upsertSubmissionOnChain(db, {
-          submission_intent_id: existingSubmission.submission_intent_id,
-          challenge_id: challenge.id,
-          on_chain_sub_id: Number(submissionId),
-          solver_address: submission.solver,
-          result_hash: submission.resultHash,
-          result_cid: existingSubmission.result_cid,
-          result_format:
-            existingSubmission.result_format ??
-            SUBMISSION_RESULT_FORMAT.plainV0,
-          proof_bundle_hash: proofBundleHash,
-          score: score.toString(),
+      await projectOnChainSubmissionFromRegistration({
+        db,
+        challenge,
+        onChainSubmissionId: Number(submissionId),
+        onChainSubmission: {
+          ...submission,
+          proofBundleHash,
+          score,
           scored: true,
-          submitted_at: new Date(
-            Number(submission.submittedAt) * 1000,
-          ).toISOString(),
-          scored_at: new Date().toISOString(),
-          tx_hash: txHash,
-          trace_id: existingSubmission.trace_id ?? null,
-        });
-      }
+        },
+        txHash,
+        scoredAt: new Date().toISOString(),
+        existingSubmission,
+      });
     }
 
     if (log.eventName === "StatusChanged") {

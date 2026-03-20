@@ -3,195 +3,68 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
-  type OnChainSubmission,
-  getChallengeLifecycleState,
-  getChallengeSubmissionCount,
-  getOnChainSubmission,
-  getPublicClient,
-  isTransientPinnedContractReadError,
-  parseSubmittedReceipt,
-} from "@agora/chain";
-import {
-  CHALLENGE_STATUS,
-  type ChallengeStatus,
   SUBMISSION_LIMITS,
-  SUBMISSION_RESULT_FORMAT,
   SUBMISSION_SEAL_ALG,
   SUBMISSION_SEAL_VERSION,
-  type SubmissionResultFormat,
-  computeSubmissionResultHash,
   hasSubmissionSealPublicConfig,
-  isValidPinnedSpecCid,
   loadConfig,
-  resolveChallengeEvaluation,
   submissionCleanupRequestSchema,
   submissionIntentRequestSchema,
   submissionRegistrationRequestSchema,
 } from "@agora/common";
 import {
-  SubmissionOnChainWriteConflictError,
-  countSubmissionIntentsByResultCid,
-  countSubmissionsByResultCid,
-  createSubmissionIntent,
   createSupabaseClient,
-  deleteUnmatchedSubmissionIntentById,
-  ensureScoreJobForRegisteredSubmission,
-  findActiveSubmissionIntentByMatch,
   getChallengeByContractAddress,
   getChallengeById,
   getProofBundleBySubmissionId,
-  getScoreJobBySubmissionId,
   getSubmissionByChainId,
   getSubmissionById,
-  getSubmissionByIntentId,
-  getSubmissionIntentById,
-  upsertSubmissionOnChain,
 } from "@agora/db";
-import { getJSON, pinFile, unpinCid } from "@agora/ipfs";
+import { pinFile } from "@agora/ipfs";
 import { zValidator } from "@hono/zod-validator";
 import { type Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import { jsonError } from "../lib/api-error.js";
 import { getSession } from "../lib/auth-store.js";
-import { getMatchingOptionalSessionAddress } from "../lib/auth/session-policy.js";
 import { jsonWithEtag } from "../lib/http-cache.js";
 import { getRequestId, getRequestLogger } from "../lib/observability.js";
+import {
+  buildPublicSubmissionVerification,
+  buildSubmissionStatusEventStream,
+  canReadPublicSubmissionVerification,
+  canServeSubmissionSealPublicKey,
+  getPublicSubmissionVerificationUnavailableMessage,
+  getSubmissionReadRetryMessage,
+  getSubmissionStatusData,
+  getSubmissionStatusDataByProtocolRefs,
+  isInvalidOnChainSubmissionReadError,
+  toPrivateSubmissionPayload,
+  waitForSubmissionStatusDataWithReader,
+} from "../lib/submission-status.js";
+import {
+  SubmissionWorkflowError,
+  cleanupSubmissionArtifact,
+  createSubmissionIntentWorkflow,
+  getSubmissionIntentExpiry,
+  registerSubmissionWorkflow,
+  toSubmissionRegistrationResponse,
+} from "../lib/submission-workflow.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import { requireSiweSession } from "../middleware/siwe.js";
 import type { ApiEnv } from "../types.js";
-import {
-  normalizeSubmissionScore,
-  toPrivateProofBundle,
-  toPrivateSubmission,
-} from "./challenges-shared.js";
 
-const SUBMISSION_INTENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-const SUBMISSION_DEADLINE_SAFETY_WINDOW_MS = 45 * 1000;
 const SUBMISSION_WAIT_DEFAULT_TIMEOUT_SECONDS = 30;
-const SUBMISSION_WAIT_MAX_TIMEOUT_SECONDS = 60;
-const SUBMISSION_WAIT_POLL_INTERVAL_MS = 2_000;
-const SUBMISSION_EVENTS_WAIT_TIMEOUT_SECONDS = 20;
 
-type PublicSubmissionVerification = {
-  challengeId: string;
-  challengeAddress: string;
-  challengeSpecCid: string | null;
-  submissionId: string;
-  onChainSubId: number;
-  solverAddress: string;
-  score: string | null;
-  scored: boolean;
-  submittedAt: string;
-  scoredAt?: string | null;
-  proofBundleCid: string | null;
-  proofBundleHash: string | null;
-  evaluationBundleCid: string | null;
-  replaySubmissionCid: string | null;
-  containerImageDigest: string | null;
-  inputHash: string | null;
-  outputHash: string | null;
-  reproducible: boolean;
+export {
+  buildSubmissionStatusEventStream,
+  canReadPublicSubmissionVerification,
+  canServeSubmissionSealPublicKey,
+  getSubmissionIntentExpiry,
+  getSubmissionReadRetryMessage,
+  getSubmissionStatusData,
+  isInvalidOnChainSubmissionReadError,
+  waitForSubmissionStatusDataWithReader,
 };
-
-type PublicProofBundle = {
-  inputHash?: string;
-  outputHash?: string;
-  containerImageDigest?: string;
-  challengeSpecCid?: string | null;
-  evaluationBundleCid?: string | null;
-  replaySubmissionCid?: string | null;
-};
-type SubmissionRow = Awaited<ReturnType<typeof getSubmissionById>>;
-type ChallengeRow = Awaited<ReturnType<typeof getChallengeById>>;
-
-export function canReadPublicSubmissionVerification(status: ChallengeStatus) {
-  return status !== CHALLENGE_STATUS.open;
-}
-
-export function canServeSubmissionSealPublicKey(input: {
-  hasPublicSealConfig: boolean;
-}) {
-  return input.hasPublicSealConfig;
-}
-
-export function isInvalidOnChainSubmissionReadError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /InvalidSubmission/i.test(message);
-}
-
-export function getSubmissionReadRetryMessage(input: {
-  submissionId: bigint;
-  challengeAddress: string;
-}) {
-  return `Submission transaction is confirmed, but submission #${input.submissionId.toString()} is not readable from challenge ${input.challengeAddress} yet. Next step: retry in a few seconds.`;
-}
-
-export function getSubmissionIntentExpiry(input: {
-  deadlineMs: number;
-  retentionMs?: number;
-}) {
-  return new Date(
-    input.deadlineMs + (input.retentionMs ?? SUBMISSION_INTENT_RETENTION_MS),
-  ).toISOString();
-}
-
-function resolveRequestedSubmissionResultFormat(
-  resultFormat?: SubmissionResultFormat,
-) {
-  return resultFormat ?? SUBMISSION_RESULT_FORMAT.plainV0;
-}
-
-function isSubmissionIntentExpired(expiresAt: string, nowMs = Date.now()) {
-  const expiresAtMs = Date.parse(expiresAt);
-  return Number.isFinite(expiresAtMs) && expiresAtMs <= nowMs;
-}
-
-async function getOptionalSessionAddress(c: Context<ApiEnv>) {
-  const token = getCookie(c, "agora_session");
-  const session = await getSession(token);
-  return session?.address.toLowerCase() ?? null;
-}
-
-async function getChallengeSubmissionIntentWindow(input: {
-  challengeAddress: `0x${string}`;
-}) {
-  const lifecycle = await getChallengeLifecycleState(input.challengeAddress);
-  return {
-    status: lifecycle.status,
-    deadlineMs: Number(lifecycle.deadline) * 1000,
-  };
-}
-
-async function resolveChallengeFromTarget(
-  db: ReturnType<typeof createSupabaseClient>,
-  input: {
-    challengeId?: string;
-    challengeAddress?: string;
-  },
-) {
-  if (input.challengeId) {
-    return getChallengeById(db, input.challengeId);
-  }
-  if (input.challengeAddress) {
-    return getChallengeByContractAddress(db, input.challengeAddress);
-  }
-  throw new Error(
-    "Submission request is missing challengeId and challengeAddress. Next step: provide a challenge UUID or contract address.",
-  );
-}
-
-function hasChallengeTargetConflict(
-  challenge: ChallengeRow,
-  input: {
-    challengeAddress?: string;
-  },
-) {
-  return Boolean(
-    input.challengeAddress &&
-      challenge.contract_address.toLowerCase() !==
-        input.challengeAddress.toLowerCase(),
-  );
-}
 
 function parseOnChainSubmissionId(value: string) {
   if (/^[0-9]+$/.test(value)) {
@@ -200,192 +73,26 @@ function parseOnChainSubmissionId(value: string) {
   return null;
 }
 
-function toSubmissionRefs(submission: SubmissionRow, challenge: ChallengeRow) {
-  return {
-    submissionId: submission.id,
-    challengeId: challenge.id,
-    challengeAddress: challenge.contract_address,
-    onChainSubmissionId: submission.on_chain_sub_id,
-  };
-}
-
-function toSubmissionStatusPayload(
-  submission: SubmissionRow,
-  challenge: ChallengeRow,
-  proofBundle: Awaited<ReturnType<typeof getProofBundleBySubmissionId>>,
-  scoreJob: Awaited<ReturnType<typeof getScoreJobBySubmissionId>>,
+function toSubmissionWorkflowJsonError(
+  c: Context<ApiEnv>,
+  error: unknown,
 ) {
-  let scoringStatus: "pending" | "complete" | "scored_awaiting_proof";
-  if (!submission.scored) {
-    scoringStatus = "pending";
-  } else if (proofBundle?.cid) {
-    scoringStatus = "complete";
-  } else {
-    scoringStatus = "scored_awaiting_proof";
+  if (!(error instanceof SubmissionWorkflowError)) {
+    return null;
   }
-
-  const terminal =
-    scoringStatus === "complete" ||
-    scoreJob?.status === "failed" ||
-    scoreJob?.status === "skipped";
-  const recommendedPollSeconds = terminal
-    ? 60
-    : scoreJob?.status === "running"
-      ? 5
-      : scoreJob?.status === "queued"
-        ? 15
-        : 20;
-
-  return {
-    submission: {
-      id: submission.id,
-      challenge_id: challenge.id,
-      challenge_address: challenge.contract_address,
-      on_chain_sub_id: submission.on_chain_sub_id,
-      solver_address: submission.solver_address,
-      score: normalizeSubmissionScore(submission.score),
-      scored: submission.scored,
-      submitted_at: submission.submitted_at,
-      scored_at: submission.scored_at ?? null,
-      refs: toSubmissionRefs(submission, challenge),
-    },
-    proofBundle: proofBundle
-      ? {
-          reproducible: proofBundle.reproducible,
-        }
-      : null,
-    job: scoreJob
-      ? {
-          status: scoreJob.status,
-          attempts: scoreJob.attempts,
-          maxAttempts: scoreJob.max_attempts,
-          lastError: sanitizeScoreJobError(scoreJob.last_error),
-          nextAttemptAt: scoreJob.next_attempt_at,
-          lockedAt: scoreJob.locked_at,
-        }
-      : null,
-    scoringStatus,
-    terminal,
-    recommendedPollSeconds,
-  };
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-type SubmissionStatusPayload = ReturnType<typeof toSubmissionStatusPayload>;
-type SubmissionWaitPayload = ReturnType<typeof withSubmissionWaitMetadata>;
-
-function encodeSseEvent(event: string, data: unknown) {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-}
-
-export function buildSubmissionStatusEventStream(input: {
-  submissionId: string;
-  signal?: AbortSignal;
-  readStatus?: (submissionId: string) => Promise<SubmissionStatusPayload>;
-  waitForStatus?: (input: {
-    submissionId: string;
-    timeoutSeconds: number;
-  }) => Promise<SubmissionWaitPayload>;
-}) {
-  const readStatus = input.readStatus ?? getSubmissionStatusData;
-  const waitForStatus = input.waitForStatus ?? waitForSubmissionStatusData;
-
-  return new ReadableStream<Uint8Array>({
-    start: async (controller) => {
-      const encoder = new TextEncoder();
-      let closed = false;
-      const close = () => {
-        if (closed) {
-          return;
-        }
-        closed = true;
-        controller.close();
-      };
-      const enqueue = (event: string, data: unknown) =>
-        closed
-          ? undefined
-          : controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
-
-      try {
-        const initial = await readStatus(input.submissionId);
-        if (input.signal?.aborted) {
-          close();
-          return;
-        }
-        if (initial.terminal) {
-          enqueue("terminal", initial);
-          close();
-          return;
-        }
-        enqueue("status", initial);
-
-        while (!input.signal?.aborted) {
-          const next = await waitForStatus({
-            submissionId: input.submissionId,
-            timeoutSeconds: SUBMISSION_EVENTS_WAIT_TIMEOUT_SECONDS,
-          });
-          if (input.signal?.aborted) {
-            close();
-            return;
-          }
-          if (next.terminal) {
-            enqueue("terminal", next);
-            close();
-            return;
-          }
-          if (next.timedOut) {
-            enqueue("keepalive", {
-              waitedMs: next.waitedMs,
-              recommendedPollSeconds: next.recommendedPollSeconds,
-            });
-            continue;
-          }
-          enqueue("status", next);
-        }
-      } catch (error) {
-        enqueue("error", {
-          message: error instanceof Error ? error.message : String(error),
-        });
-      } finally {
-        close();
-      }
-    },
+  return jsonError(c, {
+    status: error.status,
+    code: error.code,
+    message: error.message,
+    retriable: error.options?.retriable,
+    extras: error.options?.extras,
   });
 }
 
-function getSubmissionStatusSignature(
-  payload: ReturnType<typeof toSubmissionStatusPayload>,
-) {
-  return JSON.stringify({
-    scored: payload.submission.scored,
-    score: payload.submission.score,
-    scoringStatus: payload.scoringStatus,
-    terminal: payload.terminal,
-    jobStatus: payload.job?.status ?? null,
-    attempts: payload.job?.attempts ?? null,
-    lastError: payload.job?.lastError ?? null,
-    scoredAt: payload.submission.scored_at,
-  });
-}
-
-function withSubmissionWaitMetadata(
-  payload: ReturnType<typeof toSubmissionStatusPayload>,
-  waitedMs: number,
-  timedOut: boolean,
-) {
-  return {
-    ...payload,
-    waitedMs,
-    timedOut,
-  };
-}
-
-function sanitizeScoreJobError(error: string | null) {
-  if (!error) return null;
-  return error.length > 300 ? `${error.slice(0, 297)}...` : error;
+async function getOptionalSessionAddress(c: Context<ApiEnv>) {
+  const token = getCookie(c, "agora_session");
+  const session = await getSession(token);
+  return session?.address.toLowerCase() ?? null;
 }
 
 async function readSubmissionUpload(c: Context<ApiEnv>) {
@@ -415,210 +122,6 @@ async function readSubmissionUpload(c: Context<ApiEnv>) {
 function normalizeUploadFileName(fileName: string | null) {
   const normalized = path.basename(fileName ?? "sealed-submission.json").trim();
   return normalized.length > 0 ? normalized : "sealed-submission.json";
-}
-
-async function cleanupSubmissionArtifact(input: {
-  intentId?: string;
-  resultCid: string;
-}) {
-  const db = createSupabaseClient(true);
-  let deletedIntentId: string | null = null;
-
-  if (input.intentId) {
-    const deletedIntent = await deleteUnmatchedSubmissionIntentById(
-      db,
-      input.intentId,
-    );
-    deletedIntentId = deletedIntent?.id ?? null;
-  }
-
-  const [remainingIntents, persistedSubmissions] = await Promise.all([
-    countSubmissionIntentsByResultCid(db, input.resultCid, {
-      excludeIntentId: deletedIntentId ?? undefined,
-    }),
-    countSubmissionsByResultCid(db, input.resultCid),
-  ]);
-
-  if (remainingIntents > 0 || persistedSubmissions > 0) {
-    return {
-      cleanedIntent: Boolean(deletedIntentId),
-      unpinned: false,
-    };
-  }
-
-  await unpinCid(input.resultCid);
-  return {
-    cleanedIntent: Boolean(deletedIntentId),
-    unpinned: true,
-  };
-}
-
-export async function getSubmissionStatusData(submissionId: string) {
-  const db = createSupabaseClient(true);
-  const submission = await getSubmissionById(db, submissionId);
-  const challenge = await getChallengeById(db, submission.challenge_id);
-  const proofBundle = await getProofBundleBySubmissionId(db, submissionId);
-  const scoreJob = await getScoreJobBySubmissionId(db, submissionId);
-  return toSubmissionStatusPayload(
-    submission,
-    challenge,
-    proofBundle,
-    scoreJob,
-  );
-}
-
-async function waitForSubmissionStatusData(input: {
-  submissionId: string;
-  timeoutSeconds: number;
-}) {
-  return waitForSubmissionStatusDataWithReader({
-    submissionId: input.submissionId,
-    timeoutSeconds: input.timeoutSeconds,
-    readStatus: getSubmissionStatusData,
-  });
-}
-
-export async function waitForSubmissionStatusDataWithReader(input: {
-  submissionId: string;
-  timeoutSeconds: number;
-  readStatus: (
-    submissionId: string,
-  ) => Promise<ReturnType<typeof toSubmissionStatusPayload>>;
-  sleepImpl?: (ms: number) => Promise<void>;
-}) {
-  const startedAt = Date.now();
-  const timeoutMs =
-    Math.min(
-      Math.max(1, Math.trunc(input.timeoutSeconds)),
-      SUBMISSION_WAIT_MAX_TIMEOUT_SECONDS,
-    ) * 1000;
-  const sleepImpl = input.sleepImpl ?? sleep;
-  const initial = await input.readStatus(input.submissionId);
-  if (initial.terminal) {
-    return withSubmissionWaitMetadata(initial, 0, false);
-  }
-
-  const initialSignature = getSubmissionStatusSignature(initial);
-  let latest = initial;
-
-  while (Date.now() - startedAt < timeoutMs) {
-    const remainingMs = timeoutMs - (Date.now() - startedAt);
-    await sleepImpl(
-      Math.min(SUBMISSION_WAIT_POLL_INTERVAL_MS, Math.max(1, remainingMs)),
-    );
-    latest = await input.readStatus(input.submissionId);
-    const signature = getSubmissionStatusSignature(latest);
-    if (latest.terminal || signature !== initialSignature) {
-      return withSubmissionWaitMetadata(latest, Date.now() - startedAt, false);
-    }
-  }
-
-  return withSubmissionWaitMetadata(latest, Date.now() - startedAt, true);
-}
-
-async function getSubmissionStatusDataByProtocolRefs(input: {
-  challengeAddress: string;
-  onChainSubmissionId: number;
-}) {
-  const db = createSupabaseClient(true);
-  const challenge = await getChallengeByContractAddress(
-    db,
-    input.challengeAddress,
-  );
-  const submission = await getSubmissionByChainId(
-    db,
-    challenge.id,
-    input.onChainSubmissionId,
-  );
-  if (!submission) {
-    return null;
-  }
-  const proofBundle = await getProofBundleBySubmissionId(db, submission.id);
-  const scoreJob = await getScoreJobBySubmissionId(db, submission.id);
-  return toSubmissionStatusPayload(
-    submission,
-    challenge,
-    proofBundle,
-    scoreJob,
-  );
-}
-
-function getPublicSubmissionVerificationUnavailableMessage() {
-  return "Public verification is unavailable while the challenge is open. Check back when scoring begins.";
-}
-
-async function buildPublicSubmissionVerification(
-  submission: SubmissionRow,
-  challenge: ChallengeRow,
-) {
-  const lifecycle = await getChallengeLifecycleState(
-    challenge.contract_address as `0x${string}`,
-  );
-  if (!canReadPublicSubmissionVerification(lifecycle.status)) {
-    throw new Error(getPublicSubmissionVerificationUnavailableMessage());
-  }
-
-  const db = createSupabaseClient(true);
-  const proofBundle = await getProofBundleBySubmissionId(db, submission.id);
-  const evalPlan = resolveChallengeEvaluation(challenge);
-
-  let proofPayload: PublicProofBundle | null = null;
-  if (proofBundle?.cid) {
-    proofPayload = await getJSON<PublicProofBundle>(proofBundle.cid);
-  }
-
-  const replaySubmissionCid =
-    proofPayload?.replaySubmissionCid ??
-    (submission.result_format === SUBMISSION_RESULT_FORMAT.plainV0
-      ? submission.result_cid
-      : null);
-
-  const verification: PublicSubmissionVerification = {
-    challengeId: challenge.id,
-    challengeAddress: challenge.contract_address,
-    challengeSpecCid:
-      proofPayload?.challengeSpecCid ?? challenge.spec_cid ?? null,
-    submissionId: submission.id,
-    onChainSubId: submission.on_chain_sub_id,
-    solverAddress: submission.solver_address,
-    score: normalizeSubmissionScore(submission.score),
-    scored: submission.scored,
-    submittedAt: submission.submitted_at,
-    scoredAt: submission.scored_at ?? null,
-    proofBundleCid: proofBundle?.cid ?? submission.proof_bundle_cid ?? null,
-    proofBundleHash: submission.proof_bundle_hash ?? null,
-    evaluationBundleCid:
-      proofPayload?.evaluationBundleCid ?? evalPlan.evaluationBundleCid ?? null,
-    replaySubmissionCid,
-    containerImageDigest:
-      proofPayload?.containerImageDigest ??
-      proofBundle?.container_image_hash ??
-      null,
-    inputHash: proofPayload?.inputHash ?? proofBundle?.input_hash ?? null,
-    outputHash: proofPayload?.outputHash ?? proofBundle?.output_hash ?? null,
-    reproducible: proofBundle?.reproducible ?? false,
-  };
-
-  return verification;
-}
-
-function toSubmissionRegistrationResponse(input: {
-  submission: SubmissionRow;
-  challenge: ChallengeRow;
-  warning?: string | null;
-}) {
-  return {
-    ok: true,
-    submission: {
-      id: input.submission.id,
-      challenge_id: input.challenge.id,
-      challenge_address: input.challenge.contract_address,
-      on_chain_sub_id: input.submission.on_chain_sub_id,
-      solver_address: input.submission.solver_address,
-      refs: toSubmissionRefs(input.submission, input.challenge),
-    },
-    warning: input.warning ?? null,
-  };
 }
 
 const router = new Hono<ApiEnv>();
@@ -714,11 +217,14 @@ router.post(
     }
   }),
   async (c) => {
-    const payload = c.req.valid("json");
     try {
-      const data = await cleanupSubmissionArtifact(payload);
+      const data = await cleanupSubmissionArtifact(c.req.valid("json"));
       return c.json({ data });
     } catch (error) {
+      const workflowError = toSubmissionWorkflowJsonError(c, error);
+      if (workflowError) {
+        return workflowError;
+      }
       const message = error instanceof Error ? error.message : String(error);
       return jsonError(c, {
         status: 500,
@@ -741,6 +247,7 @@ router.get("/by-onchain/:challengeAddress/:subId/status", async (c) => {
         "Invalid onChainSubmissionId. Next step: provide a non-negative integer submission id.",
     });
   }
+
   const data = await getSubmissionStatusDataByProtocolRefs({
     challengeAddress,
     onChainSubmissionId,
@@ -767,6 +274,7 @@ router.get("/by-onchain/:challengeAddress/:subId/public", async (c) => {
         "Invalid onChainSubmissionId. Next step: provide a non-negative integer submission id.",
     });
   }
+
   const db = createSupabaseClient(true);
   const challenge = await getChallengeByContractAddress(db, challengeAddress);
   const submission = await getSubmissionByChainId(
@@ -802,8 +310,7 @@ router.get("/by-onchain/:challengeAddress/:subId/public", async (c) => {
 });
 
 router.get("/:id/status", async (c) => {
-  const submissionId = c.req.param("id");
-  const data = await getSubmissionStatusData(submissionId);
+  const data = await getSubmissionStatusData(c.req.param("id"));
   return jsonWithEtag(c, { data });
 });
 
@@ -821,9 +328,10 @@ router.get("/:id/wait", async (c) => {
     });
   }
 
-  const data = await waitForSubmissionStatusData({
+  const data = await waitForSubmissionStatusDataWithReader({
     submissionId: c.req.param("id"),
     timeoutSeconds,
+    readStatus: getSubmissionStatusData,
   });
   return c.json({ data });
 });
@@ -882,12 +390,11 @@ router.get("/:id", requireSiweSession, async (c) => {
     });
   }
   const proofBundle = await getProofBundleBySubmissionId(db, submissionId);
-
   return c.json({
-    data: {
-      submission: toPrivateSubmission(submission),
-      proofBundle: toPrivateProofBundle(proofBundle),
-    },
+    data: toPrivateSubmissionPayload({
+      submission,
+      proofBundle,
+    }),
   });
 });
 
@@ -906,449 +413,28 @@ router.post(
     }
   }),
   async (c) => {
-    const {
-      challengeId,
-      challengeAddress,
-      solverAddress,
-      resultCid,
-      resultFormat,
-    } = c.req.valid("json");
-    const requestId = getRequestId(c);
-    const normalizedResultCid = resultCid.trim();
-    if (!isValidPinnedSpecCid(normalizedResultCid)) {
-      return jsonError(c, {
-        status: 400,
-        code: "RESULT_CID_INVALID",
-        message:
-          "Submission resultCid must be a valid pinned ipfs:// CID. Next step: pin the sealed submission payload first, then retry.",
+    try {
+      const payload = c.req.valid("json");
+      const data = await createSubmissionIntentWorkflow({
+        challengeId: payload.challengeId,
+        challengeAddress: payload.challengeAddress,
+        solverAddress: payload.solverAddress,
+        resultCid: payload.resultCid,
+        resultFormat: payload.resultFormat,
+        optionalSessionAddress: await getOptionalSessionAddress(c),
+        requestId: getRequestId(c),
+        logger: getRequestLogger(c),
       });
+      return c.json({ data });
+    } catch (error) {
+      const workflowError = toSubmissionWorkflowJsonError(c, error);
+      if (workflowError) {
+        return workflowError;
+      }
+      throw error;
     }
-
-    const sessionAddress = getMatchingOptionalSessionAddress(
-      await getOptionalSessionAddress(c),
-      solverAddress,
-    );
-
-    const db = createSupabaseClient(true);
-    const challenge = await resolveChallengeFromTarget(db, {
-      challengeId,
-      challengeAddress,
-    });
-    if (hasChallengeTargetConflict(challenge, { challengeAddress })) {
-      return jsonError(c, {
-        status: 400,
-        code: "CHALLENGE_TARGET_CONFLICT",
-        message:
-          "challengeId and challengeAddress refer to different challenges. Next step: retry with one canonical challenge reference.",
-      });
-    }
-    const resolvedChallengeAddress =
-      challenge.contract_address as `0x${string}`;
-    const window = await getChallengeSubmissionIntentWindow({
-      challengeAddress: resolvedChallengeAddress,
-    });
-
-    if (window.status !== CHALLENGE_STATUS.open) {
-      return jsonError(c, {
-        status: 409,
-        code: "CHALLENGE_NOT_OPEN",
-        message:
-          "Challenge is no longer accepting submissions. Next step: do not submit on-chain; wait for scoring or create a new challenge.",
-      });
-    }
-    if (window.deadlineMs <= Date.now()) {
-      return jsonError(c, {
-        status: 409,
-        code: "CHALLENGE_DEADLINE_PASSED",
-        message:
-          "Challenge submission deadline has passed. Next step: do not submit on-chain; wait for scoring or create a new challenge.",
-      });
-    }
-    if (
-      window.deadlineMs <=
-      Date.now() + SUBMISSION_DEADLINE_SAFETY_WINDOW_MS
-    ) {
-      return jsonError(c, {
-        status: 409,
-        code: "CHALLENGE_DEADLINE_TOO_CLOSE",
-        message:
-          "Challenge deadline is too close to safely confirm a submission. Next step: submit earlier or choose another challenge.",
-      });
-    }
-
-    const normalizedSolverAddress =
-      sessionAddress ?? solverAddress.toLowerCase();
-    const resultHash = computeSubmissionResultHash(normalizedResultCid);
-    const requestedResultFormat =
-      resolveRequestedSubmissionResultFormat(resultFormat);
-    const existingIntent = await findActiveSubmissionIntentByMatch(db, {
-      challengeId: challenge.id,
-      solverAddress: normalizedSolverAddress,
-      resultHash,
-    });
-    if (
-      existingIntent &&
-      (existingIntent.result_cid !== normalizedResultCid ||
-        existingIntent.result_format !== requestedResultFormat)
-    ) {
-      return jsonError(c, {
-        status: 409,
-        code: "SUBMISSION_INTENT_CONFLICT",
-        message:
-          "An existing submission intent for this challenge and solver is already linked to different submission metadata. Next step: reuse the original sealed payload or clean up the stale intent before retrying.",
-      });
-    }
-
-    const intent =
-      existingIntent ??
-      (await createSubmissionIntent(db, {
-        challenge_id: challenge.id,
-        solver_address: normalizedSolverAddress,
-        result_hash: resultHash,
-        result_cid: normalizedResultCid,
-        result_format: requestedResultFormat,
-        expires_at: getSubmissionIntentExpiry({
-          deadlineMs: window.deadlineMs,
-        }),
-        trace_id: requestId,
-      }));
-
-    getRequestLogger(c).info(
-      {
-        event: "submission.intent.created",
-        challengeId: challenge.id,
-        intentId: intent.id,
-        solverAddress: normalizedSolverAddress,
-        traceId: requestId,
-      },
-      "Submission intent created",
-    );
-
-    return c.json({
-      data: {
-        intentId: intent.id,
-        resultHash,
-        expiresAt: intent.expires_at,
-      },
-    });
   },
 );
-
-async function handleSubmissionRegistration(
-  c: Context<ApiEnv>,
-  payload: {
-    challengeId?: string;
-    challengeAddress?: string;
-    intentId: string;
-    resultCid: string;
-    txHash: string;
-    resultFormat?: "plain_v0" | "sealed_submission_v2";
-  },
-) {
-  const {
-    challengeId,
-    challengeAddress,
-    intentId,
-    resultCid,
-    txHash,
-    resultFormat,
-  } = payload;
-  const requestId = getRequestId(c);
-  const normalizedResultCid = resultCid.trim();
-  const requestedResultFormat =
-    resolveRequestedSubmissionResultFormat(resultFormat);
-  const logger = getRequestLogger(c);
-  if (!isValidPinnedSpecCid(normalizedResultCid)) {
-    return jsonError(c, {
-      status: 400,
-      code: "RESULT_CID_INVALID",
-      message:
-        "Submission resultCid must be a valid pinned ipfs:// CID. Next step: pin the sealed submission payload first, then retry.",
-    });
-  }
-  const sessionAddress = await getOptionalSessionAddress(c);
-
-  const db = createSupabaseClient(true);
-  const challenge = await resolveChallengeFromTarget(db, {
-    challengeId,
-    challengeAddress,
-  });
-  if (hasChallengeTargetConflict(challenge, { challengeAddress })) {
-    return jsonError(c, {
-      status: 400,
-      code: "CHALLENGE_TARGET_CONFLICT",
-      message:
-        "challengeId and challengeAddress refer to different challenges. Next step: retry with one canonical challenge reference.",
-    });
-  }
-  const intent = await getSubmissionIntentById(db, intentId);
-  if (!intent) {
-    return jsonError(c, {
-      status: 404,
-      code: "SUBMISSION_INTENT_NOT_FOUND",
-      message:
-        "Submission intent was not found. Next step: create a fresh submission intent before retrying on-chain registration.",
-    });
-  }
-  if (intent.challenge_id !== challenge.id) {
-    return jsonError(c, {
-      status: 409,
-      code: "SUBMISSION_INTENT_TARGET_CONFLICT",
-      message:
-        "Submission intent belongs to a different challenge. Next step: retry with the original challenge target or create a fresh intent for this challenge.",
-    });
-  }
-  if (
-    intent.result_cid !== normalizedResultCid ||
-    intent.result_format !== requestedResultFormat
-  ) {
-    return jsonError(c, {
-      status: 409,
-      code: "SUBMISSION_INTENT_METADATA_CONFLICT",
-      message:
-        "Submission intent is linked to different submission metadata. Next step: retry with the original sealed payload and result format from the reserved intent.",
-    });
-  }
-  const existingSubmissionForIntent = await getSubmissionByIntentId(
-    db,
-    intent.id,
-  );
-  if (
-    !existingSubmissionForIntent &&
-    isSubmissionIntentExpired(intent.expires_at)
-  ) {
-    return jsonError(c, {
-      status: 409,
-      code: "SUBMISSION_INTENT_EXPIRED",
-      message:
-        "Submission intent has expired. Next step: create a fresh intent and resubmit the challenge result on-chain.",
-      retriable: false,
-    });
-  }
-
-  const publicClient = getPublicClient();
-  const receipt = await publicClient.getTransactionReceipt({
-    hash: txHash as `0x${string}`,
-  });
-  if (receipt.status !== "success") {
-    return jsonError(c, {
-      status: 400,
-      code: "TRANSACTION_FAILED",
-      message:
-        "Submission transaction reverted on-chain. Next step: confirm the challenge is still open, the deadline has not passed, and the solver has remaining submission slots.",
-    });
-  }
-  const resolvedChallengeAddress = (
-    challenge.contract_address as `0x${string}`
-  ).toLowerCase();
-  let subId: bigint;
-  try {
-    ({ submissionId: subId } = parseSubmittedReceipt(
-      { logs: receipt.logs },
-      resolvedChallengeAddress as `0x${string}`,
-    ));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return jsonError(c, {
-      status: 400,
-      code: "SUBMISSION_RECEIPT_INVALID",
-      message: `Submission receipt is missing the canonical Submitted event. Next step: confirm the transaction called the expected challenge contract and retry. Details: ${message}`,
-    });
-  }
-
-  let onChain: OnChainSubmission;
-  try {
-    onChain = await getOnChainSubmission(
-      challenge.contract_address as `0x${string}`,
-      subId,
-      receipt.blockNumber,
-    );
-  } catch (error) {
-    if (isTransientPinnedContractReadError(error)) {
-      return jsonError(c, {
-        status: 409,
-        code: "CHAIN_READ_NOT_READY",
-        message: getSubmissionReadRetryMessage({
-          submissionId: subId,
-          challengeAddress: challenge.contract_address,
-        }),
-        retriable: true,
-      });
-    }
-    if (isInvalidOnChainSubmissionReadError(error)) {
-      let submissionCount: bigint;
-      try {
-        submissionCount = await getChallengeSubmissionCount(
-          challenge.contract_address as `0x${string}`,
-          receipt.blockNumber,
-        );
-      } catch (countError) {
-        if (isTransientPinnedContractReadError(countError)) {
-          return jsonError(c, {
-            status: 409,
-            code: "CHAIN_READ_NOT_READY",
-            message: getSubmissionReadRetryMessage({
-              submissionId: subId,
-              challengeAddress: challenge.contract_address,
-            }),
-            retriable: true,
-          });
-        }
-        throw countError;
-      }
-      if (subId >= submissionCount) {
-        return jsonError(c, {
-          status: 409,
-          code: "CHAIN_READ_NOT_READY",
-          message: getSubmissionReadRetryMessage({
-            submissionId: subId,
-            challengeAddress: challenge.contract_address,
-          }),
-          retriable: true,
-        });
-      }
-    }
-    throw error;
-  }
-
-  const expectedHash = computeSubmissionResultHash(normalizedResultCid);
-  if (onChain.resultHash.toLowerCase() !== expectedHash.toLowerCase()) {
-    return jsonError(c, {
-      status: 400,
-      code: "RESULT_HASH_MISMATCH",
-      message:
-        "Provided resultCid does not match the on-chain result hash. Next step: retry with the exact sealed payload that was submitted on-chain.",
-    });
-  }
-  if (intent.result_hash.toLowerCase() !== expectedHash.toLowerCase()) {
-    return jsonError(c, {
-      status: 409,
-      code: "SUBMISSION_INTENT_HASH_MISMATCH",
-      message:
-        "Submission intent does not match the provided result CID. Next step: retry with the exact sealed payload reserved by the intent.",
-    });
-  }
-
-  const matchedSessionAddress = getMatchingOptionalSessionAddress(
-    sessionAddress,
-    onChain.solver,
-  );
-  if (
-    !matchedSessionAddress &&
-    (!receipt.from ||
-      onChain.solver.toLowerCase() !== receipt.from.toLowerCase())
-  ) {
-    return jsonError(c, {
-      status: 403,
-      code: "SUBMISSION_SOLVER_MISMATCH",
-      message:
-        "Transaction sender does not match the on-chain submission solver. Next step: retry with the wallet that submitted the result on-chain.",
-    });
-  }
-  if (intent.solver_address.toLowerCase() !== onChain.solver.toLowerCase()) {
-    return jsonError(c, {
-      status: 409,
-      code: "SUBMISSION_INTENT_SOLVER_MISMATCH",
-      message:
-        "Submission intent belongs to a different solver address. Next step: retry with the wallet that reserved the intent or create a new intent for the current solver.",
-    });
-  }
-
-  if (
-    existingSubmissionForIntent &&
-    existingSubmissionForIntent.on_chain_sub_id !== Number(subId)
-  ) {
-    return jsonError(c, {
-      status: 409,
-      code: "SUBMISSION_INTENT_ALREADY_USED",
-      message:
-        "Submission intent is already linked to a different on-chain submission. Next step: create a fresh intent before submitting again.",
-    });
-  }
-
-  let submissionRow: Awaited<ReturnType<typeof upsertSubmissionOnChain>>;
-  try {
-    submissionRow = await upsertSubmissionOnChain(db, {
-      submission_intent_id: intent.id,
-      challenge_id: challenge.id,
-      on_chain_sub_id: Number(subId),
-      solver_address: onChain.solver,
-      result_hash: onChain.resultHash,
-      result_cid: intent.result_cid,
-      result_format: intent.result_format,
-      proof_bundle_hash: onChain.proofBundleHash,
-      score: onChain.scored ? onChain.score.toString() : null,
-      scored: onChain.scored,
-      submitted_at: new Date(Number(onChain.submittedAt) * 1000).toISOString(),
-      tx_hash: txHash,
-      trace_id: requestId,
-    });
-  } catch (error) {
-    if (error instanceof SubmissionOnChainWriteConflictError) {
-      return jsonError(c, {
-        status: 409,
-        code: "SUBMISSION_REGISTRATION_CONFLICT",
-        message: `${error.message}`,
-      });
-    }
-    throw error;
-  }
-
-  const scoreJob = await ensureScoreJobForRegisteredSubmission(
-    db,
-    {
-      id: challenge.id,
-      status: challenge.status,
-      max_submissions_total: challenge.max_submissions_total,
-      max_submissions_per_solver: challenge.max_submissions_per_solver,
-    },
-    {
-      id: submissionRow.id,
-      challenge_id: submissionRow.challenge_id,
-      on_chain_sub_id: submissionRow.on_chain_sub_id,
-      solver_address: submissionRow.solver_address,
-      scored: submissionRow.scored,
-      trace_id: submissionRow.trace_id ?? intent.trace_id,
-    },
-    intent.trace_id ?? requestId,
-  );
-
-  const replayedRegistration = Boolean(existingSubmissionForIntent);
-  if (replayedRegistration) {
-    logger.info(
-      {
-        event: "submission.registration.replayed",
-        challengeId: challenge.id,
-        submissionId: submissionRow.id,
-        onChainSubmissionId: submissionRow.on_chain_sub_id,
-        txHash,
-      },
-      "Submission registration replay returned the existing row",
-    );
-  }
-
-  logger.info(
-    {
-      event: "submission.registration.confirmed",
-      challengeId: challenge.id,
-      submissionId: submissionRow.id,
-      onChainSubmissionId: submissionRow.on_chain_sub_id,
-      txHash,
-      scoreJobAction: scoreJob.action,
-      traceId: submissionRow.trace_id ?? intent.trace_id ?? requestId,
-    },
-    "Submission registration confirmed",
-  );
-
-  return c.json(
-    toSubmissionRegistrationResponse({
-      submission: submissionRow,
-      challenge,
-      warning: scoreJob.warning ?? null,
-    }),
-    scoreJob.warning ? 202 : 200,
-  );
-}
 
 router.post(
   "/",
@@ -1364,7 +450,36 @@ router.post(
       });
     }
   }),
-  (c) => handleSubmissionRegistration(c, c.req.valid("json")),
+  async (c) => {
+    try {
+      const payload = c.req.valid("json");
+      const result = await registerSubmissionWorkflow({
+        challengeId: payload.challengeId,
+        challengeAddress: payload.challengeAddress,
+        intentId: payload.intentId,
+        resultCid: payload.resultCid,
+        txHash: payload.txHash,
+        resultFormat: payload.resultFormat,
+        optionalSessionAddress: await getOptionalSessionAddress(c),
+        requestId: getRequestId(c),
+        logger: getRequestLogger(c),
+      });
+      return c.json(
+        toSubmissionRegistrationResponse({
+          submission: result.submission,
+          challenge: result.challenge,
+          warning: result.warning,
+        }),
+        result.status,
+      );
+    } catch (error) {
+      const workflowError = toSubmissionWorkflowJsonError(c, error);
+      if (workflowError) {
+        return workflowError;
+      }
+      throw error;
+    }
+  },
 );
 
 export default router;

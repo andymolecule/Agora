@@ -683,7 +683,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         post: {
           operationId: "cleanupSubmissionArtifact",
           summary:
-            "Delete an unmatched submission intent and unpin its sealed artifact when safe",
+            "Unpin an orphaned sealed submission artifact when nothing still references it; live submission intents are retained for registration recovery",
           requestBody: {
             required: true,
             content: {

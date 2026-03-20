@@ -7,10 +7,11 @@ import {
 } from "./schemas/scorer-runtime.js";
 
 export const OFFICIAL_SCORER_IMAGES = {
-  reproducibility: "ghcr.io/andymolecule/repro-scorer:v1",
-  tabular: "ghcr.io/andymolecule/regression-scorer:v1",
-  ranking: "ghcr.io/andymolecule/docking-scorer:v1",
-  docking: "ghcr.io/andymolecule/docking-scorer:v1",
+  reproducibility: "ghcr.io/andymolecule/gems-match-scorer:v1",
+  tabular: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+  ranking: "ghcr.io/andymolecule/gems-ranking-scorer:v1",
+  docking: "ghcr.io/andymolecule/gems-ranking-scorer:v1",
+  generated: "ghcr.io/andymolecule/gems-generated-scorer:v1",
 } as const;
 
 export const SEMI_CUSTOM_RUNTIME_FAMILY_ID = "semi_custom" as const;

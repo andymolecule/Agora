@@ -103,6 +103,33 @@ export async function findActiveSubmissionIntentByMatch(
   return (data as SubmissionIntentRow | null) ?? null;
 }
 
+export async function findSubmissionIntentByMatch(
+  db: AgoraDbClient,
+  input: {
+    challengeId: string;
+    solverAddress: string;
+    resultHash: string;
+  },
+) {
+  const { data, error } = await db
+    .from("submission_intents")
+    .select("*")
+    .eq("challenge_id", input.challengeId)
+    .eq("solver_address", input.solverAddress.toLowerCase())
+    .eq("result_hash", input.resultHash)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(
+      `Failed to fetch submission intent by match: ${error.message}`,
+    );
+  }
+
+  return (data as SubmissionIntentRow | null) ?? null;
+}
+
 export async function getSubmissionIntentById(
   db: AgoraDbClient,
   intentId: string,
@@ -115,27 +142,6 @@ export async function getSubmissionIntentById(
 
   if (error && error.code !== "PGRST116") {
     throw new Error(`Failed to fetch submission intent: ${error.message}`);
-  }
-
-  return (data as SubmissionIntentRow | null) ?? null;
-}
-
-export async function deleteUnmatchedSubmissionIntentById(
-  db: AgoraDbClient,
-  intentId: string,
-) {
-  const { data, error } = await db
-    .from("submission_intents")
-    .delete()
-    .eq("id", intentId)
-    .select("*")
-    .maybeSingle();
-
-  if (error?.code === "23503") {
-    return null;
-  }
-  if (error && error.code !== "PGRST116") {
-    throw new Error(`Failed to delete submission intent: ${error.message}`);
   }
 
   return (data as SubmissionIntentRow | null) ?? null;

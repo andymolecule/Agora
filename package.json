@@ -11,6 +11,8 @@
     "schema:verify": "node scripts/run-node-with-root-env.mjs scripts/verify-runtime-schema.mjs",
     "deploy:verify": "node scripts/run-node-with-root-env.mjs scripts/verify-deploy-sync.mjs",
     "recover:score-jobs": "node scripts/run-node-with-root-env.mjs scripts/recover-score-jobs.mjs",
+    "recover:authoring-publishes": "node scripts/run-node-with-root-env.mjs scripts/recover-authoring-publishes.mjs",
+    "smoke:lifecycle": "node scripts/run-node-with-root-env.mjs scripts/smoke-lifecycle.mjs",
     "abi:sync": "pnpm --filter @agora/contracts build && node scripts/sync-abi.mjs",
     "abi:check": "pnpm --filter @agora/contracts build && node scripts/check-abi-sync.mjs",
     "verify": "pnpm abi:check && pnpm build && pnpm test",

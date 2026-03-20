@@ -27,6 +27,7 @@ import {
   parseChallengeSpecDocument,
   readApiClientRuntimeConfig,
   resolveChallengeEvaluation,
+  resolveChallengeRuntimeConfig,
   resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeys,
   sealSubmission,
@@ -597,19 +598,17 @@ async function resolveLocalScoringConfigFromDb(challengeId: string) {
   const db = createSupabaseClient(false);
   const challenge = await getChallengeById(db, challengeId);
   const evalPlan = resolveChallengeEvaluation(challenge);
+  const cachedRuntimeConfig = resolveChallengeRuntimeConfig(challenge);
   if (!evalPlan.evaluationBundleCid) {
     throw cliWorkflowError(
       "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
     );
   }
   const scoringSpecConfig = await resolveScoringRuntimeConfig({
-    env: (challenge as { scoring_env_json?: Record<string, string> | null })
-      .scoring_env_json,
-    submissionContract: (
-      challenge as {
-        submission_contract_json?: SubmissionContractOutput | null;
-      }
-    ).submission_contract_json,
+    env: cachedRuntimeConfig.env,
+    submissionContract: cachedRuntimeConfig.submissionContract,
+    evaluationContract: cachedRuntimeConfig.evaluationContract,
+    policies: cachedRuntimeConfig.policies,
     specCid: (challenge as { spec_cid?: string | null }).spec_cid ?? null,
   });
   return { evalPlan, scoringSpecConfig };
@@ -719,6 +718,7 @@ export async function verifySubmission(input: {
     }
 
     const evalPlan = resolveChallengeEvaluation(challenge);
+    const cachedRuntimeConfig = resolveChallengeRuntimeConfig(challenge);
     if (!evalPlan.evaluationBundleCid) {
       throw cliWorkflowError(
         "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
@@ -736,13 +736,10 @@ export async function verifySubmission(input: {
     }
 
     const scoringSpecConfig = await resolveScoringRuntimeConfig({
-      env: (challenge as { scoring_env_json?: Record<string, string> | null })
-        .scoring_env_json,
-      submissionContract: (
-        challenge as {
-          submission_contract_json?: SubmissionContractOutput | null;
-        }
-      ).submission_contract_json,
+      env: cachedRuntimeConfig.env,
+      submissionContract: cachedRuntimeConfig.submissionContract,
+      evaluationContract: cachedRuntimeConfig.evaluationContract,
+      policies: cachedRuntimeConfig.policies,
       specCid: (challenge as { spec_cid?: string | null }).spec_cid ?? null,
     });
     const run = await executeScoringPipeline({

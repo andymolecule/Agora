@@ -4,7 +4,7 @@ import { resolveRunnerPolicyForChallenge } from "../src/worker.js";
 
 test("uses runtime_family to resolve runner limits", () => {
   const policy = resolveRunnerPolicyForChallenge({
-    image: "ghcr.io/andymolecule/regression-scorer:v1",
+    image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
     runtime_family: "tabular_regression",
   });
   assert.equal(policy.source, "runtime_family");
@@ -14,7 +14,7 @@ test("uses runtime_family to resolve runner limits", () => {
 
 test("docking runtime family resolves its managed runner limits", () => {
   const policy = resolveRunnerPolicyForChallenge({
-    image: "ghcr.io/andymolecule/docking-scorer:v1",
+    image: "ghcr.io/andymolecule/gems-ranking-scorer:v1",
     runtime_family: "docking",
   });
   assert.equal(policy.source, "runtime_family");
@@ -26,7 +26,7 @@ test("throws when runtime_family is unknown", () => {
   assert.throws(
     () =>
       resolveRunnerPolicyForChallenge({
-        image: "ghcr.io/andymolecule/regression-scorer:v1",
+        image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
         runtime_family: "does_not_exist",
       }),
     /Unknown runtime family on challenge/,
@@ -37,7 +37,7 @@ test("throws when expert runtimes use an invalid scorer image", () => {
   assert.throws(
     () =>
       resolveRunnerPolicyForChallenge({
-        image: "ghcr.io/andymolecule/repro-scorer:v1",
+        image: "ghcr.io/andymolecule/gems-match-scorer:v1",
         runtime_family: "expert_custom",
       }),
     /Invalid runtime family configuration/,

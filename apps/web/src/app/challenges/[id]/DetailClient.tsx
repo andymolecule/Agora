@@ -129,9 +129,9 @@ type ScorerTransparencyInfo = {
 function getScorerTransparencyInfo(value: string | null | undefined): ScorerTransparencyInfo | null {
   if (!value) return null;
   const ref = value.toLowerCase();
-  if (ref.includes("repro-scorer")) {
+  if (ref.includes("gems-match-scorer")) {
     return {
-      label: "Agora Repro Scorer",
+      label: "Gems Match Scorer",
       summary: "Compares the submitted CSV against the posted reference output row by row using deterministic rules.",
       details: [
         "Requires every reference-output column to be present in the submitted CSV.",
@@ -146,9 +146,9 @@ function getScorerTransparencyInfo(value: string | null | undefined): ScorerTran
       ],
     };
   }
-  if (ref.includes("regression-scorer")) {
+  if (ref.includes("gems-tabular-scorer")) {
     return {
-      label: "Agora Regression Scorer",
+      label: "Gems Tabular Scorer",
       summary: "Matches submitted predictions to the posted ground-truth labels by row id and computes standard regression metrics.",
       details: [
         "Requires id and prediction columns in the submission and id and label columns in the ground truth.",
@@ -163,14 +163,29 @@ function getScorerTransparencyInfo(value: string | null | undefined): ScorerTran
       ],
     };
   }
-  if (ref.includes("docking-scorer")) {
+  if (ref.includes("gems-ranking-scorer")) {
     return {
-      label: "Agora Docking Scorer",
-      summary: "Official managed scorer for docking-style ligand ranking challenges.",
+      label: "Gems Ranking Scorer",
+      summary: "Official managed scorer for ranking-style and docking-style challenges.",
       details: ["The container reference is public and the scoring logic is available for solver-side inspection and dry-run previews."],
       sourceLinks: [
         { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/docking-scorer/score.py" },
         { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/docking-scorer/Dockerfile" },
+      ],
+    };
+  }
+  if (ref.includes("gems-generated-scorer")) {
+    return {
+      label: "Gems Generated Scorer",
+      summary: "Delegates scoring to an Agora-generated Python scorer entrypoint mounted at runtime.",
+      details: [
+        "The published image is a generic runner rather than a challenge-specific scorer.",
+        "Agora stages the generated scorer program alongside the mounted runtime config and inputs.",
+        "The container still writes the same deterministic score.json contract as other official scorers.",
+      ],
+      sourceLinks: [
+        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-generated-scorer/score.py" },
+        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-generated-scorer/Dockerfile" },
       ],
     };
   }

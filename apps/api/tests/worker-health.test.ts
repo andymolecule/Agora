@@ -137,7 +137,7 @@ test("worker health warns when scoring work is queued and no healthy worker exis
       staleWorkers: 0,
       latestHeartbeatAt: null,
       latestError:
-        "Failed to pull scorer image ghcr.io/andymolecule/repro-scorer:v1",
+        "Failed to pull scorer image ghcr.io/andymolecule/gems-match-scorer:v1",
       runtimeVersions: [],
       activeRuntimeVersion: "sha-a",
       healthyWorkersForActiveRuntimeVersion: 0,
