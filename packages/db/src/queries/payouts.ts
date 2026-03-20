@@ -15,38 +15,30 @@ export async function replaceChallengePayouts(
   challengeId: string,
   payouts: ChallengePayoutWrite[],
 ) {
-  const { error: deleteError } = await db
-    .from("challenge_payouts")
-    .delete()
-    .eq("challenge_id", challengeId);
-
-  if (deleteError) {
-    throw new Error(
-      `Failed to reset challenge payouts: ${deleteError.message}`,
-    );
-  }
-
-  if (payouts.length === 0) {
-    return [];
-  }
-
   const normalized = payouts.map((payout) => ({
-    ...payout,
     solver_address: payout.solver_address.toLowerCase(),
+    winning_on_chain_sub_id: payout.winning_on_chain_sub_id,
+    rank: payout.rank,
+    amount: payout.amount,
     claimed_at: payout.claimed_at ?? null,
     claim_tx_hash: payout.claim_tx_hash ?? null,
   }));
 
-  const { data, error } = await db
-    .from("challenge_payouts")
-    .insert(normalized)
-    .select("*");
+  const { data, error } = await db.rpc("replace_challenge_payouts", {
+    p_challenge_id: challengeId,
+    p_payouts: normalized,
+  });
 
   if (error) {
-    throw new Error(`Failed to store challenge payouts: ${error.message}`);
+    if (error.message.includes("replace_challenge_payouts")) {
+      throw new Error(
+        "Failed to replace challenge payouts: runtime schema is missing the atomic payout replacement function. Next step: apply migration 033_atomic_replace_challenge_payouts.sql, reload the PostgREST schema cache, and retry.",
+      );
+    }
+    throw new Error(`Failed to replace challenge payouts: ${error.message}`);
   }
 
-  return data ?? [];
+  return Array.isArray(data) ? data : data ? [data] : [];
 }
 
 export async function upsertChallengePayoutAllocation(

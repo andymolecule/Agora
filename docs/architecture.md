@@ -25,7 +25,7 @@ This doc is authoritative for: system topology, component responsibilities, pack
 - Scoring extension lives in two places only: challenge-family defaults in `packages/common/src/challenges/*`, and managed runtime config in `packages/common/src/runtime-families.ts`
 - Challenge type and domain catalogs stay centralized in `packages/common/src/types/challenge.ts`
 - One active contract generation at a time; @agora/chain owns ABI/event details
-- Docker scorer: no network, read-only, non-root; official managed runtimes run with 1–20 min timeouts, base runner fallback is 30 min
+- Docker scorer: no network, read-only, non-root; official managed runtimes run with 5–20 min timeouts, base runner fallback is 30 min
 - API is the canonical remote agent surface; CLI is the canonical local execution surface
 - MCP is optional and remains a thin adapter: stdio for local agents, HTTP read-only for remote discovery/status
 - Historical malformed specs are intentionally unsupported and are not reconstructed at read time
@@ -37,7 +37,7 @@ Agora is an on-chain science bounty protocol. The system is split into **on-chai
 ### Navigation By Layer
 
 - Frontend: Web UI (`apps/web`), wallet interactions, challenge posting UX
-- Backend: API (`apps/api`), MCP server (`apps/mcp-server`), indexer (`packages/chain/src/indexer.ts`)
+- Backend: API (`apps/api`), executor (`apps/executor`), MCP server (`apps/mcp-server`), indexer (`packages/chain/src/indexer.ts`)
 - Chain: Factory/challenge contracts (`packages/contracts`)
 - Data: Supabase (`packages/db`) + IPFS/Pinata (`packages/ipfs`)
 - Ops: deployment scripts and runbook (`scripts/*`, `docs/operations.md`)
@@ -421,6 +421,10 @@ flowchart TB
 
     cli --> common
     cli --> agentRuntime
+    cli --> chain
+    cli --> db
+    cli --> ipfs
+    cli --> scorer
     api --> common
     api --> chain
     api --> db
@@ -430,7 +434,12 @@ flowchart TB
     executor --> scorerRuntime
     mcp --> common
     mcp --> agentRuntime
+    mcp --> chain
+    mcp --> db
+    mcp --> ipfs
+    mcp --> scorer
     web --> common
+    web --> ipfs
     agentRuntime --> chain
     agentRuntime --> db
     agentRuntime --> ipfs
@@ -514,7 +523,7 @@ Key properties:
 - **Read-only filesystem** — only `/output` is writable
 - **Non-root user** — runs as UID 65532
 - **Mount layout is runtime-family-driven** — official managed runtimes currently use the default `ground_truth.csv` + `submission.csv` layout, and the runtime reads that from `packages/common/src/runtime-families.ts`
-- **Resource limits are per runtime family** — official managed runtimes currently span 128MB–4GB memory, 0.5–2 CPUs, 32–64 PIDs, and 1–20 minute timeouts
+- **Resource limits are per runtime family** — official managed runtimes currently span 512MB–4GB memory, 1–2 CPUs, 64 PIDs, and 5–20 minute timeouts
 - **Deterministic** — same input → same score, every time
 - **Fallback timeout** — 30 minutes when no runtime-family override applies
 
@@ -610,29 +619,61 @@ erDiagram
 | Method | Path | Auth | x402 | Description |
 |--------|------|------|------|-------------|
 | `GET` | `/healthz` | — | — | Health check |
+| `GET` | `/.well-known/openapi.json` | — | — | OpenAPI document |
 | `GET` | `/.well-known/x402` | — | — | x402 pricing metadata |
 | `GET` | `/api/auth/nonce` | — | — | SIWE nonce |
 | `POST` | `/api/auth/verify` | — | — | Create SIWE session |
+| `POST` | `/api/auth/logout` | — | — | Clear SIWE session |
 | `GET` | `/api/auth/session` | — | — | Read SIWE session |
 | `GET` | `/api/challenges` | — | — | List challenges (public) |
+| `POST` | `/api/challenges` | Rate limit | — | Accelerate indexer sync |
 | `GET` | `/api/challenges/:id` | — | — | Challenge details; results unlock in `Scoring` |
+| `GET` | `/api/challenges/:id/solver-status` | — | — | Solver-specific submission/claim status |
 | `GET` | `/api/challenges/:id/leaderboard` | — | — | Per-challenge leaderboard (`403` while `Open`) |
+| `GET` | `/api/challenges/:id/claimable` | — | — | Claim/finalize state from on-chain view |
+| `POST` | `/api/challenges/:id/validate-submission` | — | — | Validate a candidate submission file against the challenge contract |
+| `GET` | `/api/challenges/by-address/:address` | — | — | Challenge details by contract address |
+| `GET` | `/api/challenges/by-address/:address/solver-status` | — | — | Solver-specific status by contract address |
+| `GET` | `/api/challenges/by-address/:address/leaderboard` | — | — | Leaderboard by contract address (`403` while `Open`) |
+| `POST` | `/api/challenges/by-address/:address/validate-submission` | — | — | Validate a candidate submission file by contract address |
 | `GET` | `/api/leaderboard` | — | — | Finalized-only public leaderboard |
 | `GET` | `/api/me/portfolio` | SIWE | — | Private solver portfolio |
+| `GET` | `/api/submissions/public-key` | — | — | Active submission sealing public key |
+| `POST` | `/api/submissions/upload` | Rate limit | — | Upload sealed submission payload to IPFS |
+| `POST` | `/api/submissions/cleanup` | Rate limit | — | Remove an uploaded payload after client-side aborts |
+| `POST` | `/api/submissions/intent` | Rate limit | — | Pre-register submission metadata before on-chain submit |
+| `POST` | `/api/submissions` | Rate limit | — | Confirm submission after on-chain tx |
+| `GET` | `/api/submissions/:id/status` | — | — | Submission status lookup |
+| `GET` | `/api/submissions/:id/wait` | — | — | Long-poll until the submission state changes |
+| `GET` | `/api/submissions/:id/events` | — | — | SSE stream for submission status changes |
 | `GET` | `/api/submissions/:id/public` | — | — | Public verification data (`403` while `Open`) |
-| `POST` | `/api/challenges` | Rate limit | — | Accelerate indexer sync |
+| `GET` | `/api/submissions/:id` | SIWE | — | Private submission payload for the solver who owns it |
+| `GET` | `/api/submissions/by-onchain/:challengeAddress/:subId/status` | — | — | Submission status lookup by contract address + on-chain id |
+| `GET` | `/api/submissions/by-onchain/:challengeAddress/:subId/public` | — | — | Public verification data by on-chain refs |
+| `GET` | `/api/agent/challenges` | Paid alias | Paid | x402-billed compatibility alias over `/api/challenges` |
+| `GET` | `/api/agent/challenges/:id` | Paid alias | Paid | x402-billed compatibility alias over `/api/challenges/:id` |
 | `GET` | `/api/stats` | — | — | Aggregate counts |
 | `GET` | `/api/indexer-health` | — | — | Indexer lag monitoring |
 | `GET` | `/api/worker-health` | — | — | Worker readiness + runtime alignment |
 | `GET` | `/api/authoring/health` | — | — | Managed authoring backlog + review SLA health |
+| `POST` | `/api/authoring/drafts` | Rate limit | — | Create a managed authoring draft |
+| `POST` | `/api/authoring/drafts/:id/compile` | Rate limit | — | Compile a managed draft into a challenge spec candidate |
+| `POST` | `/api/authoring/drafts/:id/publish` | Rate limit | — | Publish a managed draft on-chain |
+| `GET` | `/api/authoring/review/drafts` | Review token | — | List review queue drafts |
+| `POST` | `/api/authoring/review/drafts/:id/decision` | Review token | — | Approve / reject / escalate a review draft |
 | `GET` | `/api/analytics` | — | — | Platform analytics with freshness/indexer status |
-| `GET` | `/api/submissions/public-key` | — | — | Active submission sealing public key |
-| `GET` | `/api/submissions/:id/status` | — | — | Submission status lookup |
-| `POST` | `/api/submissions/intent` | Rate limit | — | Pre-register submission metadata before on-chain submit |
-| `POST` | `/api/submissions` | Rate limit | — | Confirm submission after on-chain tx |
 | `GET` | `/api/pin-spec` | — | — | Pin-spec auth nonce |
 | `POST` | `/api/pin-spec` | Signed auth | — | Pin challenge spec to IPFS |
+| `POST` | `/api/authoring/external/sources` | Partner bearer | — | Create an external/partner-managed authoring draft |
+| `GET` | `/api/authoring/external/drafts/:id` | Partner bearer | — | Read external draft state |
+| `GET` | `/api/authoring/external/drafts/:id/card` | Partner bearer | — | Read compact draft card view |
+| `POST` | `/api/authoring/external/drafts/:id/clarify` | Partner bearer | — | Append clarification messages/artifacts |
+| `POST` | `/api/authoring/external/drafts/:id/compile` | Partner bearer | — | Compile an external draft |
+| `POST` | `/api/authoring/external/drafts/:id/publish` | Partner bearer | — | Sponsor and publish an external draft |
+| `POST` | `/api/authoring/external/drafts/:id/webhook` | Partner bearer | — | Register/update a callback URL for draft events |
+| `POST` | `/api/authoring/callbacks/sweep` | Review token | — | Sweep pending authoring callback deliveries |
 | `POST` | `/api/authoring/review/sweep-expired` | Review token | — | Purge expired managed-authoring drafts |
+| `POST` | `/api/integrations/beach/drafts/import` | Partner bearer | — | Import a Beach thread into the external authoring flow |
 | `POST` | `/api/verify` | Rate limit | Paid | Re-run scorer verification |
 
 > **Note:** MCP sessions are handled by the separate MCP server on port 3001, not the API.
@@ -745,7 +786,7 @@ Projection rules:
 | **Smart Contract** | Stuck escrow | 30-day `timeoutRefund()` on unresolved disputes |
 | **Smart Contract** | Score manipulation | Proof bundle hash on-chain; anyone can verify |
 | **Scoring** | Container escape | `--network=none`, `--read-only`, `--cap-drop=ALL`, non-root |
-| **Scoring** | Resource exhaustion | Per-runtime-family limits (128MB–4GB memory, 0.5–2 CPUs, 1–20 minute timeouts), 30-minute fallback when no runtime-family override applies |
+| **Scoring** | Resource exhaustion | Per-runtime-family limits (512MB–4GB memory, 1–2 CPUs, 64 PIDs, 5–20 minute timeouts), 30-minute fallback when no runtime-family override applies |
 | **API** | Spam / abuse | Rate limiting (per wallet + per IP) |
 | **API** | Oversized payloads | 1MB JSON body limit |
 | **MCP** | Private key over HTTP | Blocked by default; requires `AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true` |

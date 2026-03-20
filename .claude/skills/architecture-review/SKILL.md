@@ -65,37 +65,41 @@ Assume failure is the baseline, not the exception. When this fails, does the sys
 
 ## Bloat Detection Tests
 
-Apply these concrete tests to detect architectural bloat:
+Apply these concrete tests to detect architectural bloat. Each test has an acceptable baseline — only flag when exceeded:
 
-1. **Sources of truth count** — Pick any concept. How many places is it defined? If the same concept appears in more than one canonical location, that is a bloat signal.
+1. **Sources of truth count** — Pick any concept. How many places is it defined? If the same concept appears in more than one canonical location, that is a bloat signal. Acceptable: a shared foundation package re-exporting types is not duplication.
 2. **Parallel pipeline detection** — Are there two ways to do the same thing? One should be canonical, others should call it.
 3. **The 5-box test** — Can you describe the entire system architecture in 5 boxes? If you need 12, the system has bloat.
 4. **Change amplification** — If you add one new concept entry, how many files must you touch? Good design: 1-2. Sick: 5+ files that must stay in sync.
 5. **Conceptual duplication** — Search for duplicate enums, duplicate container names, duplicate state labels. Duplication predicts divergence.
 6. **The delete test** — For any component, ask: what happens if I remove this entirely? If the answer is "nothing changes for the user" — it is a deletion candidate.
-7. **Public surface audit** — Count public exports per package, API routes, CLI commands, contract methods. Every public surface is a commitment. Too many = actively try to shrink them.
+7. **Public surface audit** — Count public exports per package. Acceptable: a shared foundation package (like `@agora/common`) with 20-40 exports is normal. Flag only when a leaf package has >15 exports or a foundation package has >60.
 
 
 ## How to Review
+
+**Accuracy over volume.** A review with 0 critical findings and 2 warnings is better than a review with 5 inflated criticals. Only report issues you can prove with specific code evidence and a concrete failure scenario. If everything looks clean, say so. Don't invent findings.
 
 1. Read the target files thoroughly before making any judgments.
 2. Trace the dependency chain — what imports what, what calls what. Verify one-way dependency flow.
 3. Identify canonical entities — where does each concept live, what is canonical vs derived state.
 4. Check policy vs mechanism separation — are business rules tangled with infrastructure plumbing?
 5. Run the bloat detection tests mentally — sources of truth count, change amplification, conceptual duplication.
-6. For each finding, state:
+6. **Verify reachability.** Before reporting a finding, confirm it is actually reachable at runtime. If the "vulnerability" requires modifying source code first, or the language/library already prevents it (e.g., Web Crypto validates GCM auth tags by default), downgrade or drop it. Check whether existing error handling already covers the case.
+7. **Calibrate severity.** If a finding requires 3+ assumptions to trigger, it is not critical. If a race condition requires two events in the same millisecond with no real-world trigger, it is not critical.
+8. For each finding, state:
    - **What:** the specific issue
    - **Where:** file and line number
    - **Why it matters:** concrete consequence, not abstract principle
    - **Suggested fix:** the simplest change that resolves it
-7. Rank findings by severity (critical > warning > nitpick).
-8. If everything looks clean, say so. Don't invent findings.
+9. Rank findings by severity (critical > warning > nitpick).
+10. Before finalizing, check the project docs (CLAUDE.md, architecture.md, operations.md, protocol.md) — if a pattern is described as intentional, downgrade to nitpick at most.
 
 ## Severity Guide
 
-- **Critical:** Leaky abstractions, high coupling, violated invariants, missing single source of truth, canonical/derived state confusion, trust boundary violations, high blast radius — these cause cascading failures, data corruption, and make the system fragile.
-- **Warning:** Low modularity, poor extensibility, over-engineering, high structural entropy, mixed policy/mechanism, high change amplification, excessive surface area — these slow down development and make changes risky.
-- **Nitpick:** Dead code, inconsistent naming, pattern drift from neighboring code, minor duplication that hasn't diverged yet.
+- **Critical:** Violated invariants, missing single source of truth where it causes data corruption, trust boundary violations, canonical/derived state confusion that leads to wrong settlement or lost funds. Must have a concrete failure scenario — not a hypothetical.
+- **Warning:** Design smells that predict future bugs or slow development — leaky abstractions, high coupling, high blast radius, low modularity, poor extensibility, over-engineering, high structural entropy, mixed policy/mechanism, high change amplification, excessive surface area. These should surface early as warning flags, not be ignored.
+- **Nitpick:** Dead code, inconsistent naming, pattern drift from neighboring code, minor duplication that hasn't diverged yet, theoretical issues requiring 3+ assumptions to trigger.
 
 ## Agora-Specific Context
 
@@ -106,6 +110,12 @@ These patterns are intentional — do NOT flag them:
 - `@agora/common` is a shared foundation package. Many packages importing from it is expected, not high coupling.
 - The indexer polls events and writes projections to Supabase. The DB is a cache, not truth — this dual-source pattern is by design.
 - `simulateAndWriteContract` wraps viem simulate+write. This abstraction earns its keep for error handling.
+- The worker/orchestrator/executor split is intentional architecture, not over-engineering.
+- In-memory rate limiting on low-traffic endpoints (e.g., `pin-spec`) is a conscious trade-off.
+- `sealed_submission_v2` format naming is versioned by design, not drift.
+- Deprecated tables coexisting with replacements during migration windows is transitional, not schema bloat.
+
+**General rule:** Before flagging a pattern, check if project docs (CLAUDE.md, architecture.md, operations.md, protocol.md) describe it as intentional. If so, do not flag it.
 
 ## Output Format
 

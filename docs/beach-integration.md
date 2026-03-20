@@ -531,6 +531,11 @@ The payload includes:
 - current draft state
 - compact draft card
 
+There are two callback payload families:
+
+- draft lifecycle events such as `draft_updated`, `draft_compiled`, `draft_compile_failed`, and `draft_published`
+- challenge lifecycle events such as `challenge_created` and `challenge_finalized`, which also include a `challenge` object
+
 When the draft has already been published, the card also includes:
 
 - `published_challenge_id`
@@ -545,7 +550,12 @@ Beach does not run the sweep itself; Agora operators do.
 
 ## Step 6: Verify Callbacks on the Beach Side
 
-Agora signs callbacks with HMAC-SHA256 when a callback secret is configured.
+Agora signs callbacks with HMAC-SHA256 whenever callback delivery is enabled.
+
+The signing secret is:
+
+- the explicit Beach callback secret, when `AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS` is configured
+- otherwise the Beach partner bearer key, because Agora falls back to partner keys for callback signing
 
 ### Callback headers
 
@@ -555,6 +565,10 @@ Beach should verify:
 - `x-agora-event-id`
 - `x-agora-timestamp`
 - `x-agora-signature`
+
+Important:
+
+- `x-agora-signature` is prefixed as `sha256=<hex digest>`
 
 ### Verification model
 
@@ -569,7 +583,7 @@ Beach should:
 1. read the raw request body
 2. parse `x-agora-timestamp`
 3. reject timestamps outside a ±5 minute window
-4. compute HMAC with the Beach callback secret
+4. compute HMAC with the Beach callback secret, or the Beach partner key if Agora is using the fallback signing path
 5. compare using a timing-safe equality check
 6. deduplicate using `x-agora-event-id`
 
@@ -721,7 +735,7 @@ Then:
 6. optionally test the hosted UI flow at:
 
 ```text
-http://localhost:3001/post?draft=<draft_id>&return_to=https://beach.science/thread/42
+http://localhost:3100/post?draft=<draft_id>&return_to=https://beach.science/thread/42
 ```
 
 ### Callback sweep test

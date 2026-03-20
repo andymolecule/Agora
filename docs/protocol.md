@@ -306,7 +306,7 @@ deadline: "2026-03-04T23:59:59Z"
   - `--read-only` — only `/output` is writable
   - `--cap-drop=ALL` — no Linux capabilities
   - Base runner fallback: 256 MB memory, 0.5 CPUs, 32 PIDs, 30-minute timeout
-  - Official managed runtime range today: 128 MB – 4 GB memory, 0.5 – 2 CPUs, 32 – 64 PIDs, 1 – 20 minute timeouts
+  - Official managed runtime range today: 512 MB – 4 GB memory, 1 – 2 CPUs, 64 PIDs, 5 – 20 minute timeouts
   - `--user 65532:65532` — non-root execution
   - `--security-opt=no-new-privileges` — no privilege escalation
 - **`score-local` is preview-only:** Free and unlimited. Does not affect on-chain state.

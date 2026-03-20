@@ -184,6 +184,12 @@ Agora does not have one scorer image anymore. It has a small official scorer ima
 
 The important architectural rule is not “one scorer.” It is “one small official scorer image set with pinned digests and deterministic runtime contracts.”
 
+One nuance:
+
+- the repo and release workflow also publish `ghcr.io/andymolecule/gems-generated-scorer:v1`
+- on current `main`, that image is present as a generic runner/building block, but it is not a first-class managed runtime family selected by the active runtime-family resolver
+- so the live execution rail today still routes through the three images listed above
+
 ### Runtime-family to image mapping
 
 ```mermaid

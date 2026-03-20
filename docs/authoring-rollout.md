@@ -26,8 +26,8 @@ Operators and engineers deploying Agora after the phase-1 to phase-7 authoring r
 ## Summary
 
 - Fresh environments: apply all migrations.
-- Existing environments: the important migration window is `017` through `027`.
-- `020_strict_submission_intents.sql` is destructive on old data without a matching intent. Preflight it first.
+- Existing environments: the important migration window is `017` through `033`.
+- `020_strict_submission_intents.sql` is guarded and will stop if legacy submissions still lack a matching intent. Preflight it first.
 - API, indexer, and worker orchestrator should be redeployed together after env + schema changes.
 - Beach/OpenClaw integration is Agora-hosted on the backend: Beach/OpenClaw only need a bearer token and optional webhook endpoint; Agora owns the sponsor signer for the MVP publish path.
 - For the Beach/OpenClaw MVP, the server-to-server external draft flow is the primary path. Browser-hosted `/post` is only the human-assist fallback.
@@ -83,6 +83,12 @@ Existing environment already running Agora:
   - `025_create_authoring_source_links.sql`
   - `026_add_challenge_source_attribution.sql`
   - `027_extend_authoring_callback_events.sql`
+  - `028_add_authoring_sponsor_budget_reservations.sql`
+  - `029_add_challenge_evaluation_plan.sql`
+  - `030_make_challenge_runtime_caches_optional.sql`
+  - `031_drop_legacy_challenge_runtime_caches.sql`
+  - `032_scope_score_job_claims_by_chain.sql`
+  - `033_atomic_replace_challenge_payouts.sql`
 
 ### Migration Notes
 
@@ -99,7 +105,7 @@ Existing environment already running Agora:
 `020_strict_submission_intents.sql`
 - adds `submissions.submission_intent_id`
 - backfills from matched intents
-- deletes submissions without intents
+- raises and stops if any submissions still lack intents after backfill
 - deduplicates `submission_intents`
 - makes the FK non-null
 
@@ -134,6 +140,25 @@ Existing environment already running Agora:
 - extends the callback outbox event constraint
 - allows `challenge_created` and `challenge_finalized` in addition to the existing `draft_*` events
 
+`028_add_authoring_sponsor_budget_reservations.sql`
+- adds the sponsor-budget reservation ledger used by external authoring publish
+
+`029_add_challenge_evaluation_plan.sql`
+- adds `challenges.evaluation_plan_json` as the canonical cached execution plan
+
+`030_make_challenge_runtime_caches_optional.sql`
+- relaxes the old challenge runtime cache columns during the evaluation-plan cutover
+
+`031_drop_legacy_challenge_runtime_caches.sql`
+- removes legacy challenge runtime cache columns once `evaluation_plan_json` is canonical
+
+`032_scope_score_job_claims_by_chain.sql`
+- scopes worker score-job claims by `challenges.chain_id`
+- prevents workers on one chain/runtime from stealing jobs from another
+
+`033_atomic_replace_challenge_payouts.sql`
+- adds the atomic payout replacement function used by settlement/indexer reconciliation
+
 ---
 
 ## Preflight Before `020`
@@ -148,9 +173,9 @@ select count(*) from submissions where submission_intent_id is null;
 
 If that count is non-zero:
 
-- those rows will be deleted by `020`
+- `020` will raise and stop instead of deleting those rows implicitly
 - decide whether the environment is disposable
-- if it is production-like and you care about those rows, stop and inspect before applying
+- if you care about those rows, stop and inspect/backfill or explicitly delete them before re-running the migration
 
 Recommended extra checks:
 
@@ -198,8 +223,14 @@ Recommended order for existing environments:
 11. apply `025`
 12. apply `026`
 13. apply `027`
-14. reload PostgREST schema cache
-15. run `pnpm schema:verify`
+14. apply `028`
+15. apply `029`
+16. apply `030`
+17. apply `031`
+18. apply `032`
+19. apply `033`
+20. reload PostgREST schema cache
+21. run `pnpm schema:verify`
 
 If your deployment path relies on Supabase-managed PostgREST metadata, reload schema visibility before restarting API/worker services.
 
@@ -481,7 +512,7 @@ node --import tsx --test \
 
 If you are deploying the latest code to an existing environment, the minimum safe cutover set is:
 
-1. apply `017` through `027`
+1. apply `017` through `033`
 2. set the new authoring env vars
 3. redeploy API + indexer + worker orchestrator together
 4. run `pnpm schema:verify`

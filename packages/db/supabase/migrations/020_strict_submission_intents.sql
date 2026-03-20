@@ -1,8 +1,6 @@
--- Destructive migration: do not apply blindly to a populated production
--- database. Preflight first:
---   select count(*) from submissions where submission_intent_id is null;
--- Any remaining rows would be deleted below because the strict intent-first
--- model does not allow scoreable submissions without a registered intent.
+-- Guarded migration: stop instead of deleting legacy submissions implicitly.
+-- If the backfill still leaves rows without submission_intent_id, inspect and
+-- repair or explicitly remove them before re-running this migration.
 alter table submissions
   add column if not exists submission_intent_id uuid;
 
@@ -12,8 +10,22 @@ from submission_intents
 where submission_intents.matched_submission_id = submissions.id
   and submissions.submission_intent_id is null;
 
-delete from submissions
-where submission_intent_id is null;
+do $$
+declare
+  orphaned_submission_count bigint;
+begin
+  select count(*)
+    into orphaned_submission_count
+  from submissions
+  where submission_intent_id is null;
+
+  if orphaned_submission_count > 0 then
+    raise exception
+      'Migration 020_strict_submission_intents would leave % submission rows without submission_intent_id. Next step: inspect and backfill those legacy rows, or explicitly delete them before re-running this migration.',
+      orphaned_submission_count;
+  end if;
+end;
+$$;
 
 with ranked_submission_intents as (
   select

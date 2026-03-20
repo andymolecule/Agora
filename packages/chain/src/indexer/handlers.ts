@@ -913,6 +913,9 @@ export async function processChallengeLog(input: {
   challengeFromBlock: bigint;
   challengeCursorKey: string;
   challengePersistTargets: Map<string, bigint>;
+  getOnChainSubmissionImpl?: typeof getOnChainSubmission;
+  getSubmissionByChainIdImpl?: typeof getSubmissionByChainId;
+  projectOnChainSubmissionFromRegistrationImpl?: typeof projectOnChainSubmissionFromRegistration;
 }): Promise<ChallengeLogProcessingResult> {
   const {
     db,
@@ -924,6 +927,9 @@ export async function processChallengeLog(input: {
     challengeFromBlock,
     challengeCursorKey,
     challengePersistTargets,
+    getOnChainSubmissionImpl,
+    getSubmissionByChainIdImpl,
+    projectOnChainSubmissionFromRegistrationImpl,
   } = input;
 
   if (!log.eventName || !log.transactionHash) {
@@ -937,6 +943,13 @@ export async function processChallengeLog(input: {
   }
 
   const challengeAddress = challenge.contract_address as `0x${string}`;
+  const getOnChainSubmissionForEvent =
+    getOnChainSubmissionImpl ?? getOnChainSubmission;
+  const getSubmissionByChainIdForEvent =
+    getSubmissionByChainIdImpl ?? getSubmissionByChainId;
+  const projectSubmissionForEvent =
+    projectOnChainSubmissionFromRegistrationImpl ??
+    projectOnChainSubmissionFromRegistration;
   let needsRepair = false;
 
   try {
@@ -947,17 +960,17 @@ export async function processChallengeLog(input: {
           eventArg(log.args, "submissionId"),
         "submissionId",
       );
-      const submission = await getOnChainSubmission(
+      const submission = await getOnChainSubmissionForEvent(
         challengeAddress,
         submissionId,
         log.blockNumber ?? undefined,
       );
-      const existingSubmission = await getSubmissionByChainId(
+      const existingSubmission = await getSubmissionByChainIdForEvent(
         db,
         challenge.id,
         Number(submissionId),
       );
-      await projectOnChainSubmissionFromRegistration({
+      const projected = await projectSubmissionForEvent({
         db,
         challenge,
         onChainSubmissionId: Number(submissionId),
@@ -965,6 +978,19 @@ export async function processChallengeLog(input: {
         txHash,
         existingSubmission,
       });
+      if (!projected) {
+        needsRepair = true;
+        indexerLogger.warn(
+          {
+            event: "indexer.submission.unregistered_requires_repair",
+            challengeId: challenge.id,
+            challengeAddress,
+            onChainSubmissionId: Number(submissionId),
+            txHash,
+          },
+          "On-chain submission is missing a registered intent and now requires repair",
+        );
+      }
     }
 
     if (log.eventName === "Scored") {
@@ -983,7 +1009,7 @@ export async function processChallengeLog(input: {
         "proofBundleHash",
       );
 
-      const submission = await getOnChainSubmission(
+      const submission = await getOnChainSubmissionForEvent(
         challengeAddress,
         submissionId,
         log.blockNumber ?? undefined,
@@ -992,12 +1018,12 @@ export async function processChallengeLog(input: {
       // scored, scored_at, proof_bundle_hash).  proof_bundle_cid is owned
       // exclusively by the oracle worker via updateScore — the indexer
       // must never touch it.
-      const existingSubmission = await getSubmissionByChainId(
+      const existingSubmission = await getSubmissionByChainIdForEvent(
         db,
         challenge.id,
         Number(submissionId),
       );
-      await projectOnChainSubmissionFromRegistration({
+      const projected = await projectSubmissionForEvent({
         db,
         challenge,
         onChainSubmissionId: Number(submissionId),
@@ -1011,6 +1037,19 @@ export async function processChallengeLog(input: {
         scoredAt: new Date().toISOString(),
         existingSubmission,
       });
+      if (!projected) {
+        needsRepair = true;
+        indexerLogger.warn(
+          {
+            event: "indexer.submission.unregistered_requires_repair",
+            challengeId: challenge.id,
+            challengeAddress,
+            onChainSubmissionId: Number(submissionId),
+            txHash,
+          },
+          "Scored on-chain submission is missing a registered intent and now requires repair",
+        );
+      }
     }
 
     if (log.eventName === "StatusChanged") {

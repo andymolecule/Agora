@@ -46,6 +46,25 @@ function createFakeDb() {
     challengeRows,
     challengePayouts,
     indexerCursors,
+    async rpc(name: string, args: Record<string, unknown>) {
+      if (name === "replace_challenge_payouts") {
+        const challengeId = String(args.p_challenge_id);
+        const payouts = Array.isArray(args.p_payouts) ? args.p_payouts : [];
+        const normalized = payouts.map((row) => ({
+          challenge_id: challengeId,
+          solver_address: String(row.solver_address).toLowerCase(),
+          winning_on_chain_sub_id: Number(row.winning_on_chain_sub_id),
+          rank: Number(row.rank),
+          amount: row.amount,
+          claimed_at: row.claimed_at ?? null,
+          claim_tx_hash: row.claim_tx_hash ?? null,
+        }));
+        challengePayouts.set(challengeId, normalized);
+        return { data: normalized, error: null };
+      }
+
+      throw new Error(`Unexpected rpc access in fake db: ${name}`);
+    },
     from(table: string) {
       if (table === "indexed_events") {
         return {
@@ -194,26 +213,6 @@ function createFakeDb() {
               },
             };
           },
-          delete() {
-            return {
-              async eq(_column: string, challengeId: string) {
-                challengePayouts.set(challengeId, []);
-                return { error: null };
-              },
-            };
-          },
-          insert(payload: Array<Record<string, unknown>>) {
-            return {
-              async select() {
-                for (const row of payload) {
-                  const challengeId = String(row.challenge_id);
-                  const existing = challengePayouts.get(challengeId) ?? [];
-                  challengePayouts.set(challengeId, [...existing, row]);
-                }
-                return { data: payload, error: null };
-              },
-            };
-          },
         };
       }
 
@@ -308,6 +307,55 @@ test("StatusChanged projects scoring status and marks the event indexed", async 
     event_name: "StatusChanged",
     block_number: 123,
     block_hash: `0x${"b".repeat(64)}`,
+  });
+});
+
+test("Submitted flags targeted repair when the on-chain submission cannot be matched to a registered intent", async () => {
+  const db = createFakeDb();
+  const txHash = `0x${"9".repeat(64)}` as `0x${string}`;
+
+  const result = await processChallengeLog({
+    db: db as never,
+    publicClient: {} as never,
+    challenge: {
+      id: "challenge-orphaned-submission",
+      contract_address: "0x0000000000000000000000000000000000000011",
+      tx_hash: txHash,
+      status: CHALLENGE_STATUS.open,
+    },
+    log: {
+      eventName: "Submitted",
+      args: {
+        submissionId: 4n,
+      },
+      transactionHash: txHash,
+      logIndex: 8,
+      blockNumber: 124n,
+      blockHash: `0x${"c".repeat(64)}`,
+    },
+    fromBlock: 120n,
+    challengeFromBlock: 120n,
+    challengeCursorKey: "challenge-orphaned-submission",
+    challengePersistTargets: new Map(),
+    getOnChainSubmissionImpl: async () => ({
+      solver: "0x0000000000000000000000000000000000000012",
+      resultHash: "0xhash",
+      proofBundleHash: "0x0000000000000000000000000000000000000013",
+      score: 0n,
+      scored: false,
+      submittedAt: 1_700_000_000n,
+    }),
+    getSubmissionByChainIdImpl: async () => null,
+    projectOnChainSubmissionFromRegistrationImpl: async () => null,
+  });
+
+  assert.equal(result.needsRepair, true);
+  assert.deepEqual(db.indexedEvents.get(`${txHash}:8`), {
+    tx_hash: txHash,
+    log_index: 8,
+    event_name: "Submitted",
+    block_number: 124,
+    block_hash: `0x${"c".repeat(64)}`,
   });
 });
 

@@ -303,9 +303,9 @@ flowchart TB
 |-----------|-------|-------|
 | Protocol fee | 10% | Only on successful finalization |
 | Dispute window | 0–2160 hours on testnet | Production policy targets 168–2160 hours (7–90 days) |
-| Official managed runtime timeout | 1–20 minutes | Base runner fallback is 30 minutes when no runtime-family override applies |
-| Container memory | 128 MB – 4 GB | Runtime-family-dependent; base runner fallback is 256 MB |
-| Container CPUs | 0.5 – 2 | Runtime-family-dependent; base runner fallback is 0.5 CPU |
+| Official managed runtime timeout | 5–20 minutes | Base runner fallback is 30 minutes when no runtime-family override applies |
+| Container memory | 512 MB – 4 GB | Runtime-family-dependent; base runner fallback is 256 MB |
+| Container CPUs | 1 – 2 | Runtime-family-dependent; base runner fallback is 0.5 CPU |
 | USDC reward range | 1–30 USDC | Testnet limits |
 | Oracle immutability | Per challenge | Fixed at creation, cannot be rotated mid-challenge |
 | Dispute timeout | 30 days | Full refund to poster |
