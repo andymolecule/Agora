@@ -11,12 +11,22 @@ const args = process.argv.slice(2);
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.join(scriptDir, "..");
 const nextOutputDir = path.join(appRoot, ".next");
+const nextOutputPackageJsonPath = path.join(nextOutputDir, "package.json");
 
 applyAgoraRuntimeEnv();
 
 if (args[0] === "build" && fs.existsSync(nextOutputDir)) {
   fs.rmSync(nextOutputDir, { recursive: true, force: true });
 }
+
+if (!fs.existsSync(nextOutputDir)) {
+  fs.mkdirSync(nextOutputDir, { recursive: true });
+}
+fs.writeFileSync(
+  nextOutputPackageJsonPath,
+  `${JSON.stringify({ type: "commonjs" }, null, 2)}\n`,
+  "utf8",
+);
 
 const child = spawn(process.execPath, [nextBin, ...args], {
   stdio: "inherit",

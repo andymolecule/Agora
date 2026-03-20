@@ -268,7 +268,10 @@ export function ReviewClient() {
                     Runtime
                   </div>
                   <div className="mt-2 text-sm font-semibold text-warm-900">
-                    {formatRuntime(compilation?.runtime_family)}
+                    {formatRuntime(
+                      compilation?.execution_runtime_family ??
+                        compilation?.preset_id,
+                    )}
                   </div>
                 </div>
                 <div className="rounded-[20px] border border-warm-200 bg-warm-50 p-4">

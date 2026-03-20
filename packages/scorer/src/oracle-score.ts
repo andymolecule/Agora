@@ -11,7 +11,7 @@ import {
   SUBMISSION_RESULT_FORMAT,
   type SubmissionContractOutput,
   loadConfig,
-  resolveChallengeEvaluation,
+  resolveEvaluationPlan,
   resolveSubmissionOpenPrivateKeys,
 } from "@agora/common";
 import {
@@ -28,19 +28,6 @@ import { resolveScoringRuntimeConfig } from "./pipeline.js";
 import { buildProofBundle } from "./proof.js";
 import { resolveSubmissionSource } from "./sealed-submission.js";
 import { scoreToWad } from "./staging.js";
-
-function warnLegacyScoringConfigFallback(input: {
-  challengeId: string;
-  specCid: string;
-}) {
-  process.emitWarning(
-    "Challenge is missing cached scoring config; falling back to the IPFS spec.",
-    {
-      code: "AGORA_SCORER_LEGACY_SPEC_FALLBACK",
-      detail: `Backfill the cached scoring config for challenge ${input.challengeId}. specCid=${input.specCid}`,
-    },
-  );
-}
 
 export interface OracleScoreInput {
   /** Supabase client (service-key level). */
@@ -86,10 +73,9 @@ export async function oracleScore(
     contract_address: string;
     spec_cid?: string | null;
     submission_contract_json?: SubmissionContractOutput | null;
-    scoring_env_json?: Record<string, string> | null;
   };
-  const evalPlan = resolveChallengeEvaluation(challenge);
-  if (!evalPlan.evaluationBundleCid) {
+  const evaluationPlan = resolveEvaluationPlan(challenge);
+  if (!evaluationPlan.evaluationBundleCid) {
     throw new Error(
       `Challenge ${submission.challenge_id} missing evaluation bundle CID.`,
     );
@@ -98,15 +84,10 @@ export async function oracleScore(
   // 2. Run scorer container
   const config = loadConfig();
   const scoringSpecConfig = await resolveScoringRuntimeConfig({
-    env: challenge.scoring_env_json,
-    submissionContract: challenge.submission_contract_json,
-    specCid: challenge.spec_cid,
-    onLegacyFallback: (specCid) => {
-      warnLegacyScoringConfigFallback({
-        challengeId: challenge.id,
-        specCid,
-      });
-    },
+    env: evaluationPlan.env,
+    submissionContract: evaluationPlan.submissionContract,
+    evaluationContract: evaluationPlan.evaluationContract,
+    policies: evaluationPlan.policies,
   });
   const submissionSource = await resolveSubmissionSource({
     resultCid: submission.result_cid,
@@ -116,13 +97,16 @@ export async function oracleScore(
     privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(config),
   });
   const run = await executeScoringPipeline({
-    image: evalPlan.image,
-    runtimeFamily: evalPlan.runtimeFamily,
-    evaluationBundle: { cid: evalPlan.evaluationBundleCid },
-    mount: evalPlan.mount,
+    image: evaluationPlan.image ?? "",
+    runtimeFamily: evaluationPlan.executionRuntimeFamily,
+    evaluationBundle: { cid: evaluationPlan.evaluationBundleCid },
+    mount: evaluationPlan.mount,
+    generatedScorer: evaluationPlan.generatedScorer,
     submission: submissionSource,
     submissionContract: scoringSpecConfig.submissionContract,
-    metric: evalPlan.metric,
+    evaluationContract: scoringSpecConfig.evaluationContract,
+    metric: evaluationPlan.metric,
+    policies: scoringSpecConfig.policies,
     env: scoringSpecConfig.env,
     keepWorkspace: true,
   });
@@ -157,7 +141,7 @@ export async function oracleScore(
       ...baseProof,
       challengeSpecCid:
         (challenge as { spec_cid?: string | null }).spec_cid ?? null,
-      evaluationBundleCid: evalPlan.evaluationBundleCid ?? null,
+      evaluationBundleCid: evaluationPlan.evaluationBundleCid ?? null,
       replaySubmissionCid,
     };
 

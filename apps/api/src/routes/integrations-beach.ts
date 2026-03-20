@@ -107,7 +107,7 @@ export function createBeachIntegrationsRouter(dependencies?: {
 
       const body = c.req.valid("json");
       try {
-        const session = await createExternalAuthoringDraft({
+        const draft = await createExternalAuthoringDraft({
           provider: "beach_science",
           body: normalizeBeachDraftImportRequest(body),
           createSupabaseClientImpl,
@@ -127,7 +127,7 @@ export function createBeachIntegrationsRouter(dependencies?: {
               title: body.thread.title ?? null,
               poster_agent_handle: body.thread.poster_agent_handle ?? null,
             },
-            ...buildAuthoringDraftResponse(session),
+            ...buildAuthoringDraftResponse(draft),
           },
         });
       } catch (error) {

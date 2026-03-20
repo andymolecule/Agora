@@ -201,14 +201,14 @@ async function readPartnerDraft(input: {
   createSupabaseClientImpl: typeof createSupabaseClient;
 }) {
   const db = input.createSupabaseClientImpl(true);
-  const session = await input.getAuthoringDraftViewByIdImpl(db, input.id);
-  if (!session || !draftBelongsToProvider(session, input.provider)) {
-    return { session: null, error: buildDraftNotFoundError() };
+  const draft = await input.getAuthoringDraftViewByIdImpl(db, input.id);
+  if (!draft || !draftBelongsToProvider(draft, input.provider)) {
+    return { draft: null, error: buildDraftNotFoundError() };
   }
-  if (isAuthoringDraftExpired(session)) {
-    return { session: null, error: buildExpiredDraftError() };
+  if (isAuthoringDraftExpired(draft)) {
+    return { draft: null, error: buildExpiredDraftError() };
   }
-  return { session, error: null };
+  return { draft, error: null };
 }
 
 async function safelyDeliverDraftLifecycleEvent(
@@ -221,8 +221,8 @@ async function safelyDeliverDraftLifecycleEvent(
     input.logger?.warn(
       {
         event: "authoring.callback.delivery_failed",
-        draftId: input.session.id,
-        provider: input.session.authoring_ir_json?.origin.provider ?? "direct",
+        draftId: input.draft.id,
+        provider: input.draft.authoring_ir_json?.origin.provider ?? "direct",
         eventType: input.event,
         message: error instanceof Error ? error.message : String(error),
       },
@@ -242,8 +242,8 @@ async function safelyDeliverChallengeLifecycleEvent(
     input.logger?.warn(
       {
         event: "authoring.callback.delivery_failed",
-        draftId: input.session.id,
-        provider: input.session.authoring_ir_json?.origin.provider ?? "direct",
+        draftId: input.draft.id,
+        provider: input.draft.authoring_ir_json?.origin.provider ?? "direct",
         eventType: input.event,
         message: error instanceof Error ? error.message : String(error),
       },
@@ -413,7 +413,7 @@ export function createAuthoringSourcesRouter(
 
       const body = c.req.valid("json");
       try {
-        const session = await createExternalAuthoringDraft({
+        const draft = await createExternalAuthoringDraft({
           provider,
           body,
           createSupabaseClientImpl,
@@ -426,7 +426,7 @@ export function createAuthoringSourcesRouter(
           logger: getRequestLogger(c),
         });
         return c.json({
-          data: buildAuthoringDraftResponse(session),
+          data: buildAuthoringDraftResponse(draft),
         });
       } catch (error) {
         return artifactNormalizationErrorResponse(c, error);
@@ -448,12 +448,12 @@ export function createAuthoringSourcesRouter(
       getAuthoringDraftViewByIdImpl,
       createSupabaseClientImpl,
     });
-    if (!result.session) {
+    if (!result.draft) {
       return draftLookupErrorResponse(c, result.error);
     }
 
     return c.json({
-      data: buildAuthoringDraftResponse(result.session),
+      data: buildAuthoringDraftResponse(result.draft),
     });
   });
 
@@ -471,13 +471,13 @@ export function createAuthoringSourcesRouter(
       getAuthoringDraftViewByIdImpl,
       createSupabaseClientImpl,
     });
-    if (!result.session) {
+    if (!result.draft) {
       return draftLookupErrorResponse(c, result.error);
     }
 
     return c.json({
       data: {
-        card: buildAuthoringDraftCard(result.session),
+        card: buildAuthoringDraftCard(result.draft),
       },
     });
   });
@@ -509,10 +509,10 @@ export function createAuthoringSourcesRouter(
         getAuthoringDraftViewByIdImpl,
         createSupabaseClientImpl,
       });
-      if (!result.session) {
+      if (!result.draft) {
         return draftLookupErrorResponse(c, result.error);
       }
-      if (result.session.state === "published") {
+      if (result.draft.state === "published") {
         return jsonError(c, {
           status: 409,
           code: "AUTHORING_DRAFT_PUBLISHED",
@@ -520,7 +520,7 @@ export function createAuthoringSourcesRouter(
             "Authoring draft is already published and can no longer be changed. Next step: create a new draft from the updated host thread and retry.",
         });
       }
-      if (result.session.state === "compiling") {
+      if (result.draft.state === "compiling") {
         return jsonError(c, draftBusyError());
       }
 
@@ -530,7 +530,7 @@ export function createAuthoringSourcesRouter(
       >["source"]["poster_messages"];
       try {
         mergedMessages = mergeExternalMessages(
-          result.session.authoring_ir_json?.source.poster_messages ?? [],
+          result.draft.authoring_ir_json?.source.poster_messages ?? [],
           body.messages,
         );
       } catch (error) {
@@ -545,44 +545,48 @@ export function createAuthoringSourcesRouter(
       try {
         normalizedArtifacts = await normalizeExternalArtifactsForDraftImpl({
           artifacts: body.artifacts,
+          logger: getRequestLogger(c),
+          draftId: result.draft.id,
+          provider,
         });
       } catch (error) {
         return artifactNormalizationErrorResponse(c, error);
       }
       const mergedArtifacts = mergeExternalArtifacts(
-        result.session.uploaded_artifacts_json ?? [],
+        result.draft.uploaded_artifacts_json ?? [],
         normalizedArtifacts,
       );
       const authoringIr = buildManagedAuthoringIr({
-        intent: result.session.intent_json,
+        intent: result.draft.intent_json,
         uploadedArtifacts: mergedArtifacts,
         sourceMessages: mergedMessages,
         origin: {
           provider,
           external_id:
-            result.session.authoring_ir_json?.origin.external_id ?? null,
+            result.draft.authoring_ir_json?.origin.external_id ?? null,
           external_url:
-            result.session.authoring_ir_json?.origin.external_url ?? null,
-          ingested_at: result.session.authoring_ir_json?.origin.ingested_at,
+            result.draft.authoring_ir_json?.origin.external_url ?? null,
+          ingested_at: result.draft.authoring_ir_json?.origin.ingested_at,
           raw_context:
             body.raw_context ??
-            result.session.authoring_ir_json?.origin.raw_context ??
+            result.draft.authoring_ir_json?.origin.raw_context ??
             null,
         },
       });
       const db = createSupabaseClientImpl(true);
-      let updatedSession: AuthoringDraftViewRow;
+      let updatedDraft: AuthoringDraftViewRow;
       try {
-        updatedSession = await refreshDraftIr({
+        updatedDraft = await refreshDraftIr({
           db,
-          session: result.session,
-          state: buildDraftUpdatedState(result.session.state),
-          intentJson: result.session.intent_json,
+          draft: result.draft,
+          state: buildDraftUpdatedState(result.draft.state),
+          intentJson: result.draft.intent_json,
           authoringIrJson: authoringIr,
           uploadedArtifactsJson: mergedArtifacts,
           expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
           updateAuthoringDraftImpl,
           getAuthoringDraftViewByIdImpl,
+          logger: getRequestLogger(c),
         });
       } catch (error) {
         if (error instanceof AuthoringDraftWriteConflictError) {
@@ -594,14 +598,14 @@ export function createAuthoringSourcesRouter(
       await safelyDeliverDraftLifecycleEvent(
         {
           event: "draft_updated",
-          session: updatedSession,
+          draft: updatedDraft,
           logger: getRequestLogger(c),
         },
         deliverAuthoringDraftLifecycleEventImpl,
       );
 
       return c.json({
-        data: buildAuthoringDraftResponse(updatedSession),
+        data: buildAuthoringDraftResponse(updatedDraft),
       });
     },
   );
@@ -633,13 +637,13 @@ export function createAuthoringSourcesRouter(
         getAuthoringDraftViewByIdImpl,
         createSupabaseClientImpl,
       });
-      if (!result.session) {
+      if (!result.draft) {
         return draftLookupErrorResponse(c, result.error);
       }
-      if (result.session.state === "compiling") {
+      if (result.draft.state === "compiling") {
         return jsonError(c, draftBusyError());
       }
-      if (result.session.state === "published") {
+      if (result.draft.state === "published") {
         return jsonError(c, {
           status: 409,
           code: "AUTHORING_DRAFT_PUBLISHED",
@@ -649,7 +653,7 @@ export function createAuthoringSourcesRouter(
       }
 
       const body = c.req.valid("json");
-      const intent = body.intent ?? result.session.intent_json;
+      const intent = body.intent ?? result.draft.intent_json;
       if (!intent) {
         return jsonError(c, {
           status: 400,
@@ -662,21 +666,22 @@ export function createAuthoringSourcesRouter(
       const db = createSupabaseClientImpl(true);
       const compilingAuthoringIr = buildManagedAuthoringIr({
         intent,
-        uploadedArtifacts: result.session.uploaded_artifacts_json ?? [],
+        uploadedArtifacts: result.draft.uploaded_artifacts_json ?? [],
         sourceMessages:
-          result.session.authoring_ir_json?.source.poster_messages ?? [],
-        origin: result.session.authoring_ir_json?.origin ?? { provider },
+          result.draft.authoring_ir_json?.source.poster_messages ?? [],
+        origin: result.draft.authoring_ir_json?.origin ?? { provider },
       });
-      let compilingSession: AuthoringDraftViewRow;
+      let compilingDraft: AuthoringDraftViewRow;
       try {
-        compilingSession = await markDraftCompiling({
+        compilingDraft = await markDraftCompiling({
           db,
-          session: result.session,
+          draft: result.draft,
           intentJson: intent,
           authoringIrJson: compilingAuthoringIr,
           expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
           updateAuthoringDraftImpl,
           getAuthoringDraftViewByIdImpl,
+          logger: getRequestLogger(c),
         });
       } catch (error) {
         if (error instanceof AuthoringDraftWriteConflictError) {
@@ -688,36 +693,39 @@ export function createAuthoringSourcesRouter(
       try {
         const outcome = await compileManagedAuthoringDraftOutcomeImpl({
           intent,
-          uploadedArtifacts: result.session.uploaded_artifacts_json ?? [],
+          uploadedArtifacts: result.draft.uploaded_artifacts_json ?? [],
+          draftId: result.draft.id,
+          logger: getRequestLogger(c),
         });
-        let updatedSession: AuthoringDraftViewRow;
+        let updatedDraft: AuthoringDraftViewRow;
         const updatedAuthoringIr = {
           ...outcome.authoringIr,
-          origin: result.session.authoring_ir_json?.origin ?? {
+          origin: result.draft.authoring_ir_json?.origin ?? {
             provider,
             ingested_at: new Date().toISOString(),
             raw_context: null,
           },
           source: {
             poster_messages:
-              result.session.authoring_ir_json?.source.poster_messages ?? [],
+              result.draft.authoring_ir_json?.source.poster_messages ?? [],
             uploaded_artifact_ids: (
-              result.session.uploaded_artifacts_json ?? []
+              result.draft.uploaded_artifacts_json ?? []
             ).map((artifact) => artifact.id ?? artifact.uri),
           },
         };
         try {
-          updatedSession = await completeDraftCompilation({
+          updatedDraft = await completeDraftCompilation({
             db,
-            session: compilingSession,
+            draft: compilingDraft,
             state: outcome.state,
             intentJson: intent,
             authoringIrJson: updatedAuthoringIr,
-            uploadedArtifactsJson: result.session.uploaded_artifacts_json ?? [],
+            uploadedArtifactsJson: result.draft.uploaded_artifacts_json ?? [],
             compilationJson: outcome.compilation ?? null,
             expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
             updateAuthoringDraftImpl,
             getAuthoringDraftViewByIdImpl,
+            logger: getRequestLogger(c),
           });
         } catch (error) {
           if (error instanceof AuthoringDraftWriteConflictError) {
@@ -729,30 +737,31 @@ export function createAuthoringSourcesRouter(
         await safelyDeliverDraftLifecycleEvent(
           {
             event: "draft_compiled",
-            session: updatedSession,
+            draft: updatedDraft,
             logger: getRequestLogger(c),
           },
           deliverAuthoringDraftLifecycleEventImpl,
         );
 
         return c.json({
-          data: buildAuthoringDraftResponse(updatedSession),
+          data: buildAuthoringDraftResponse(updatedDraft),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        let failedSession: AuthoringDraftViewRow;
+        let failedDraft: AuthoringDraftViewRow;
         try {
-          failedSession = await failDraft({
+          failedDraft = await failDraft({
             db,
-            session: compilingSession,
+            draft: compilingDraft,
             intentJson: intent,
             authoringIrJson: compilingAuthoringIr,
-            uploadedArtifactsJson: result.session.uploaded_artifacts_json ?? [],
+            uploadedArtifactsJson: result.draft.uploaded_artifacts_json ?? [],
             compilationJson: null,
             message,
             expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
             updateAuthoringDraftImpl,
             getAuthoringDraftViewByIdImpl,
+            logger: getRequestLogger(c),
           });
         } catch (conflictError) {
           if (conflictError instanceof AuthoringDraftWriteConflictError) {
@@ -764,7 +773,7 @@ export function createAuthoringSourcesRouter(
         await safelyDeliverDraftLifecycleEvent(
           {
             event: "draft_compile_failed",
-            session: failedSession,
+            draft: failedDraft,
             logger: getRequestLogger(c),
           },
           deliverAuthoringDraftLifecycleEventImpl,
@@ -807,13 +816,21 @@ export function createAuthoringSourcesRouter(
         getAuthoringDraftViewByIdImpl,
         createSupabaseClientImpl,
       });
-      if (!result.session) {
+      if (!result.draft) {
         return draftLookupErrorResponse(c, result.error);
       }
 
       const body = c.req.valid("json");
+      if (body.funding === "poster") {
+        return jsonError(c, {
+          status: 501,
+          code: "AUTHORING_EXTERNAL_POSTER_FUNDING_NOT_ENABLED",
+          message:
+            "Poster-funded external publishing is not enabled yet. Next step: omit funding or set funding to \"sponsor\" and retry.",
+        });
+      }
       const returnTo = resolveAuthoringDraftReturnUrl({
-        session: result.session,
+        draft: result.draft,
         requestedReturnTo: body.return_to,
         runtimeConfig: readAuthoringPartnerRuntimeConfigImpl(),
       });
@@ -822,23 +839,23 @@ export function createAuthoringSourcesRouter(
       }
 
       if (
-        result.session.state === "published" &&
-        result.session.published_spec_cid
+        result.draft.state === "published" &&
+        result.draft.published_spec_cid
       ) {
         const publishedLink = await getPublishedChallengeLinkByDraftIdImpl(
           db,
-          result.session.id,
+          result.draft.id,
         );
         return c.json({
           data: {
             ...buildAuthoringDraftResponse({
-              ...result.session,
+              ...result.draft,
               published_challenge_id: publishedLink?.challenge_id ?? null,
             }),
-            specCid: result.session.published_spec_cid,
+            specCid: result.draft.published_spec_cid,
             spec:
-              result.session.published_spec_json ??
-              result.session.compilation_json?.challenge_spec,
+              result.draft.published_spec_json ??
+              result.draft.compilation_json?.challenge_spec,
             returnTo: publishedLink?.return_to ?? returnTo.returnTo,
             challenge:
               publishedLink?.challenge_id == null
@@ -849,8 +866,8 @@ export function createAuthoringSourcesRouter(
       }
 
       if (
-        result.session.state !== "ready" ||
-        !result.session.compilation_json
+        result.draft.state !== "ready" ||
+        !result.draft.compilation_json
       ) {
         return jsonError(c, {
           status: 409,
@@ -872,12 +889,12 @@ export function createAuthoringSourcesRouter(
 
       const canonicalSpec = withAuthoringDraftSourceAttribution(
         await canonicalizeChallengeSpecImpl(
-          result.session.compilation_json.challenge_spec,
+          result.draft.compilation_json.challenge_spec,
           {
             resolveOfficialPresetDigests: true,
           },
         ),
-        getAuthoringDraftSourceAttribution(result.session),
+        getAuthoringDraftSourceAttribution(result.draft),
       );
       const scoreability = validateChallengeScoreability(canonicalSpec);
       if (!scoreability.ok) {
@@ -889,12 +906,12 @@ export function createAuthoringSourcesRouter(
       }
 
       const specCid = await pinJSONImpl(
-        `challenge-${result.session.id}`,
+        `challenge-${result.draft.id}`,
         canonicalSpec,
       );
       const published = await sponsorAndPublishAuthoringDraftImpl({
         db,
-        draft: result.session,
+        draft: result.draft,
         spec: canonicalSpec,
         specCid,
         sponsorPrivateKey: sponsorRuntime.privateKey,
@@ -904,12 +921,14 @@ export function createAuthoringSourcesRouter(
         expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
         updateAuthoringDraftImpl,
         getAuthoringDraftViewByIdImpl,
+        logger: getRequestLogger(c),
       });
 
+      // Hosts must treat publish callbacks as best-effort, unordered signals.
       await safelyDeliverDraftLifecycleEvent(
         {
           event: "draft_published",
-          session: published.draft,
+          draft: published.draft,
           logger: getRequestLogger(c),
         },
         deliverAuthoringDraftLifecycleEventImpl,
@@ -917,7 +936,7 @@ export function createAuthoringSourcesRouter(
       await safelyDeliverChallengeLifecycleEvent(
         {
           event: "challenge_created",
-          session: published.draft,
+          draft: published.draft,
           challenge: {
             challenge_id: published.challenge.challengeId,
             contract_address: published.challenge.challengeAddress,
@@ -978,22 +997,23 @@ export function createAuthoringSourcesRouter(
         getAuthoringDraftViewByIdImpl,
         createSupabaseClientImpl,
       });
-      if (!result.session) {
+      if (!result.draft) {
         return draftLookupErrorResponse(c, result.error);
       }
 
       const body = c.req.valid("json");
       const db = createSupabaseClientImpl(true);
-      const updatedSession = await registerDraftCallback({
+      const updatedDraft = await registerDraftCallback({
         db,
-        session: result.session,
+        draft: result.draft,
         callbackUrl: body.callback_url,
         upsertAuthoringCallbackTargetImpl,
         getAuthoringDraftViewByIdImpl,
+        logger: getRequestLogger(c),
       });
 
       return c.json({
-        data: buildAuthoringDraftResponse(updatedSession),
+        data: buildAuthoringDraftResponse(updatedDraft),
       });
     },
   );

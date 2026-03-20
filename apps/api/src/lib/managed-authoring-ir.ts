@@ -5,27 +5,29 @@ import {
   type ChallengeAuthoringIrOutput,
   type ChallengeIntentOutput,
   type ClarificationQuestionOutput,
+  type DefinitionBackedSubmissionKindOutput,
   type EvaluatorArchetypeId,
   type ExternalSourceMessageOutput,
   type RuntimeMetricDefinition,
-  type SemiCustomSubmissionKindOutput,
   createCsvTableEvaluationContract,
+  createDefinitionBackedEvaluatorContract,
+  createDefinitionBackedExactArtifactMatchExecution,
+  createDefinitionBackedStructuredRecordExecution,
+  createDefinitionBackedStructuredTableExecution,
   createRuntimePolicies,
-  createSemiCustomEvaluatorContract,
-  createSemiCustomExactArtifactMatchExecution,
-  createSemiCustomStructuredRecordExecution,
-  createSemiCustomStructuredTableExecution,
+  buildGeneratedScorerProgramForManagedPreset,
+  buildGeneratedScorerProgramFromDefinitionBackedEvaluator,
   getEvaluatorArchetype,
   getManagedRuntimeMetric,
   lookupManagedRuntimeFamily,
 } from "@agora/common";
-import type { SupportedRuntimeFamily } from "./managed-authoring-compiler.js";
+import type { SupportedManagedPresetId } from "./managed-authoring-compiler.js";
 
 type RoutingMode = ChallengeAuthoringIrOutput["routing"]["mode"];
 type AmbiguityClass = AuthoringAmbiguityClassOutput;
 
 const RUNTIME_METRIC_HINT_PATTERNS: Partial<
-  Record<SupportedRuntimeFamily, RegExp>
+  Record<SupportedManagedPresetId, RegExp>
 > = {
   tabular_regression: /\b(r2|rmse|mae|pearson|spearman)\b/i,
   tabular_classification: /\b(accuracy|f1|precision|recall)\b/i,
@@ -95,7 +97,7 @@ function roundConfidence(value: number) {
 
 interface InferredSubmissionShape {
   solverDeliverable: string;
-  artifactKind: SemiCustomSubmissionKindOutput;
+  artifactKind: DefinitionBackedSubmissionKindOutput;
   schemaRequirements: Record<string, unknown> | null;
   validationRules: string[];
 }
@@ -146,7 +148,7 @@ function inferGenericSubmissionShape(input: {
   brief: string;
   payoutCondition: string | null;
   artifacts: AuthoringArtifactOutput[];
-  runtimeFamily?: SupportedRuntimeFamily | null;
+  runtimeFamily?: SupportedManagedPresetId | null;
 }): InferredSubmissionShape | null {
   const runtimeFamilyConfig = input.runtimeFamily
     ? lookupManagedRuntimeFamily(input.runtimeFamily)
@@ -242,7 +244,7 @@ function inferGenericSubmissionShape(input: {
   return null;
 }
 
-function inferSemiCustomEvaluatorArchetype(input: {
+function inferDefinitionBackedEvaluatorArchetype(input: {
   brief: string;
   payoutCondition: string | null;
   submissionKind: string | null;
@@ -266,7 +268,7 @@ function inferSemiCustomEvaluatorArchetype(input: {
   }
 }
 
-function buildSemiCustomEvaluatorContract(input: {
+function buildDefinitionBackedEvaluatorContract(input: {
   archetypeId: EvaluatorArchetypeId;
   archetypeLabel: string;
   artifacts: ChallengeAuthoringIrOutput["artifacts"];
@@ -284,7 +286,7 @@ function buildSemiCustomEvaluatorContract(input: {
     .map((artifact) => artifact.selected_role ?? artifact.id);
   const resolvedMetric =
     input.metric ??
-    inferSemiCustomMetric({
+    inferDefinitionBackedMetric({
       archetypeId: input.archetypeId,
       winningDefinition: input.winningDefinition,
     }) ??
@@ -312,7 +314,7 @@ function buildSemiCustomEvaluatorContract(input: {
         ? "This evaluator contract maps to the official exact artifact match execution template."
         : "This evaluator contract is typed and reviewable, but still needs a configured execution path.";
 
-  return createSemiCustomEvaluatorContract({
+  return createDefinitionBackedEvaluatorContract({
     archetype: input.archetypeId,
     summary: `${input.archetypeLabel} evaluator contract for deterministic scoring outside the current managed runtime catalog.`,
     solverVisibleArtifactRoles,
@@ -331,7 +333,7 @@ function buildSemiCustomEvaluatorContract(input: {
   });
 }
 
-function inferSemiCustomMetric(input: {
+function inferDefinitionBackedMetric(input: {
   archetypeId: EvaluatorArchetypeId;
   winningDefinition: string | null;
 }) {
@@ -369,7 +371,7 @@ function inferStructuredRecordExecution(
     return null;
   }
 
-  return createSemiCustomStructuredRecordExecution({
+  return createDefinitionBackedStructuredRecordExecution({
     evaluationArtifactRole,
     policies: createRuntimePolicies({
       coveragePolicy: "reject",
@@ -413,7 +415,7 @@ function inferStructuredTableExecution(
     return null;
   }
 
-  return createSemiCustomStructuredTableExecution({
+  return createDefinitionBackedStructuredTableExecution({
     evaluationArtifactRole,
     evaluationContract: createCsvTableEvaluationContract({
       requiredColumns: [idColumn, valueColumn],
@@ -448,7 +450,7 @@ function inferExactArtifactMatchExecution(
     return null;
   }
 
-  return createSemiCustomExactArtifactMatchExecution({
+  return createDefinitionBackedExactArtifactMatchExecution({
     evaluationArtifactRole,
     policies: createRuntimePolicies({
       coveragePolicy: "reject",
@@ -460,7 +462,7 @@ function inferExactArtifactMatchExecution(
 
 function inferRoleHypotheses(
   artifact: AuthoringArtifactOutput,
-  runtimeFamily?: SupportedRuntimeFamily,
+  runtimeFamily?: SupportedManagedPresetId,
 ) {
   const source = [
     artifact.file_name?.trim(),
@@ -554,7 +556,7 @@ function defaultVisibilityForRole(role: string): "public" | "private" {
 }
 
 function rolePromptForRuntimeFamily(
-  runtimeFamily?: SupportedRuntimeFamily | null,
+  runtimeFamily?: SupportedManagedPresetId | null,
 ) {
   switch (runtimeFamily) {
     case "reproducibility":
@@ -621,7 +623,7 @@ function buildBlockingReasons(input: {
 
 function buildOpenQuestions(input: {
   blockingReasons: string[];
-  runtimeFamily?: SupportedRuntimeFamily;
+  runtimeFamily?: SupportedManagedPresetId;
   metric?: string | null;
   error?: AgoraError;
   artifactCount: number;
@@ -735,7 +737,7 @@ function buildOpenQuestions(input: {
 function buildAmbiguityState(input: {
   brief: string;
   payoutCondition: string | null;
-  runtimeFamily?: SupportedRuntimeFamily;
+  runtimeFamily?: SupportedManagedPresetId;
   metric?: string | null;
   artifacts: ChallengeAuthoringIrOutput["artifacts"];
   blockingReasons: string[];
@@ -777,7 +779,7 @@ function buildAmbiguityState(input: {
   if (
     input.error?.code === "MANAGED_THRESHOLD_UNSUPPORTED" ||
     input.routingMode === "expert_mode_required" ||
-    input.routingMode === "semi_custom"
+    input.routingMode === "definition_backed"
   ) {
     classes.add("custom_evaluator_needed");
   }
@@ -790,7 +792,7 @@ function buildAmbiguityState(input: {
     classes.add("custom_evaluator_needed");
     classes.add("multi_family_ambiguous");
     alternatives.push(
-      "This draft may need either a managed runtime clarification or a semi-custom evaluator.",
+      "This draft may need either a managed preset clarification or a definition-backed evaluator path.",
     );
   }
   if (
@@ -864,7 +866,7 @@ export function buildManagedAuthoringIr(input: {
   uploadedArtifacts: AuthoringArtifactOutput[];
   sourceTitle?: string | null;
   sourceMessages?: ExternalSourceMessageOutput[];
-  runtimeFamily?: SupportedRuntimeFamily;
+  presetId?: SupportedManagedPresetId;
   metric?: string | null;
   confidenceScore?: number;
   error?: AgoraError;
@@ -892,8 +894,8 @@ export function buildManagedAuthoringIr(input: {
     .join("\n\n");
   const payoutCondition = trimmed(intent?.payout_condition);
   const metricDefinition =
-    input.runtimeFamily && input.metric
-      ? getManagedRuntimeMetric(input.runtimeFamily, input.metric)
+    input.presetId && input.metric
+      ? getManagedRuntimeMetric(input.presetId, input.metric)
       : undefined;
   const comparator = parseComparator({
     payoutCondition,
@@ -901,7 +903,7 @@ export function buildManagedAuthoringIr(input: {
   });
 
   const artifacts = input.uploadedArtifacts.map((artifact, index) => {
-    const hypotheses = inferRoleHypotheses(artifact, input.runtimeFamily);
+    const hypotheses = inferRoleHypotheses(artifact, input.presetId);
     const topHypothesis = hypotheses[0];
     const selectedRole =
       topHypothesis && topHypothesis.confidence >= 0.8
@@ -929,20 +931,20 @@ export function buildManagedAuthoringIr(input: {
     };
   });
 
-  const runtimeFamily = input.runtimeFamily ?? null;
-  const runtimeFamilyConfig = runtimeFamily
-    ? lookupManagedRuntimeFamily(runtimeFamily)
+  const presetId = input.presetId ?? null;
+  const runtimeFamilyConfig = presetId
+    ? lookupManagedRuntimeFamily(presetId)
     : undefined;
   const inferredSubmission =
     inferGenericSubmissionShape({
       brief,
       payoutCondition,
       artifacts: input.uploadedArtifacts,
-      runtimeFamily,
+      runtimeFamily: presetId,
     }) ?? null;
   const scoreability =
     payoutCondition && artifacts.length > 0 && inferredSubmission
-      ? runtimeFamily
+      ? presetId
         ? "deterministic"
         : "deterministic_with_custom_evaluator"
       : "not_objective_yet";
@@ -969,7 +971,7 @@ export function buildManagedAuthoringIr(input: {
 
   const openQuestions = buildOpenQuestions({
     blockingReasons,
-    runtimeFamily: input.runtimeFamily,
+    runtimeFamily: input.presetId,
     metric: input.metric,
     error: input.error,
     artifactCount: artifacts.length,
@@ -979,9 +981,9 @@ export function buildManagedAuthoringIr(input: {
     input.routingMode ??
     (blockingReasons.length > 0
       ? "not_ready"
-      : runtimeFamily
-        ? "managed_supported"
-        : "semi_custom");
+      : presetId
+        ? "preset_supported"
+        : "definition_backed");
 
   const routingConfidence =
     typeof input.confidenceScore === "number"
@@ -989,22 +991,22 @@ export function buildManagedAuthoringIr(input: {
       : blockingReasons.length > 0
         ? 0.4
         : 0.8;
-  const semiCustomArchetypeId =
+  const definitionArchetypeId =
     inferredSubmission && scoreability === "deterministic_with_custom_evaluator"
-      ? inferSemiCustomEvaluatorArchetype({
+      ? inferDefinitionBackedEvaluatorArchetype({
           brief,
           payoutCondition,
           submissionKind: inferredSubmission.artifactKind,
         })
       : null;
-  const semiCustomArchetype = semiCustomArchetypeId
-    ? getEvaluatorArchetype(semiCustomArchetypeId)
+  const definitionArchetype = definitionArchetypeId
+    ? getEvaluatorArchetype(definitionArchetypeId)
     : null;
   const domainHint = trimmed(intent?.domain);
   const ambiguity = buildAmbiguityState({
     brief,
     payoutCondition,
-    runtimeFamily: input.runtimeFamily,
+    runtimeFamily: input.presetId,
     metric: input.metric,
     artifacts,
     blockingReasons,
@@ -1014,6 +1016,52 @@ export function buildManagedAuthoringIr(input: {
     intent,
     error: input.error,
   });
+  const evaluatorDefinition =
+    inferredSubmission &&
+    scoreability === "deterministic_with_custom_evaluator" &&
+    definitionArchetypeId &&
+    definitionArchetype
+      ? buildDefinitionBackedEvaluatorContract({
+          archetypeId: definitionArchetypeId,
+          archetypeLabel: definitionArchetype.label,
+          artifacts,
+          submission: inferredSubmission,
+          winningDefinition: payoutCondition,
+          comparator,
+          metric: input.metric ?? null,
+          minimumThreshold: parseMinimumThreshold(payoutCondition),
+        })
+      : null;
+  const presetBackendKind =
+    presetId && input.metric
+      ? buildGeneratedScorerProgramForManagedPreset({
+          presetId,
+          metric: input.metric,
+        })
+        ? "generated_scorer"
+        : "preset_interpreter"
+      : presetId
+        ? "preset_interpreter"
+        : null;
+  const definitionBackendKind = evaluatorDefinition
+    ? buildGeneratedScorerProgramFromDefinitionBackedEvaluator(
+        evaluatorDefinition,
+      )
+      ? "generated_scorer"
+      : evaluatorDefinition.execution
+        ? "preset_interpreter"
+        : "definition_only"
+    : null;
+  const executionRuntimeFamily = presetId
+    ? presetId
+    : evaluatorDefinition?.execution?.template === "official_table_metric_v1"
+      ? evaluatorDefinition.scoring.metric === "accuracy" ||
+          evaluatorDefinition.scoring.metric === "f1"
+        ? "tabular_classification"
+        : "tabular_regression"
+      : evaluatorDefinition?.execution
+        ? "reproducibility"
+        : null;
 
   return {
     version: 1,
@@ -1070,11 +1118,11 @@ export function buildManagedAuthoringIr(input: {
     },
     evaluation: {
       scoreability,
-      evaluator_candidates: runtimeFamily
+      path_candidates: presetId
         ? [
             {
-              id: runtimeFamily,
-              kind: "managed_template",
+              id: presetId,
+              kind: "managed_preset",
               confidence: routingConfidence,
               notes: runtimeFamilyConfig
                 ? [
@@ -1085,16 +1133,16 @@ export function buildManagedAuthoringIr(input: {
           ]
         : inferredSubmission &&
             scoreability === "deterministic_with_custom_evaluator" &&
-            semiCustomArchetypeId
+            definitionArchetypeId
           ? (() => {
               return [
                 {
-                  id: semiCustomArchetypeId,
-                  kind: "semi_custom" as const,
+                  id: definitionArchetypeId,
+                  kind: "definition_backed" as const,
                   confidence: routingConfidence,
                   notes: [
-                    semiCustomArchetype
-                      ? `${semiCustomArchetype.label} is the current best evaluator archetype fit.`
+                    definitionArchetype
+                      ? `${definitionArchetype.label} is the current best evaluator archetype fit.`
                       : "This draft is deterministic but needs a configurable evaluator path.",
                     "No current managed runtime family fits this challenge cleanly.",
                   ],
@@ -1102,31 +1150,25 @@ export function buildManagedAuthoringIr(input: {
               ];
             })()
           : [],
-      selected_evaluator:
-        runtimeFamily ??
+      selected_candidate_id:
+        presetId ??
         (inferredSubmission &&
         scoreability === "deterministic_with_custom_evaluator" &&
-        semiCustomArchetypeId
-          ? semiCustomArchetypeId
+        definitionArchetypeId
+          ? definitionArchetypeId
           : null),
-      runtime_family: runtimeFamily,
-      metric: input.metric ?? null,
-      semi_custom_contract:
+      preset_id: presetId,
+      definition_id:
+        !presetId &&
         inferredSubmission &&
         scoreability === "deterministic_with_custom_evaluator" &&
-        semiCustomArchetypeId &&
-        semiCustomArchetype
-          ? buildSemiCustomEvaluatorContract({
-              archetypeId: semiCustomArchetypeId,
-              archetypeLabel: semiCustomArchetype.label,
-              artifacts,
-              submission: inferredSubmission,
-              winningDefinition: payoutCondition,
-              comparator,
-              metric: input.metric ?? null,
-              minimumThreshold: parseMinimumThreshold(payoutCondition),
-            })
+        definitionArchetypeId
+          ? definitionArchetypeId
           : null,
+      backend_kind: presetBackendKind ?? definitionBackendKind,
+      execution_runtime_family: executionRuntimeFamily,
+      metric: input.metric ?? null,
+      evaluator_definition: evaluatorDefinition,
       compute_hints:
         inferredSubmission?.artifactKind === "bundle_or_code"
           ? ["Evaluator must execute a bounded bundle or code artifact."]
@@ -1153,7 +1195,7 @@ export function buildManagedAuthoringIr(input: {
       blocking_reasons: blockingReasons,
       recommended_next_action:
         openQuestions[0]?.next_step ??
-        (routingMode === "managed_supported"
+        (routingMode === "preset_supported"
           ? "Review the compiled contract before publishing."
           : null),
     },

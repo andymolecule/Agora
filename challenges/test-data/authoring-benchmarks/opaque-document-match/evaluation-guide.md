@@ -3,12 +3,12 @@
 ## Intent
 
 This benchmark checks that Agora can keep a deterministic exact-match task in a
-generic semi-custom path even when the submission is an opaque file instead of
+generic definition-backed path even when the submission is an opaque file instead of
 CSV or JSON.
 
 ## What Should Happen
 
-- The draft should route to `semi_custom`.
+- The draft should route to `definition_backed`.
 - The evaluator archetype should be `exact_artifact_match`.
 - Agora should keep the role vocabulary generic:
   - `source_packet.pdf` -> `public_inputs`

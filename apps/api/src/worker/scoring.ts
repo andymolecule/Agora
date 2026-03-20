@@ -1,15 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  EXPERT_RUNTIME_FAMILY_ID,
-  type RunnerLimits,
-  SEMI_CUSTOM_RUNTIME_FAMILY_ID,
   SUBMISSION_RESULT_FORMAT,
+  type EvaluationPlan,
   getSubmissionLimitViolation,
   isProductionRuntime,
   loadConfig,
-  resolveChallengeEvaluation,
-  resolveRuntimeFamilyLimits,
+  resolveEvaluationPlan,
   resolveSubmissionLimits,
   resolveSubmissionOpenPrivateKeys,
   validateExpertScorerImage,
@@ -41,11 +38,11 @@ export interface ResolvedRunnerPolicy {
     pids: number;
   };
   timeoutMs?: number;
-  source: "runtime_family" | "default";
+  source: "evaluation_plan" | "default";
 }
 
 function policyFromLimits(
-  runnerLimits: RunnerLimits,
+  runnerLimits: NonNullable<EvaluationPlan["limits"]>,
   source: ResolvedRunnerPolicy["source"],
 ): ResolvedRunnerPolicy {
   return {
@@ -59,15 +56,11 @@ function policyFromLimits(
   };
 }
 
-export function resolveRunnerPolicyForChallenge(challenge: {
-  image: string;
-  runtime_family: string;
-  semi_custom_runner_family?: string;
-}): ResolvedRunnerPolicy {
-  const runtimeFamily = challenge.runtime_family.trim();
-
-  if (runtimeFamily === EXPERT_RUNTIME_FAMILY_ID) {
-    const customIntegrityError = validateExpertScorerImage(challenge.image);
+export function resolveRunnerPolicyForEvaluationPlan(
+  plan: Pick<EvaluationPlan, "backendKind" | "image" | "limits">,
+): ResolvedRunnerPolicy {
+  if (plan.backendKind === "oci_image") {
+    const customIntegrityError = validateExpertScorerImage(plan.image ?? "");
     if (customIntegrityError) {
       throw new Error(
         `Invalid runtime family configuration: ${customIntegrityError}`,
@@ -76,26 +69,10 @@ export function resolveRunnerPolicyForChallenge(challenge: {
     return { source: "default" };
   }
 
-  if (
-    runtimeFamily === SEMI_CUSTOM_RUNTIME_FAMILY_ID &&
-    challenge.semi_custom_runner_family?.trim()
-  ) {
-    const runnerLimits = resolveRuntimeFamilyLimits(
-      challenge.semi_custom_runner_family,
-    );
-    if (!runnerLimits) {
-      throw new Error(
-        `Unknown semi-custom runner family: ${challenge.semi_custom_runner_family}`,
-      );
-    }
-    return policyFromLimits(runnerLimits, "runtime_family");
+  if (!plan.limits) {
+    throw new Error("Challenge is missing evaluation plan runner limits.");
   }
-
-  const runnerLimits = resolveRuntimeFamilyLimits(runtimeFamily);
-  if (!runnerLimits) {
-    throw new Error(`Unknown runtime family on challenge: ${runtimeFamily}`);
-  }
-  return policyFromLimits(runnerLimits, "runtime_family");
+  return policyFromLimits(plan.limits, "evaluation_plan");
 }
 
 export interface ScoringOutcomeSuccess {
@@ -171,37 +148,21 @@ export async function scoreSubmissionAndBuildProof(
     };
   }
 
-  const evalPlan = resolveChallengeEvaluation(challenge);
-  const runnerPolicy = resolveRunnerPolicyForChallenge({
-    image: evalPlan.image,
-    runtime_family: challenge.runtime_family,
-    semi_custom_runner_family:
-      evalPlan.semiCustomExecution?.runner_runtime_family,
-  });
+  const evaluationPlan = resolveEvaluationPlan(challenge);
+  const runnerPolicy = resolveRunnerPolicyForEvaluationPlan(evaluationPlan);
   const phaseMeta = {
     jobId,
     submissionId: submission.id,
     challengeId: challenge.id,
-    image: evalPlan.image,
+    image: evaluationPlan.image,
   };
   const config = loadConfig();
   const isProduction = isProductionRuntime(config);
   const scoringSpecConfig = await resolveScoringRuntimeConfig({
-    env: challenge.scoring_env_json,
-    submissionContract: challenge.submission_contract_json,
-    evaluationContract: evalPlan.semiCustomExecution?.evaluation_contract,
-    policies: evalPlan.semiCustomExecution?.policies,
-    specCid: challenge.spec_cid,
-    onLegacyFallback: async (specCid) => {
-      log(
-        "warn",
-        "Challenge is missing cached scoring config; falling back to IPFS spec fetch",
-        {
-          ...phaseMeta,
-          specCid,
-        },
-      );
-    },
+    env: evaluationPlan.env,
+    submissionContract: evaluationPlan.submissionContract,
+    evaluationContract: evaluationPlan.evaluationContract,
+    policies: evaluationPlan.policies,
   });
   let submissionSource: Awaited<ReturnType<typeof resolveSubmissionSource>>;
   try {
@@ -223,16 +184,17 @@ export async function scoreSubmissionAndBuildProof(
     throw error;
   }
   const run = await executeScoringPipeline({
-    image: evalPlan.image,
-    runtimeFamily: evalPlan.runtimeFamily,
-    evaluationBundle: evalPlan.evaluationBundleCid
-      ? { cid: evalPlan.evaluationBundleCid }
+    image: evaluationPlan.image ?? "",
+    runtimeFamily: evaluationPlan.executionRuntimeFamily,
+    evaluationBundle: evaluationPlan.evaluationBundleCid
+      ? { cid: evaluationPlan.evaluationBundleCid }
       : undefined,
-    mount: evalPlan.mount,
+    mount: evaluationPlan.mount,
+    generatedScorer: evaluationPlan.generatedScorer,
     submission: submissionSource,
     submissionContract: scoringSpecConfig.submissionContract,
     evaluationContract: scoringSpecConfig.evaluationContract,
-    metric: evalPlan.metric,
+    metric: evaluationPlan.metric,
     policies: scoringSpecConfig.policies,
     env: scoringSpecConfig.env,
     timeoutMs: runnerPolicy.timeoutMs,
@@ -289,7 +251,7 @@ export async function scoreSubmissionAndBuildProof(
           ...baseProof,
           challengeSpecCid:
             (challenge as { spec_cid?: string | null }).spec_cid ?? null,
-          evaluationBundleCid: evalPlan.evaluationBundleCid ?? null,
+          evaluationBundleCid: evaluationPlan.evaluationBundleCid ?? null,
           replaySubmissionCid,
         };
 

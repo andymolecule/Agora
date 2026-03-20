@@ -33,15 +33,16 @@ export function buildManagedReviewSummary(input: {
   };
 }
 
-export function buildSemiCustomReviewSummary(input: {
+export function buildDefinitionBackedReviewSummary(input: {
   authoringIr: ChallengeAuthoringIrOutput;
   executable: boolean;
   triggerMessage?: string | null;
 }): AuthoringReviewSummaryOutput {
-  const evaluatorId =
-    input.authoringIr.evaluation.selected_evaluator ?? "semi_custom";
+  const definitionId =
+    input.authoringIr.evaluation.definition_id ?? "definition_backed";
   const evaluatorArchetype =
-    input.authoringIr.evaluation.semi_custom_contract?.archetype ?? evaluatorId;
+    input.authoringIr.evaluation.evaluator_definition?.archetype ??
+    definitionId;
   const ambiguitySummary =
     input.authoringIr.ambiguity.classes.length > 0
       ? ` Ambiguities still tracked: ${input.authoringIr.ambiguity.classes.join(", ")}.`
@@ -52,8 +53,8 @@ export function buildSemiCustomReviewSummary(input: {
       : "";
 
   return {
-    summary: `Agora could not map this draft cleanly to a current managed runtime family, but the challenge appears deterministic enough for a semi-custom evaluator path.${triggerSummary} Current evaluator archetype candidate: ${evaluatorArchetype}.${ambiguitySummary}${input.executable ? " This contract already maps to a supported semi-custom execution template and can proceed through review." : " Next step: configure a supported semi-custom evaluator or continue in Expert Mode."}`,
-    reason_codes: ["semi_custom_candidate"],
+    summary: `Agora could not map this draft cleanly to a current managed preset, but the challenge appears deterministic enough for a definition-backed evaluator path.${triggerSummary} Current evaluator definition candidate: ${evaluatorArchetype}.${ambiguitySummary}${input.executable ? " This definition already maps to a supported execution backend and can proceed through review." : " Next step: configure a supported execution backend or continue in Expert Mode."}`,
+    reason_codes: ["definition_backed_candidate"],
     confidence_score: input.authoringIr.routing.confidence_score,
     recommended_action: input.executable
       ? "approve_after_review"
@@ -76,11 +77,11 @@ export function deriveAuthoringDraftReviewSummary(
   }
 
   const authoringIr = row.authoring_ir_json;
-  const isSemiCustom =
-    row.compilation_json.runtime_family === "semi_custom" ||
-    authoringIr?.routing.mode === "semi_custom";
-  if (isSemiCustom && authoringIr) {
-    return buildSemiCustomReviewSummary({
+  const isDefinitionBacked =
+    row.compilation_json.authoring_path === "definition_backed" ||
+    authoringIr?.routing.mode === "definition_backed";
+  if (isDefinitionBacked && authoringIr) {
+    return buildDefinitionBackedReviewSummary({
       authoringIr,
       executable: validateChallengeScoreability(
         row.compilation_json.challenge_spec,

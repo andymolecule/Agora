@@ -8,6 +8,7 @@ import {
   type CreateAuthoringSourceDraftRequestOutput,
   SUBMISSION_LIMITS,
 } from "@agora/common";
+import type { AgoraLogger } from "@agora/common/server-observability";
 import { pinFile, unpinCid } from "@agora/ipfs";
 
 const AUTHORING_ARTIFACT_FETCH_TIMEOUT_MS = 15_000;
@@ -270,11 +271,24 @@ export async function normalizeExternalArtifactsForDraft(input: {
   unpinCidImpl?: typeof unpinCid;
   fetchTimeoutMs?: number;
   maxBytes?: number;
+  logger?: AgoraLogger;
+  draftId?: string;
+  provider?: string;
 }) {
   const normalizedArtifacts: AuthoringArtifactOutput[] = [];
   const pinFileImpl = input.pinFileImpl ?? pinFile;
   const unpinCidImpl = input.unpinCidImpl ?? unpinCid;
   const pinnedUris: string[] = [];
+
+  input.logger?.info(
+    {
+      event: "authoring.artifacts.normalize_started",
+      draftId: input.draftId ?? null,
+      provider: input.provider ?? null,
+      artifactCount: input.artifacts.length,
+    },
+    "Started normalizing external authoring artifacts",
+  );
 
   try {
     for (const artifact of input.artifacts) {
@@ -328,8 +342,30 @@ export async function normalizeExternalArtifactsForDraft(input: {
     }
   } catch (error) {
     await rollbackPinnedArtifacts(pinnedUris, unpinCidImpl);
+    input.logger?.warn(
+      {
+        event: "authoring.artifacts.normalize_failed",
+        draftId: input.draftId ?? null,
+        provider: input.provider ?? null,
+        pinnedCount: pinnedUris.length,
+        code: error instanceof AgoraError ? error.code : null,
+        status: error instanceof AgoraError ? error.status : null,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      "External authoring artifact normalization failed",
+    );
     throw error;
   }
 
+  input.logger?.info(
+    {
+      event: "authoring.artifacts.normalize_completed",
+      draftId: input.draftId ?? null,
+      provider: input.provider ?? null,
+      artifactCount: normalizedArtifacts.length,
+      pinnedCount: pinnedUris.length,
+    },
+    "Normalized external authoring artifacts",
+  );
   return normalizedArtifacts;
 }

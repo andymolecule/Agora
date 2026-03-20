@@ -20,13 +20,12 @@ import {
   AgoraError,
   SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
-  type SubmissionContractOutput,
   challengeSpecSchema,
   importSubmissionSealPublicKey,
   loadConfig,
   parseChallengeSpecDocument,
   readApiClientRuntimeConfig,
-  resolveChallengeEvaluation,
+  resolveEvaluationPlan,
   resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeys,
   sealSubmission,
@@ -557,7 +556,7 @@ export async function scoreLocal(input: {
 }) {
   return withScorerLock(async () => {
     const apiUrl = input.apiUrl ?? readApiClientRuntimeConfig().apiUrl;
-    const { evalPlan, scoringSpecConfig } = apiUrl
+    const { evaluationPlan, scoringSpecConfig } = apiUrl
       ? await resolveLocalScoringConfigFromApi({
           challengeId: input.challengeId,
           apiUrl,
@@ -565,12 +564,16 @@ export async function scoreLocal(input: {
       : await resolveLocalScoringConfigFromDb(input.challengeId);
 
     const run = await executeScoringPipeline({
-      image: evalPlan.image,
-      evaluationBundle: { cid: evalPlan.evaluationBundleCid },
-      mount: evalPlan.mount,
+      image: evaluationPlan.image ?? "",
+      evaluationBundle: { cid: evaluationPlan.evaluationBundleCid },
+      mount: evaluationPlan.mount,
+      generatedScorer: evaluationPlan.generatedScorer,
       submission: { localPath: input.filePath },
       submissionContract: scoringSpecConfig.submissionContract,
-      metric: evalPlan.metric,
+      evaluationContract: scoringSpecConfig.evaluationContract,
+      metric: evaluationPlan.metric,
+      runtimeFamily: evaluationPlan.executionRuntimeFamily,
+      policies: scoringSpecConfig.policies,
       env: scoringSpecConfig.env,
     });
 
@@ -596,23 +599,19 @@ export async function scoreLocal(input: {
 async function resolveLocalScoringConfigFromDb(challengeId: string) {
   const db = createSupabaseClient(false);
   const challenge = await getChallengeById(db, challengeId);
-  const evalPlan = resolveChallengeEvaluation(challenge);
-  if (!evalPlan.evaluationBundleCid) {
+  const evaluationPlan = resolveEvaluationPlan(challenge);
+  if (!evaluationPlan.evaluationBundleCid) {
     throw cliWorkflowError(
       "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
     );
   }
   const scoringSpecConfig = await resolveScoringRuntimeConfig({
-    env: (challenge as { scoring_env_json?: Record<string, string> | null })
-      .scoring_env_json,
-    submissionContract: (
-      challenge as {
-        submission_contract_json?: SubmissionContractOutput | null;
-      }
-    ).submission_contract_json,
-    specCid: (challenge as { spec_cid?: string | null }).spec_cid ?? null,
+    env: evaluationPlan.env,
+    submissionContract: evaluationPlan.submissionContract,
+    evaluationContract: evaluationPlan.evaluationContract,
+    policies: evaluationPlan.policies,
   });
-  return { evalPlan, scoringSpecConfig };
+  return { evaluationPlan, scoringSpecConfig };
 }
 
 async function resolveLocalScoringConfigFromApi(input: {
@@ -632,19 +631,22 @@ async function resolveLocalScoringConfigFromApi(input: {
   const spec = challengeSpecSchema.parse(
     parseChallengeSpecDocument(await getText(specCid)),
   );
-  const evalPlan = resolveChallengeEvaluation(spec);
-  if (!evalPlan.evaluationBundleCid) {
+  const evaluationPlan = resolveEvaluationPlan(spec);
+  if (!evaluationPlan.evaluationBundleCid) {
     throw cliWorkflowError(
       "Challenge spec is missing an evaluation bundle CID. Next step: inspect the pinned spec and retry against a scoreable challenge.",
     );
   }
 
   const scoringSpecConfig = await resolveScoringRuntimeConfig({
-    submissionContract: challenge.submission_contract ?? undefined,
-    specCid,
+    env: evaluationPlan.env,
+    submissionContract:
+      challenge.submission_contract ?? evaluationPlan.submissionContract,
+    evaluationContract: evaluationPlan.evaluationContract,
+    policies: evaluationPlan.policies,
   });
 
-  return { evalPlan, scoringSpecConfig };
+  return { evaluationPlan, scoringSpecConfig };
 }
 
 export async function verifySubmission(input: {
@@ -718,8 +720,8 @@ export async function verifySubmission(input: {
       );
     }
 
-    const evalPlan = resolveChallengeEvaluation(challenge);
-    if (!evalPlan.evaluationBundleCid) {
+    const evaluationPlan = resolveEvaluationPlan(challenge);
+    if (!evaluationPlan.evaluationBundleCid) {
       throw cliWorkflowError(
         "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
       );
@@ -736,19 +738,16 @@ export async function verifySubmission(input: {
     }
 
     const scoringSpecConfig = await resolveScoringRuntimeConfig({
-      env: (challenge as { scoring_env_json?: Record<string, string> | null })
-        .scoring_env_json,
-      submissionContract: (
-        challenge as {
-          submission_contract_json?: SubmissionContractOutput | null;
-        }
-      ).submission_contract_json,
-      specCid: (challenge as { spec_cid?: string | null }).spec_cid ?? null,
+      env: evaluationPlan.env,
+      submissionContract: evaluationPlan.submissionContract,
+      evaluationContract: evaluationPlan.evaluationContract,
+      policies: evaluationPlan.policies,
     });
     const run = await executeScoringPipeline({
       image: proofPayload.containerImageDigest ?? proof.container_image_hash,
-      evaluationBundle: { cid: evalPlan.evaluationBundleCid },
-      mount: evalPlan.mount,
+      evaluationBundle: { cid: evaluationPlan.evaluationBundleCid },
+      mount: evaluationPlan.mount,
+      generatedScorer: evaluationPlan.generatedScorer,
       submission: await resolveSubmissionSource({
         resultCid: submission.result_cid,
         resultFormat: submission.result_format,
@@ -757,7 +756,10 @@ export async function verifySubmission(input: {
         privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(runtimeConfig),
       }),
       submissionContract: scoringSpecConfig.submissionContract,
-      metric: evalPlan.metric,
+      evaluationContract: scoringSpecConfig.evaluationContract,
+      metric: evaluationPlan.metric,
+      runtimeFamily: evaluationPlan.executionRuntimeFamily,
+      policies: scoringSpecConfig.policies,
       env: scoringSpecConfig.env,
     });
 

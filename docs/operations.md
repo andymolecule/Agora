@@ -137,7 +137,7 @@ Architecture boundary:
 
 - Clients now pre-register `submission_intents` before the on-chain submit. API submit confirmation and the indexer only attach on-chain submissions to already-registered intents, and only then create or revive `score_jobs`.
 - Worker polls `score_jobs` but only claims jobs after the challenge enters `Scoring` at deadline, and only when the worker runtime matches the active scoring runtime version declared by the API.
-- Scorer is the Docker container itself (for example `ghcr.io/andymolecule/repro-scorer:v1`) — stateless, sandboxed, no network access. The orchestrator stages inputs; the executor service runs the container.
+- Scorer is the Docker container itself (for example `ghcr.io/andymolecule/gems-match-scorer:v1`) — stateless, sandboxed, no network access. The orchestrator stages inputs; the executor service runs the container.
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
 - Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` remains the active scoring runtime fence while API and worker-orchestrator roll forward together on Railway.
@@ -311,8 +311,13 @@ Steady-state flow:
 ## Smoke Test
 
 ```bash
+pnpm smoke:lifecycle
 ./scripts/e2e-test.sh
 ```
+
+- `pnpm smoke:lifecycle` runs the local full-stack lifecycle harness, including authoring draft publish, submit, score, proof, dispute, finalize, and claim.
+- Before running it against an existing environment, apply migrations `028_add_authoring_sponsor_budget_reservations.sql`, `029_add_challenge_evaluation_plan.sql`, and `030_make_challenge_runtime_caches_optional.sql`, then reload the PostgREST schema cache.
+- `./scripts/e2e-test.sh` remains the CLI/operator smoke for direct post/list/get/score-local/submit/verify-public flows against a published scorer image.
 
 Fast overrides for shorter sessions:
 

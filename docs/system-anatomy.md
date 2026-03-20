@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A reverse-engineered, bottom-up walkthrough of Agora as it exists in the current codebase: what each layer does, what data it handles, where determinism is enforced, and how the system climbs from Docker scorers up to the browser, CLI, MCP server, and partner integrations.
+A reverse-engineered, bottom-up walkthrough of Agora as it exists in the current codebase: what each layer does, what data it handles, where determinism is enforced, and how the system climbs from GEMS scorer images up to the browser, CLI, MCP server, and partner integrations.
 
 This document is a systems map, not the normative spec. Source-of-truth rules still live in the code and the narrower docs:
 
@@ -95,10 +95,11 @@ flowchart TB
         Base["Base contracts"]
     end
 
-    subgraph Containers["Short-lived scorer containers"]
-        Repro["repro-scorer"]
-        Regr["regression-scorer"]
-        Dock["docking-scorer"]
+    subgraph Containers["Short-lived GEMS scorer containers"]
+        Repro["gems-match-scorer"]
+        Regr["gems-tabular-scorer"]
+        Dock["gems-ranking-scorer"]
+        Generated["gems-generated-scorer"]
     end
 
     Browser --> API
@@ -107,6 +108,7 @@ flowchart TB
     CLI --> Repro
     CLI --> Regr
     CLI --> Dock
+    CLI --> Generated
     Agent --> API
     MCP --> API
     Partner --> API
@@ -125,6 +127,7 @@ flowchart TB
     Exec --> Repro
     Exec --> Regr
     Exec --> Dock
+    Exec --> Generated
 ```
 
 The important separation is:
@@ -168,41 +171,41 @@ Almost every module in the repo exists to either:
 
 ---
 
-## Layer 0: The Docker Scorers (Ground Truth Execution)
+## Layer 0: The GEMS Scorers (Ground Truth Execution)
 
 This is the lowest layer where challenge evaluation actually happens. Everything above it exists to stage files, pick the right official image, and publish the result.
 
 ### What it is
 
-Agora does not have one scorer image anymore. It has a small official scorer image set:
+Agora does not have one scorer image anymore. It has a small official GEMS scorer image set:
 
 | Image | Code | Used by |
 |-------|------|---------|
-| `ghcr.io/andymolecule/repro-scorer:v1` | `containers/repro-scorer/score.py` | `reproducibility` plus executable semi-custom `exact_artifact_match` and `structured_record_score` |
-| `ghcr.io/andymolecule/regression-scorer:v1` | `containers/regression-scorer/score.py` | `tabular_regression`, `tabular_classification`, executable semi-custom `structured_table_score` |
-| `ghcr.io/andymolecule/docking-scorer:v1` | `containers/docking-scorer/score.py` | `ranking`, `docking` |
+| `ghcr.io/andymolecule/gems-generated-scorer:v1` | `containers/gems-generated-scorer/score.py` | `generated_scorer` backend for Agora-compiled deterministic scorers, including generated managed presets |
+| `ghcr.io/andymolecule/gems-match-scorer:v1` | `containers/gems-match-scorer/score.py` | Specialized deterministic artifact matching and direct match-style scorer specs |
+| `ghcr.io/andymolecule/gems-tabular-scorer:v1` | `containers/gems-tabular-scorer/score.py` | Specialized deterministic tabular metrics and direct tabular scorer specs |
+| `ghcr.io/andymolecule/gems-ranking-scorer:v1` | `containers/gems-ranking-scorer/score.py` | `ranking`, `docking` |
 
-The important architectural rule is not “one scorer.” It is “one small official scorer image set with pinned digests and deterministic runtime contracts.”
+The important architectural rule is not “one scorer.” It is “one small official GEMS scorer image set with pinned digests and deterministic runtime contracts.”
 
 ### Runtime-family to image mapping
 
 ```mermaid
 flowchart LR
-    R1["reproducibility"] --> I1["repro-scorer"]
-    R2["exact_artifact_match"] --> I1
-    R3["structured_record_score"] --> I1
+    G1["generated_scorer backend"] --> I0["gems-generated-scorer"]
+    G2["generated managed presets"] --> I0
 
-    T1["tabular_regression"] --> I2["regression-scorer"]
-    T2["tabular_classification"] --> I2
-    T3["structured_table_score"] --> I2
+    M1["direct match scorer specs"] --> I1["gems-match-scorer"]
 
-    K1["ranking"] --> I3["docking-scorer"]
+    T1["direct tabular scorer specs"] --> I2["gems-tabular-scorer"]
+
+    K1["ranking"] --> I3["gems-ranking-scorer"]
     K2["docking"] --> I3
 ```
 
 ### What it receives
 
-All official scorers receive a staged input directory:
+All official GEMS scorers receive a staged input directory:
 
 ```text
 /input/
@@ -214,7 +217,7 @@ All official scorers receive a staged input directory:
 Common mount patterns today:
 
 ```text
-tabular managed / semi-custom:
+tabular managed / definition-backed:
   ground_truth.csv
   submission.csv
 
@@ -237,16 +240,23 @@ The runtime config tells the image:
 
 ### What it does
 
-The three official scorer images cover different deterministic workloads:
+The official GEMS scorer images cover different deterministic workloads:
 
 ```text
-repro-scorer
+gems-generated-scorer
+  ├── loads generated_scorer.py
+  ├── hosts Agora-compiled deterministic scoring logic
+  └── keeps generated scoring inside the same sandboxed runtime contract
+```
+
+```text
+gems-match-scorer
   ├── csv_table exact/tolerant row matching
   ├── json_file deep equality
   ├── json_record rubric validation
   └── opaque_file byte-for-byte matching
 
-regression-scorer
+gems-tabular-scorer
   ├── r2
   ├── rmse
   ├── mae
@@ -255,15 +265,16 @@ regression-scorer
   ├── accuracy
   └── f1
 
-docking-scorer
+gems-ranking-scorer
   ├── spearman ranking
   └── ndcg ranking
 ```
 
 The bottom-line rule is:
 
-- managed prediction / ranking / docking use dedicated metric scorers
-- exact-match and structured-record semi-custom paths reuse the reproducibility scorer
+- Agora routes objective deterministic custom logic through gems-generated-scorer whenever it can compile a scorer program safely.
+- ranking and docking keep their dedicated gems-ranking-scorer image.
+- gems-match-scorer and gems-tabular-scorer remain available as specialized deterministic scorer images for direct scorer specs and local inspection flows.
 
 ### What it outputs
 
@@ -445,7 +456,7 @@ ScoringPipelineResult
 
 This layer is where spec-derived scoring config is resolved. It prefers cached DB config on the challenge row and falls back to the IPFS spec CID only when needed.
 
-It also keeps managed, semi-custom, and expert scoring on one execution rail: once the image, mount plan, contracts, and policies are resolved, the pipeline does not care where they came from.
+It also keeps managed, definition-backed, and expert scoring on one execution rail: once the image, mount plan, contracts, and policies are resolved, the pipeline does not care where they came from.
 
 ---
 
@@ -524,7 +535,7 @@ Every poll interval:
   │     ├── scorer image
   │     ├── evaluation bundle CID
   │     ├── mount config
-  │     └── semi-custom runner family override if needed
+  │     └── definition-backed execution runtime override if needed
   │
   ├── resolve submission source
   │     ├── plain_v0 → use CID directly
@@ -920,7 +931,7 @@ Both converge into:
     routing.mode:
       - not_ready
       - managed_supported
-      - semi_custom
+      - definition_backed
       - expert_mode_required
         │
         ▼
@@ -1013,12 +1024,12 @@ Important distinction:
 
 - `managed_supported` + strong confidence + successful dry-run → `ready`
 - `managed_supported` + weaker confidence → `needs_review`
-- `semi_custom` + executable official template → typed contract + dry-run + `needs_review`
-- `semi_custom` + non-executable contract → typed contract but publish-blocked
-- `expert_mode_required` → not a current managed/semi-custom execution path
+- `definition_backed` + executable official template → typed contract + dry-run + `needs_review`
+- `definition_backed` + non-executable contract → typed contract but publish-blocked
+- `expert_mode_required` → not a current managed/definition-backed execution path
 - unresolved ambiguity → `needs_clarification`
 
-Current semi-custom archetype registry:
+Current definition-backed archetype registry:
 
 - `exact_artifact_match`
 - `structured_table_score`
@@ -1026,7 +1037,7 @@ Current semi-custom archetype registry:
 - `bundle_or_code_judge`
 - `opaque_file_judge`
 
-Current executable semi-custom templates:
+Current executable definition-backed templates:
 
 - `official_table_metric_v1`
 - `official_exact_match_v1`
@@ -1304,7 +1315,7 @@ That single path touches almost every layer described above:
 
 3. **The draft aggregate is cleaner than before.** Draft state, source identity, callback targets, callback deliveries, and publish outcomes are no longer stuffed into one thick all-purpose draft row. The split into `authoring_drafts`, `authoring_source_links`, `authoring_callback_targets`, `authoring_callback_deliveries`, and `published_challenge_links` materially reduced structural entropy.
 
-4. **The authoring layer is broader without jumping straight to arbitrary code.** Managed runtimes, executable semi-custom templates, and typed-but-non-executable semi-custom archetypes are distinct concepts now.
+4. **The authoring layer is broader without jumping straight to arbitrary code.** Managed runtimes, executable definition-backed templates, and typed-but-non-executable definition-backed archetypes are distinct concepts now.
 
 5. **Public fairness boundaries are explicit.** Open challenges keep leaderboard and verification surfaces closed, and the code treats effective on-chain lifecycle semantics as the visibility boundary.
 
@@ -1318,7 +1329,7 @@ That single path touches almost every layer described above:
 
 4. **Proof pinning and on-chain posting are recoverable, not transactional.** The system has retry and reconciliation logic, but proof publication and score posting are still a multi-step workflow rather than a single atomic commit.
 
-5. **Some semi-custom archetypes remain typed-only.** `bundle_or_code_judge` and `opaque_file_judge` are valid routing outputs, but they are not first-class executable official templates yet. Expanding them carelessly would be an easy way to reintroduce complexity.
+5. **Some definition-backed archetypes remain typed-only.** `bundle_or_code_judge` and `opaque_file_judge` are valid routing outputs, but they are not first-class executable official templates yet. Expanding them carelessly would be an easy way to reintroduce complexity.
 
 ---
 
@@ -1333,7 +1344,7 @@ Can the poster express the winner condition as a deterministic contract that the
 If yes, Agora can usually support it through:
 
 - a managed runtime family
-- an executable semi-custom evaluator template
+- an executable definition-backed evaluator template
 - or expert mode with a custom scorer image
 
 If no, the challenge is not yet a fit for the current deterministic settlement model.
@@ -1344,9 +1355,9 @@ If no, the challenge is not yet a fit for the current deterministic settlement m
 
 | Example | Evaluation artifact | Current path |
 |---------|---------------------|--------------|
-| reproduce a published data table | hidden CSV reference | managed `reproducibility` or semi-custom `exact_artifact_match` |
-| match an exact JSON output | hidden JSON reference | executable semi-custom `exact_artifact_match` |
-| reproduce a binary document or generated file | hidden binary/PDF | executable semi-custom `exact_artifact_match` |
+| reproduce a published data table | hidden CSV reference | managed `reproducibility` or definition-backed `exact_artifact_match` |
+| match an exact JSON output | hidden JSON reference | executable definition-backed `exact_artifact_match` |
+| reproduce a binary document or generated file | hidden binary/PDF | executable definition-backed `exact_artifact_match` |
 
 Why it works:
 
@@ -1362,7 +1373,7 @@ Why it works:
 | numeric predictions against hidden labels | hidden CSV labels | managed `tabular_regression` |
 | class labels against hidden truth | hidden CSV labels | managed `tabular_classification` |
 | ranked candidates against hidden relevance | hidden ranking CSV | managed `ranking` or `docking` |
-| table-shaped deterministic semi-custom scoring | hidden CSV + typed contract | executable semi-custom `structured_table_score` |
+| table-shaped deterministic definition-backed scoring | hidden CSV + typed contract | executable definition-backed `structured_table_score` |
 
 Why it works:
 
@@ -1376,8 +1387,8 @@ Why it works:
 
 | Example | Evaluation artifact | Current path |
 |---------|---------------------|--------------|
-| incident report with required sections | hidden rubric JSON | executable semi-custom `structured_record_score` |
-| structured protocol compliance | hidden rubric JSON | executable semi-custom `structured_record_score` |
+| incident report with required sections | hidden rubric JSON | executable definition-backed `structured_record_score` |
+| structured protocol compliance | hidden rubric JSON | executable definition-backed `structured_record_score` |
 | bundle/code package requiring custom deterministic checks | typed archetype only | `bundle_or_code_judge` (typed, not executable by official template yet) |
 
 Why it works:
@@ -1395,18 +1406,18 @@ Why it works:
 | run hidden model inference over submitted code | needs arbitrary execution against hidden environment | expert/custom scorer only |
 | evaluate a code bundle with a bespoke hidden test harness | needs custom judge runtime | typed archetype exists, official template not yet |
 
-This is the frontier. The current managed and semi-custom layers are intentionally constrained to avoid turning the platform into arbitrary code execution by default.
+This is the frontier. The current managed and definition-backed layers are intentionally constrained to avoid turning the platform into arbitrary code execution by default.
 
 ### Summary: What the scorer can and cannot evaluate
 
 ```text
 Poster has...                     Current architecture path
 ───────────────────────────────   ───────────────────────────────────────────
-Exact reference artifact          Managed or semi-custom exact match
+Exact reference artifact          Managed or definition-backed exact match
 Hidden labels / hidden scores     Managed metric scorer or structured table score
 Deterministic rubric              Structured record score
 Custom deterministic judge        Expert mode today; limited typed archetypes exist
-Open-ended search problem         Not a first-class managed/semi-custom path
+Open-ended search problem         Not a first-class managed/definition-backed path
 ```
 
 ### Design implication

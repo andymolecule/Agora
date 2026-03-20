@@ -1,12 +1,14 @@
 {
   "id": "bundle-code-judge",
-  "managed_support": "semi_custom_typed",
+  "authoring_path_support": "definition_backed_typed",
   "intent_family": "bundle_or_code_judge",
   "artifacts_root": "uploads",
   "prompt_variants_root": "prompt-variants",
   "solver_submissions_root": "solver-submissions",
   "compile_invariants": {
-    "runtime_family": "semi_custom",
+    "preset_id": "bundle_or_code_judge",
+    "backend_kind": "definition_only",
+    "execution_runtime_family": null,
     "evaluator_archetype": "bundle_or_code_judge",
     "metric": "custom",
     "artifact_roles": [
@@ -29,7 +31,7 @@
   },
   "acceptable_compile_states": ["needs_review"],
   "disallowed_outcomes": {
-    "runtime_families": [
+    "preset_ids": [
       "tabular_regression",
       "tabular_classification",
       "ranking",

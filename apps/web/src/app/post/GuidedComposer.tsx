@@ -76,7 +76,7 @@ function UploadEditor({
     <div className="space-y-4">
       <label
         className={cx(
-          "flex cursor-pointer flex-col items-center justify-center rounded-[2px] border-2 border-dashed px-5 py-8 text-center transition motion-reduce:transition-none",
+          "flex cursor-pointer flex-col items-center justify-center rounded border-2 border-dashed px-5 py-8 text-center transition motion-reduce:transition-none",
           dragActive
             ? "border-warm-900 bg-warm-50"
             : "border-warm-300 bg-white hover:border-warm-900",
@@ -125,7 +125,7 @@ function UploadEditor({
       </label>
 
       {uploads.length > 0 ? (
-        <div className="divide-y divide-warm-200 rounded-[2px] border border-warm-300 bg-white">
+        <div className="divide-y divide-warm-200 rounded border border-warm-300 bg-white">
           {uploads.map((artifact) => (
             <div
               key={artifact.id}
@@ -180,7 +180,7 @@ function UploadEditor({
             .map((column) => (
               <span
                 key={column}
-                className="rounded-[2px] border border-warm-200 bg-warm-50 px-2 py-0.5 font-mono text-[10px] text-warm-700"
+                className="rounded border border-warm-200 bg-warm-50 px-2 py-0.5 font-mono text-[10px] text-warm-700"
               >
                 {column}
               </span>
@@ -188,7 +188,7 @@ function UploadEditor({
         </div>
       ) : null}
 
-      <div className="rounded-[2px] border border-warm-300 bg-warm-50 px-4 py-3 text-xs leading-5 text-warm-600">
+      <div className="rounded border border-warm-300 bg-warm-50 px-4 py-3 text-xs leading-5 text-warm-600">
         Descriptive names help Agora map files during compile.{" "}
         {hints.map(({ hint, trailing }) => (
           <span key={hint}>
@@ -202,7 +202,7 @@ function UploadEditor({
         type="button"
         onClick={onConfirm}
         disabled={disabled}
-        className="btn-primary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
+        className="btn-primary rounded px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
       >
         Confirm files
       </button>
@@ -333,11 +333,11 @@ export function GuidedComposer({
                 promptRefs.current[promptId] = node;
               }}
               className={cx(
-                "flex items-center gap-3 rounded-[2px] border border-warm-300 bg-white px-4 py-3",
+                "flex items-center gap-3 rounded border border-warm-300 bg-white px-4 py-3",
                 dimmed && "opacity-40",
               )}
             >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[2px] bg-emerald-600 text-white">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-emerald-600 text-white">
                 <Check className="h-3.5 w-3.5" strokeWidth={3} />
               </div>
               <div className="min-w-0 flex-1">
@@ -351,7 +351,7 @@ export function GuidedComposer({
               <button
                 type="button"
                 onClick={() => onEditPrompt(promptId)}
-                className="inline-flex shrink-0 items-center gap-1 rounded-[2px] border border-warm-300 bg-white px-2.5 py-1 text-xs font-medium text-warm-700 transition hover:border-warm-900 hover:text-warm-900 motion-reduce:transition-none"
+                className="inline-flex shrink-0 items-center gap-1 rounded border border-warm-300 bg-white px-2.5 py-1 text-xs font-medium text-warm-700 transition hover:border-warm-900 hover:text-warm-900 motion-reduce:transition-none"
               >
                 <Pencil className="h-3 w-3" />
                 Edit
@@ -367,10 +367,10 @@ export function GuidedComposer({
               ref={(node) => {
                 promptRefs.current[promptId] = node;
               }}
-              className="rounded-[2px] border-2 border-warm-900 bg-white p-5 shadow-[4px_4px_0px_var(--color-warm-900)]"
+              className="rounded-md bg-white p-5 shadow-[0_20px_40px_rgba(28,28,24,0.06)]"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[2px] bg-warm-900 font-mono text-xs font-bold text-white">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-warm-900 font-mono text-xs font-bold text-white">
                   {index + 1}
                 </div>
                 <h3 className="font-display text-lg font-semibold tracking-tight text-warm-900">
@@ -385,7 +385,7 @@ export function GuidedComposer({
               ) : null}
 
               {activeClarifications.length > 0 ? (
-                <div className="ml-10 mt-4 rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <div className="ml-10 mt-4 rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   <div className="font-semibold">
                     {clarificationHelperText(clarificationTarget ?? "problem")}
                   </div>
@@ -444,7 +444,7 @@ export function GuidedComposer({
                         rows={4}
                         aria-label={prompt.prompt}
                         placeholder={prompt.placeholder}
-                        className="w-full rounded-[2px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transition-none"
+                        className="w-full rounded border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:ring-1 focus:ring-warm-900/15 motion-reduce:transition-none"
                       />
                     ) : prompt.inputKind === "currency" ? (
                       <div className="flex items-center gap-2">
@@ -456,7 +456,7 @@ export function GuidedComposer({
                           inputMode="decimal"
                           aria-label={prompt.prompt}
                           placeholder={prompt.placeholder}
-                          className="w-full rounded-[2px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transition-none"
+                          className="w-full rounded border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:ring-1 focus:ring-warm-900/15 motion-reduce:transition-none"
                         />
                         <span className="shrink-0 font-mono text-sm font-bold text-warm-500">
                           USDC
@@ -474,9 +474,9 @@ export function GuidedComposer({
                             aria-pressed={draftValue === option.value}
                             onClick={() => setDraftValue(option.value)}
                             className={cx(
-                              "rounded-[2px] border px-4 py-2.5 text-sm font-medium transition motion-reduce:transition-none",
+                              "rounded border px-4 py-2.5 text-sm font-medium transition motion-reduce:transition-none",
                               draftValue === option.value
-                                ? "border-warm-900 bg-warm-900 text-white shadow-[2px_2px_0px_var(--color-warm-900)]"
+                                ? "border-warm-900 bg-warm-900 text-white shadow-none"
                                 : "border-warm-300 bg-white text-warm-700 hover:border-warm-900",
                             )}
                           >
@@ -490,7 +490,7 @@ export function GuidedComposer({
                         onChange={(event) => setDraftValue(event.target.value)}
                         aria-label={prompt.prompt}
                         placeholder={prompt.placeholder}
-                        className="w-full rounded-[2px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transition-none"
+                        className="w-full rounded border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:ring-1 focus:ring-warm-900/15 motion-reduce:transition-none"
                       />
                     )}
 
@@ -504,7 +504,7 @@ export function GuidedComposer({
                       <button
                         type="submit"
                         disabled={submitDisabled}
-                        className="btn-primary rounded-[2px] px-6 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
+                        className="btn-primary rounded px-6 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
                       >
                         Continue
                       </button>
@@ -514,7 +514,7 @@ export function GuidedComposer({
                           onClick={() =>
                             onSkipOptionalPrompt("solverInstructions")
                           }
-                          className="btn-secondary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
+                          className="btn-secondary rounded px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
                         >
                           Skip
                         </button>
@@ -531,12 +531,12 @@ export function GuidedComposer({
       })}
 
       {!state.activePromptId ? (
-        <div className="rounded-[2px] border-2 border-emerald-600 bg-emerald-50 p-5 shadow-[4px_4px_0px_var(--color-emerald-600)]">
+        <div className="rounded-md bg-emerald-50 p-5">
           <div className="flex items-center gap-3">
             {isCompiling ? (
               <Loader2 className="h-5 w-5 animate-spin text-emerald-700" />
             ) : (
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[2px] bg-emerald-600 text-white">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-emerald-600 text-white">
                 <Check className="h-4 w-4" strokeWidth={3} />
               </div>
             )}
@@ -555,27 +555,27 @@ export function GuidedComposer({
       ) : null}
 
       {state.compileState === "needs_review" ? (
-        <div className="rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Agora compiled a contract, but an operator must review it before you
           can publish.
         </div>
       ) : null}
 
       {state.compileState === "ready" ? (
-        <div className="rounded-[2px] border border-emerald-400 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+        <div className="rounded border border-emerald-400 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
           Contract locked. Continue to review before funding.
         </div>
       ) : null}
 
       {state.compileState === "needs_clarification" &&
       clarificationQuestions.length === 0 ? (
-        <div className="rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Agora needs more context before it can lock the contract.
         </div>
       ) : null}
 
       {state.uploads.some((artifact) => artifact.status === "error") ? (
-        <div className="flex items-center gap-2 rounded-[2px] border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div className="flex items-center gap-2 rounded border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
           <CircleAlert className="h-4 w-4 shrink-0" />
           One or more uploads failed. Remove and re-upload before compile.
         </div>

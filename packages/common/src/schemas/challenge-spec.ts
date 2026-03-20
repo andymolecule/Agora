@@ -3,14 +3,22 @@ import { z } from "zod";
 import { CHALLENGE_LIMITS } from "../constants.js";
 import { getDisputeWindowMinHours } from "../dispute-policy.js";
 import {
-  EXPERT_RUNTIME_FAMILY_ID,
-  SEMI_CUSTOM_RUNTIME_FAMILY_ID,
+  type ChallengeEvalRow,
+  type EvaluationPlan,
+  evaluationBackendKindSchema,
+  resolveEvaluationPlan,
+  toLegacyResolvedChallengeEvaluation,
+} from "../evaluation-plan.js";
+import {
+  generatedScorerProgramSchema,
+  resolveGeneratedScorerImage,
+} from "../generated-scorers.js";
+import {
   isManagedRuntimeFamily,
   isOfficialScorerImage,
   resolveManagedScorerImage,
   resolveOfficialImageToDigest,
   resolveRuntimeFamilyLimits,
-  resolveRuntimeFamilyMount,
   resolveRuntimeFamilyRuntimeDefaults,
   validateExpertScorerImage,
   validateRuntimeMetric,
@@ -28,13 +36,11 @@ import {
   safePublicHttpsUrlSchema,
 } from "./authoring-source.js";
 import {
-  resolveSemiCustomExecutionPlan,
-  semiCustomEvaluatorContractSchema,
+  definitionBackedEvaluatorContractSchema,
+  resolveDefinitionBackedExecutionOfficialImage,
+  resolveDefinitionBackedExecutionPlan,
 } from "./evaluator-contract.js";
-import {
-  type SubmissionContractOutput,
-  submissionContractSchema,
-} from "./submission-contract.js";
+import { submissionContractSchema } from "./submission-contract.js";
 
 const domainEnum = z.enum(CHALLENGE_DOMAINS);
 const typeEnum = z.enum(CHALLENGE_TYPES);
@@ -56,16 +62,31 @@ const ipfsOrHttpsUriSchema = z
 
 const decimalStringPattern = /^\d+(?:\.\d{1,6})?$/;
 
-function validateSemiCustomExecutionScorerImage(image: string): string | null {
+function validatePresetInterpreterProvidedImage(image: string): string | null {
   const imageError = validateScorerImage(image);
   if (imageError) {
     return imageError;
   }
   if (!isOfficialScorerImage(image)) {
-    return "Executable semi-custom challenges must use an official Agora scorer image.";
+    return "Preset-interpreter challenges must use an official Agora scorer image.";
   }
-  if (!image.includes("@sha256:")) {
-    return "Executable semi-custom challenges must use a pinned scorer image digest (@sha256:...).";
+  return null;
+}
+
+function validateGeneratedScorerProvidedImage(image: string): string | null {
+  const imageError = validateScorerImage(image);
+  if (imageError) {
+    return imageError;
+  }
+  const generatedScorerImage = resolveGeneratedScorerImage();
+  const expectedRepository = generatedScorerImage.split("@")[0]?.split(":")[0];
+  const candidateRepository = image.trim().split("@")[0]?.split(":")[0];
+  if (
+    !expectedRepository ||
+    !candidateRepository ||
+    expectedRepository !== candidateRepository
+  ) {
+    return "Generated scorer challenges must use the official Agora generated scorer image.";
   }
   return null;
 }
@@ -105,11 +126,14 @@ export const challengeArtifactSchema = z.object({
 });
 
 export const challengeEvaluationSchema = z.object({
-  runtime_family: z.string().trim().min(1),
+  preset_id: z.string().trim().min(1),
+  backend_kind: evaluationBackendKindSchema,
+  execution_runtime_family: z.string().trim().min(1).optional(),
   metric: z.string().trim().min(1),
   scorer_image: z.string().trim().min(1).optional(),
   evaluation_bundle: ipfsOrHttpsUriSchema.optional(),
-  evaluator_contract: semiCustomEvaluatorContractSchema.optional(),
+  evaluator_contract: definitionBackedEvaluatorContractSchema.optional(),
+  generated_scorer: generatedScorerProgramSchema.optional(),
 });
 
 export const challengeSourceSchema = z.object({
@@ -131,9 +155,428 @@ function hasDuplicateArtifacts(artifacts: ChallengeArtifact[]) {
   return false;
 }
 
+function addIssue(
+  ctx: z.RefinementCtx,
+  path: (string | number)[],
+  message: string,
+) {
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path,
+    message,
+  });
+}
+
+function validateDefinitionOnlyEvaluation(input: {
+  value: ChallengeSpec;
+  ctx: z.RefinementCtx;
+}) {
+  const { value, ctx } = input;
+  const evaluatorContract = value.evaluation.evaluator_contract;
+
+  if (!evaluatorContract) {
+    addIssue(
+      ctx,
+      ["evaluation", "evaluator_contract"],
+      "Definition-backed challenges require an evaluator_contract. Next step: attach the typed evaluator contract and retry.",
+    );
+    return;
+  }
+
+  if (value.evaluation.preset_id !== evaluatorContract.archetype) {
+    addIssue(
+      ctx,
+      ["evaluation", "preset_id"],
+      "evaluation.preset_id must match evaluator_contract.archetype.",
+    );
+  }
+
+  if (value.evaluation.metric !== evaluatorContract.scoring.metric) {
+    addIssue(
+      ctx,
+      ["evaluation", "metric"],
+      "evaluation.metric must match evaluator_contract.scoring.metric.",
+    );
+  }
+
+  if (value.evaluation.execution_runtime_family) {
+    addIssue(
+      ctx,
+      ["evaluation", "execution_runtime_family"],
+      "Typed-only definition-backed challenges should omit execution_runtime_family until an execution path is configured. Next step: remove execution_runtime_family or switch backend_kind to preset_interpreter.",
+    );
+  }
+
+  if (value.evaluation.scorer_image) {
+    addIssue(
+      ctx,
+      ["evaluation", "scorer_image"],
+      "Typed-only definition-backed challenges should omit scorer_image until an execution path is configured. Next step: remove scorer_image or switch backend_kind to preset_interpreter.",
+    );
+  }
+
+  if (value.evaluation.evaluation_bundle) {
+    addIssue(
+      ctx,
+      ["evaluation", "evaluation_bundle"],
+      "Definition-backed challenges should describe hidden inputs through evaluator_contract instead of evaluation_bundle. Next step: move evaluator requirements into evaluator_contract and retry.",
+    );
+  }
+
+  if (evaluatorContract.execution) {
+    addIssue(
+      ctx,
+      ["evaluation", "backend_kind"],
+      "Definition-backed challenges with execution details must use an executable backend_kind. Next step: switch backend_kind or remove the execution template.",
+    );
+  }
+
+  if (value.evaluation.generated_scorer) {
+    addIssue(
+      ctx,
+      ["evaluation", "generated_scorer"],
+      "Typed-only definition-backed challenges should omit generated_scorer until an execution path is configured. Next step: remove generated_scorer or switch backend_kind.",
+    );
+  }
+}
+
+function validatePresetInterpreterEvaluation(input: {
+  value: ChallengeSpec;
+  ctx: z.RefinementCtx;
+}) {
+  const { value, ctx } = input;
+  const executionRuntimeFamily =
+    value.evaluation.execution_runtime_family?.trim() || undefined;
+  const scorerImage = value.evaluation.scorer_image;
+  const evaluatorContract = value.evaluation.evaluator_contract;
+
+  if (!executionRuntimeFamily) {
+    addIssue(
+      ctx,
+      ["evaluation", "execution_runtime_family"],
+      "Preset-interpreter challenges require execution_runtime_family. Next step: set the effective managed runtime family and retry.",
+    );
+    return;
+  }
+
+  if (evaluatorContract) {
+    const executionPlan =
+      resolveDefinitionBackedExecutionPlan(evaluatorContract);
+    if (!executionPlan) {
+      addIssue(
+        ctx,
+        ["evaluation", "evaluator_contract"],
+        "Definition-backed preset-interpreter challenges require a supported execution template. Next step: attach execution details or switch backend_kind to definition_only.",
+      );
+      return;
+    }
+
+    if (value.evaluation.preset_id !== evaluatorContract.archetype) {
+      addIssue(
+        ctx,
+        ["evaluation", "preset_id"],
+        "evaluation.preset_id must match evaluator_contract.archetype.",
+      );
+    }
+
+    if (value.evaluation.metric !== evaluatorContract.scoring.metric) {
+      addIssue(
+        ctx,
+        ["evaluation", "metric"],
+        "evaluation.metric must match evaluator_contract.scoring.metric.",
+      );
+    }
+
+    if (executionRuntimeFamily !== executionPlan.runner_runtime_family) {
+      addIssue(
+        ctx,
+        ["evaluation", "execution_runtime_family"],
+        `execution_runtime_family must match the evaluator contract execution template (${executionPlan.runner_runtime_family}).`,
+      );
+    }
+
+    if (value.evaluation.evaluation_bundle) {
+      addIssue(
+        ctx,
+        ["evaluation", "evaluation_bundle"],
+        "Definition-backed preset-interpreter challenges should derive hidden inputs from evaluator_contract artifact roles instead of evaluation_bundle. Next step: remove evaluation_bundle and retry.",
+      );
+    }
+
+    if (scorerImage) {
+      const imageError = validatePresetInterpreterProvidedImage(scorerImage);
+      if (imageError) {
+        addIssue(
+          ctx,
+          ["evaluation", "scorer_image"],
+          `${imageError} Next step: use the official interpreter image for this execution template or omit scorer_image and let Agora canonicalize it.`,
+        );
+      }
+    }
+
+    const evaluationArtifact = value.artifacts.find(
+      (artifact) => artifact.role === executionPlan.evaluation_artifact_role,
+    );
+    if (!evaluationArtifact) {
+      addIssue(
+        ctx,
+        ["artifacts"],
+        `Definition-backed execution requires an artifact with role ${executionPlan.evaluation_artifact_role}. Next step: add that artifact role or remove execution.`,
+      );
+    }
+    return;
+  }
+
+  if (value.evaluation.preset_id !== executionRuntimeFamily) {
+    addIssue(
+      ctx,
+      ["evaluation", "execution_runtime_family"],
+      "Managed preset-interpreter challenges must use execution_runtime_family equal to preset_id. Next step: align the two fields and retry.",
+    );
+  }
+
+  if (!isManagedRuntimeFamily(value.evaluation.preset_id)) {
+    addIssue(
+      ctx,
+      ["evaluation", "preset_id"],
+      `Unknown preset_id: ${value.evaluation.preset_id}`,
+    );
+    return;
+  }
+
+  const metricError = validateRuntimeMetric(
+    executionRuntimeFamily,
+    value.evaluation.metric,
+  );
+  if (metricError) {
+    addIssue(ctx, ["evaluation", "metric"], metricError);
+  }
+
+  if (scorerImage) {
+    const imageError = validatePresetInterpreterProvidedImage(scorerImage);
+    if (imageError) {
+      addIssue(
+        ctx,
+        ["evaluation", "scorer_image"],
+        `${imageError} Next step: use the official preset interpreter image or omit scorer_image and let Agora canonicalize it.`,
+      );
+    }
+  }
+
+  if (!resolveRuntimeFamilyLimits(executionRuntimeFamily)) {
+    addIssue(
+      ctx,
+      ["evaluation", "execution_runtime_family"],
+      `Runtime family ${executionRuntimeFamily} is missing runner limits.`,
+    );
+  }
+
+  const defaults = resolveRuntimeFamilyRuntimeDefaults(executionRuntimeFamily);
+  if (
+    defaults?.evaluationContract &&
+    value.submission_contract.kind !== "csv_table"
+  ) {
+    addIssue(
+      ctx,
+      ["submission_contract"],
+      `Runtime family ${executionRuntimeFamily} requires a csv_table submission contract.`,
+    );
+  }
+
+  if (!value.evaluation.evaluation_bundle) {
+    addIssue(
+      ctx,
+      ["evaluation", "evaluation_bundle"],
+      `Preset ${value.evaluation.preset_id} requires an evaluation_bundle.`,
+    );
+  }
+}
+
+function validateCustomImageEvaluation(input: {
+  value: ChallengeSpec;
+  ctx: z.RefinementCtx;
+}) {
+  const { value, ctx } = input;
+  const scorerImage = value.evaluation.scorer_image;
+  if (value.evaluation.preset_id !== "custom") {
+    addIssue(
+      ctx,
+      ["evaluation", "preset_id"],
+      "Custom image challenges must use preset_id custom. Next step: set preset_id to custom and retry.",
+    );
+  }
+  if (value.evaluation.evaluator_contract) {
+    addIssue(
+      ctx,
+      ["evaluation", "evaluator_contract"],
+      "Custom image challenges should not attach evaluator_contract. Next step: remove evaluator_contract or switch backend_kind.",
+    );
+  }
+  if (value.evaluation.execution_runtime_family) {
+    addIssue(
+      ctx,
+      ["evaluation", "execution_runtime_family"],
+      "Custom image challenges should omit execution_runtime_family. Next step: remove execution_runtime_family and retry.",
+    );
+  }
+  if (!scorerImage) {
+    addIssue(
+      ctx,
+      ["evaluation", "scorer_image"],
+      "Custom image challenges require a scorer_image. Next step: attach a pinned scorer image and retry.",
+    );
+    return;
+  }
+  const imageError = validateExpertScorerImage(scorerImage);
+  if (imageError) {
+    addIssue(ctx, ["evaluation", "scorer_image"], imageError);
+  }
+}
+
+function validateGeneratedScorerEvaluation(input: {
+  value: ChallengeSpec;
+  ctx: z.RefinementCtx;
+}) {
+  const { value, ctx } = input;
+  const evaluatorContract = value.evaluation.evaluator_contract;
+  const generatedScorer = value.evaluation.generated_scorer;
+  const scorerImage = value.evaluation.scorer_image;
+  const executionRuntimeFamily =
+    value.evaluation.execution_runtime_family?.trim() || undefined;
+  const managedRuntimeFamily = isManagedRuntimeFamily(value.evaluation.preset_id)
+    ? value.evaluation.preset_id
+    : null;
+
+  if (!generatedScorer) {
+    addIssue(
+      ctx,
+      ["evaluation", "generated_scorer"],
+      "Generated scorer challenges require a generated_scorer manifest. Next step: compile the generated scorer and retry.",
+    );
+    return;
+  }
+
+  if (evaluatorContract) {
+    if (value.evaluation.preset_id !== evaluatorContract.archetype) {
+      addIssue(
+        ctx,
+        ["evaluation", "preset_id"],
+        "evaluation.preset_id must match evaluator_contract.archetype.",
+      );
+    }
+
+    if (value.evaluation.metric !== evaluatorContract.scoring.metric) {
+      addIssue(
+        ctx,
+        ["evaluation", "metric"],
+        "evaluation.metric must match evaluator_contract.scoring.metric.",
+      );
+    }
+  } else if (!managedRuntimeFamily) {
+    addIssue(
+      ctx,
+      ["evaluation", "evaluator_contract"],
+      "Generated scorer challenges must either target a supported managed preset or attach an evaluator_contract. Next step: set preset_id to a managed runtime family or include the typed evaluator contract.",
+    );
+    return;
+  } else {
+    const metricError = validateRuntimeMetric(
+      managedRuntimeFamily,
+      value.evaluation.metric,
+    );
+    if (metricError) {
+      addIssue(ctx, ["evaluation", "metric"], metricError);
+    }
+
+    if (
+      executionRuntimeFamily &&
+      executionRuntimeFamily !== managedRuntimeFamily
+    ) {
+      addIssue(
+        ctx,
+        ["evaluation", "execution_runtime_family"],
+        "Managed generated scorer challenges must use execution_runtime_family equal to preset_id. Next step: align the two fields and retry.",
+      );
+    }
+
+    if (!resolveRuntimeFamilyLimits(managedRuntimeFamily)) {
+      addIssue(
+        ctx,
+        ["evaluation", "execution_runtime_family"],
+        `Runtime family ${managedRuntimeFamily} is missing runner limits.`,
+      );
+    }
+
+    const defaults = resolveRuntimeFamilyRuntimeDefaults(managedRuntimeFamily);
+    if (
+      defaults?.evaluationContract &&
+      value.submission_contract.kind !== "csv_table"
+    ) {
+      addIssue(
+        ctx,
+        ["submission_contract"],
+        `Runtime family ${managedRuntimeFamily} requires a csv_table submission contract.`,
+      );
+    }
+  }
+
+  if (scorerImage) {
+    const imageError = validateGeneratedScorerProvidedImage(scorerImage);
+    if (imageError) {
+      addIssue(
+        ctx,
+        ["evaluation", "scorer_image"],
+        `${imageError} Next step: use the official generated scorer image or omit scorer_image and let Agora canonicalize it.`,
+      );
+    }
+  }
+
+  if (executionRuntimeFamily && generatedScorer.runtime_family) {
+    if (executionRuntimeFamily !== generatedScorer.runtime_family) {
+      addIssue(
+        ctx,
+        ["evaluation", "execution_runtime_family"],
+        `execution_runtime_family must match generated_scorer.runtime_family (${generatedScorer.runtime_family}).`,
+      );
+    }
+  }
+
+  if (
+    managedRuntimeFamily &&
+    generatedScorer.runtime_family &&
+    generatedScorer.runtime_family !== managedRuntimeFamily
+  ) {
+    addIssue(
+      ctx,
+      ["evaluation", "generated_scorer", "runtime_family"],
+      `generated_scorer.runtime_family must match preset_id (${managedRuntimeFamily}) for managed generated scorer challenges.`,
+    );
+  }
+
+  if (value.evaluation.evaluation_bundle) {
+    addIssue(
+      ctx,
+      ["evaluation", "evaluation_bundle"],
+      "Generated scorer challenges should derive hidden inputs from generated_scorer artifact roles instead of evaluation_bundle. Next step: remove evaluation_bundle and retry.",
+    );
+  }
+
+  const evaluationArtifact = value.artifacts.find(
+    (artifact) =>
+      artifact.role === generatedScorer.evaluation_artifact_role,
+  );
+  if (!evaluationArtifact) {
+    addIssue(
+      ctx,
+      ["artifacts"],
+      `Generated scorer execution requires an artifact with role ${generatedScorer.evaluation_artifact_role}. Next step: add that artifact role or regenerate the scorer.`,
+    );
+  }
+}
+
 const _baseSpecShape = z
   .object({
-    schema_version: z.literal(3),
+    schema_version: z.literal(4),
     id: z.string().trim().min(1),
     title: z.string().trim().min(1),
     domain: domainEnum,
@@ -169,198 +612,46 @@ const _baseSpecShape = z
       typeof value.max_submissions_per_solver === "number" &&
       value.max_submissions_per_solver > value.max_submissions_total
     ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["max_submissions_per_solver"],
-        message:
-          "max_submissions_per_solver cannot exceed max_submissions_total",
-      });
+      addIssue(
+        ctx,
+        ["max_submissions_per_solver"],
+        "max_submissions_per_solver cannot exceed max_submissions_total",
+      );
     }
 
     if (hasDuplicateArtifacts(value.artifacts)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["artifacts"],
-        message:
-          "Duplicate artifacts are not allowed. Next step: remove duplicated role/visibility/uri entries and retry.",
-      });
+      addIssue(
+        ctx,
+        ["artifacts"],
+        "Duplicate artifacts are not allowed. Next step: remove duplicated role/visibility/uri entries and retry.",
+      );
     }
 
-    const runtimeFamilyId = value.evaluation.runtime_family;
-    const scorerImage = value.evaluation.scorer_image;
-    const evaluatorContract = value.evaluation.evaluator_contract;
-
-    if (runtimeFamilyId === SEMI_CUSTOM_RUNTIME_FAMILY_ID) {
-      if (!evaluatorContract) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["evaluation", "evaluator_contract"],
-          message:
-            "Semi-custom challenges require an evaluator_contract. Next step: attach the typed evaluator contract and retry.",
-        });
-      }
-      if (value.evaluation.evaluation_bundle) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["evaluation", "evaluation_bundle"],
-          message:
-            "Semi-custom challenges should describe hidden inputs through evaluator_contract instead of evaluation_bundle. Next step: move evaluator requirements into evaluator_contract and retry.",
-        });
-      }
-      if (
-        evaluatorContract &&
-        evaluatorContract.scoring.metric !== value.evaluation.metric
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["evaluation", "metric"],
-          message:
-            "evaluation.metric must match evaluator_contract.scoring.metric.",
-        });
-      }
-      const executionPlan = resolveSemiCustomExecutionPlan(evaluatorContract);
-      if (!executionPlan && typeof scorerImage === "string") {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["evaluation", "scorer_image"],
-          message:
-            "Typed-only semi-custom challenges should omit scorer_image until an execution template is configured. Next step: remove scorer_image or add execution details.",
-        });
-      }
-      if (executionPlan) {
-        if (!scorerImage) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ["evaluation", "scorer_image"],
-            message:
-              "Executable semi-custom challenges require a scorer_image. Next step: attach the official scorer image for the execution template and retry.",
-          });
-        } else {
-          const imageError =
-            validateSemiCustomExecutionScorerImage(scorerImage);
-          if (imageError) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              path: ["evaluation", "scorer_image"],
-              message: `${imageError} Next step: use a pinned official scorer image digest for this execution template.`,
-            });
-          }
-        }
-        const evaluationArtifact = value.artifacts.find(
-          (artifact) =>
-            artifact.role === executionPlan.evaluation_artifact_role,
-        );
-        if (!evaluationArtifact) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ["artifacts"],
-            message: `Semi-custom execution requires an artifact with role ${executionPlan.evaluation_artifact_role}. Next step: add that artifact role or remove execution.`,
-          });
-        }
-      }
-      return;
-    }
-
-    if (runtimeFamilyId === EXPERT_RUNTIME_FAMILY_ID) {
-      if (!scorerImage) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["evaluation", "scorer_image"],
-          message:
-            "Expert challenges require a scorer_image. Next step: attach a pinned scorer image and retry.",
+    switch (value.evaluation.backend_kind) {
+      case "definition_only":
+        validateDefinitionOnlyEvaluation({
+          value,
+          ctx,
         });
         return;
-      }
-      const imageError = validateExpertScorerImage(scorerImage);
-      if (imageError) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["evaluation", "scorer_image"],
-          message: imageError,
+      case "generated_scorer":
+        validateGeneratedScorerEvaluation({
+          value,
+          ctx,
         });
-      }
-      return;
-    }
-
-    if (!scorerImage) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["evaluation", "scorer_image"],
-        message:
-          "Managed challenges require a scorer_image. Next step: choose a registered runtime family and retry.",
-      });
-      return;
-    }
-
-    if (!isManagedRuntimeFamily(runtimeFamilyId)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["evaluation", "runtime_family"],
-        message: `Unknown runtime family: ${runtimeFamilyId}`,
-      });
-      return;
-    }
-
-    const metricError = validateRuntimeMetric(
-      runtimeFamilyId,
-      value.evaluation.metric,
-    );
-    if (metricError) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["evaluation", "metric"],
-        message: metricError,
-      });
-    }
-
-    const imageError = validateScorerImage(scorerImage);
-    if (imageError) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["evaluation", "scorer_image"],
-        message: imageError,
-      });
-    }
-
-    const family = resolveRuntimeFamilyLimits(runtimeFamilyId);
-    if (!family) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["evaluation", "runtime_family"],
-        message: `Runtime family ${runtimeFamilyId} is missing runner limits.`,
-      });
-    }
-
-    const managedImage = resolveManagedScorerImage(runtimeFamilyId);
-    if (!managedImage) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["evaluation", "runtime_family"],
-        message: `Runtime family ${runtimeFamilyId} is missing a scorer image.`,
-      });
-    }
-
-    const defaults = resolveRuntimeFamilyRuntimeDefaults(runtimeFamilyId);
-    if (
-      defaults?.evaluationContract &&
-      value.submission_contract.kind !== "csv_table"
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["submission_contract"],
-        message: `Runtime family ${runtimeFamilyId} requires a csv_table submission contract.`,
-      });
-    }
-
-    if (
-      runtimeFamilyId !== EXPERT_RUNTIME_FAMILY_ID &&
-      !value.evaluation.evaluation_bundle
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["evaluation", "evaluation_bundle"],
-        message: `Runtime family ${runtimeFamilyId} requires an evaluation bundle.`,
-      });
+        return;
+      case "preset_interpreter":
+        validatePresetInterpreterEvaluation({
+          value,
+          ctx,
+        });
+        return;
+      case "oci_image":
+        validateCustomImageEvaluation({
+          value,
+          ctx,
+        });
+        return;
     }
   });
 
@@ -389,29 +680,16 @@ export const challengeSpecSchema = _baseSpecShape;
 export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;
 export type ChallengeSpecOutput = z.output<typeof challengeSpecSchema>;
 
-export interface ChallengeEvaluationCacheRow {
-  runtime_family: string;
-  metric: string;
-  scorer_image?: string | null;
-  evaluation_bundle?: string | null;
-  evaluator_contract?: z.output<
-    typeof semiCustomEvaluatorContractSchema
-  > | null;
-}
-
-export interface ChallengeEvalRow {
-  evaluation_json?: ChallengeEvaluationCacheRow | null;
-  artifacts_json?: ChallengeArtifact[] | null;
-  submission_contract_json?: SubmissionContractOutput | null;
-}
-
 export interface ResolvedChallengeEvaluation {
-  runtimeFamily: string;
+  executionRuntimeFamily?: string;
   image: string;
   metric: string;
   evaluationBundleCid?: string;
-  evaluatorContract?: z.output<typeof semiCustomEvaluatorContractSchema>;
-  semiCustomExecution?: ReturnType<typeof resolveSemiCustomExecutionPlan>;
+  evaluatorContract?: z.output<typeof definitionBackedEvaluatorContractSchema>;
+  definitionBackedExecution?: ReturnType<
+    typeof resolveDefinitionBackedExecutionPlan
+  >;
+  generatedScorer?: z.output<typeof generatedScorerProgramSchema>;
   mount: {
     evaluationBundleName?: string;
     submissionFileName: string;
@@ -447,20 +725,34 @@ export async function canonicalizeChallengeSpec(
     resolveOfficialPresetDigests?: boolean;
   } = {},
 ): Promise<ChallengeSpecOutput> {
-  const runtimeFamilyId = spec.evaluation.runtime_family;
   let scorerImage = spec.evaluation.scorer_image?.trim() ?? "";
 
-  if (
-    runtimeFamilyId !== EXPERT_RUNTIME_FAMILY_ID &&
-    runtimeFamilyId !== SEMI_CUSTOM_RUNTIME_FAMILY_ID
-  ) {
-    const managedImage = resolveManagedScorerImage(runtimeFamilyId);
-    if (!managedImage) {
-      throw new Error(
-        `Unknown runtime family ${runtimeFamilyId}. Next step: choose a registered runtime family and retry.`,
+  if (spec.evaluation.backend_kind === "generated_scorer") {
+    scorerImage = resolveGeneratedScorerImage();
+  } else if (spec.evaluation.backend_kind === "preset_interpreter") {
+    if (spec.evaluation.evaluator_contract) {
+      const executionPlan = resolveDefinitionBackedExecutionPlan(
+        spec.evaluation.evaluator_contract,
       );
+      if (!executionPlan) {
+        throw new Error(
+          "Definition-backed preset-interpreter challenges require a supported execution template. Next step: attach execution details or switch backend_kind.",
+        );
+      }
+      scorerImage = resolveDefinitionBackedExecutionOfficialImage(
+        executionPlan.template,
+      );
+    } else {
+      const executionRuntimeFamily =
+        spec.evaluation.execution_runtime_family?.trim() || spec.evaluation.preset_id;
+      const managedImage = resolveManagedScorerImage(executionRuntimeFamily);
+      if (!managedImage) {
+        throw new Error(
+          `Unknown runtime family ${executionRuntimeFamily}. Next step: choose a registered runtime family and retry.`,
+        );
+      }
+      scorerImage = managedImage;
     }
-    scorerImage = managedImage;
   }
 
   if (options.resolveOfficialPresetDigests === true) {
@@ -473,9 +765,11 @@ export async function canonicalizeChallengeSpec(
     ...spec,
     evaluation: {
       ...spec.evaluation,
-      ...(runtimeFamilyId === SEMI_CUSTOM_RUNTIME_FAMILY_ID
+      ...(spec.evaluation.backend_kind === "definition_only"
         ? {}
-        : { scorer_image: scorerImage }),
+        : scorerImage
+          ? { scorer_image: scorerImage }
+          : {}),
     },
   };
 }
@@ -483,57 +777,7 @@ export async function canonicalizeChallengeSpec(
 export function resolveChallengeEvaluation(
   spec: ChallengeSpecOutput | ChallengeEvalRow,
 ): ResolvedChallengeEvaluation {
-  if ("evaluation" in spec) {
-    const semiCustomExecution = resolveSemiCustomExecutionPlan(
-      spec.evaluation.evaluator_contract,
-    );
-    const evaluationBundleCid = semiCustomExecution
-      ? spec.artifacts.find(
-          (artifact) =>
-            artifact.role === semiCustomExecution.evaluation_artifact_role,
-        )?.uri
-      : spec.evaluation.evaluation_bundle;
-    return {
-      runtimeFamily: spec.evaluation.runtime_family,
-      image: spec.evaluation.scorer_image ?? "",
-      metric: spec.evaluation.metric,
-      evaluationBundleCid,
-      evaluatorContract: spec.evaluation.evaluator_contract,
-      semiCustomExecution,
-      mount:
-        semiCustomExecution?.mount ??
-        resolveRuntimeFamilyMount(spec.evaluation.runtime_family),
-    };
-  }
-
-  const evaluation = spec.evaluation_json;
-  if (!evaluation) {
-    throw new Error(
-      "Challenge is missing evaluation_json. Next step: rebuild the challenge projection and retry.",
-    );
-  }
-
-  const semiCustomExecution = resolveSemiCustomExecutionPlan(
-    evaluation.evaluator_contract,
-  );
-  const evaluationBundleCid = semiCustomExecution
-    ? spec.artifacts_json?.find(
-        (artifact) =>
-          artifact.role === semiCustomExecution.evaluation_artifact_role,
-      )?.uri
-    : (evaluation.evaluation_bundle ?? undefined);
-
-  return {
-    runtimeFamily: evaluation.runtime_family,
-    image: evaluation.scorer_image ?? "",
-    metric: evaluation.metric,
-    evaluationBundleCid,
-    evaluatorContract: evaluation.evaluator_contract ?? undefined,
-    semiCustomExecution,
-    mount:
-      semiCustomExecution?.mount ??
-      resolveRuntimeFamilyMount(evaluation.runtime_family),
-  };
+  return toLegacyResolvedChallengeEvaluation(resolveEvaluationPlan(spec));
 }
 
 export function resolveScoringEnvironmentFromSpec(
@@ -543,10 +787,7 @@ export function resolveScoringEnvironmentFromSpec(
     return undefined;
   }
 
-  return (
-    resolveRuntimeFamilyRuntimeDefaults(spec.evaluation.runtime_family)?.env ??
-    undefined
-  );
+  return resolveEvaluationPlan(spec).env;
 }
 
 export interface ChallengeScoreabilityValidation {
@@ -554,69 +795,47 @@ export interface ChallengeScoreabilityValidation {
   errors: string[];
 }
 
-export function validateChallengeScoreability(
+function validateChallengeScoreabilityForPlan(
   spec: ChallengeSpecOutput,
+  evaluationPlan: EvaluationPlan,
 ): ChallengeScoreabilityValidation {
   const errors: string[] = [];
-  const runtimeFamilyId = spec.evaluation.runtime_family;
 
-  if (runtimeFamilyId === SEMI_CUSTOM_RUNTIME_FAMILY_ID) {
-    if (!spec.evaluation.evaluator_contract) {
-      errors.push("Semi-custom challenges require an evaluator_contract.");
-    }
-    const executionPlan = resolveSemiCustomExecutionPlan(
-      spec.evaluation.evaluator_contract,
+  if (evaluationPlan.backendKind === "definition_only") {
+    errors.push(
+      "Definition-backed evaluator contracts are typed but not executable by the current scorer runtime yet.",
     );
-    if (!executionPlan) {
-      errors.push(
-        "Semi-custom evaluator contracts are typed but not executable by the current scorer runtime yet.",
-      );
-      return {
-        ok: false,
-        errors,
-      };
-    }
-
-    const scorerImage = spec.evaluation.scorer_image?.trim();
-    if (!scorerImage) {
-      errors.push(
-        "Executable semi-custom challenges require a scorer image digest.",
-      );
-    } else {
-      const imageError = validateSemiCustomExecutionScorerImage(scorerImage);
-      if (imageError) {
-        errors.push(imageError);
-      }
-    }
-
-    const evaluationArtifact = spec.artifacts.find(
-      (artifact) => artifact.role === executionPlan.evaluation_artifact_role,
-    );
-    if (!evaluationArtifact) {
-      errors.push(
-        `Semi-custom execution requires an artifact with role ${executionPlan.evaluation_artifact_role}.`,
-      );
-    }
     return {
-      ok: errors.length === 0,
+      ok: false,
       errors,
     };
   }
 
-  if (!spec.evaluation.scorer_image?.trim()) {
+  if (!evaluationPlan.image?.trim()) {
     errors.push("Challenge requires a scorer image.");
   }
 
-  if (!spec.evaluation.metric.trim()) {
+  if (!evaluationPlan.metric.trim()) {
     errors.push("Challenge requires a metric.");
   }
 
+  if (evaluationPlan.evaluationArtifactRole) {
+    const evaluationArtifact = spec.artifacts.find(
+      (artifact) => artifact.role === evaluationPlan.evaluationArtifactRole,
+    );
+    if (!evaluationArtifact) {
+      errors.push(
+        `Execution requires an artifact with role ${evaluationPlan.evaluationArtifactRole}.`,
+      );
+    }
+  }
+
   if (
-    runtimeFamilyId !== EXPERT_RUNTIME_FAMILY_ID &&
-    !spec.evaluation.evaluation_bundle
+    evaluationPlan.backendKind !== "oci_image" &&
+    !evaluationPlan.evaluationBundleCid
   ) {
     errors.push(
-      `Runtime family ${runtimeFamilyId} requires an evaluation bundle.`,
+      `Preset ${evaluationPlan.presetId} requires a deterministic evaluation artifact.`,
     );
   }
 
@@ -624,4 +843,14 @@ export function validateChallengeScoreability(
     ok: errors.length === 0,
     errors,
   };
+}
+
+export function validateChallengeScoreability(
+  spec: ChallengeSpecOutput,
+  evaluationPlan?: EvaluationPlan,
+): ChallengeScoreabilityValidation {
+  return validateChallengeScoreabilityForPlan(
+    spec,
+    evaluationPlan ?? resolveEvaluationPlan(spec),
+  );
 }

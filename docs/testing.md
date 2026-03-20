@@ -40,7 +40,10 @@ pnpm verify                 # = abi:check && build && test
 # Pre-launch validation
 ./scripts/preflight-testnet.sh
 
-# End-to-end lifecycle
+# API-owned lifecycle smoke
+pnpm smoke:lifecycle
+
+# CLI/operator lifecycle smoke
 ./scripts/e2e-test.sh
 ```
 
@@ -185,7 +188,7 @@ AGORA_PINATA_JWT
 AGORA_PRIVATE_KEY
 
 # Optional overrides
-AGORA_E2E_SCORER_IMAGE="ghcr.io/andymolecule/repro-scorer:v1"
+AGORA_E2E_SCORER_IMAGE="ghcr.io/andymolecule/gems-match-scorer:v1"
 AGORA_E2E_DEADLINE_MINUTES="10"
 AGORA_E2E_DISPUTE_WINDOW_HOURS="0"      # 0 for same-session testing
 AGORA_E2E_ENABLE_TIME_TRAVEL="1"         # allow evm_increaseTime on Anvil
@@ -205,6 +208,8 @@ AGORA_E2E_DISPUTE_WINDOW_HOURS=0 \
 ```
 
 The scorer image must already be published and pullable. The E2E script does not build local scorer images.
+
+`pnpm smoke:lifecycle` runs the API-owned lifecycle harness, including authoring draft publish. It expects migrations `028_add_authoring_sponsor_budget_reservations.sql`, `029_add_challenge_evaluation_plan.sql`, and `030_make_challenge_runtime_caches_optional.sql` to be applied and visible through the PostgREST schema cache before it starts.
 
 ---
 

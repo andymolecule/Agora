@@ -475,7 +475,7 @@ test("challenge detail parsing requires the canonical artifacts block", async ()
             evaluation: {
               runtime_family: "reproducibility",
               metric: "exact_match",
-              scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
+              scorer_image: "ghcr.io/andymolecule/gems-match-scorer:v1",
             },
             refs: {
               challengeId: "11111111-1111-4111-8111-111111111111",
@@ -531,7 +531,7 @@ test("API client supports protocol-ref challenge and submission lookups", async 
               evaluation: {
                 runtime_family: "reproducibility",
                 metric: "exact_match",
-                scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
+                scorer_image: "ghcr.io/andymolecule/gems-match-scorer:v1",
               },
               refs: {
                 challengeId: "11111111-1111-4111-8111-111111111111",

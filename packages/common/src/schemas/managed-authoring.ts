@@ -6,11 +6,12 @@ import {
   externalSourceProviderSchema,
   safePublicHttpsUrlSchema,
 } from "./authoring-source.js";
+import { evaluationBackendKindSchema } from "../evaluation-plan.js";
 import {
   challengeArtifactSchema,
   challengeSpecSchema,
 } from "./challenge-spec.js";
-import { semiCustomEvaluatorContractSchema } from "./evaluator-contract.js";
+import { definitionBackedEvaluatorContractSchema } from "./evaluator-contract.js";
 import { submissionContractSchema } from "./submission-contract.js";
 
 const AUTHORING_MAX_TITLE_LENGTH = 160;
@@ -34,9 +35,20 @@ const distributionSchema = z.enum(["winner_take_all", "top_3", "proportional"]);
 
 const authoringRoutingModeSchema = z.enum([
   "not_ready",
-  "managed_supported",
-  "semi_custom",
+  "preset_supported",
+  "definition_backed",
   "expert_mode_required",
+]);
+
+const authoringEvaluationCandidateKindSchema = z.enum([
+  "managed_preset",
+  "definition_backed",
+  "expert_mode",
+]);
+
+const authoringCompilationPathSchema = z.enum([
+  "preset_supported",
+  "definition_backed",
 ]);
 
 const authoringScoreabilitySchema = z.enum([
@@ -274,18 +286,21 @@ export const challengeAuthoringIrSchema = z.object({
   }),
   evaluation: z.object({
     scoreability: authoringScoreabilitySchema,
-    evaluator_candidates: z.array(
+    path_candidates: z.array(
       z.object({
         id: z.string().trim().min(1),
-        kind: z.enum(["managed_template", "semi_custom", "expert"]),
+        kind: authoringEvaluationCandidateKindSchema,
         confidence: z.number().min(0).max(1),
         notes: z.array(z.string().trim().min(1)),
       }),
     ),
-    selected_evaluator: z.string().trim().min(1).nullable(),
-    runtime_family: z.string().trim().min(1).nullable(),
+    selected_candidate_id: z.string().trim().min(1).nullable(),
+    preset_id: z.string().trim().min(1).nullable(),
+    definition_id: z.string().trim().min(1).nullable(),
+    backend_kind: evaluationBackendKindSchema.nullable(),
+    execution_runtime_family: z.string().trim().min(1).nullable(),
     metric: z.string().trim().min(1).nullable(),
-    semi_custom_contract: semiCustomEvaluatorContractSchema.nullable(),
+    evaluator_definition: definitionBackedEvaluatorContractSchema.nullable(),
     compute_hints: z.array(z.string().trim().min(1)),
     privacy_requirements: z.array(z.string().trim().min(1)),
   }),
@@ -365,9 +380,37 @@ export const registerAuthoringDraftWebhookRequestSchema = z.object({
   callback_url: safePublicHttpsUrlSchema,
 });
 
-export const publishExternalAuthoringDraftRequestSchema = z.object({
-  return_to: safePublicHttpsUrlSchema.optional(),
-});
+const externalAuthoringFundingSchema = z.enum(["sponsor", "poster"]);
+
+export const publishExternalAuthoringDraftRequestSchema = z
+  .object({
+    funding: externalAuthoringFundingSchema.default("sponsor"),
+    poster_address: z
+      .string()
+      .trim()
+      .regex(/^0x[a-fA-F0-9]{40}$/)
+      .optional(),
+    return_to: safePublicHttpsUrlSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.funding === "poster" && !value.poster_address) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["poster_address"],
+        message:
+          "Poster-funded external publishing requires poster_address. Next step: provide the agent wallet address and retry.",
+      });
+    }
+
+    if (value.funding === "sponsor" && value.poster_address) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["poster_address"],
+        message:
+          "poster_address is only allowed when funding is \"poster\". Next step: remove poster_address or switch funding to \"poster\" and retry.",
+      });
+    }
+  });
 
 export const authoringDraftAssessmentSchema = z.object({
   feasible: z.boolean(),
@@ -375,9 +418,11 @@ export const authoringDraftAssessmentSchema = z.object({
   requires_review: z.boolean(),
   confidence: z.enum(["high", "medium", "low"]),
   confidence_score: z.number().min(0).max(1),
-  runtime_family: z.string().trim().min(1).nullable(),
+  preset_id: z.string().trim().min(1).nullable(),
+  definition_id: z.string().trim().min(1).nullable(),
+  backend_kind: evaluationBackendKindSchema.nullable(),
+  execution_runtime_family: z.string().trim().min(1).nullable(),
   metric: z.string().trim().min(1).nullable(),
-  evaluator_archetype: z.string().trim().min(1).nullable(),
   reason_codes: z.array(z.string().trim().min(1)).default([]),
   missing: z.array(z.string().trim().min(1)).default([]),
   suggestions: z.array(z.string().trim().min(1)).default([]),
@@ -399,8 +444,12 @@ export const dryRunPreviewSchema = z.object({
 });
 
 export const compilationResultSchema = z.object({
+  authoring_path: authoringCompilationPathSchema,
   challenge_type: z.string().trim().min(1),
-  runtime_family: z.string().trim().min(1),
+  preset_id: z.string().trim().min(1).nullable(),
+  definition_id: z.string().trim().min(1).nullable(),
+  backend_kind: evaluationBackendKindSchema,
+  execution_runtime_family: z.string().trim().min(1).nullable(),
   metric: z.string().trim().min(1),
   resolved_artifacts: z.array(challengeArtifactSchema).min(1),
   submission_contract: submissionContractSchema,

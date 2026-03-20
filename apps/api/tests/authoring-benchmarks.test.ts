@@ -78,19 +78,29 @@ for (const benchmarkCase of benchmarkCases) {
       }
 
       assert.equal(
-        result.compilation.runtime_family,
-        benchmarkCase.benchmark.compile_invariants.runtime_family,
+        result.compilation.challenge_spec.evaluation.preset_id,
+        benchmarkCase.benchmark.compile_invariants.preset_id,
+      );
+      assert.equal(
+        result.compilation.challenge_spec.evaluation.backend_kind,
+        benchmarkCase.benchmark.compile_invariants.backend_kind,
+      );
+      assert.equal(
+        result.compilation.challenge_spec.evaluation.execution_runtime_family ??
+          null,
+        benchmarkCase.benchmark.compile_invariants.execution_runtime_family ??
+          null,
       );
       assert.equal(
         result.compilation.metric,
         benchmarkCase.benchmark.compile_invariants.metric,
       );
       assert.equal(
-        benchmarkCase.benchmark.disallowed_outcomes.runtime_families.includes(
-          result.compilation.runtime_family,
+        benchmarkCase.benchmark.disallowed_outcomes.preset_ids.includes(
+          result.compilation.challenge_spec.evaluation.preset_id,
         ),
         false,
-        `${benchmarkLabel} should not route to a disallowed runtime family`,
+        `${benchmarkLabel} should not route to a disallowed preset`,
       );
 
       const challengeType =
@@ -103,7 +113,7 @@ for (const benchmarkCase of benchmarkCases) {
         benchmarkCase.benchmark.compile_invariants.evaluator_archetype;
       if (evaluatorArchetype) {
         assert.equal(
-          result.authoringIr.evaluation.semi_custom_contract?.archetype,
+          result.authoringIr.evaluation.evaluator_definition?.archetype,
           evaluatorArchetype,
         );
       }
@@ -161,10 +171,16 @@ for (const benchmarkCase of benchmarkCases) {
         );
       }
 
-      if (benchmarkCase.benchmark.managed_support === "semi_custom_executable") {
+      if (
+        benchmarkCase.benchmark.authoring_path_support ===
+        "definition_backed_executable"
+      ) {
         assert.equal(result.compilation.dry_run.status, "validated");
       }
-      if (benchmarkCase.benchmark.managed_support === "semi_custom_typed") {
+      if (
+        benchmarkCase.benchmark.authoring_path_support ===
+        "definition_backed_typed"
+      ) {
         assert.equal(result.compilation.dry_run.status, "skipped");
       }
     } finally {

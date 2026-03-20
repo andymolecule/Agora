@@ -1,14 +1,14 @@
 # Structured Report Validation Authoring Benchmark
 
 Authoring benchmark for a deterministic structured-record challenge that now
-uses a bounded executable semi-custom scorer path.
+uses a bounded executable definition-backed scorer path.
 
 This benchmark is intentionally broad and non-ML:
 
 - the poster uploads a public schema/example
 - Agora keeps a validation rubric hidden
 - solvers submit one structured JSON report
-- the challenge should route to semi-custom review, not a managed family
+- the challenge should route to definition-backed review, not a managed family
 
 ## Benchmark Goal
 
@@ -29,7 +29,7 @@ and validate it through the official structured-record execution template.
 
 This benchmark passes when:
 
-- the draft routes to `semi_custom`
+- the draft routes to `definition_backed`
 - the evaluator archetype is `structured_record_score`
 - the artifact roles stay generic
 - the submission contract is a JSON file contract

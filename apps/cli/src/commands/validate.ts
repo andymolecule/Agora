@@ -3,8 +3,7 @@ import path from "node:path";
 import {
   DEFAULT_CHAIN_ID,
   type SubmissionContractOutput,
-  resolveChallengeEvaluation,
-  resolveScoringEnvironmentFromSpec,
+  resolveEvaluationPlan,
   validateChallengeSpec,
 } from "@agora/common";
 import { executeScoringPipeline } from "@agora/scorer";
@@ -28,7 +27,7 @@ function buildCsvDryRunRow(
 }
 
 function buildDryRunInputs(input: {
-  runtimeFamily: string;
+  runtimeFamily?: string;
   submissionContract: SubmissionContractOutput;
 }) {
   if (input.submissionContract.kind !== "csv_table") {
@@ -110,20 +109,30 @@ export function buildValidateCommand() {
         `Pulling and testing scorer container: ${container}`,
       );
       try {
-        const evalPlan = resolveChallengeEvaluation(parsed.data);
+        const evaluationPlan = resolveEvaluationPlan(parsed.data);
         const dryRunInputs = buildDryRunInputs({
-          runtimeFamily: evalPlan.runtimeFamily,
+          runtimeFamily: evaluationPlan.executionRuntimeFamily,
           submissionContract: parsed.data.submission_contract,
         });
         const run = await executeScoringPipeline({
-          image: evalPlan.image,
+          image: evaluationPlan.image ?? "",
           evaluationBundle: dryRunInputs.evaluationBundle,
-          mount: evalPlan.mount,
+          mount: evaluationPlan.mount,
+          generatedScorer: evaluationPlan.generatedScorer,
           submission: dryRunInputs.submission,
           submissionContract: dryRunInputs.submissionContract,
-          metric: evalPlan.metric,
-          runtimeFamily: evalPlan.runtimeFamily,
-          env: resolveScoringEnvironmentFromSpec(parsed.data),
+          evaluationContract: evaluationPlan.evaluationContract,
+          metric: evaluationPlan.metric,
+          runtimeFamily: evaluationPlan.executionRuntimeFamily,
+          policies: evaluationPlan.policies,
+          env: evaluationPlan.env,
+          limits: evaluationPlan.limits
+            ? {
+                memory: evaluationPlan.limits.memory,
+                cpus: evaluationPlan.limits.cpus,
+                pids: evaluationPlan.limits.pids,
+              }
+            : undefined,
           timeoutMs: 5 * 60 * 1000, // 5 min for dry-run
         });
 

@@ -89,7 +89,7 @@ function GaugeCard({
 }) {
   return (
     <div className="p-4 flex items-center gap-4">
-      <div className="flex items-center justify-center w-10 h-10 border border-warm-900 text-warm-900 flex-shrink-0">
+      <div className="flex items-center justify-center w-10 h-10 bg-warm-100 text-warm-900 flex-shrink-0">
         <Icon className="w-5 h-5" strokeWidth={1.5} />
       </div>
       <div className="min-w-0">
@@ -120,7 +120,7 @@ function ProgressMetric({
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
 }) {
   return (
-    <div className="border border-warm-900 p-4">
+    <div className="rounded-md bg-white p-4">
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2">
           <Icon className="w-4 h-4" strokeWidth={1.5} />
@@ -130,7 +130,7 @@ function ProgressMetric({
           {value}%
         </span>
       </div>
-      <div className="w-full border border-warm-900 h-[14px] p-[2px]">
+      <div className="w-full rounded-full bg-warm-200 h-[14px] p-[2px]">
         <div
           className="h-full transition-all duration-700"
           style={{
@@ -179,27 +179,27 @@ function RecentChallengesTable({
   challenges: AnalyticsData["recentChallenges"];
 }) {
   return (
-    <div className="border border-warm-900 rounded-[2px] overflow-hidden">
-      <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3 bg-warm-100 border-b border-warm-900">
+    <div className="rounded-md bg-white overflow-hidden">
+      <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3 bg-warm-100 border-b border-warm-200">
         <FlaskConical className="w-4 h-4" strokeWidth={2} />
         Recent Challenges
       </h3>
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="bg-warm-100">
-            <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
+            <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-200">
               Title
             </th>
-            <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
+            <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-200">
               Domain
             </th>
-            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
+            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-200">
               Status
             </th>
-            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
+            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-200">
               Reward
             </th>
-            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
+            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-200">
               Created
             </th>
           </tr>
@@ -222,13 +222,13 @@ function RecentChallengesTable({
                   </Link>
                 </td>
                 <td className="py-2 px-4">
-                  <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider border border-warm-900 text-warm-900">
+                  <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider bg-warm-100 text-warm-900">
                     {c.domain}
                   </span>
                 </td>
                 <td className="py-2 px-4 text-right">
                   <span
-                    className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-[2px] border"
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded border"
                     style={{
                       backgroundColor: statusStyle.bg,
                       color: statusStyle.text,
@@ -273,24 +273,24 @@ function RecentSubmissionsTable({
   submissions: AnalyticsData["recentSubmissions"];
 }) {
   return (
-    <div className="border border-warm-900 rounded-[2px] overflow-hidden">
-      <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3 bg-warm-100 border-b border-warm-900">
+    <div className="rounded-md bg-white overflow-hidden">
+      <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3 bg-warm-100 border-b border-warm-200">
         <FileText className="w-4 h-4" strokeWidth={2} />
         Recent Submissions
       </h3>
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="bg-warm-100">
-            <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
+            <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-200">
               Solver
             </th>
-            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
+            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-200">
               Score
             </th>
-            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
+            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-200">
               Scored
             </th>
-            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900">
+            <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-200">
               Submitted
             </th>
           </tr>
@@ -319,7 +319,7 @@ function RecentSubmissionsTable({
               </td>
               <td className="py-2 px-4 text-right">
                 <span
-                  className={`px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-[2px] border ${
+                  className={`px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded border ${
                     s.scored
                       ? "bg-[#e8efe8] text-[#2d6a2e] border-[#b5cdb6]"
                       : "bg-warm-900/5 text-warm-900/40 border-warm-900/10"
@@ -465,15 +465,15 @@ function WorkerStatus() {
   const sealingConfigured = health?.sealing?.configured;
 
   return (
-    <div className="border border-warm-900 overflow-hidden">
+    <div className="rounded-md bg-white overflow-hidden">
       {/* Header bar */}
-      <div className="flex items-center justify-between px-5 py-3 bg-warm-100 border-b border-warm-900">
+      <div className="flex items-center justify-between px-5 py-3 bg-warm-100 border-b border-warm-200">
         <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2">
           <Activity className="w-4 h-4" strokeWidth={2} />
           Scoring Worker
         </h3>
         <span
-          className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 border rounded-[2px]"
+          className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 border rounded"
           style={
             ready
               ? {
@@ -601,7 +601,7 @@ export function AnalyticsClient() {
       {query.isLoading ? (
         <AnalyticsSkeleton />
       ) : query.error ? (
-        <div className="border border-warm-900 p-8 text-center font-mono font-bold text-sm uppercase tracking-wider text-warm-900/60">
+        <div className="rounded-md bg-white p-8 text-center font-mono font-bold text-sm uppercase tracking-wider text-warm-900/60">
           Unable to load analytics data. Try refreshing.
         </div>
       ) : d ? (
@@ -614,7 +614,7 @@ export function AnalyticsClient() {
               <DollarSign className="w-3 h-3" strokeWidth={1.5} />
               Financial Overview
             </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 border border-warm-900 divide-x divide-warm-900 bg-white">
+            <div className="grid grid-cols-2 md:grid-cols-4 rounded-md bg-white">
               <div className="p-5 text-center">
                 <HeroMetric
                   label="Total Value Locked"
@@ -647,7 +647,7 @@ export function AnalyticsClient() {
           </div>
 
           {/* ── Section 2: Activity Metrics ── */}
-          <div className="grid grid-cols-2 md:grid-cols-4 border border-warm-900 divide-x divide-warm-900 bg-white">
+          <div className="grid grid-cols-2 md:grid-cols-4 rounded-md bg-white">
             <GaugeCard
               icon={FlaskConical}
               label="Challenges"

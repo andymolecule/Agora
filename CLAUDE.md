@@ -24,9 +24,8 @@ These apply to every line of code and every design decision:
 - @docs/protocol.md — On-chain protocol, lifecycle, settlement (the "rules")
 - @docs/data-and-indexing.md — DB schema, projections, source-of-truth boundaries
 - @docs/operations.md — Running, deploying, monitoring, incident response
-- @docs/design/design-system/DESIGN-SYSTEM.md — Canonical frontend visual identity
+- @.claude/skills/agora-design-system/SKILL.md — Canonical frontend design system (visual identity + implementation)
 - @docs/contributing/agent-guide.md — Agent getting-started guide
-- @.claude/skills/agora-design-system/SKILL.md — Frontend design system skill
 
 ## Tech Stack
 
@@ -116,6 +115,26 @@ See @.env.example for the full documented list.
 - Distribution types: WinnerTakeAll, TopThree (60/25/15), Proportional
 - Dispute window: poster-configurable, 168–2160 hours (7–90 days)
 - See @docs/architecture.md for full contract diagrams
+
+## Agent Behavior
+
+Rules for how Claude agents should operate in this codebase:
+
+- **Plan before acting** — For multi-step or ambiguous tasks, outline the approach before writing code. State what you'll change, which files, and why.
+- **Subagent strategy** — Use parallel subagents for independent tasks (e.g., searching multiple directories, running builds while researching). Use sequential agents when outputs depend on each other.
+- **Verify before done** — After any significant change, confirm it works: run the build, check for regressions, grep for stale references. Never mark a task complete on faith.
+- **Autonomous bug fixing** — If a build or test fails after your change, diagnose and fix it immediately. Don't leave broken state for the user to clean up.
+- **Demand elegance, not cleverness** — Write code that reads well and does its job cleanly. Elegance means clarity and precision, not abstraction for its own sake. This complements YAGNI — elegant code is simple code that doesn't need a comment to explain why it exists.
+- **Learn from mistakes** — When a correction reveals a repeatable pattern (wrong API, bad assumption, subtle footgun), propose adding it to Critical Rules or the relevant section of this file. Every mistake should only happen once.
+
+## Maintaining This File
+
+This file is the single source of truth for how Claude operates in this repo. Keep it effective:
+
+- **Add rules from real mistakes, not hypotheticals.** If Claude does something wrong, add a rule so it never happens again. The Critical Rules section is the "error graveyard" — it should grow over time.
+- **Keep it sparse.** Every rule should earn its place. Remove rules that no longer apply or that Claude consistently gets right without prompting.
+- **No separate memory files.** Don't scatter instructions across `.claude/projects/*/memory/` or other side files. Consolidate here.
+- **Claude can propose edits.** After a correction or a session that surfaced a new pattern, Claude should suggest a specific CLAUDE.md addition — not dump a paragraph, but a one-line rule that prevents the next occurrence.
 
 ## When You're Stuck
 

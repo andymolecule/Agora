@@ -1,9 +1,11 @@
+import { resolveManagedScorerImage } from "../runtime-families.js";
 import {
-  EXPERT_RUNTIME_FAMILY_ID,
-  SEMI_CUSTOM_RUNTIME_FAMILY_ID,
-  resolveManagedScorerImage,
-} from "../runtime-families.js";
-import type { SemiCustomEvaluatorContractOutput } from "../schemas/evaluator-contract.js";
+  buildGeneratedScorerProgramFromDefinitionBackedEvaluator,
+  buildGeneratedScorerProgramForManagedPreset,
+  resolveGeneratedScorerImage,
+  type GeneratedScorerProgramOutput,
+} from "../generated-scorers.js";
+import type { DefinitionBackedEvaluatorContractOutput } from "../schemas/evaluator-contract.js";
 import {
   type SubmissionContractOutput,
   createCsvTableSubmissionContract,
@@ -13,6 +15,7 @@ import type {
   ChallengeArtifact,
   ChallengeDomain,
   ChallengeEvaluation,
+  ChallengeEvaluationBackendKind,
   ChallengeSpec,
   ChallengeType,
 } from "../types/challenge.js";
@@ -23,7 +26,9 @@ export interface ChallengeTypeTemplate {
   description: string;
   defaultDomain: ChallengeDomain;
   defaultMetric: string;
-  defaultRuntimeFamily: string;
+  defaultPresetId: string;
+  defaultBackendKind: ChallengeEvaluationBackendKind;
+  defaultExecutionRuntimeFamily?: string;
   defaultScorerImage: string;
   defaultMinimumScore: number;
 }
@@ -36,8 +41,10 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
       "Solvers predict held-out outcomes from a labeled training dataset.",
     defaultDomain: "omics",
     defaultMetric: "r2",
-    defaultRuntimeFamily: "tabular_regression",
-    defaultScorerImage: resolveManagedScorerImage("tabular_regression") ?? "",
+    defaultPresetId: "tabular_regression",
+    defaultBackendKind: "generated_scorer",
+    defaultExecutionRuntimeFamily: "tabular_regression",
+    defaultScorerImage: resolveGeneratedScorerImage(),
     defaultMinimumScore: 0,
   },
   reproducibility: {
@@ -47,8 +54,10 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
       "Solvers reproduce a posted reference artifact from shared source data.",
     defaultDomain: "other",
     defaultMetric: "exact_match",
-    defaultRuntimeFamily: "reproducibility",
-    defaultScorerImage: resolveManagedScorerImage("reproducibility") ?? "",
+    defaultPresetId: "reproducibility",
+    defaultBackendKind: "generated_scorer",
+    defaultExecutionRuntimeFamily: "reproducibility",
+    defaultScorerImage: resolveGeneratedScorerImage(),
     defaultMinimumScore: 0,
   },
   docking: {
@@ -57,7 +66,9 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
     description: "Solvers rank candidates against a target-specific benchmark.",
     defaultDomain: "drug_discovery",
     defaultMetric: "spearman",
-    defaultRuntimeFamily: "docking",
+    defaultPresetId: "docking",
+    defaultBackendKind: "preset_interpreter",
+    defaultExecutionRuntimeFamily: "docking",
     defaultScorerImage: resolveManagedScorerImage("docking") ?? "",
     defaultMinimumScore: 0,
   },
@@ -67,7 +78,8 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
     description: "Solvers search a space while Agora scores the result.",
     defaultDomain: "drug_discovery",
     defaultMetric: "custom",
-    defaultRuntimeFamily: EXPERT_RUNTIME_FAMILY_ID,
+    defaultPresetId: "custom",
+    defaultBackendKind: "oci_image",
     defaultScorerImage: "",
     defaultMinimumScore: 0,
   },
@@ -78,7 +90,8 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
       "Solvers submit adversarial inputs against a target model or claim.",
     defaultDomain: "other",
     defaultMetric: "custom",
-    defaultRuntimeFamily: EXPERT_RUNTIME_FAMILY_ID,
+    defaultPresetId: "custom",
+    defaultBackendKind: "oci_image",
     defaultScorerImage: "",
     defaultMinimumScore: 0,
   },
@@ -88,7 +101,8 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
     description: "Bring your own scorer image, rules, and artifact contract.",
     defaultDomain: "other",
     defaultMetric: "custom",
-    defaultRuntimeFamily: EXPERT_RUNTIME_FAMILY_ID,
+    defaultPresetId: "custom",
+    defaultBackendKind: "oci_image",
     defaultScorerImage: "",
     defaultMinimumScore: 0,
   },
@@ -100,10 +114,10 @@ export function getChallengeTypeTemplate(
   return TYPE_TEMPLATE_REGISTRY[challengeType];
 }
 
-export function defaultRuntimeFamilyForChallengeType(
+export function defaultPresetIdForChallengeType(
   challengeType: ChallengeType,
 ): string {
-  return TYPE_TEMPLATE_REGISTRY[challengeType].defaultRuntimeFamily;
+  return TYPE_TEMPLATE_REGISTRY[challengeType].defaultPresetId;
 }
 
 export function defaultMinimumScoreForChallengeType(
@@ -113,10 +127,15 @@ export function defaultMinimumScoreForChallengeType(
 }
 
 export function getChallengeCompatibilityType(input: {
-  runtimeFamily: string;
-  evaluatorContract?: SemiCustomEvaluatorContractOutput | null;
+  presetId: string;
+  backendKind: ChallengeEvaluationBackendKind;
+  evaluatorContract?: DefinitionBackedEvaluatorContractOutput | null;
 }): ChallengeType {
-  switch (input.runtimeFamily) {
+  if (input.backendKind === "oci_image") {
+    return "custom";
+  }
+
+  switch (input.presetId) {
     case "reproducibility":
       return "reproducibility";
     case "tabular_regression":
@@ -126,9 +145,6 @@ export function getChallengeCompatibilityType(input: {
       return "docking";
     case "ranking":
       return "optimization";
-    case SEMI_CUSTOM_RUNTIME_FAMILY_ID:
-    case EXPERT_RUNTIME_FAMILY_ID:
-      return "custom";
     default:
       return "custom";
   }
@@ -137,11 +153,12 @@ export function getChallengeCompatibilityType(input: {
 export function getChallengeCompatibilityTypeFromEvaluation(
   evaluation: Pick<
     ChallengeEvaluation,
-    "runtime_family" | "evaluator_contract"
+    "preset_id" | "backend_kind" | "evaluator_contract"
   >,
 ): ChallengeType {
   return getChallengeCompatibilityType({
-    runtimeFamily: evaluation.runtime_family,
+    presetId: evaluation.preset_id,
+    backendKind: evaluation.backend_kind,
     evaluatorContract: evaluation.evaluator_contract ?? null,
   });
 }
@@ -149,7 +166,7 @@ export function getChallengeCompatibilityTypeFromEvaluation(
 export function defaultMinimumScoreForEvaluation(
   evaluation: Pick<
     ChallengeEvaluation,
-    "runtime_family" | "evaluator_contract"
+    "preset_id" | "backend_kind" | "evaluator_contract"
   >,
 ): number {
   return defaultMinimumScoreForChallengeType(
@@ -213,7 +230,9 @@ export interface ChallengeSpecDraftInput {
   type: ChallengeType;
   description: string;
   artifacts: ChallengeArtifact[];
-  runtimeFamily?: string;
+  presetId?: string;
+  backendKind?: ChallengeEvaluationBackendKind;
+  executionRuntimeFamily?: string;
   scorerImage?: string;
   metric?: string;
   reward: {
@@ -227,41 +246,67 @@ export interface ChallengeSpecDraftInput {
   tags?: string[];
   labTba?: string;
   evaluationBundle?: string;
-  evaluatorContract?: SemiCustomEvaluatorContractOutput;
+  evaluatorContract?: DefinitionBackedEvaluatorContractOutput;
+  generatedScorer?: GeneratedScorerProgramOutput;
 }
 
 export function buildChallengeSpecDraft(
   input: ChallengeSpecDraftInput,
 ): ChallengeSpec {
   const template = getChallengeTypeTemplate(input.type);
-  const runtimeFamily =
-    input.runtimeFamily?.trim() || template.defaultRuntimeFamily;
+  const presetId = input.presetId?.trim() || template.defaultPresetId;
+  const backendKind = input.backendKind ?? template.defaultBackendKind;
+  const executionRuntimeFamily =
+    input.executionRuntimeFamily?.trim() ||
+    template.defaultExecutionRuntimeFamily;
+  const metric = input.metric?.trim() || template.defaultMetric;
+  const generatedScorer =
+    backendKind === "generated_scorer"
+      ? input.generatedScorer ??
+        buildGeneratedScorerProgramFromDefinitionBackedEvaluator(
+          input.evaluatorContract,
+        ) ??
+        buildGeneratedScorerProgramForManagedPreset({
+          presetId,
+          metric,
+        }) ??
+        undefined
+      : undefined;
   const scorerImage =
     input.scorerImage?.trim() ||
-    (runtimeFamily === EXPERT_RUNTIME_FAMILY_ID
+    (backendKind === "oci_image"
       ? ""
-      : runtimeFamily === SEMI_CUSTOM_RUNTIME_FAMILY_ID
+      : backendKind === "generated_scorer"
+        ? resolveGeneratedScorerImage()
+      : backendKind === "definition_only"
         ? null
-        : (resolveManagedScorerImage(runtimeFamily) ??
-          template.defaultScorerImage));
+        : executionRuntimeFamily
+          ? (resolveManagedScorerImage(executionRuntimeFamily) ??
+            template.defaultScorerImage)
+          : template.defaultScorerImage);
 
   return {
-    schema_version: 3,
+    schema_version: 4,
     id: input.id,
     title: input.title,
     domain: input.domain,
     type: input.type,
     description: input.description,
     evaluation: {
-      runtime_family: runtimeFamily,
-      metric: input.metric?.trim() || template.defaultMetric,
+      preset_id: presetId,
+      backend_kind: backendKind,
+      ...(executionRuntimeFamily
+        ? { execution_runtime_family: executionRuntimeFamily }
+        : {}),
+      metric,
       ...(scorerImage ? { scorer_image: scorerImage } : {}),
-      ...(input.evaluationBundle
+      ...(input.evaluationBundle && backendKind !== "generated_scorer"
         ? { evaluation_bundle: input.evaluationBundle }
         : {}),
       ...(input.evaluatorContract
         ? { evaluator_contract: input.evaluatorContract }
         : {}),
+      ...(generatedScorer ? { generated_scorer: generatedScorer } : {}),
     },
     artifacts: input.artifacts,
     submission_contract: buildSubmissionContractForChallengeType(

@@ -1,11 +1,7 @@
 import { getOnChainSubmission } from "@agora/chain";
-import { challengeSpecSchema, resolveChallengeEvaluation } from "@agora/common";
+import { challengeSpecSchema, resolveEvaluationPlan } from "@agora/common";
 import { getJSON } from "@agora/ipfs";
-import {
-  executeScoringPipeline,
-  resolveScoringSpecRuntimeConfigFromSpecCid,
-  wadToScore,
-} from "@agora/scorer";
+import { executeScoringPipeline, wadToScore } from "@agora/scorer";
 import { Command } from "commander";
 import { keccak256, toBytes } from "viem";
 import { fetchApiJson } from "../lib/api";
@@ -146,23 +142,22 @@ export function buildVerifyPublicCommand() {
         const runSpinner = createSpinner(
           "Running scorer for public verification...",
         );
-        const scoringSpecConfig =
-          await resolveScoringSpecRuntimeConfigFromSpecCid(
-            payload.challengeSpecCid,
-          );
         const challengeSpec = challengeSpecSchema.parse(
           await getJSON(payload.challengeSpecCid),
         );
-        const evalPlan = resolveChallengeEvaluation(challengeSpec);
+        const evaluationPlan = resolveEvaluationPlan(challengeSpec);
         const run = await executeScoringPipeline({
           image: proof.containerImageDigest,
           evaluationBundle: { cid: payload.evaluationBundleCid },
-          mount: evalPlan.mount,
+          mount: evaluationPlan.mount,
+          generatedScorer: evaluationPlan.generatedScorer,
           submission: { cid: payload.replaySubmissionCid },
-          submissionContract: scoringSpecConfig.submissionContract,
-          metric: evalPlan.metric,
-          runtimeFamily: evalPlan.runtimeFamily,
-          env: scoringSpecConfig.env,
+          submissionContract: evaluationPlan.submissionContract,
+          evaluationContract: evaluationPlan.evaluationContract,
+          metric: evaluationPlan.metric,
+          runtimeFamily: evaluationPlan.executionRuntimeFamily,
+          policies: evaluationPlan.policies,
+          env: evaluationPlan.env,
           strictPull: true,
         });
         if (!run.result.ok) {

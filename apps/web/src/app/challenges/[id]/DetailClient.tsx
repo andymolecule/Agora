@@ -129,48 +129,66 @@ type ScorerTransparencyInfo = {
 function getScorerTransparencyInfo(value: string | null | undefined): ScorerTransparencyInfo | null {
   if (!value) return null;
   const ref = value.toLowerCase();
-  if (ref.includes("repro-scorer")) {
+  if (ref.includes("gems-match-scorer")) {
     return {
-      label: "Agora Repro Scorer",
-      summary: "Compares the submitted CSV against the posted reference output row by row using deterministic rules.",
+      label: "Agora GEMS Match Scorer",
+      summary: "Compares submitted artifacts against reference artifacts using deterministic CSV, JSON, or byte-level matching rules.",
       details: [
-        "Requires every reference-output column to be present in the submitted CSV.",
-        "Reorders submission columns to match the reference output before comparison.",
-        "Uses absolute numeric tolerance for numeric values.",
-        "Uses exact equality for non-numeric values.",
+        "Supports CSV row matching, JSON exact match, structured-record validation, and opaque binary comparison.",
+        "Requires every reference-output column to be present in CSV submissions.",
+        "Uses absolute numeric tolerance for numeric CSV values and exact equality for non-numeric values.",
         "Writes deterministic JSON score output for reproducible replay.",
       ],
       sourceLinks: [
-        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/repro-scorer/score.py" },
-        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/repro-scorer/Dockerfile" },
+        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-match-scorer/score.py" },
+        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-match-scorer/Dockerfile" },
       ],
     };
   }
-  if (ref.includes("regression-scorer")) {
+  if (ref.includes("gems-tabular-scorer")) {
     return {
-      label: "Agora Regression Scorer",
-      summary: "Matches submitted predictions to the posted ground-truth labels by row id and computes standard regression metrics.",
+      label: "Agora GEMS Tabular Scorer",
+      summary: "Matches submitted predictions to hidden labels by row id and computes deterministic tabular metrics for regression and classification.",
       details: [
         "Requires id and prediction columns in the submission and id and label columns in the ground truth.",
         "Matches rows by id rather than by file order.",
-        "Computes R², RMSE, MAE, Pearson, and Spearman metrics.",
-        "Uses clamped R² as the primary score for payout and ranking.",
+        "Computes R², RMSE, MAE, Pearson, Spearman, Accuracy, and F1.",
+        "Normalizes lower-is-better metrics before payout and ranking.",
         "Writes deterministic JSON score output for reproducible replay.",
       ],
       sourceLinks: [
-        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/regression-scorer/score.py" },
-        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/regression-scorer/Dockerfile" },
+        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-tabular-scorer/score.py" },
+        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-tabular-scorer/Dockerfile" },
       ],
     };
   }
-  if (ref.includes("docking-scorer")) {
+  if (ref.includes("gems-ranking-scorer")) {
     return {
-      label: "Agora Docking Scorer",
-      summary: "Official managed scorer for docking-style ligand ranking challenges.",
-      details: ["The container reference is public and the scoring logic is available for solver-side inspection and dry-run previews."],
+      label: "Agora GEMS Ranking Scorer",
+      summary: "Computes deterministic ranking metrics for ranking and docking-style challenges.",
+      details: [
+        "Computes Spearman and NDCG over ranked CSV submissions.",
+        "Used by both generic ranking challenges and docking-style ligand ranking challenges.",
+        "The container reference is public and the scoring logic is available for solver-side inspection and dry-run previews.",
+      ],
       sourceLinks: [
-        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/docking-scorer/score.py" },
-        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/docking-scorer/Dockerfile" },
+        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-ranking-scorer/score.py" },
+        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-ranking-scorer/Dockerfile" },
+      ],
+    };
+  }
+  if (ref.includes("gems-generated-scorer")) {
+    return {
+      label: "Agora GEMS Generated Scorer",
+      summary: "Loads a generated Python scoring program and runs it inside Agora's deterministic scorer runtime.",
+      details: [
+        "Stages a generated_scorer.py program alongside the standard runtime config and mounted inputs.",
+        "Lets Agora compile objective deterministic scoring logic without users supplying a custom Docker image.",
+        "Keeps execution inside the same sandboxed Docker scoring boundary as the specialized scorer images.",
+      ],
+      sourceLinks: [
+        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-generated-scorer/score.py" },
+        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-generated-scorer/Dockerfile" },
       ],
     };
   }
@@ -345,7 +363,11 @@ export function DetailClient({ id }: { id: string }) {
   const challengeTypeLabel = formatChallengeType(challenge.challenge_type);
   const rewardDistribution = titleCase(challenge.distribution_type ?? "winner_take_all");
   const successDefinition =
-    (spec?.type ?? challenge.evaluation?.runtime_family) === "reproducibility"
+    (
+      spec?.type ??
+      challenge.evaluation?.execution_runtime_family ??
+      challenge.evaluation?.preset_id
+    ) === "reproducibility"
       ? "Submissions are compared against the reference output bundle using deterministic row matching."
       : "Submissions are ranked by score after the managed evaluation pipeline runs on the hidden evaluation bundle.";
   const evaluationCriteria =

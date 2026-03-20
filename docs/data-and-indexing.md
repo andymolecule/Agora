@@ -25,7 +25,7 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 - Scoreable submissions require a pre-registered `submission_intent` and a linked `submissions.submission_intent_id`
 - Fairness-sensitive visibility checks use chain `status()` rather than projected status
 - Public leaderboard, win rate, and earned USDC derive from finalized `challenge_payouts` rows
-- Worker scoring reads cached `submission_contract_json` and `scoring_env_json` from the DB first; IPFS spec fetch is legacy fallback only
+- Worker scoring reads the canonical `evaluation_plan_json` projection and does not depend on a live IPFS spec fetch for runtime configuration
 - Authoring state is now split by concern: `authoring_drafts` for canonical draft state, `authoring_source_links` for stable external source identity, `authoring_callback_targets` for registered host callback URLs, `published_challenge_links` for publish outcome, and `authoring_callback_deliveries` for callback retry
 - Published challenges can now carry external-source attribution (`source_provider`, `source_external_id`, `source_external_url`, `source_agent_handle`) for Beach/OpenClaw lineage and sponsor-budget accounting
 
@@ -57,7 +57,7 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 | Leaderboard display | DB (`challenge_payouts` from finalized) | Not score heuristics |
 | UI status labels | API domain types derived from chain | — |
 | Verification gate | Chain truth | Fairness-sensitive routes re-check |
-| Challenge metadata | IPFS (immutable) + DB (searchable cache) | DB also caches resolved scoring config for worker hot-path reads |
+| Challenge metadata | IPFS (immutable) + DB (searchable cache) | DB also caches canonical evaluation plans for worker hot-path reads |
 | Submission fetch metadata (`result_cid`, `result_format`) | DB registration (`submission_intents` + `submissions.submission_intent_id`) | Chain stores only `result_hash`; unmatched on-chain submissions are not scoreable |
 | Submission content | IPFS | Hash anchored on-chain |
 
@@ -86,10 +86,9 @@ erDiagram
         int dispute_window_hours
         string spec_cid
         string runtime_family
-        jsonb evaluation_json
+        jsonb evaluation_plan_json
         jsonb artifacts_json
         jsonb submission_contract_json
-        jsonb scoring_env_json
         int winning_on_chain_sub_id
         string winner_solver_address
         string tx_hash
@@ -301,7 +300,7 @@ erDiagram
 
 ### Table Descriptions
 
-- **challenges** — Projected from `ChallengeCreated` events + IPFS spec parsing. Key fields: `contract_address` (unique on-chain identity), `status` (projected lifecycle state), `reward_amount` (USDC, 6 decimals), `deadline` (UTC timestamp), `spec_cid` (IPFS pointer to challenge YAML), `runtime_family` (managed runtime selection), `evaluation_json` (resolved scorer image + metric metadata), `artifacts_json` (public/private artifact cache), `submission_contract_json` (cached solver artifact contract), and `scoring_env_json` (cached resolved scoring env such as tolerance). `challenge_type` remains a compatibility and display field, but execution behavior should key off `runtime_family` plus the evaluator contract.
+- **challenges** — Projected from `ChallengeCreated` events + IPFS spec parsing. Key fields: `contract_address` (unique on-chain identity), `status` (projected lifecycle state), `reward_amount` (USDC, 6 decimals), `deadline` (UTC timestamp), `spec_cid` (IPFS pointer to challenge YAML), `runtime_family` (derived execution family for display/indexing), `evaluation_plan_json` (canonical scorer image + contracts + limits + mounts + generated program metadata), `artifacts_json` (public/private artifact cache), and `submission_contract_json` (cached solver artifact contract). `challenge_type` remains a compatibility and display field, but execution behavior should key off the canonical evaluation plan.
 
 - **submissions** — Projected from `Submitted` + `Scored` events. Key fields: `on_chain_sub_id` (contract-level submission index), `result_hash` (keccak256 of result CID, anchored on-chain), `submission_intent_id` (required link to the pre-registered submission intent), `result_cid` (IPFS pointer to the registered submission file), `score` (WAD-scaled score string), and `scored` (boolean, set true when `Scored` event is indexed). Additional columns: `result_format` (enum: `plain_v0` for direct/public payloads or `sealed_submission_v2` for sealed envelopes), `proof_bundle_cid` (IPFS CID of the proof bundle), `proof_bundle_hash` (on-chain hash of the proof bundle), and `scored_at` (timestamp when the score was posted). For `sealed_submission_v2`, `result_cid` points to the sealed envelope, not the plaintext replay artifact.
 

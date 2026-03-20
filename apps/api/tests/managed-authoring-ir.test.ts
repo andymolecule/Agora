@@ -42,7 +42,7 @@ test("managed authoring IR exposes missing objective and artifact questions", ()
   assert.equal(questions[5]?.id, "submission-deadline");
 });
 
-test("managed authoring IR can represent deterministic semi-custom drafts without a managed runtime family", () => {
+test("managed authoring IR can represent deterministic definition-backed drafts without a managed preset", () => {
   const authoringIr = buildManagedAuthoringIr({
     intent: {
       title: "Deterministic report validation",
@@ -76,7 +76,7 @@ test("managed authoring IR can represent deterministic semi-custom drafts withou
     ],
   });
 
-  assert.equal(authoringIr.routing.mode, "semi_custom");
+  assert.equal(authoringIr.routing.mode, "definition_backed");
   assert.equal(
     authoringIr.routing.blocking_reasons.includes(
       "submission_contract_missing",
@@ -85,24 +85,21 @@ test("managed authoring IR can represent deterministic semi-custom drafts withou
   );
   assert.equal(authoringIr.submission.artifact_kind, "json_file");
   assert.equal(
-    authoringIr.evaluation.evaluator_candidates[0]?.kind,
-    "semi_custom",
+    authoringIr.evaluation.path_candidates[0]?.kind,
+    "definition_backed",
   );
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.archetype,
+    authoringIr.evaluation.evaluator_definition?.archetype,
     "structured_record_score",
   );
-  assert.equal(
-    authoringIr.evaluation.selected_evaluator,
-    "structured_record_score",
-  );
+  assert.equal(authoringIr.evaluation.definition_id, "structured_record_score");
   assert.equal(
     authoringIr.ambiguity.classes.includes("custom_evaluator_needed"),
     true,
   );
 });
 
-test("managed authoring IR adds an execution template for supported structured table semi-custom drafts", () => {
+test("managed authoring IR adds an execution template for supported structured-table definition-backed drafts", () => {
   const authoringIr = buildManagedAuthoringIr({
     intent: {
       title: "Deterministic score reconciliation",
@@ -136,25 +133,25 @@ test("managed authoring IR adds an execution template for supported structured t
     ],
   });
 
-  assert.equal(authoringIr.routing.mode, "semi_custom");
+  assert.equal(authoringIr.routing.mode, "definition_backed");
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.archetype,
+    authoringIr.evaluation.evaluator_definition?.archetype,
     "structured_table_score",
   );
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.execution?.template,
+    authoringIr.evaluation.evaluator_definition?.execution?.template,
     "official_table_metric_v1",
   );
   assert.equal(authoringIr.artifacts[0]?.selected_role, "public_inputs");
   assert.equal(authoringIr.artifacts[1]?.selected_role, "hidden_reference");
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.execution
+    authoringIr.evaluation.evaluator_definition?.execution
       ?.evaluation_artifact_role,
     "hidden_reference",
   );
 });
 
-test("managed authoring IR adds an execution template for supported exact-match semi-custom drafts", () => {
+test("managed authoring IR adds an execution template for supported exact-match definition-backed drafts", () => {
   const authoringIr = buildManagedAuthoringIr({
     intent: {
       title: "Reference output match",
@@ -188,13 +185,13 @@ test("managed authoring IR adds an execution template for supported exact-match 
     ],
   });
 
-  assert.equal(authoringIr.routing.mode, "semi_custom");
+  assert.equal(authoringIr.routing.mode, "definition_backed");
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.archetype,
+    authoringIr.evaluation.evaluator_definition?.archetype,
     "exact_artifact_match",
   );
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.execution?.template,
+    authoringIr.evaluation.evaluator_definition?.execution?.template,
     "official_exact_match_v1",
   );
   assert.equal(authoringIr.artifacts[0]?.selected_role, "public_inputs");
@@ -233,17 +230,17 @@ test("managed authoring IR adds a JSON exact-match execution template when the d
     ],
   });
 
-  assert.equal(authoringIr.routing.mode, "semi_custom");
+  assert.equal(authoringIr.routing.mode, "definition_backed");
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.archetype,
+    authoringIr.evaluation.evaluator_definition?.archetype,
     "exact_artifact_match",
   );
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.submission.kind,
+    authoringIr.evaluation.evaluator_definition?.submission.kind,
     "json_file",
   );
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.execution?.template,
+    authoringIr.evaluation.evaluator_definition?.execution?.template,
     "official_exact_match_v1",
   );
   assert.equal(authoringIr.artifacts[0]?.selected_role, "public_inputs");
@@ -283,21 +280,21 @@ test("managed authoring IR adds a structured-record execution template when the 
     ],
   });
 
-  assert.equal(authoringIr.routing.mode, "semi_custom");
+  assert.equal(authoringIr.routing.mode, "definition_backed");
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.archetype,
+    authoringIr.evaluation.evaluator_definition?.archetype,
     "structured_record_score",
   );
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.submission.kind,
+    authoringIr.evaluation.evaluator_definition?.submission.kind,
     "json_file",
   );
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.scoring.metric,
+    authoringIr.evaluation.evaluator_definition?.scoring.metric,
     "validation_score",
   );
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.execution?.template,
+    authoringIr.evaluation.evaluator_definition?.execution?.template,
     "official_structured_record_v1",
   );
   assert.equal(authoringIr.artifacts[0]?.selected_role, "public_inputs");
@@ -336,27 +333,27 @@ test("managed authoring IR adds an opaque-file exact-match execution template wh
     ],
   });
 
-  assert.equal(authoringIr.routing.mode, "semi_custom");
+  assert.equal(authoringIr.routing.mode, "definition_backed");
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.archetype,
+    authoringIr.evaluation.evaluator_definition?.archetype,
     "exact_artifact_match",
   );
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.submission.kind,
+    authoringIr.evaluation.evaluator_definition?.submission.kind,
     "opaque_file",
   );
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.submission
+    authoringIr.evaluation.evaluator_definition?.submission
       .schema_requirements?.expected_extension,
     ".pdf",
   );
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.submission
+    authoringIr.evaluation.evaluator_definition?.submission
       .schema_requirements?.expected_mime,
     "application/pdf",
   );
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.execution?.template,
+    authoringIr.evaluation.evaluator_definition?.execution?.template,
     "official_exact_match_v1",
   );
   assert.equal(authoringIr.artifacts[0]?.selected_role, "public_inputs");
@@ -396,13 +393,13 @@ test("managed authoring IR keeps bundle-based deterministic drafts in generic ro
     ],
   });
 
-  assert.equal(authoringIr.routing.mode, "semi_custom");
+  assert.equal(authoringIr.routing.mode, "definition_backed");
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.archetype,
+    authoringIr.evaluation.evaluator_definition?.archetype,
     "bundle_or_code_judge",
   );
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.submission.kind,
+    authoringIr.evaluation.evaluator_definition?.submission.kind,
     "bundle_or_code",
   );
   assert.equal(authoringIr.artifacts[0]?.selected_role, "public_inputs");
@@ -449,9 +446,9 @@ test("managed authoring IR keeps opaque report validation drafts in generic role
     ],
   });
 
-  assert.equal(authoringIr.routing.mode, "semi_custom");
+  assert.equal(authoringIr.routing.mode, "definition_backed");
   assert.equal(
-    authoringIr.evaluation.semi_custom_contract?.archetype,
+    authoringIr.evaluation.evaluator_definition?.archetype,
     "opaque_file_judge",
   );
   assert.equal(authoringIr.submission.artifact_kind, "opaque_file");

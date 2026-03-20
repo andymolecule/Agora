@@ -64,6 +64,10 @@ That is intentional:
 - the callback says what happened
 - the card endpoint says what is true now
 
+Delivery order is not guaranteed across event types.
+
+For example, `draft_published` and `challenge_created` are sent as separate best-effort events and can be retried independently. Hosts must treat each callback as a refresh signal, not as a strict ordered event stream.
+
 After any callback, hosts should fetch:
 
 `GET /api/authoring/external/drafts/:id/card`

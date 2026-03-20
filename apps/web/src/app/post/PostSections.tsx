@@ -28,7 +28,10 @@ const STEP_LABELS: Record<PostStep, string> = {
   3: "Publish",
 };
 
-function formatRuntimeLabel(value: string) {
+function formatRuntimeLabel(value?: string | null) {
+  if (!value) {
+    return "Unknown";
+  }
   return value
     .split("_")
     .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
@@ -49,7 +52,7 @@ function DeadlineRefreshNotice({
         <button
           type="button"
           onClick={onRefresh}
-          className="inline-flex items-center gap-2 rounded-[2px] border border-amber-400 bg-white px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-wider text-amber-900 transition hover:border-warm-900 hover:text-warm-900 motion-reduce:transition-none"
+          className="inline-flex items-center gap-2 rounded border border-amber-400 bg-white px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-wider text-amber-900 transition hover:border-warm-900 hover:text-warm-900 motion-reduce:transition-none"
         >
           Refresh contract
         </button>
@@ -68,7 +71,7 @@ export function PostNotice({
   return (
     <div
       className={cx(
-        "rounded-[2px] border px-4 py-3 text-sm",
+        "rounded border px-4 py-3 text-sm",
         tone === "info" && "border-accent-200 bg-accent-50 text-accent-700",
         tone === "success" &&
           "border-emerald-300 bg-emerald-50 text-emerald-800",
@@ -92,9 +95,9 @@ export function PostStepIndicator({ step }: { step: PostStep }) {
           <div
             aria-current={currentStep === step ? "step" : undefined}
             className={cx(
-              "flex items-center gap-1.5 rounded-[2px] px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wider",
+              "flex items-center gap-1.5 rounded px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wider",
               currentStep === step
-                ? "border-2 border-warm-900 bg-warm-900 text-white shadow-[2px_2px_0px_var(--color-warm-900)]"
+                ? "border-2 border-warm-900 bg-warm-900 text-white shadow-none"
                 : currentStep < step
                   ? "border border-warm-300 bg-white text-warm-900"
                   : "border border-warm-200 bg-warm-50 text-warm-400",
@@ -117,7 +120,7 @@ export function PostingModeSection({
   onSetPostingMode: (nextMode: PostingMode) => void;
 }) {
   return (
-    <section className="rounded-[2px] border border-warm-300 bg-white px-4 py-4">
+    <section className="rounded border border-warm-300 bg-white px-4 py-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-500">
@@ -129,14 +132,14 @@ export function PostingModeSection({
             images, and advanced runtime setups.
           </p>
         </div>
-        <div className="inline-flex rounded-[2px] border border-warm-300 bg-warm-50 p-1">
+        <div className="inline-flex rounded border border-warm-300 bg-warm-50 p-1">
           <button
             type="button"
             onClick={() => onSetPostingMode("managed")}
             className={cx(
-              "rounded-[2px] px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider transition motion-reduce:transition-none",
+              "rounded px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider transition motion-reduce:transition-none",
               !expertMode
-                ? "bg-warm-900 text-white shadow-[2px_2px_0px_var(--color-warm-900)]"
+                ? "bg-warm-900 text-white shadow-none"
                 : "text-warm-700 hover:text-warm-900",
             )}
           >
@@ -146,9 +149,9 @@ export function PostingModeSection({
             type="button"
             onClick={() => onSetPostingMode("expert")}
             className={cx(
-              "rounded-[2px] px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider transition motion-reduce:transition-none",
+              "rounded px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider transition motion-reduce:transition-none",
               expertMode
-                ? "bg-warm-900 text-white shadow-[2px_2px_0px_var(--color-warm-900)]"
+                ? "bg-warm-900 text-white shadow-none"
                 : "text-warm-700 hover:text-warm-900",
             )}
           >
@@ -163,9 +166,9 @@ export function PostingModeSection({
 export function ExpertModePanel() {
   return (
     <section className="space-y-4">
-      <div className="rounded-[2px] border-2 border-warm-900 bg-white p-5 shadow-[4px_4px_0px_var(--color-warm-900)]">
+      <div className="rounded bg-white p-5 shadow-none">
         <div className="flex items-start gap-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[2px] bg-warm-900 text-white">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-warm-900 text-white">
             <TerminalSquare className="h-5 w-5" />
           </div>
           <div className="space-y-3">
@@ -187,7 +190,7 @@ export function ExpertModePanel() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-[1.05fr_0.95fr]">
-        <div className="rounded-[2px] border border-warm-300 bg-white p-5">
+        <div className="rounded border border-warm-300 bg-white p-5">
           <div className="flex items-center gap-3">
             <Shield className="h-4 w-4 text-warm-700" />
             <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-500">
@@ -206,14 +209,14 @@ export function ExpertModePanel() {
           </div>
         </div>
 
-        <div className="rounded-[2px] border border-warm-300 bg-warm-50 p-5">
+        <div className="rounded border border-warm-300 bg-warm-50 p-5">
           <div className="flex items-center gap-3">
             <Sparkles className="h-4 w-4 text-warm-700" />
             <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-500">
               CLI Path
             </div>
           </div>
-          <div className="mt-3 rounded-[2px] border border-warm-300 bg-white px-4 py-3 font-mono text-[12px] text-warm-800">
+          <div className="mt-3 rounded border border-warm-300 bg-white px-4 py-3 font-mono text-[12px] text-warm-800">
             agora post ./challenge.yaml --format json
           </div>
           <p className="mt-3 text-sm leading-6 text-warm-700">
@@ -262,7 +265,7 @@ export function ReviewStep({
 }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-[2px] border-2 border-warm-900 bg-white p-5 shadow-[4px_4px_0px_var(--color-warm-900)]">
+      <div className="rounded bg-white p-5 shadow-none">
         <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
           Challenge title
         </div>
@@ -273,12 +276,12 @@ export function ReviewStep({
                 value={titleDraft}
                 onChange={(event) => onTitleDraftChange(event.target.value)}
                 aria-label="Challenge title"
-                className="min-w-0 flex-1 rounded-[2px] border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transition-none"
+                className="min-w-0 flex-1 rounded border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:ring-1 focus:ring-warm-900/15 motion-reduce:transition-none"
               />
               <button
                 type="button"
                 onClick={onSaveTitle}
-                className="btn-primary rounded-[2px] px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider"
+                className="btn-primary rounded px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider"
               >
                 Save
               </button>
@@ -298,7 +301,7 @@ export function ReviewStep({
             <button
               type="button"
               onClick={onBeginTitleEdit}
-              className="inline-flex shrink-0 items-center gap-1 rounded-[2px] border border-warm-300 bg-white px-2.5 py-1 text-xs font-medium text-warm-700 transition hover:border-warm-900 hover:text-warm-900 motion-reduce:transition-none"
+              className="inline-flex shrink-0 items-center gap-1 rounded border border-warm-300 bg-white px-2.5 py-1 text-xs font-medium text-warm-700 transition hover:border-warm-900 hover:text-warm-900 motion-reduce:transition-none"
             >
               <Pencil className="h-3 w-3" />
               Edit
@@ -319,7 +322,7 @@ export function ReviewStep({
                 <button
                   type="button"
                   onClick={onOpenExpertMode}
-                  className="inline-flex items-center gap-2 rounded-[2px] border border-amber-400 bg-white px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-wider text-amber-900 transition hover:border-warm-900 hover:text-warm-900 motion-reduce:transition-none"
+                  className="inline-flex items-center gap-2 rounded border border-amber-400 bg-white px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-wider text-amber-900 transition hover:border-warm-900 hover:text-warm-900 motion-reduce:transition-none"
                 >
                   Open expert mode
                 </button>
@@ -340,7 +343,7 @@ export function ReviewStep({
         />
       ) : null}
 
-      <div className="space-y-4 rounded-[2px] border border-warm-300 bg-white p-5">
+      <div className="space-y-4 rounded border border-warm-300 bg-white p-5">
         <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
           Contract summary
         </div>
@@ -353,20 +356,22 @@ export function ReviewStep({
           <p>{compilation.confirmation_contract.dry_run_summary}</p>
         </div>
 
-        <div className="flex rounded-[2px] border-[2.5px] border-warm-900 bg-white shadow-[5px_5px_0px_var(--color-warm-900)]">
-          <div className="flex-1 border-r-[2.5px] border-warm-900 p-4">
+        <div className="flex rounded-md bg-surface-inset overflow-hidden">
+          <div className="flex-1 bg-surface-default p-4">
             <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
               Runtime
             </div>
             <div className="mt-1 font-display text-lg font-bold tracking-tight text-warm-900">
-              {formatRuntimeLabel(compilation.runtime_family)}
+              {formatRuntimeLabel(
+                compilation.execution_runtime_family ?? compilation.preset_id,
+              )}
             </div>
           </div>
           <div
             className={cx(
               "flex-1 p-4",
               compilation.dry_run.sample_score != null &&
-                "border-r-[2.5px] border-warm-900",
+                "border-r border-warm-200",
             )}
           >
             <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
@@ -457,7 +462,7 @@ export function ReviewStep({
           {reviewSummary.reason_codes.map((code) => (
             <span
               key={code}
-              className="rounded-[2px] border border-warm-300 bg-warm-50 px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-warm-600"
+              className="rounded border border-warm-300 bg-warm-50 px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-warm-600"
             >
               {code}
             </span>
@@ -465,7 +470,7 @@ export function ReviewStep({
         </div>
       ) : null}
 
-      <details className="rounded-[2px] border border-warm-300">
+      <details className="rounded border border-warm-300">
         <summary className="cursor-pointer px-4 py-3 font-mono text-xs font-bold uppercase tracking-wider text-warm-500">
           Raw spec preview
         </summary>
@@ -515,7 +520,7 @@ export function PublishStep({
         />
       ) : null}
 
-      <div className="rounded-[2px] border-2 border-warm-900 bg-white p-5 shadow-[4px_4px_0px_var(--color-warm-900)]">
+      <div className="rounded bg-white p-5 shadow-none">
         <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
           Reward
         </div>
@@ -543,7 +548,7 @@ export function PublishStep({
         </div>
       </div>
 
-      <div className="rounded-[2px] border border-warm-300 bg-white p-5">
+      <div className="rounded border border-warm-300 bg-white p-5">
         <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
           Wallet
         </div>
@@ -573,14 +578,14 @@ export function PublishStep({
                 {balanceReady ? "Ready" : "Insufficient"}
               </span>
             </div>
-            <div className="rounded-[2px] border border-warm-200 bg-warm-50 px-3 py-2 text-sm text-warm-600">
+            <div className="rounded border border-warm-200 bg-warm-50 px-3 py-2 text-sm text-warm-600">
               {fundingSummary}
             </div>
           </div>
         )}
       </div>
 
-      <div className="rounded-[2px] border border-warm-300 bg-warm-50 p-5">
+      <div className="rounded border border-warm-300 bg-warm-50 p-5">
         <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
           What goes live
         </div>
@@ -620,7 +625,7 @@ export function PostingActionBar({
   isCompiling: boolean;
   compileReady: boolean;
   isReviewQueued: boolean;
-  reviewMode: "operator_review" | "semi_custom" | null;
+  reviewMode: "operator_review" | "definition_backed" | null;
   needsDeadlineRefresh: boolean;
   isConnected: boolean;
   isWrongChain: boolean;
@@ -639,12 +644,12 @@ export function PostingActionBar({
   onPublish: () => void;
 }) {
   return (
-    <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-[2px] border-2 border-warm-900 bg-white px-5 py-4 shadow-[4px_4px_0px_var(--color-warm-900)]">
+    <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-md bg-white/80 px-5 py-4 shadow-[0_20px_40px_rgba(28,28,24,0.06)] backdrop-blur-[12px]">
       <div className="text-sm text-warm-600">
         {step === 1
           ? "Lock answers, then compile."
           : step === 2
-            ? reviewMode === "semi_custom"
+            ? reviewMode === "definition_backed"
               ? "Managed publish is not available for this evaluator yet."
               : isReviewQueued
                 ? "Waiting for operator review."
@@ -661,7 +666,7 @@ export function PostingActionBar({
           <button
             type="button"
             onClick={onBack}
-            className="btn-secondary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
+            className="btn-secondary rounded px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
           >
             Back
           </button>
@@ -672,7 +677,7 @@ export function PostingActionBar({
             type="button"
             onClick={onCompile}
             disabled={isCompiling || !compileReady}
-            className="btn-primary inline-flex items-center gap-2 rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
+            className="btn-primary inline-flex items-center gap-2 rounded px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
           >
             {isCompiling ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Generate contract
@@ -684,7 +689,7 @@ export function PostingActionBar({
             <button
               type="button"
               onClick={onRefreshContract}
-              className="btn-primary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
+              className="btn-primary rounded px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
             >
               Refresh contract
             </button>
@@ -692,25 +697,25 @@ export function PostingActionBar({
             <button
               type="button"
               onClick={onContinueToPublish}
-              className="btn-primary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
+              className="btn-primary rounded px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
             >
               Continue to publish
             </button>
           )
         ) : null}
 
-        {step === 2 && reviewMode === "semi_custom" ? (
+        {step === 2 && reviewMode === "definition_backed" ? (
           <button
             type="button"
             onClick={onOpenExpertMode}
-            className="btn-primary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
+            className="btn-primary rounded px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
           >
             Open Expert Mode
           </button>
         ) : null}
 
-        {step === 2 && isReviewQueued && reviewMode !== "semi_custom" ? (
-          <div className="rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-2.5 font-mono text-xs font-bold uppercase tracking-wider text-amber-900">
+        {step === 2 && isReviewQueued && reviewMode !== "definition_backed" ? (
+          <div className="rounded border border-amber-300 bg-amber-50 px-4 py-2.5 font-mono text-xs font-bold uppercase tracking-wider text-amber-900">
             Awaiting review
           </div>
         ) : null}
@@ -721,7 +726,7 @@ export function PostingActionBar({
               <button
                 type="button"
                 onClick={onOpenConnect}
-                className="btn-primary inline-flex items-center gap-2 rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
+                className="btn-primary inline-flex items-center gap-2 rounded px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
               >
                 <Wallet className="h-4 w-4" />
                 Connect wallet
@@ -730,7 +735,7 @@ export function PostingActionBar({
               <button
                 type="button"
                 onClick={onOpenChain}
-                className="btn-primary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
+                className="btn-primary rounded px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
               >
                 Switch to {chainName}
               </button>
@@ -740,7 +745,7 @@ export function PostingActionBar({
                   <button
                     type="button"
                     onClick={onRefreshContract}
-                    className="btn-primary inline-flex items-center gap-2 rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
+                    className="btn-primary inline-flex items-center gap-2 rounded px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
                   >
                     Refresh contract
                   </button>
@@ -750,7 +755,7 @@ export function PostingActionBar({
                     type="button"
                     onClick={onApprove}
                     disabled={isApproving}
-                    className="btn-secondary inline-flex items-center gap-2 rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
+                    className="btn-secondary inline-flex items-center gap-2 rounded px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
                   >
                     {isApproving ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -764,7 +769,7 @@ export function PostingActionBar({
                   disabled={
                     needsDeadlineRefresh || isPublishing || requiresApproval
                   }
-                  className="btn-primary inline-flex items-center gap-2 rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
+                  className="btn-primary inline-flex items-center gap-2 rounded px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
                 >
                   {isPublishing ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

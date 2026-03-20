@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AuthoringDraftViewRow } from "@agora/db";
-import { enforceAuthoringSponsorMonthlyBudget } from "../src/lib/authoring-sponsored-publish.js";
+import { reserveAuthoringSponsorMonthlyBudget } from "../src/lib/authoring-sponsored-publish.js";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 
 function createDraft(): AuthoringDraftViewRow {
@@ -33,10 +33,10 @@ function createDraft(): AuthoringDraftViewRow {
         timezone: "UTC",
       },
       uploadedArtifacts: [],
-      runtimeFamily: "tabular_regression",
+      presetId: "tabular_regression",
       metric: "r2",
       confidenceScore: 0.9,
-      routingMode: "managed_supported",
+      routingMode: "preset_supported",
       sourceMessages: [
         {
           id: "msg-1",
@@ -71,14 +71,16 @@ function createDraft(): AuthoringDraftViewRow {
 
 function createSpec() {
   return {
-    schema_version: 3 as const,
+    schema_version: 4 as const,
     id: "draft-1",
     title: "Drug response challenge",
     description: "Predict held-out drug response values.",
     domain: "other" as const,
     type: "prediction" as const,
     evaluation: {
-      runtime_family: "tabular_regression",
+      preset_id: "tabular_regression" as const,
+      backend_kind: "preset_interpreter" as const,
+      execution_runtime_family: "tabular_regression" as const,
       metric: "r2",
       scorer_image: "ghcr.io/agora/tabular-regression@sha256:abc",
       evaluation_bundle: "ipfs://bundle",
@@ -104,27 +106,39 @@ function createSpec() {
   };
 }
 
-test("enforceAuthoringSponsorMonthlyBudget allows publishes within the partner cap", async () => {
-  await assert.doesNotReject(() =>
-    enforceAuthoringSponsorMonthlyBudget({
-      db: {} as never,
-      draft: createDraft(),
-      spec: createSpec(),
-      sponsorMonthlyBudgetUsdc: 500,
-      sumRewardAmountForSourceProviderImpl: async () => 100,
+test("reserveAuthoringSponsorMonthlyBudget reserves budget within the partner cap", async () => {
+  const reservation = await reserveAuthoringSponsorMonthlyBudget({
+    db: {} as never,
+    draft: createDraft(),
+    spec: createSpec(),
+    sponsorMonthlyBudgetUsdc: 500,
+    now: new Date("2026-03-18T12:00:00.000Z"),
+    reserveAuthoringSponsorBudgetImpl: async () => ({
+      reserved: true,
+      totalAllocatedUsdc: 110,
     }),
-  );
+  });
+
+  assert.deepEqual(reservation, {
+    draftId: "68dff5c6-336a-47fa-a4de-41e6386bd2e4",
+    provider: "beach_science",
+    amountUsdc: 10,
+    periodStartIso: "2026-03-01T00:00:00.000Z",
+  });
 });
 
-test("enforceAuthoringSponsorMonthlyBudget rejects publishes that exceed the partner cap", async () => {
+test("reserveAuthoringSponsorMonthlyBudget rejects publishes that exceed the partner cap", async () => {
   await assert.rejects(
     () =>
-      enforceAuthoringSponsorMonthlyBudget({
+      reserveAuthoringSponsorMonthlyBudget({
         db: {} as never,
         draft: createDraft(),
         spec: createSpec(),
         sponsorMonthlyBudgetUsdc: 100,
-        sumRewardAmountForSourceProviderImpl: async () => 95,
+        reserveAuthoringSponsorBudgetImpl: async () => ({
+          reserved: false,
+          totalAllocatedUsdc: 95,
+        }),
       }),
     /sponsor budget for beach_science would be exceeded/i,
   );

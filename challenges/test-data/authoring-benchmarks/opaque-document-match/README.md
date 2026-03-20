@@ -9,7 +9,7 @@ This benchmark exists to cover a broad non-tabular, non-JSON executable path:
 - solvers submit one opaque artifact
 - payout is determined by exact byte-for-byte match against the hidden file
 
-It should land in the semi-custom executable path rather than a managed family.
+It should land in the executable definition-backed path rather than a managed family.
 
 ## Benchmark Goal
 
@@ -29,7 +29,7 @@ the task in operational language, not runtime-family vocabulary.
 
 This benchmark passes when:
 
-- the draft routes to `semi_custom`
+- the draft routes to `definition_backed`
 - the evaluator archetype is `exact_artifact_match`
 - the artifact roles stay generic: `public_inputs` and `hidden_reference`
 - the submission contract is an opaque file contract for PDF

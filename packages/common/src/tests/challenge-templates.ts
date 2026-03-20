@@ -3,14 +3,15 @@ import {
   buildChallengeSpecDraft,
   defaultMinimumScoreForChallengeType,
   defaultMinimumScoreForEvaluation,
-  defaultRuntimeFamilyForChallengeType,
+  defaultPresetIdForChallengeType,
   getChallengeCompatibilityType,
   getChallengeCompatibilityTypeFromEvaluation,
   getChallengeTypeTemplate,
 } from "../challenges/index.js";
 
 const predictionTemplate = getChallengeTypeTemplate("prediction");
-assert.equal(predictionTemplate.defaultRuntimeFamily, "tabular_regression");
+assert.equal(predictionTemplate.defaultPresetId, "tabular_regression");
+assert.equal(predictionTemplate.defaultBackendKind, "generated_scorer");
 
 const reproducibilitySpec = buildChallengeSpecDraft({
   id: "draft-001",
@@ -42,9 +43,22 @@ const reproducibilitySpec = buildChallengeSpecDraft({
   },
 });
 
-assert.equal(reproducibilitySpec.schema_version, 3);
-assert.equal(reproducibilitySpec.evaluation.runtime_family, "reproducibility");
+assert.equal(reproducibilitySpec.schema_version, 4);
+assert.equal(reproducibilitySpec.evaluation.preset_id, "reproducibility");
+assert.equal(reproducibilitySpec.evaluation.backend_kind, "generated_scorer");
+assert.equal(
+  reproducibilitySpec.evaluation.execution_runtime_family,
+  "reproducibility",
+);
+assert.equal(
+  reproducibilitySpec.evaluation.generated_scorer?.evaluation_artifact_role,
+  "reference_output",
+);
 assert.equal(reproducibilitySpec.submission_contract.kind, "csv_table");
+assert.equal(
+  "evaluation_bundle" in reproducibilitySpec.evaluation,
+  false,
+);
 
 const dockingSpec = buildChallengeSpecDraft({
   id: "draft-003",
@@ -80,7 +94,7 @@ const dockingSpec = buildChallengeSpecDraft({
   },
 });
 
-assert.equal(dockingSpec.evaluation.runtime_family, "docking");
+assert.equal(dockingSpec.evaluation.preset_id, "docking");
 assert.equal(dockingSpec.submission_contract.kind, "csv_table");
 assert.equal(dockingSpec.submission_contract.columns.id, "ligand_id");
 assert.equal(dockingSpec.submission_contract.columns.value, "docking_score");
@@ -98,7 +112,8 @@ const customSpec = buildChallengeSpecDraft({
       uri: "ipfs://QmPublicInput",
     },
   ],
-  runtimeFamily: "expert_custom",
+  presetId: "custom",
+  backendKind: "oci_image",
   scorerImage: "ghcr.io/acme/custom-scorer@sha256:1234",
   metric: "custom",
   reward: {
@@ -115,7 +130,7 @@ const customSpec = buildChallengeSpecDraft({
 
 assert.equal(customSpec.submission_contract.kind, "opaque_file");
 
-const semiCustomSpec = buildChallengeSpecDraft({
+const definitionSpec = buildChallengeSpecDraft({
   id: "draft-004",
   title: "Deterministic JSON report judge",
   domain: "other",
@@ -133,7 +148,8 @@ const semiCustomSpec = buildChallengeSpecDraft({
       uri: "ipfs://QmRubric",
     },
   ],
-  runtimeFamily: "semi_custom",
+  presetId: "structured_record_score",
+  backendKind: "definition_only",
   metric: "validation_score",
   evaluatorContract: {
     version: "v1",
@@ -173,34 +189,37 @@ const semiCustomSpec = buildChallengeSpecDraft({
   },
 });
 
-assert.equal(semiCustomSpec.evaluation.runtime_family, "semi_custom");
-assert.equal("scorer_image" in semiCustomSpec.evaluation, false);
+assert.equal(definitionSpec.evaluation.preset_id, "structured_record_score");
+assert.equal(definitionSpec.evaluation.backend_kind, "definition_only");
+assert.equal("scorer_image" in definitionSpec.evaluation, false);
 assert.equal(
-  semiCustomSpec.evaluation.evaluator_contract?.archetype,
+  definitionSpec.evaluation.evaluator_contract?.archetype,
   "structured_record_score",
 );
 assert.equal(
-  defaultRuntimeFamilyForChallengeType("prediction"),
+  defaultPresetIdForChallengeType("prediction"),
   "tabular_regression",
 );
-assert.equal(defaultRuntimeFamilyForChallengeType("docking"), "docking");
+assert.equal(defaultPresetIdForChallengeType("docking"), "docking");
 assert.equal(defaultMinimumScoreForChallengeType("prediction"), 0);
 assert.equal(
   getChallengeCompatibilityType({
-    runtimeFamily: "tabular_regression",
+    presetId: "tabular_regression",
+    backendKind: "generated_scorer",
   }),
   "prediction",
 );
 assert.equal(
   getChallengeCompatibilityType({
-    runtimeFamily: "ranking",
+    presetId: "ranking",
+    backendKind: "preset_interpreter",
   }),
   "optimization",
 );
 assert.equal(
-  getChallengeCompatibilityTypeFromEvaluation(semiCustomSpec.evaluation),
+  getChallengeCompatibilityTypeFromEvaluation(definitionSpec.evaluation),
   "custom",
 );
-assert.equal(defaultMinimumScoreForEvaluation(semiCustomSpec.evaluation), 0);
+assert.equal(defaultMinimumScoreForEvaluation(definitionSpec.evaluation), 0);
 
 console.log("challenge templates validation passed");

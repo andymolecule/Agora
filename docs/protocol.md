@@ -239,16 +239,18 @@ The authoritative schema for challenge specification files.
 ### Example
 
 ```yaml
-schema_version: 3
+schema_version: 4
 id: ch-001
 title: "Rank ligands for KRAS binding affinity"
 domain: drug_discovery
 type: docking
 description: "Predict docking scores for the supplied ligand set against the target structure."
 evaluation:
-  runtime_family: docking
+  preset_id: docking
+  backend_kind: preset_interpreter
+  execution_runtime_family: docking
   metric: spearman
-  scorer_image: ghcr.io/andymolecule/docking-scorer:v1@sha256:...
+  scorer_image: ghcr.io/andymolecule/gems-ranking-scorer:v1@sha256:...
   evaluation_bundle: ipfs://QmReferenceScores
 artifacts:
   - role: target_structure

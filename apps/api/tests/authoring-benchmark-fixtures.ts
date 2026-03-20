@@ -1,23 +1,34 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AuthoringArtifactOutput, ChallengeIntentOutput } from "@agora/common";
 
+const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const BENCHMARK_ROOT = path.resolve(
-  process.cwd(),
-  "../../challenges/test-data/authoring-benchmarks",
+  TEST_DIR,
+  "../../../challenges/test-data/authoring-benchmarks",
 );
 
 type BenchmarkCompileState = "ready" | "needs_review" | "needs_clarification";
 
 type BenchmarkJson = {
   id: string;
-  managed_support: "supported" | "semi_custom_executable" | "semi_custom_typed";
+  authoring_path_support:
+    | "supported"
+    | "definition_backed_executable"
+    | "definition_backed_typed";
   intent_family: string;
   artifacts_root: string;
   prompt_variants_root: string;
   solver_submissions_root: string;
   compile_invariants: {
-    runtime_family: string;
+    preset_id: string;
+    backend_kind:
+      | "preset_interpreter"
+      | "definition_only"
+      | "generated_scorer"
+      | "oci_image";
+    execution_runtime_family?: string | null;
     metric: string;
     artifact_roles: Array<{
       file_name: string;
@@ -37,7 +48,7 @@ type BenchmarkJson = {
   };
   acceptable_compile_states: BenchmarkCompileState[];
   disallowed_outcomes: {
-    runtime_families: string[];
+    preset_ids: string[];
     recommended_actions: string[];
   };
   prompt_variants: Array<{
@@ -232,17 +243,16 @@ export function buildAuthoringBenchmarkDependencies(
   const metric = benchmarkCase.benchmark.compile_invariants.metric;
   const selectedMetricValue = metric === "exact_match" ? 1 : 0.97;
   const compilerResponse =
-    benchmarkCase.benchmark.managed_support === "supported"
+    benchmarkCase.benchmark.authoring_path_support === "supported"
       ? {
-          runtime_family:
-            benchmarkCase.benchmark.compile_invariants.runtime_family,
+          preset_id: benchmarkCase.benchmark.compile_invariants.preset_id,
           metric,
           confidence_score: 0.91,
           reason_codes: ["benchmark_managed_fit"],
           warnings: [],
         }
       : {
-          runtime_family: "reproducibility",
+          preset_id: "reproducibility",
           metric: "exact_match",
           confidence_score: 0.4,
           reason_codes: ["no_supported_runtime_signal"],

@@ -21,15 +21,15 @@ import {
   createOpaqueFileSubmissionContract,
 } from "./submission-contract.js";
 
-export const SEMI_CUSTOM_SUBMISSION_KINDS = [
+export const DEFINITION_BACKED_SUBMISSION_KINDS = [
   "csv_table",
   "json_file",
   "bundle_or_code",
   "opaque_file",
 ] as const;
 
-export const semiCustomSubmissionKindSchema = z.enum(
-  SEMI_CUSTOM_SUBMISSION_KINDS,
+export const definitionBackedSubmissionKindSchema = z.enum(
+  DEFINITION_BACKED_SUBMISSION_KINDS,
 );
 
 export const evaluatorComparatorSchema = z.enum([
@@ -51,11 +51,17 @@ const EXECUTABLE_STRUCTURED_TABLE_METRICS = [
 ] as const;
 
 const EXECUTABLE_STRUCTURED_RECORD_METRICS = ["validation_score"] as const;
+const EXECUTABLE_BUNDLE_MANIFEST_METRICS = ["validation_score"] as const;
 
 const EXECUTABLE_EXACT_MATCH_SUBMISSION_KINDS = [
   "csv_table",
   "json_file",
   "opaque_file",
+] as const;
+
+const EXECUTABLE_EXACT_MATCH_CSV_METRICS = [
+  "exact_match",
+  "tolerant_match",
 ] as const;
 
 const JSON_EXACT_MATCH_MOUNT: ScoringMountConfig = {
@@ -68,8 +74,13 @@ const OPAQUE_EXACT_MATCH_MOUNT: ScoringMountConfig = {
   submissionFileName: "submission.bin",
 };
 
+const BUNDLE_MANIFEST_MOUNT: ScoringMountConfig = {
+  evaluationBundleName: "judge_rubric.json",
+  submissionFileName: "submission.zip",
+};
+
 function isExecutableExactMatchSubmissionKind(
-  value: SemiCustomSubmissionKindOutput,
+  value: DefinitionBackedSubmissionKindOutput,
 ): value is (typeof EXECUTABLE_EXACT_MATCH_SUBMISSION_KINDS)[number] {
   return EXECUTABLE_EXACT_MATCH_SUBMISSION_KINDS.includes(
     value as (typeof EXECUTABLE_EXACT_MATCH_SUBMISSION_KINDS)[number],
@@ -89,53 +100,61 @@ const STRUCTURED_TABLE_RUNNER_FAMILY_BY_METRIC = {
   "tabular_regression" | "tabular_classification"
 >;
 
-const SEMI_CUSTOM_EXECUTION_TEMPLATE_IMAGE = {
+const DEFINITION_BACKED_EXECUTION_TEMPLATE_IMAGE = {
   official_table_metric_v1: OFFICIAL_SCORER_IMAGES.tabular,
   official_exact_match_v1: OFFICIAL_SCORER_IMAGES.reproducibility,
   official_structured_record_v1: OFFICIAL_SCORER_IMAGES.reproducibility,
+  official_bundle_manifest_v1: OFFICIAL_SCORER_IMAGES.generated,
 } as const;
 
-export const semiCustomStructuredTableExecutionSchema = z.object({
+export const definitionBackedStructuredTableExecutionSchema = z.object({
   template: z.literal("official_table_metric_v1"),
   evaluation_artifact_role: z.string().trim().min(1),
   evaluation_contract: csvTableEvaluationContractSchema,
   policies: scorerRuntimePoliciesSchema,
 });
 
-export const semiCustomExactArtifactMatchExecutionSchema = z.object({
+export const definitionBackedExactArtifactMatchExecutionSchema = z.object({
   template: z.literal("official_exact_match_v1"),
   evaluation_artifact_role: z.string().trim().min(1),
   policies: scorerRuntimePoliciesSchema,
 });
 
-export const semiCustomStructuredRecordExecutionSchema = z.object({
+export const definitionBackedStructuredRecordExecutionSchema = z.object({
   template: z.literal("official_structured_record_v1"),
   evaluation_artifact_role: z.string().trim().min(1),
   policies: scorerRuntimePoliciesSchema,
 });
 
-export const semiCustomExecutionSchema = z.discriminatedUnion("template", [
-  semiCustomStructuredTableExecutionSchema,
-  semiCustomExactArtifactMatchExecutionSchema,
-  semiCustomStructuredRecordExecutionSchema,
+export const definitionBackedBundleManifestExecutionSchema = z.object({
+  template: z.literal("official_bundle_manifest_v1"),
+  evaluation_artifact_role: z.string().trim().min(1),
+  policies: scorerRuntimePoliciesSchema,
+});
+
+export const definitionBackedExecutionSchema = z.discriminatedUnion("template", [
+  definitionBackedStructuredTableExecutionSchema,
+  definitionBackedExactArtifactMatchExecutionSchema,
+  definitionBackedStructuredRecordExecutionSchema,
+  definitionBackedBundleManifestExecutionSchema,
 ]);
 
 const allowedSubmissionKindsByArchetype: Record<
   EvaluatorArchetypeId,
-  readonly z.infer<typeof semiCustomSubmissionKindSchema>[]
+  readonly z.infer<typeof definitionBackedSubmissionKindSchema>[]
 > = {
   // Archetypes describe the full typed contract space. Execution templates can
   // still impose a narrower executable subset; for example, exact_artifact_match
   // currently executes csv_table, json_file, and opaque_file submissions through
   // official_exact_match_v1.
-  exact_artifact_match: SEMI_CUSTOM_SUBMISSION_KINDS,
+  exact_artifact_match: DEFINITION_BACKED_SUBMISSION_KINDS,
   structured_table_score: ["csv_table"],
   structured_record_score: ["json_file"],
   bundle_or_code_judge: ["bundle_or_code"],
   opaque_file_judge: ["opaque_file"],
 };
 
-export const semiCustomEvaluatorContractSchema = z
+export const definitionBackedEvaluatorContractSchema = z
   .object({
     version: z.literal("v1"),
     archetype: z.enum(EVALUATOR_ARCHETYPE_IDS),
@@ -145,7 +164,7 @@ export const semiCustomEvaluatorContractSchema = z
       hidden: z.array(z.string().trim().min(1)),
     }),
     submission: z.object({
-      kind: semiCustomSubmissionKindSchema,
+      kind: definitionBackedSubmissionKindSchema,
       schema_requirements: z.record(z.string(), z.unknown()).nullable(),
       validation_rules: z.array(z.string().trim().min(1)),
     }),
@@ -155,7 +174,7 @@ export const semiCustomEvaluatorContractSchema = z
       deterministic_rule: z.string().trim().min(1),
       minimum_threshold: z.string().trim().min(1).nullable(),
     }),
-    execution: semiCustomExecutionSchema.optional(),
+    execution: definitionBackedExecutionSchema.optional(),
     notes: z.array(z.string().trim().min(1)),
   })
   .superRefine((value, ctx) => {
@@ -183,7 +202,7 @@ export const semiCustomEvaluatorContractSchema = z
         code: z.ZodIssueCode.custom,
         path: ["execution"],
         message:
-          "Semi-custom execution is currently available only for structured_table_score. Next step: remove execution or switch to a structured table evaluator archetype.",
+          "Definition-backed execution is currently available only for structured_table_score. Next step: remove execution or switch to a structured table evaluator archetype.",
       });
     }
 
@@ -195,7 +214,7 @@ export const semiCustomEvaluatorContractSchema = z
         code: z.ZodIssueCode.custom,
         path: ["execution"],
         message:
-          "Semi-custom execution requires submission.kind=csv_table. Next step: update the submission contract or remove execution.",
+          "Definition-backed execution requires submission.kind=csv_table. Next step: update the submission contract or remove execution.",
       });
     }
 
@@ -221,7 +240,7 @@ export const semiCustomEvaluatorContractSchema = z
         code: z.ZodIssueCode.custom,
         path: ["execution"],
         message:
-          "Semi-custom exact-match execution is currently available only for exact_artifact_match. Next step: remove execution or switch to the exact artifact match archetype.",
+          "Definition-backed exact-match execution is currently available only for exact_artifact_match. Next step: remove execution or switch to the exact artifact match archetype.",
       });
     }
 
@@ -232,19 +251,27 @@ export const semiCustomEvaluatorContractSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["execution"],
-        message: `Semi-custom exact-match execution currently requires submission.kind=${EXECUTABLE_EXACT_MATCH_SUBMISSION_KINDS.join(" or ")}. Next step: update the submission contract or remove execution.`,
+        message: `Definition-backed exact-match execution currently requires submission.kind=${EXECUTABLE_EXACT_MATCH_SUBMISSION_KINDS.join(" or ")}. Next step: update the submission contract or remove execution.`,
       });
     }
 
     if (
       value.execution.template === "official_exact_match_v1" &&
-      value.scoring.metric !== "exact_match"
+      ((value.submission.kind === "csv_table" &&
+        !EXECUTABLE_EXACT_MATCH_CSV_METRICS.includes(
+          value.scoring
+            .metric as (typeof EXECUTABLE_EXACT_MATCH_CSV_METRICS)[number],
+        )) ||
+        (value.submission.kind !== "csv_table" &&
+          value.scoring.metric !== "exact_match"))
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["scoring", "metric"],
         message:
-          "Metric exact_match is required for official_exact_match_v1. Next step: change the metric to exact_match or remove execution.",
+          value.submission.kind === "csv_table"
+            ? `Metric ${value.scoring.metric} is not executable by official_exact_match_v1. Next step: choose one of ${EXECUTABLE_EXACT_MATCH_CSV_METRICS.join(", ")}.`
+            : "Metric exact_match is required for official_exact_match_v1. Next step: change the metric to exact_match or remove execution.",
       });
     }
 
@@ -256,7 +283,7 @@ export const semiCustomEvaluatorContractSchema = z
         code: z.ZodIssueCode.custom,
         path: ["execution"],
         message:
-          "Semi-custom structured-record execution is currently available only for structured_record_score. Next step: remove execution or switch to the structured record evaluator archetype.",
+          "Definition-backed structured-record execution is currently available only for structured_record_score. Next step: remove execution or switch to the structured record evaluator archetype.",
       });
     }
 
@@ -268,7 +295,7 @@ export const semiCustomEvaluatorContractSchema = z
         code: z.ZodIssueCode.custom,
         path: ["execution"],
         message:
-          "Semi-custom structured-record execution requires submission.kind=json_file. Next step: update the submission contract or remove execution.",
+          "Definition-backed structured-record execution requires submission.kind=json_file. Next step: update the submission contract or remove execution.",
       });
     }
 
@@ -285,25 +312,66 @@ export const semiCustomEvaluatorContractSchema = z
         message: `Metric ${value.scoring.metric} is not executable by official_structured_record_v1. Next step: choose one of ${EXECUTABLE_STRUCTURED_RECORD_METRICS.join(", ")}.`,
       });
     }
+
+    if (
+      value.execution.template === "official_bundle_manifest_v1" &&
+      value.archetype !== "bundle_or_code_judge"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["execution"],
+        message:
+          "Definition-backed bundle-manifest execution is currently available only for bundle_or_code_judge. Next step: remove execution or switch to the bundle/code judge archetype.",
+      });
+    }
+
+    if (
+      value.execution.template === "official_bundle_manifest_v1" &&
+      value.submission.kind !== "bundle_or_code"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["execution"],
+        message:
+          "Definition-backed bundle-manifest execution requires submission.kind=bundle_or_code. Next step: update the submission contract or remove execution.",
+      });
+    }
+
+    if (
+      value.execution.template === "official_bundle_manifest_v1" &&
+      !EXECUTABLE_BUNDLE_MANIFEST_METRICS.includes(
+        value.scoring
+          .metric as (typeof EXECUTABLE_BUNDLE_MANIFEST_METRICS)[number],
+      )
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scoring", "metric"],
+        message: `Metric ${value.scoring.metric} is not executable by official_bundle_manifest_v1. Next step: choose one of ${EXECUTABLE_BUNDLE_MANIFEST_METRICS.join(", ")}.`,
+      });
+    }
   });
 
 export type EvaluatorComparatorOutput = z.output<
   typeof evaluatorComparatorSchema
 >;
-export type SemiCustomSubmissionKindOutput = z.output<
-  typeof semiCustomSubmissionKindSchema
+export type DefinitionBackedSubmissionKindOutput = z.output<
+  typeof definitionBackedSubmissionKindSchema
 >;
-export type SemiCustomStructuredTableExecutionOutput = z.output<
-  typeof semiCustomStructuredTableExecutionSchema
+export type DefinitionBackedStructuredTableExecutionOutput = z.output<
+  typeof definitionBackedStructuredTableExecutionSchema
 >;
-export type SemiCustomExactArtifactMatchExecutionOutput = z.output<
-  typeof semiCustomExactArtifactMatchExecutionSchema
+export type DefinitionBackedExactArtifactMatchExecutionOutput = z.output<
+  typeof definitionBackedExactArtifactMatchExecutionSchema
 >;
-export type SemiCustomStructuredRecordExecutionOutput = z.output<
-  typeof semiCustomStructuredRecordExecutionSchema
+export type DefinitionBackedStructuredRecordExecutionOutput = z.output<
+  typeof definitionBackedStructuredRecordExecutionSchema
 >;
-export type SemiCustomEvaluatorContractOutput = z.output<
-  typeof semiCustomEvaluatorContractSchema
+export type DefinitionBackedBundleManifestExecutionOutput = z.output<
+  typeof definitionBackedBundleManifestExecutionSchema
+>;
+export type DefinitionBackedEvaluatorContractOutput = z.output<
+  typeof definitionBackedEvaluatorContractSchema
 >;
 
 function parseSuggestedColumns(
@@ -336,8 +404,8 @@ function parseOpaqueFileContractDetails(
   };
 }
 
-export function createSubmissionContractFromSemiCustomEvaluatorContract(
-  contract: SemiCustomEvaluatorContractOutput,
+export function createSubmissionContractFromDefinitionBackedEvaluatorContract(
+  contract: DefinitionBackedEvaluatorContractOutput,
 ): SubmissionContractOutput {
   switch (contract.submission.kind) {
     case "csv_table": {
@@ -373,12 +441,12 @@ export function createSubmissionContractFromSemiCustomEvaluatorContract(
   }
 }
 
-export function createSemiCustomEvaluatorContract(input: {
+export function createDefinitionBackedEvaluatorContract(input: {
   archetype: EvaluatorArchetypeId;
   summary: string;
   solverVisibleArtifactRoles: string[];
   hiddenArtifactRoles: string[];
-  submissionKind: SemiCustomSubmissionKindOutput;
+  submissionKind: DefinitionBackedSubmissionKindOutput;
   schemaRequirements?: Record<string, unknown> | null;
   validationRules?: string[];
   metric: string;
@@ -386,12 +454,13 @@ export function createSemiCustomEvaluatorContract(input: {
   deterministicRule: string;
   minimumThreshold?: string | null;
   execution?:
-    | SemiCustomStructuredTableExecutionOutput
-    | SemiCustomExactArtifactMatchExecutionOutput
-    | SemiCustomStructuredRecordExecutionOutput;
+    | DefinitionBackedStructuredTableExecutionOutput
+    | DefinitionBackedExactArtifactMatchExecutionOutput
+    | DefinitionBackedStructuredRecordExecutionOutput
+    | DefinitionBackedBundleManifestExecutionOutput;
   notes?: string[];
-}): SemiCustomEvaluatorContractOutput {
-  return semiCustomEvaluatorContractSchema.parse({
+}): DefinitionBackedEvaluatorContractOutput {
+  return definitionBackedEvaluatorContractSchema.parse({
     version: "v1",
     archetype: input.archetype,
     summary: input.summary,
@@ -415,12 +484,12 @@ export function createSemiCustomEvaluatorContract(input: {
   });
 }
 
-export function createSemiCustomStructuredTableExecution(input: {
+export function createDefinitionBackedStructuredTableExecution(input: {
   evaluationArtifactRole: string;
   evaluationContract: CsvTableEvaluationContractOutput;
   policies?: Partial<ScorerRuntimePoliciesOutput>;
-}): SemiCustomStructuredTableExecutionOutput {
-  return semiCustomStructuredTableExecutionSchema.parse({
+}): DefinitionBackedStructuredTableExecutionOutput {
+  return definitionBackedStructuredTableExecutionSchema.parse({
     template: "official_table_metric_v1",
     evaluation_artifact_role: input.evaluationArtifactRole,
     evaluation_contract: input.evaluationContract,
@@ -432,11 +501,11 @@ export function createSemiCustomStructuredTableExecution(input: {
   });
 }
 
-export function createSemiCustomExactArtifactMatchExecution(input: {
+export function createDefinitionBackedExactArtifactMatchExecution(input: {
   evaluationArtifactRole: string;
   policies?: Partial<ScorerRuntimePoliciesOutput>;
-}): SemiCustomExactArtifactMatchExecutionOutput {
-  return semiCustomExactArtifactMatchExecutionSchema.parse({
+}): DefinitionBackedExactArtifactMatchExecutionOutput {
+  return definitionBackedExactArtifactMatchExecutionSchema.parse({
     template: "official_exact_match_v1",
     evaluation_artifact_role: input.evaluationArtifactRole,
     policies: createRuntimePolicies({
@@ -447,11 +516,11 @@ export function createSemiCustomExactArtifactMatchExecution(input: {
   });
 }
 
-export function createSemiCustomStructuredRecordExecution(input: {
+export function createDefinitionBackedStructuredRecordExecution(input: {
   evaluationArtifactRole: string;
   policies?: Partial<ScorerRuntimePoliciesOutput>;
-}): SemiCustomStructuredRecordExecutionOutput {
-  return semiCustomStructuredRecordExecutionSchema.parse({
+}): DefinitionBackedStructuredRecordExecutionOutput {
+  return definitionBackedStructuredRecordExecutionSchema.parse({
     template: "official_structured_record_v1",
     evaluation_artifact_role: input.evaluationArtifactRole,
     policies: createRuntimePolicies({
@@ -462,9 +531,24 @@ export function createSemiCustomStructuredRecordExecution(input: {
   });
 }
 
-export interface SemiCustomExecutionPlan {
+export function createDefinitionBackedBundleManifestExecution(input: {
+  evaluationArtifactRole: string;
+  policies?: Partial<ScorerRuntimePoliciesOutput>;
+}): DefinitionBackedBundleManifestExecutionOutput {
+  return definitionBackedBundleManifestExecutionSchema.parse({
+    template: "official_bundle_manifest_v1",
+    evaluation_artifact_role: input.evaluationArtifactRole,
+    policies: createRuntimePolicies({
+      coveragePolicy: input.policies?.coverage_policy,
+      duplicateIdPolicy: input.policies?.duplicate_id_policy,
+      invalidValuePolicy: input.policies?.invalid_value_policy,
+    }),
+  });
+}
+
+export interface DefinitionBackedExecutionPlan {
   template: NonNullable<
-    SemiCustomEvaluatorContractOutput["execution"]
+    DefinitionBackedEvaluatorContractOutput["execution"]
   >["template"];
   runner_runtime_family:
     | "tabular_regression"
@@ -476,17 +560,17 @@ export interface SemiCustomExecutionPlan {
   policies: ScorerRuntimePoliciesOutput;
 }
 
-export function resolveSemiCustomExecutionOfficialImage(
+export function resolveDefinitionBackedExecutionOfficialImage(
   template: NonNullable<
-    SemiCustomEvaluatorContractOutput["execution"]
+    DefinitionBackedEvaluatorContractOutput["execution"]
   >["template"],
 ): string {
-  return SEMI_CUSTOM_EXECUTION_TEMPLATE_IMAGE[template];
+  return DEFINITION_BACKED_EXECUTION_TEMPLATE_IMAGE[template];
 }
 
-export function resolveSemiCustomExecutionPlan(
-  contract?: SemiCustomEvaluatorContractOutput | null,
-): SemiCustomExecutionPlan | null {
+export function resolveDefinitionBackedExecutionPlan(
+  contract?: DefinitionBackedEvaluatorContractOutput | null,
+): DefinitionBackedExecutionPlan | null {
   if (!contract?.execution) {
     return null;
   }
@@ -516,6 +600,10 @@ export function resolveSemiCustomExecutionPlan(
       evaluation_artifact_role: contract.execution.evaluation_artifact_role,
       policies: contract.execution.policies,
     };
+  }
+
+  if (contract.execution.template === "official_bundle_manifest_v1") {
+    return null;
   }
 
   const runnerRuntimeFamily =

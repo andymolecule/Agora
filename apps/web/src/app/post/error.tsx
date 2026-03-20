@@ -17,9 +17,9 @@ export default function PostError({
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 pb-24">
-      <section className="rounded-[2px] border-2 border-warm-900 bg-white p-6 shadow-[4px_4px_0px_var(--color-warm-900)]">
+      <section className="rounded-md bg-white p-6">
         <div className="flex items-start gap-4">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[2px] bg-warm-900 text-white">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded bg-warm-900 text-white">
             <AlertTriangle className="h-5 w-5" />
           </div>
           <div className="space-y-3">
@@ -39,14 +39,14 @@ export default function PostError({
               <button
                 type="button"
                 onClick={reset}
-                className="inline-flex items-center gap-2 rounded-[2px] border-2 border-warm-900 bg-warm-900 px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider text-white shadow-[3px_3px_0px_var(--color-warm-900)] transition hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transform-none motion-reduce:transition-none"
+                className="btn-primary inline-flex items-center gap-2 rounded px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider text-white transition motion-reduce:transition-none"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 Try again
               </button>
               <Link
                 href="/post"
-                className="inline-flex items-center gap-2 rounded-[2px] border border-warm-300 bg-warm-50 px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider text-warm-700 transition hover:border-warm-900 hover:text-warm-900 motion-reduce:transition-none"
+                className="inline-flex items-center gap-2 rounded bg-surface-inset px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider text-warm-700 transition hover:bg-warm-200 motion-reduce:transition-none"
               >
                 Restart flow
               </Link>

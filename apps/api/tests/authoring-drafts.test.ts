@@ -13,7 +13,7 @@ import {
 } from "../src/lib/authoring-drafts.js";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 
-function createSession(
+function createDraft(
   overrides: Partial<AuthoringDraftViewRow> = {},
 ): AuthoringDraftViewRow {
   const uploadedArtifacts = overrides.uploaded_artifacts_json ?? [
@@ -68,7 +68,7 @@ function createSession(
 }
 
 test("deliverAuthoringDraftLifecycleEvent signs callback payloads with the partner callback secret", async () => {
-  const session = createSession();
+  const draft = createDraft();
   let capturedUrl: string | null = null;
   let capturedBody: string | null = null;
   let capturedTimestamp: string | null = null;
@@ -77,7 +77,7 @@ test("deliverAuthoringDraftLifecycleEvent signs callback payloads with the partn
 
   const delivered = await deliverAuthoringDraftLifecycleEvent({
     event: "draft_updated",
-    session,
+    draft,
     fetchImpl: async (input, init) => {
       capturedUrl = String(input);
       capturedBody = String(init?.body ?? "");
@@ -129,14 +129,14 @@ test("deliverAuthoringDraftLifecycleEvent signs callback payloads with the partn
 });
 
 test("deliverChallengeLifecycleEvent signs challenge lifecycle payloads with the partner callback secret", async () => {
-  const session = createSession();
+  const draft = createDraft();
   let capturedBody: string | null = null;
   let capturedSignature: string | null = null;
   let capturedTimestamp: string | null = null;
 
   const delivered = await deliverChallengeLifecycleEvent({
     event: "challenge_created",
-    session,
+    draft,
     challenge: {
       challenge_id: "7e6d7395-bec8-44b6-9d3e-5dd4518ab201",
       contract_address: "0x2222222222222222222222222222222222222222",
@@ -192,7 +192,7 @@ test("deliverChallengeLifecycleEvent signs challenge lifecycle payloads with the
 });
 
 test("deliverAuthoringDraftLifecycleEvent ignores callback urls on direct drafts", async () => {
-  const session = createSession({
+  const draft = createDraft({
     authoring_ir_json: buildManagedAuthoringIr({
       intent: null,
       uploadedArtifacts: [],
@@ -218,7 +218,7 @@ test("deliverAuthoringDraftLifecycleEvent ignores callback urls on direct drafts
 
   const delivered = await deliverAuthoringDraftLifecycleEvent({
     event: "draft_updated",
-    session,
+    draft,
     fetchImpl: async () => {
       fetchCalled = true;
       return new Response(null, { status: 200 });
@@ -236,7 +236,7 @@ test("deliverAuthoringDraftLifecycleEvent ignores callback urls on direct drafts
 });
 
 test("deliverAuthoringDraftLifecycleEvent enqueues a durable retry after an initial failure", async () => {
-  const session = createSession();
+  const draft = createDraft();
   const calls: Array<{ url: string; event: string }> = [];
   const queuedDeliveries: Array<{
     callback_url: string;
@@ -248,7 +248,7 @@ test("deliverAuthoringDraftLifecycleEvent enqueues a durable retry after an init
 
   const delivered = await deliverAuthoringDraftLifecycleEvent({
     event: "draft_compiled",
-    session,
+    draft,
     fetchImpl: async (input, init) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as {
         event: string;
@@ -315,7 +315,7 @@ test("deliverAuthoringDraftLifecycleEvent enqueues a durable retry after an init
   assert.equal(queuedDeliveries[0]?.attempts, 1);
   assert.equal(queuedDeliveries[0]?.payload_json.event, "draft_compiled");
   assert.equal(queuedDeliveries[0]?.payload_json.provider, "beach_science");
-  assert.equal(queuedDeliveries[0]?.payload_json.draft_id, session.id);
+  assert.equal(queuedDeliveries[0]?.payload_json.draft_id, draft.id);
   assert.match(
     queuedDeliveries[0]?.last_error ?? "",
     /Callback endpoint returned HTTP 503/,
@@ -328,21 +328,21 @@ test("deliverAuthoringDraftLifecycleEvent enqueues a durable retry after an init
 });
 
 test("sweepPendingAuthoringDraftLifecycleEvents delivers due callbacks and marks them delivered", async () => {
-  const session = createSession();
+  const draft = createDraft();
   const dueDelivery: AuthoringCallbackDeliveryRow = {
     id: "delivery-1",
-    draft_id: session.id,
+    draft_id: draft.id,
     provider: "beach_science",
     callback_url: "https://hooks.beach.science/agora",
     event: "draft_compiled",
     payload_json: {
       event: "draft_compiled",
       occurred_at: "2026-03-18T00:00:01.000Z",
-      draft_id: session.id,
+      draft_id: draft.id,
       provider: "beach_science",
       state: "ready",
       card: {
-        draft_id: session.id,
+        draft_id: draft.id,
         provider: "beach_science",
         state: "ready",
         title: "Draft title",
@@ -350,7 +350,7 @@ test("sweepPendingAuthoringDraftLifecycleEvents delivers due callbacks and marks
         reward_total: "10",
         distribution: "winner_take_all",
         submission_deadline: "2026-03-25T00:00:00.000Z",
-        routing_mode: "managed_supported",
+        routing_mode: "preset_supported",
         ambiguity_classes: [],
         clarification_count: 0,
         next_question: null,
@@ -421,21 +421,21 @@ test("sweepPendingAuthoringDraftLifecycleEvents delivers due callbacks and marks
 });
 
 test("sweepPendingAuthoringDraftLifecycleEvents reschedules failed callbacks until they exhaust", async () => {
-  const session = createSession();
+  const draft = createDraft();
   const dueDelivery: AuthoringCallbackDeliveryRow = {
     id: "delivery-2",
-    draft_id: session.id,
+    draft_id: draft.id,
     provider: "beach_science",
     callback_url: "https://hooks.beach.science/agora",
     event: "draft_updated",
     payload_json: {
       event: "draft_updated",
       occurred_at: "2026-03-18T00:00:01.000Z",
-      draft_id: session.id,
+      draft_id: draft.id,
       provider: "beach_science",
       state: "draft",
       card: {
-        draft_id: session.id,
+        draft_id: draft.id,
         provider: "beach_science",
         state: "draft",
         title: "Draft title",
@@ -514,10 +514,10 @@ test("sweepPendingAuthoringDraftLifecycleEvents reschedules failed callbacks unt
 });
 
 test("resolveAuthoringDraftReturnUrl accepts allowlisted requested return URLs", () => {
-  const session = createSession();
+  const draft = createDraft();
 
   const result = resolveAuthoringDraftReturnUrl({
-    session,
+    draft,
     requestedReturnTo: "https://beach.science/thread/42?tab=challenge",
     runtimeConfig: {
       partnerKeys: { beach_science: "partner-key" },
@@ -535,10 +535,10 @@ test("resolveAuthoringDraftReturnUrl accepts allowlisted requested return URLs",
 });
 
 test("resolveAuthoringDraftReturnUrl rejects non-allowlisted requested return URLs", () => {
-  const session = createSession();
+  const draft = createDraft();
 
   const result = resolveAuthoringDraftReturnUrl({
-    session,
+    draft,
     requestedReturnTo: "https://evil.example/thread/42",
     runtimeConfig: {
       partnerKeys: { beach_science: "partner-key" },
@@ -553,10 +553,10 @@ test("resolveAuthoringDraftReturnUrl rejects non-allowlisted requested return UR
 });
 
 test("resolveAuthoringDraftReturnUrl falls back to an allowlisted origin external URL", () => {
-  const session = createSession();
+  const draft = createDraft();
 
   const result = resolveAuthoringDraftReturnUrl({
-    session,
+    draft,
     runtimeConfig: {
       partnerKeys: { beach_science: "partner-key" },
       callbackSecrets: { beach_science: "callback-secret" },

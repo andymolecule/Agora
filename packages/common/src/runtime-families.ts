@@ -7,14 +7,12 @@ import {
 } from "./schemas/scorer-runtime.js";
 
 export const OFFICIAL_SCORER_IMAGES = {
-  reproducibility: "ghcr.io/andymolecule/repro-scorer:v1",
-  tabular: "ghcr.io/andymolecule/regression-scorer:v1",
-  ranking: "ghcr.io/andymolecule/docking-scorer:v1",
-  docking: "ghcr.io/andymolecule/docking-scorer:v1",
+  reproducibility: "ghcr.io/andymolecule/gems-match-scorer:v1",
+  tabular: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+  ranking: "ghcr.io/andymolecule/gems-ranking-scorer:v1",
+  docking: "ghcr.io/andymolecule/gems-ranking-scorer:v1",
+  generated: "ghcr.io/andymolecule/gems-generated-scorer:v1",
 } as const;
-
-export const SEMI_CUSTOM_RUNTIME_FAMILY_ID = "semi_custom" as const;
-export const EXPERT_RUNTIME_FAMILY_ID = "expert_custom" as const;
 
 export interface RunnerLimits {
   memory: string;
@@ -226,18 +224,6 @@ export function validateRuntimeMetric(
   runtimeFamilyId: string,
   metricId: string,
 ): string | null {
-  if (runtimeFamilyId === SEMI_CUSTOM_RUNTIME_FAMILY_ID) {
-    return metricId.trim().length > 0
-      ? null
-      : "Semi-custom challenges require a metric identifier.";
-  }
-
-  if (runtimeFamilyId === EXPERT_RUNTIME_FAMILY_ID) {
-    return metricId.trim().length > 0
-      ? null
-      : "Expert challenges require a metric identifier.";
-  }
-
   const family = lookupManagedRuntimeFamily(runtimeFamilyId);
   if (!family) {
     return `Unknown runtime family: ${runtimeFamilyId}`;

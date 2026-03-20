@@ -82,7 +82,7 @@ Quick reference for key terms used across Agora documentation and code.
 | **Spec CID** | IPFS content identifier for the challenge YAML specification. |
 | **Result CID** | IPFS content identifier for a submission file (or sealed envelope). |
 | **Proof bundle CID** | IPFS content identifier for the scoring proof bundle. |
-| **DB cache columns** | `submission_contract_json` and `scoring_env_json` JSONB columns on the challenges table. Populated at challenge creation to avoid IPFS re-fetch during scoring. |
+| **Challenge runtime cache** | `evaluation_plan_json` JSONB column on the challenges table. It is the canonical execution plan used during scoring and verification. |
 | **`artifacts_json`** | Supabase cache of the canonical public and private challenge artifacts. Not the public API contract by itself — the pinned challenge spec is. |
 
 ## Interfaces

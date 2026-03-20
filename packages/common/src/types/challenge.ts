@@ -1,4 +1,5 @@
-import type { SemiCustomEvaluatorContractOutput } from "../schemas/evaluator-contract.js";
+import type { DefinitionBackedEvaluatorContractOutput } from "../schemas/evaluator-contract.js";
+import type { GeneratedScorerProgramOutput } from "../generated-scorers.js";
 import type { SubmissionContractOutput } from "../schemas/submission-contract.js";
 
 export const CHALLENGE_DOMAINS = [
@@ -75,12 +76,21 @@ export interface ChallengeArtifact {
   description?: string;
 }
 
+export type ChallengeEvaluationBackendKind =
+  | "preset_interpreter"
+  | "definition_only"
+  | "generated_scorer"
+  | "oci_image";
+
 export interface ChallengeEvaluation {
-  runtime_family: string;
+  preset_id: string;
+  backend_kind: ChallengeEvaluationBackendKind;
+  execution_runtime_family?: string;
   metric: string;
   scorer_image?: string;
   evaluation_bundle?: string;
-  evaluator_contract?: SemiCustomEvaluatorContractOutput;
+  evaluator_contract?: DefinitionBackedEvaluatorContractOutput;
+  generated_scorer?: GeneratedScorerProgramOutput;
 }
 
 export interface ChallengeReward {
@@ -96,7 +106,7 @@ export interface ChallengeSource {
 }
 
 export interface ChallengeSpec {
-  schema_version: 3;
+  schema_version: 4;
   id: string;
   title: string;
   domain: ChallengeDomain;

@@ -84,7 +84,7 @@ const detailResponse = agentChallengeDetailResponseSchema.parse({
       evaluation: {
         runtime_family: "tabular_regression",
         metric: "r2",
-        scorer_image: "ghcr.io/andymolecule/regression-scorer:v1",
+        scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
       },
       distribution_type: "winner_take_all",
       dispute_window_hours: 168,

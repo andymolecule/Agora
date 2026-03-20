@@ -301,6 +301,9 @@ try {
     "github-secret",
     "partner bearer keys should remain the callback signing fallback when no explicit callback secret is configured",
   );
+  assert.deepEqual(authoringPartnerRuntime.callbackSecretFallbackProviders, [
+    "github",
+  ]);
   assert.deepEqual(authoringPartnerRuntime.returnOrigins.beach_science, [
     "https://beach.science",
     "https://staging.beach.science",
@@ -341,6 +344,8 @@ try {
   );
 
   const authoringSponsorRuntime = readAuthoringSponsorRuntimeConfig({
+    AGORA_AUTHORING_PARTNER_KEYS:
+      "beach_science:beach-secret,github:github-secret",
     AGORA_AUTHORING_SPONSOR_PRIVATE_KEY:
       "0x1111111111111111111111111111111111111111111111111111111111111111",
     AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: "beach_science:500,github:125",
@@ -354,9 +359,18 @@ try {
   assert.throws(
     () =>
       readAuthoringSponsorRuntimeConfig({
+        AGORA_AUTHORING_PARTNER_KEYS: "beach_science:beach-secret",
         AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: "beach_science:not-a-number",
       }),
     /positive USDC budget/i,
+  );
+  assert.throws(
+    () =>
+      readAuthoringSponsorRuntimeConfig({
+        AGORA_AUTHORING_PARTNER_KEYS: "beach_science:beach-secret",
+        AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: "github:125",
+      }),
+    /without a matching AGORA_AUTHORING_PARTNER_KEYS entry/i,
   );
 
   const blankCliRuntime = readCliRuntimeConfig({

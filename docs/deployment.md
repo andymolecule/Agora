@@ -179,6 +179,7 @@ This section covers non-code work for deployment across hosted systems.
 
 - Publish scorer images under the Agora namespace (`ghcr.io/andymolecule/*`).
 - Use the `Publish Scorers` GitHub Actions workflow to build and publish official scorer images from `containers/`.
+- The canonical published image set is `gems-match-scorer`, `gems-tabular-scorer`, `gems-ranking-scorer`, and `gems-generated-scorer`.
 - The scorer publish workflow now verifies both digest resolution and unauthenticated `docker pull` after publishing. A release is not healthy until both pass.
 - If the repo owner and GHCR namespace differ, provide `GHCR_PAT` (with `write:packages`) and, if needed, `GHCR_USERNAME` to the workflow so it can push into the org package namespace.
 - Make official scorer packages public in GHCR so solvers and verifiers can inspect and pull them without credentials.
@@ -199,6 +200,8 @@ This section covers non-code work for deployment across hosted systems.
 ### Worker Recovery Scripts
 
 - `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` requeues stale `running` jobs and retries failed jobs after an infra outage.
+- `pnpm recover:authoring-publishes -- --stale-minutes=30` audits stale reserved sponsor-budget publishes and can consume or release them explicitly after operator review.
+- `pnpm recover:authoring-publishes` requires migration `028_add_authoring_sponsor_budget_reservations.sql` and a refreshed PostgREST schema cache before it can read reservation rows.
 - `agora clean-failed-jobs` skips terminal failed jobs such as invalid submissions, missing off-chain submission metadata, and invalid challenge scoring configs. It is dry-run by default.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
@@ -223,6 +226,7 @@ This section covers non-code work for deployment across hosted systems.
 - `git remote -v` shows the Agora repo URL.
 - Hosted web app title and metadata display Agora.
 - `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` passes before cutover, proving API and web each serve the intended revision and that the worker is aligned with the API runtime.
+- `pnpm smoke:lifecycle` passes on the target environment if you want a full local-chain lifecycle rehearsal, including authoring draft publish. It requires migrations `028`, `029`, and `030` plus a refreshed PostgREST schema cache.
 - API auth flow sets `agora_session`.
 - MCP server registers as `agora-mcp`.
 - CLI help text shows `agora`.

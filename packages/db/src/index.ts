@@ -43,4 +43,5 @@ export * from "./queries/authoring-callback-targets.js";
 export * from "./queries/authoring-source-links.js";
 export * from "./queries/published-challenge-links.js";
 export * from "./queries/authoring-callback-deliveries.js";
+export * from "./queries/authoring-sponsor-budget-reservations.js";
 export * from "./schema-compatibility.js";

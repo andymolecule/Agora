@@ -1,12 +1,14 @@
 {
   "id": "structured-report-validation",
-  "managed_support": "semi_custom_executable",
+  "authoring_path_support": "definition_backed_executable",
   "intent_family": "structured_record_score",
   "artifacts_root": "uploads",
   "prompt_variants_root": "prompt-variants",
   "solver_submissions_root": "solver-submissions",
   "compile_invariants": {
-    "runtime_family": "semi_custom",
+    "preset_id": "structured_record_score",
+    "backend_kind": "generated_scorer",
+    "execution_runtime_family": "reproducibility",
     "evaluator_archetype": "structured_record_score",
     "metric": "validation_score",
     "artifact_roles": [
@@ -29,7 +31,7 @@
   },
   "acceptable_compile_states": ["needs_review"],
   "disallowed_outcomes": {
-    "runtime_families": [
+    "preset_ids": [
       "tabular_regression",
       "tabular_classification",
       "ranking",

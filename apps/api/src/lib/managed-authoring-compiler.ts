@@ -5,10 +5,11 @@ import {
   lookupManagedRuntimeFamily,
   validateRuntimeMetric,
 } from "@agora/common";
+import type { AgoraLogger } from "@agora/common/server-observability";
 import { z } from "zod";
 import { readManagedAuthoringRuntimeConfig } from "./managed-authoring-runtime.js";
 
-export type SupportedRuntimeFamily =
+export type SupportedManagedPresetId =
   | "reproducibility"
   | "tabular_regression"
   | "tabular_classification"
@@ -22,7 +23,7 @@ export interface CompilerArtifactAssignment {
 }
 
 export interface CompilerProposal {
-  runtimeFamily: SupportedRuntimeFamily;
+  presetId: SupportedManagedPresetId;
   metric: string;
   confidenceScore: number;
   reasonCodes: string[];
@@ -43,10 +44,10 @@ const supportedRuntimeFamilyIds = [
   "tabular_classification",
   "ranking",
   "docking",
-] as const satisfies readonly SupportedRuntimeFamily[];
+] as const satisfies readonly SupportedManagedPresetId[];
 
 const compilerProposalSchema = z.object({
-  runtime_family: z.enum(supportedRuntimeFamilyIds),
+  preset_id: z.enum(supportedRuntimeFamilyIds),
   metric: z.string().trim().min(1),
   confidence_score: z.number().min(0).max(1),
   reason_codes: z.array(z.string().trim().min(1)).default([]),
@@ -66,8 +67,8 @@ function artifactName(artifact: AuthoringArtifactOutput) {
   return artifact.file_name?.trim() || artifact.uri;
 }
 
-function inferRuntimeFamily(sourceText: string): {
-  runtimeFamily: SupportedRuntimeFamily;
+function inferManagedPreset(sourceText: string): {
+  presetId: SupportedManagedPresetId;
   matchedSupportedSignal: boolean;
 } {
   if (
@@ -76,7 +77,7 @@ function inferRuntimeFamily(sourceText: string): {
     )
   ) {
     return {
-      runtimeFamily: "reproducibility",
+      presetId: "reproducibility",
       matchedSupportedSignal: true,
     };
   }
@@ -84,19 +85,19 @@ function inferRuntimeFamily(sourceText: string): {
     /(dock|docking|ligand|binding pocket|target structure)/i.test(sourceText)
   ) {
     return {
-      runtimeFamily: "docking",
+      presetId: "docking",
       matchedSupportedSignal: true,
     };
   }
   if (/(rank|ranking|ndcg|leaderboard)/i.test(sourceText)) {
     return {
-      runtimeFamily: "ranking",
+      presetId: "ranking",
       matchedSupportedSignal: true,
     };
   }
   if (/(classif|accuracy|f1|precision|recall|label class)/i.test(sourceText)) {
     return {
-      runtimeFamily: "tabular_classification",
+      presetId: "tabular_classification",
       matchedSupportedSignal: true,
     };
   }
@@ -106,21 +107,21 @@ function inferRuntimeFamily(sourceText: string): {
     )
   ) {
     return {
-      runtimeFamily: "tabular_regression",
+      presetId: "tabular_regression",
       matchedSupportedSignal: true,
     };
   }
   return {
-    runtimeFamily: "tabular_regression",
+    presetId: "tabular_regression",
     matchedSupportedSignal: false,
   };
 }
 
 function inferMetric(
-  runtimeFamily: SupportedRuntimeFamily,
+  presetId: SupportedManagedPresetId,
   sourceText: string,
 ): string {
-  switch (runtimeFamily) {
+  switch (presetId) {
     case "reproducibility":
       return /(tolerance|approx|drift)/i.test(sourceText)
         ? "tolerant_match"
@@ -153,9 +154,9 @@ class HeuristicCompilerProvider implements CompilerProvider {
       ...input.uploadedArtifacts.map((artifact) => artifactName(artifact)),
     ].join(" ");
 
-    const { runtimeFamily, matchedSupportedSignal } =
-      inferRuntimeFamily(sourceText);
-    const metric = inferMetric(runtimeFamily, sourceText);
+    const { presetId, matchedSupportedSignal } =
+      inferManagedPreset(sourceText);
+    const metric = inferMetric(presetId, sourceText);
 
     let confidenceScore = 0.8;
     const reasonCodes: string[] = [];
@@ -169,7 +170,7 @@ class HeuristicCompilerProvider implements CompilerProvider {
       );
     }
 
-    const minimumArtifacts = runtimeFamily === "docking" ? 3 : 2;
+    const minimumArtifacts = presetId === "docking" ? 3 : 2;
     if (input.uploadedArtifacts.length < minimumArtifacts) {
       confidenceScore -= 0.25;
       reasonCodes.push("too_few_artifacts");
@@ -189,19 +190,19 @@ class HeuristicCompilerProvider implements CompilerProvider {
       reasonCodes.push("missing_payout_condition");
     }
 
-    if (runtimeFamily === "tabular_regression" && metric === "r2") {
+    if (presetId === "tabular_regression" && metric === "r2") {
       warnings.push(
         "Regression challenges default to R2 unless the description clearly requests RMSE, MAE, Pearson, or Spearman.",
       );
     }
-    if (runtimeFamily === "docking") {
+    if (presetId === "docking") {
       warnings.push(
         "Docking challenges work best when the uploaded files clearly include a target structure, a ligand set, and hidden reference scores.",
       );
     }
 
     return {
-      runtimeFamily,
+      presetId,
       metric,
       confidenceScore,
       reasonCodes,
@@ -230,15 +231,15 @@ function buildCompilerCatalog() {
 
 function buildSystemPrompt() {
   return [
-    "You compile Agora managed challenge drafts into a supported runtime family.",
+    "You compile Agora managed challenge drafts into a supported managed preset.",
     "Return JSON only. Do not include markdown or prose outside the JSON object.",
-    "Choose one runtime family, one supported metric for that family, and artifact assignments for the required file roles when you can infer them.",
+    "Choose one preset_id, one supported metric for that preset, and artifact assignments for the required file roles when you can infer them.",
     "Use only these visibility values: public, private.",
     "Confidence should reflect whether a non-technical poster would likely agree that the uploaded files were mapped correctly and the scoring metric matches their stated payout condition.",
     "If the challenge is ambiguous, keep confidence below 0.75 and include concrete reason_codes.",
-    "If the challenge does not fit the managed catalog cleanly, keep confidence low and include reason_codes such as no_supported_runtime_signal or weak_runtime_fit so the caller can route to semi-custom or Expert Mode.",
+    "If the challenge does not fit the managed catalog cleanly, keep confidence low and include reason_codes such as no_supported_runtime_signal or weak_runtime_fit so the caller can route to a definition-backed path or Expert Mode.",
     "Prefer tabular_regression for numeric prediction tasks, tabular_classification for label prediction tasks, reproducibility for exact output matching, docking for ligand-ranking tasks against a target structure, and ranking for ordered or leaderboard-style outcomes that are not docking-specific.",
-    `Supported runtime catalog: ${JSON.stringify(buildCompilerCatalog())}`,
+    `Supported managed preset catalog: ${JSON.stringify(buildCompilerCatalog())}`,
   ].join("\n");
 }
 
@@ -338,7 +339,7 @@ class OpenAiCompatibleCompilerProvider implements CompilerProvider {
                 type: "object",
                 additionalProperties: false,
                 properties: {
-                  runtime_family: {
+                  preset_id: {
                     type: "string",
                     enum: [...supportedRuntimeFamilyIds],
                   },
@@ -374,7 +375,7 @@ class OpenAiCompatibleCompilerProvider implements CompilerProvider {
                   },
                 },
                 required: [
-                  "runtime_family",
+                  "preset_id",
                   "metric",
                   "confidence_score",
                   "reason_codes",
@@ -396,17 +397,14 @@ class OpenAiCompatibleCompilerProvider implements CompilerProvider {
 
     const content = await readOpenAiCompatibleContent(response);
     const parsed = compilerProposalSchema.parse(JSON.parse(content));
-    const metricError = validateRuntimeMetric(
-      parsed.runtime_family,
-      parsed.metric,
-    );
+    const metricError = validateRuntimeMetric(parsed.preset_id, parsed.metric);
     if (metricError) {
       throw new Error(
         `${metricError} Next step: choose a supported metric or switch to Expert Mode.`,
       );
     }
 
-    const family = lookupManagedRuntimeFamily(parsed.runtime_family);
+    const family = lookupManagedRuntimeFamily(parsed.preset_id);
     for (const assignment of parsed.artifact_assignments ?? []) {
       if (
         assignment.artifact_index < 0 ||
@@ -418,13 +416,13 @@ class OpenAiCompatibleCompilerProvider implements CompilerProvider {
       }
       if (!family?.supportedArtifactRoles.includes(assignment.role)) {
         throw new Error(
-          `Managed authoring compiler returned unsupported artifact role ${assignment.role} for ${parsed.runtime_family}. Next step: retry the compile request or use Expert Mode.`,
+          `Managed authoring compiler returned unsupported artifact role ${assignment.role} for ${parsed.preset_id}. Next step: retry the compile request or use Expert Mode.`,
         );
       }
     }
 
     return {
-      runtimeFamily: parsed.runtime_family,
+      presetId: parsed.preset_id,
       metric: parsed.metric,
       confidenceScore: parsed.confidence_score,
       reasonCodes: parsed.reason_codes,
@@ -452,15 +450,64 @@ export async function compileManagedAuthoringProposal(input: {
   intent: ChallengeIntentOutput;
   uploadedArtifacts: AuthoringArtifactOutput[];
   fetchImpl?: typeof fetch;
+  draftId?: string;
+  logger?: AgoraLogger;
 }): Promise<CompilerProposal> {
+  const runtime = readManagedAuthoringRuntimeConfig();
+  input.logger?.info(
+    {
+      event: "authoring.compiler.started",
+      draftId: input.draftId ?? null,
+      backend: runtime.compilerBackend,
+      model:
+        runtime.compilerBackend === "openai_compatible" ? runtime.model : null,
+      artifactCount: input.uploadedArtifacts.length,
+    },
+    "Started managed authoring compiler",
+  );
+
   try {
-    return await resolveCompilerProvider({
+    const proposal = await resolveCompilerProvider({
       fetchImpl: input.fetchImpl,
     }).compile({
       intent: input.intent,
       uploadedArtifacts: input.uploadedArtifacts,
     });
+    input.logger?.info(
+      {
+        event: "authoring.compiler.completed",
+        draftId: input.draftId ?? null,
+        backend: runtime.compilerBackend,
+        model:
+          runtime.compilerBackend === "openai_compatible"
+            ? runtime.model
+            : null,
+        presetId: proposal.presetId,
+        metric: proposal.metric,
+        confidenceScore: proposal.confidenceScore,
+        reasonCodes: proposal.reasonCodes,
+        warningCount: proposal.warnings.length,
+        artifactAssignmentCount: proposal.artifactAssignments?.length ?? 0,
+      },
+      "Completed managed authoring compiler",
+    );
+    return proposal;
   } catch (error) {
+    input.logger?.warn(
+      {
+        event: "authoring.compiler.failed",
+        draftId: input.draftId ?? null,
+        backend: runtime.compilerBackend,
+        model:
+          runtime.compilerBackend === "openai_compatible"
+            ? runtime.model
+            : null,
+        code: error instanceof AgoraError ? error.code : null,
+        status: error instanceof AgoraError ? error.status : null,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      "Managed authoring compiler failed",
+    );
     if (error instanceof AgoraError) {
       throw error;
     }

@@ -12,6 +12,8 @@ import {
   validateChallengeScoreability,
 } from "@agora/common";
 import {
+  type AuthoringDraftViewRow,
+  AuthoringDraftWriteConflictError,
   createAuthoringDraft,
   createSupabaseClient,
   getAuthoringDraftViewById,
@@ -76,6 +78,16 @@ function expiredAuthoringDraftError(c: Context<ApiEnv>) {
       "Authoring draft expired. Next step: start a new draft or use the published challenge spec if this draft was already posted.",
   });
 }
+
+function authoringDraftConflictError(c: Context<ApiEnv>) {
+  return jsonError(c, {
+    status: 409,
+    code: "AUTHORING_DRAFT_CONFLICT",
+    message:
+      "Authoring draft changed during the update. Next step: reload the latest draft state from Agora and retry your change.",
+  });
+}
+
 type AuthoringDraftRouteDependencies = {
   createSupabaseClient?: typeof createSupabaseClient;
   createAuthoringDraft?: typeof createAuthoringDraft;
@@ -223,6 +235,7 @@ export function createAuthoringDraftRoutes(
         expiresInMs: DRAFT_EXPIRY_MS,
         createAuthoringDraftImpl,
         getAuthoringDraftViewByIdImpl,
+        logger: getRequestLoggerImpl(c),
       });
 
       return c.json({
@@ -264,6 +277,14 @@ export function createAuthoringDraftRoutes(
       if (ownershipError) {
         return jsonError(c, ownershipError);
       }
+      if (existingDraft.state === "published") {
+        return jsonError(c, {
+          status: 409,
+          code: "AUTHORING_DRAFT_PUBLISHED",
+          message:
+            "Authoring draft is already published and can no longer be recompiled. Next step: create a new draft from the updated source material and retry.",
+        });
+      }
 
       const intent = body.intent ?? existingDraft.intent_json;
       if (!intent) {
@@ -286,39 +307,59 @@ export function createAuthoringDraftRoutes(
         uploadedArtifacts,
       });
 
-      const compilingDraft = await markDraftCompiling({
-        db,
-        session: existingDraft,
-        posterAddress: resolvedPosterAddress,
-        intentJson: intent,
-        authoringIrJson: compilingAuthoringIr,
-        expiresInMs: DRAFT_EXPIRY_MS,
-        updateAuthoringDraftImpl,
-        getAuthoringDraftViewByIdImpl,
-      });
+      let compilingDraft: AuthoringDraftViewRow;
+      try {
+        compilingDraft = await markDraftCompiling({
+          db,
+          draft: existingDraft,
+          posterAddress: resolvedPosterAddress,
+          intentJson: intent,
+          authoringIrJson: compilingAuthoringIr,
+          expiresInMs: DRAFT_EXPIRY_MS,
+          updateAuthoringDraftImpl,
+          getAuthoringDraftViewByIdImpl,
+          logger: getRequestLoggerImpl(c),
+        });
+      } catch (error) {
+        if (error instanceof AuthoringDraftWriteConflictError) {
+          return authoringDraftConflictError(c);
+        }
+        throw error;
+      }
 
       try {
         const outcome = await compileManagedAuthoringDraftOutcomeImpl({
           intent,
           uploadedArtifacts,
+          draftId: existingDraft.id,
+          logger: getRequestLoggerImpl(c),
         });
 
-        const updatedDraft = await completeDraftCompilation({
-          db,
-          session: compilingDraft,
-          state: outcome.state,
-          posterAddress: resolvedPosterAddress,
-          intentJson: intent,
-          authoringIrJson: outcome.authoringIr,
-          uploadedArtifactsJson: uploadedArtifacts,
-          compilationJson: outcome.compilation ?? null,
-          expiresInMs:
-            outcome.state === "ready" || outcome.state === "needs_review"
-              ? READY_EXPIRY_MS
-              : DRAFT_EXPIRY_MS,
-          updateAuthoringDraftImpl,
-          getAuthoringDraftViewByIdImpl,
-        });
+        let updatedDraft: AuthoringDraftViewRow;
+        try {
+          updatedDraft = await completeDraftCompilation({
+            db,
+            draft: compilingDraft,
+            state: outcome.state,
+            posterAddress: resolvedPosterAddress,
+            intentJson: intent,
+            authoringIrJson: outcome.authoringIr,
+            uploadedArtifactsJson: uploadedArtifacts,
+            compilationJson: outcome.compilation ?? null,
+            expiresInMs:
+              outcome.state === "ready" || outcome.state === "needs_review"
+                ? READY_EXPIRY_MS
+                : DRAFT_EXPIRY_MS,
+            updateAuthoringDraftImpl,
+            getAuthoringDraftViewByIdImpl,
+            logger: getRequestLoggerImpl(c),
+          });
+        } catch (error) {
+          if (error instanceof AuthoringDraftWriteConflictError) {
+            return authoringDraftConflictError(c);
+          }
+          throw error;
+        }
 
         return c.json({
           data: {
@@ -327,19 +368,27 @@ export function createAuthoringDraftRoutes(
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        await failDraft({
-          db,
-          session: compilingDraft,
-          posterAddress: resolvedPosterAddress,
-          intentJson: intent,
-          authoringIrJson: compilingAuthoringIr,
-          uploadedArtifactsJson: uploadedArtifacts,
-          compilationJson: null,
-          message,
-          expiresInMs: DRAFT_EXPIRY_MS,
-          updateAuthoringDraftImpl,
-          getAuthoringDraftViewByIdImpl,
-        });
+        try {
+          await failDraft({
+            db,
+            draft: compilingDraft,
+            posterAddress: resolvedPosterAddress,
+            intentJson: intent,
+            authoringIrJson: compilingAuthoringIr,
+            uploadedArtifactsJson: uploadedArtifacts,
+            compilationJson: null,
+            message,
+            expiresInMs: DRAFT_EXPIRY_MS,
+            updateAuthoringDraftImpl,
+            getAuthoringDraftViewByIdImpl,
+            logger: getRequestLoggerImpl(c),
+          });
+        } catch (persistError) {
+          if (persistError instanceof AuthoringDraftWriteConflictError) {
+            return authoringDraftConflictError(c);
+          }
+          throw persistError;
+        }
 
         return jsonError(c, {
           status: 422,
@@ -383,7 +432,7 @@ export function createAuthoringDraftRoutes(
       }
 
       const returnTo = resolveAuthoringDraftReturnUrlImpl({
-        session: draft,
+        draft,
         requestedReturnTo: body.return_to,
       });
       if (!returnTo.ok) {
@@ -486,7 +535,7 @@ export function createAuthoringDraftRoutes(
       const specCid = await pinJSONImpl(`challenge-${draft.id}`, canonicalSpec);
       const updatedDraft = await publishDraft({
         db,
-        session: draft,
+        draft,
         posterAddress: signerAddress,
         compilationJson: {
           ...draft.compilation_json,
@@ -499,11 +548,12 @@ export function createAuthoringDraftRoutes(
         updateAuthoringDraftImpl,
         upsertPublishedChallengeLinkImpl,
         getAuthoringDraftViewByIdImpl,
+        logger: getRequestLoggerImpl(c),
       });
 
       await deliverAuthoringDraftLifecycleEventImpl({
         event: "draft_published",
-        session: updatedDraft,
+        draft: updatedDraft,
         logger: getRequestLoggerImpl(c),
       });
 
@@ -623,7 +673,7 @@ export function createAuthoringDraftRoutes(
 
         const updatedDraft = await approveDraftForPublish({
           db,
-          session: draft,
+          draft,
           compilationJson: {
             ...draft.compilation_json,
             challenge_spec: canonicalSpec,
@@ -631,6 +681,7 @@ export function createAuthoringDraftRoutes(
           expiresInMs: READY_EXPIRY_MS,
           updateAuthoringDraftImpl,
           getAuthoringDraftViewByIdImpl,
+          logger: getRequestLoggerImpl(c),
         });
         return c.json({
           data: {
@@ -639,15 +690,25 @@ export function createAuthoringDraftRoutes(
         });
       }
 
+      if (draft.state !== "needs_review") {
+        return jsonError(c, {
+          status: 409,
+          code: "AUTHORING_REVIEW_NOT_DECIDABLE",
+          message:
+            "Only review-queued drafts can be rejected or sent to Expert Mode. Next step: refresh the queue and inspect the latest draft state.",
+        });
+      }
+
       if (body.action === "send_to_expert_mode") {
         const updatedDraft = await failDraft({
           db,
-          session: draft,
+          draft,
           message:
             "Managed authoring cannot safely publish this draft as-is. Next step: switch to Expert Mode and post the scorer contract from the CLI.",
           expiresInMs: DRAFT_EXPIRY_MS,
           updateAuthoringDraftImpl,
           getAuthoringDraftViewByIdImpl,
+          logger: getRequestLoggerImpl(c),
         });
         return c.json({
           data: {
@@ -658,11 +719,12 @@ export function createAuthoringDraftRoutes(
 
       const updatedDraft = await failDraft({
         db,
-        session: draft,
+        draft,
         message: body.message,
         expiresInMs: DRAFT_EXPIRY_MS,
         updateAuthoringDraftImpl,
         getAuthoringDraftViewByIdImpl,
+        logger: getRequestLoggerImpl(c),
       });
 
       return c.json({

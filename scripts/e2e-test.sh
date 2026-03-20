@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 AGORA_CMD=(node "apps/cli/dist/index.js")
-E2E_SCORER_IMAGE="${AGORA_E2E_SCORER_IMAGE:-ghcr.io/andymolecule/repro-scorer:v1}"
+E2E_SCORER_IMAGE="${AGORA_E2E_SCORER_IMAGE:-ghcr.io/andymolecule/gems-match-scorer:v1}"
 E2E_DEADLINE_MINUTES="${AGORA_E2E_DEADLINE_MINUTES:-10}"
 E2E_DISPUTE_WINDOW_HOURS="${AGORA_E2E_DISPUTE_WINDOW_HOURS:-0}"
 E2E_MAX_FINALIZE_WAIT_SECONDS="${AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS:-600}"
@@ -110,14 +110,16 @@ PY
 )"
 
 cat >"$TMP_DIR/challenge.yaml" <<YAML
-schema_version: 3
+schema_version: 4
 id: e2e-$(date +%s)
 title: "${E2E_TITLE}"
 domain: longevity
 type: reproducibility
 description: "Automated end-to-end validation challenge."
 evaluation:
-  runtime_family: reproducibility
+  preset_id: reproducibility
+  backend_kind: preset_interpreter
+  execution_runtime_family: reproducibility
   metric: exact_match
   scorer_image: "${E2E_SCORER_IMAGE}"
   evaluation_bundle: "${TMP_DIR}/ground_truth.csv"

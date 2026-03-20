@@ -3,19 +3,16 @@ import path from "node:path";
 import {
   type CsvTableEvaluationContractOutput,
   DEFAULT_SCORER_MOUNT,
+  GENERATED_SCORER_PROGRAM_FILE_NAME,
   SCORER_RUNTIME_CONFIG_FILE_NAME,
   type ScorerRuntimePoliciesOutput,
   type ScoringMountConfig,
   type SubmissionContractOutput,
   buildScorerRuntimeConfig,
-  challengeSpecSchema,
-  parseChallengeSpecDocument,
-  resolveChallengeEvaluation,
-  resolveRuntimeFamilyRuntimeDefaults,
-  resolveScoringEnvironmentFromSpec,
+  type GeneratedScorerProgramOutput,
   validateSubmissionBytesAgainstContract,
 } from "@agora/common";
-import { downloadToPath, getText } from "@agora/ipfs";
+import { downloadToPath } from "@agora/ipfs";
 import { executeScorer } from "./execution.js";
 import type { RunScorerInput, RunnerScoreResult } from "./runner.js";
 import { cleanupWorkspace, createScoringWorkspace } from "./staging.js";
@@ -53,6 +50,7 @@ export interface ExecuteScoringPipelineInput {
   metric?: string;
   policies?: Partial<ScorerRuntimePoliciesOutput>;
   env?: Record<string, string>;
+  generatedScorer?: GeneratedScorerProgramOutput;
   timeoutMs?: number;
   limits?: RunScorerInput["limits"];
   keepWorkspace?: boolean;
@@ -68,6 +66,7 @@ export interface ScoringPipelineResult {
   evaluationBundlePath?: string;
   submissionPath: string;
   runtimeConfigPath: string;
+  generatedScorerPath?: string;
   inputPaths: string[];
   cleanup: () => Promise<void>;
 }
@@ -84,8 +83,6 @@ export interface ResolveScoringRuntimeConfigInput {
   submissionContract?: SubmissionContractOutput | null;
   evaluationContract?: CsvTableEvaluationContractOutput | null;
   policies?: Partial<ScorerRuntimePoliciesOutput> | null;
-  specCid?: string | null;
-  onLegacyFallback?: (specCid: string) => void | Promise<void>;
 }
 
 interface ScoringMountPlan {
@@ -109,66 +106,14 @@ function buildScoringMountPlan(
   };
 }
 
-export async function resolveScoringSpecRuntimeConfigFromSpecCid(
-  specCid?: string | null,
-): Promise<ScoringSpecRuntimeConfig> {
-  if (!specCid) {
-    return {};
-  }
-  try {
-    const spec = challengeSpecSchema.parse(
-      parseChallengeSpecDocument(await getText(specCid)),
-    );
-    const evalPlan = resolveChallengeEvaluation(spec);
-    return {
-      env: resolveScoringEnvironmentFromSpec(spec),
-      submissionContract: spec.submission_contract,
-      evaluationContract: evalPlan.semiCustomExecution?.evaluation_contract,
-      policies: evalPlan.semiCustomExecution?.policies,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Failed to load challenge spec ${specCid} for scorer configuration. Next step: confirm the spec CID is pinned and reachable. ${message}`,
-    );
-  }
-}
-
 export async function resolveScoringRuntimeConfig(
   input: ResolveScoringRuntimeConfigInput,
 ): Promise<ScoringSpecRuntimeConfig> {
-  const resolved: ScoringSpecRuntimeConfig = {
+  return {
     env: input.env ?? undefined,
     submissionContract: input.submissionContract ?? undefined,
     evaluationContract: input.evaluationContract ?? undefined,
     policies: input.policies ?? undefined,
-  };
-
-  const needsEnv = resolved.env === undefined;
-  const needsSubmissionContract = resolved.submissionContract === undefined;
-  const needsEvaluationContract = resolved.evaluationContract === undefined;
-  const needsPolicies = resolved.policies === undefined;
-  if (
-    (!needsEnv &&
-      !needsSubmissionContract &&
-      !needsEvaluationContract &&
-      !needsPolicies) ||
-    !input.specCid
-  ) {
-    return resolved;
-  }
-
-  await input.onLegacyFallback?.(input.specCid);
-  const legacy = await resolveScoringSpecRuntimeConfigFromSpecCid(
-    input.specCid,
-  );
-  return {
-    env: resolved.env ?? legacy.env,
-    submissionContract:
-      resolved.submissionContract ?? legacy.submissionContract,
-    evaluationContract:
-      resolved.evaluationContract ?? legacy.evaluationContract,
-    policies: resolved.policies ?? legacy.policies,
   };
 }
 
@@ -242,7 +187,12 @@ export async function executeScoringPipeline(
   };
 
   try {
-    const { evaluationBundlePath, submissionPath, runtimeConfigPath } =
+    const {
+      evaluationBundlePath,
+      submissionPath,
+      runtimeConfigPath,
+      generatedScorerPath,
+    } =
       await runObservedPhase(input.phaseObserver, "fetch_inputs", async () => {
         const stagingPlan = buildScoringMountPlan(
           input.mount ?? DEFAULT_SCORER_MOUNT,
@@ -256,28 +206,34 @@ export async function executeScoringPipeline(
         }
 
         await stageSourceToPath(input.submission, stagingPlan.submissionPath);
-        const runtimeFamily = input.runtimeFamily;
-        const runtimeDefaults = runtimeFamily
-          ? resolveRuntimeFamilyRuntimeDefaults(runtimeFamily)
-          : null;
         const runtimeConfig = buildScorerRuntimeConfig({
-          runtimeFamily,
+          runtimeFamily: input.runtimeFamily,
           metric: input.metric,
           mount: input.mount ?? DEFAULT_SCORER_MOUNT,
           submissionContract: input.submissionContract,
-          evaluationContract:
-            input.evaluationContract ?? runtimeDefaults?.evaluationContract,
-          policies: input.policies ?? runtimeDefaults?.policies,
+          evaluationContract: input.evaluationContract,
+          policies: input.policies,
         });
         await fs.writeFile(
           stagingPlan.runtimeConfigPath,
           JSON.stringify(runtimeConfig, null, 2),
           "utf8",
         );
+        const generatedScorerPath = input.generatedScorer
+          ? path.join(workspace.inputDir, GENERATED_SCORER_PROGRAM_FILE_NAME)
+          : undefined;
+        if (generatedScorerPath && input.generatedScorer) {
+          await fs.writeFile(
+            generatedScorerPath,
+            input.generatedScorer.source,
+            "utf8",
+          );
+        }
         return {
           evaluationBundlePath,
           submissionPath: stagingPlan.submissionPath,
           runtimeConfigPath: stagingPlan.runtimeConfigPath,
+          generatedScorerPath,
         };
       });
 
@@ -305,10 +261,12 @@ export async function executeScoringPipeline(
           evaluationBundlePath,
           submissionPath,
           runtimeConfigPath,
+          generatedScorerPath,
           inputPaths: [
             evaluationBundlePath,
             submissionPath,
             runtimeConfigPath,
+            generatedScorerPath,
           ].filter((value): value is string => typeof value === "string"),
           cleanup,
         };
@@ -342,10 +300,12 @@ export async function executeScoringPipeline(
       evaluationBundlePath,
       submissionPath,
       runtimeConfigPath,
+      generatedScorerPath,
       inputPaths: [
         evaluationBundlePath,
         submissionPath,
         runtimeConfigPath,
+        generatedScorerPath,
       ].filter((value): value is string => typeof value === "string"),
       cleanup,
     };

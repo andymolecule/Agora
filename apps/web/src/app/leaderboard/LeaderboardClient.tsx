@@ -68,7 +68,7 @@ export function LeaderboardClient() {
             return (
               <div
                 key={entry.address}
-                className="border border-warm-900 rounded-[2px] overflow-hidden"
+                className="rounded-md bg-white overflow-hidden"
               >
                 <button
                   type="button"

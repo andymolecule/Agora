@@ -1,79 +1,132 @@
 ---
 name: agora-design-system
-description: "Agora frontend design system and component guidelines. Use when building or modifying any frontend component in apps/web, styling UI, or reviewing frontend code for design consistency. Canonical spec: docs/design/design-system/DESIGN-SYSTEM.md."
+description: "Agora frontend design system and component guidelines. Use when building or modifying any frontend component in apps/web, styling UI, or reviewing frontend code for design consistency."
 allowed-tools: Read, Grep, Glob
 ---
 
-# Agora Frontend Design Skill
+# Design System: The Digital Curator
 
-## Visual Reference
+## Creative North Star
 
-See @docs/design/design-system/DESIGN-SYSTEM.md for full specs.
+Editorial, gallery-like experience. Not a warehouse — a high-end boutique. Visual language balances the technical precision of **JetBrains Mono** with the expressive geometry of **Space Grotesk**. Intentional asymmetry, expansive negative space, "paper-on-glass" layering. The marketplace should feel curated, authoritative, and whisper-quiet.
 
-## Design Direction
+---
 
-Warm editorial product UI — calm, premium, intentional. Beige base with muted ink blue accent. Typography-forward. Restrained colour usage.
+## Color Strategy & Tonal Depth
 
-## Core Rules
+Sophisticated palette of architectural greys and "parchment" neutrals.
 
-| Area | Rule |
-|------|------|
-| **Palette** | Warm Neutral (`warm-50`–`warm-900`) + Ink Blue accent (`accent-500: #2F4F7F`) |
-| **No raw black** | Use `warm-900` (`#1E1B18`) for CTAs, headings. Never `#000` in new code. |
-| **Fonts** | Space Grotesk (headings only), Inter (everything else), JetBrains Mono (data) |
-| **Radius** | Buttons/inputs: `--radius-md` (8px). Cards: `--radius-lg` (12px). Panels: `--radius-xl` (16px). |
-| **Height** | Buttons: 40px. Inputs: 40–44px. |
-| **Shadows** | Cards: border only → `--shadow-md` on hover. Modals: `--shadow-lg`. |
-| **Spacing** | Use `--space-*` tokens (4/8/12/16/24/32/48/64). Card padding: 20–24px. Section gaps: 32–48px. |
-| **Motion** | CSS transitions for hover/focus. Framer Motion for hero entrances only. |
-| **Icons** | Lucide React |
-| **Themes** | Light (default), Dark. All semantic tokens swap via CSS custom properties. |
+### The "No-Line" Rule
 
-## Typography Hierarchy
+**Strict Mandate:** No 1px solid borders for sectioning or containment. Structure is defined solely through background color shifts. A `surface-container-low` (`#f6f3ed`) section on a `surface` (`#fcf9f3`) background provides all containment. If you feel the need to draw a line, increase padding or shift the background tone instead.
 
-- **H1–H3:** Space Grotesk, 600 weight, negative tracking
-- **H4:** Inter, 600 weight
-- **Body:** Inter, 400 weight, 14–16px
-- **Label:** Inter, 500 weight, 13px
-- **Mono:** JetBrains Mono, 500 weight, 13px
+### Surface Hierarchy
 
-Do NOT use Space Grotesk for cards, tabs, labels, buttons, or tables.
+| Layer | Stitch Token | Hex | CSS Property | Tailwind |
+|---|---|---|---|---|
+| Base | `surface` | `#fcf9f3` | `--surface-base` | `bg-surface-base` |
+| Secondary sections | `surface-container-low` | `#f6f3ed` | `--surface-inset` | `bg-surface-inset` |
+| Interactive cards | `surface-container-lowest` | `#ffffff` | `--surface-default` | `bg-surface-default` |
+| Elevated cards | `surface-container-lowest` | `#ffffff` | `--surface-elevated` | `bg-surface-elevated` |
+| Persistent overlays | `surface-container-high` | `#ebe8e2` | — | `bg-warm-200` |
 
-## Neo-Brutalist Patterns
+### Glass & Gradient Rule
 
-Pages using the brutalist variant follow these additional rules:
+Floating elements (Modals, Hover Menus, Navigation Bars) must use **Glassmorphism**:
+- `surface-container-lowest` at 80% opacity (`--glass-bg`)
+- `backdrop-blur: 12px` (codebase uses 16px via `.glass-panel`)
+- Main CTAs: subtle linear gradient from `primary` (`#111519`) to `primary-container` (`#25292e`) at 145 degrees
 
-| Pattern | Implementation |
-|---------|---------------|
-| **Border radius** | `rounded-[2px]` (not the design system's 8/12/16px) |
-| **Borders** | `border border-warm-900` (strong, not subtle) |
-| **Offset shadows** | `shadow-[4px_4px_0px_var(--color-warm-900)]` |
-| **Button press** | Use `.btn-primary` / `.btn-secondary` classes from `globals.css` |
-| **KPI strips** | 2.5px borders, 5px offset shadows, inner cell borders via `nth-child` |
+---
+
+## Typography
+
+| Level | Stitch Token | Font | Size | Tailwind Class | Character |
+|---|---|---|---|---|---|
+| Display | `display-lg` | Space Grotesk | 3.5rem | `font-display` | Tight tracking (-2%), Bold |
+| Headline | `headline-md` | Space Grotesk | 1.75rem | `font-display` | Categories, brand moments |
+| Title | `title-md` | Inter | 1.125rem | `font-sans` | High readability for names |
+| Code/Label | `label-md` | JetBrains Mono | 0.75rem | `font-mono` | Prices, scores, technical metadata |
+| Body | `body-md` | Inter | 0.875rem | `font-sans` | Descriptions |
+
+**Rules:**
+- Use `JetBrains Mono` for all price points and technical metadata (e.g., "Weight: 1.2kg") — "spec-sheet" aesthetic.
+- Use `Space Grotesk` for headings and brand-heavy storytelling moments only.
+- **Never** use Space Grotesk for cards, tabs, labels, buttons, or tables.
+
+---
+
+## Elevation & Depth
+
+Depth via **Tonal Layering** and ambient light, never heavy drop shadows.
+
+- **Layering Principle:** Lift a card by placing `surface-container-lowest` (#ffffff) on `surface-container` (#f0eee8). No shadow needed.
+- **Ambient Shadows:** Floating elements only: `box-shadow: 0 20px 40px rgba(28, 28, 24, 0.06)`. Shadow color is tinted `on-surface`, never pure black.
+- **Ghost Border:** If accessibility requires a container edge, use `outline-variant` (`#c5c6cb`) at **15% opacity**. Felt, not seen.
+
+---
+
+## Components
+
+### Buttons
+- **Primary:** Gradient fill (`primary` → `primary-container`). `0.25rem` radius. White text. No border.
+- **Secondary:** `surface-container-highest` background. Dark text.
+- **Tertiary:** Text-only, `JetBrains Mono` with 1px underline of `primary` spaced 4px from baseline.
+
+### Cards
+- **No Divider Lines.** Separate image from details using `spacing-6` (1.5rem) gap.
+- Images: `0.375rem` corner radius — "finished" but not "bubbly."
+
+### Input Fields
+- Resting: `surface-container-low` background.
+- Focus: shift to `surface-container-lowest` + Ghost Border at 20% `outline`.
+- Labels: `label-md` (JetBrains Mono).
+
+### Chips (Filters)
+- Pill-shaped (`rounded-full`).
+- Active: `primary` background, `on-primary` text.
+- Inactive: `surface-container-high` background, no border.
+
+### Editorial Grid
+Asymmetric Mosaic — every 3rd item spans 2 columns and 2 rows for discovery-driven layouts.
+
+---
+
+## Do's and Don'ts
+
+- **DO** use `spacing-20` (5rem) for section margins.
+- **DO** align mono-spaced text top-left ("ledger" look).
+- **DON'T** use 100% opaque black for borders or shadows.
+- **DON'T** use standard "Blue" for links — use `primary` with weight increase or subtle underline.
+- **DON'T** crowd CTAs — at least `spacing-8` clearance from other interactive elements.
+- **DON'T** use `<hr>` dividers — use background color shifts.
+
+---
+
+## Interaction Patterns
+
+- **Hover:** Card background shifts from `surface-container-low` → `surface-container-lowest`.
+- **Micro-animations:** 300ms `cubic-bezier(0.16, 1, 0.3, 1)` (Ease Out Expo). Smooth and weighted, never bouncy.
+
+---
 
 ## Implementation
 
 - Next.js 14 (app router), SSR enabled
 - `ClientLayout` wraps children in `WebProviders` (wagmi/RainbowKit, client-only)
-- Status styles shared via `lib/status-styles.ts`
+- Tailwind CSS 4 + CSS custom properties (no separate tailwind.config — uses `@theme` in globals.css)
+- Animation: `motion/react` (Framer Motion) for hero entrances only; CSS transitions for hover/focus
+- Icons: Lucide React
 - Desktop-first, responsive at `md` breakpoint
-- Tailwind CSS 4 + CSS custom properties
-- Animation: `motion/react` (Framer Motion)
+- Themes: Light (default), Dark — all semantic tokens swap via CSS custom properties in globals.css
+- Status styles shared via `lib/status-styles.ts`
 
 ## Gotchas
 
-These are common mistakes discovered during development. Avoid them:
-
-1. **No raw hex in shadows.** Tailwind arbitrary shadow values like `shadow-[4px_4px_0px_#16a34a]` break theme switching. Always use CSS vars: `shadow-[4px_4px_0px_var(--color-emerald-600)]`.
-
-2. **No `role="radio"` on `<button>`.** Biome's `lint/a11y/useSemanticElements` rejects this. Use `aria-pressed` on buttons instead of `role="radio"` + `role="radiogroup"`.
-
-3. **No `#000` anywhere.** Use `warm-900` (`#1E1B18`) for near-black. This applies to text, borders, shadows, and backgrounds.
-
-4. **Select-type inputs use predefined options, not free-form.** Deadline, distribution, and dispute window all use curated option lists from `guided-prompts.ts`, not date pickers or free text.
-
-5. **Nav closing tags.** When changing a `<div>` to a semantic element like `<nav>`, update both the opening AND closing tag. Mismatched tags cause silent hydration errors.
-
-6. **Biome-ignore comments are positional.** If you refactor the line a `biome-ignore` comment targets, the comment becomes stale and Biome will flag it. Remove or move the comment when you change the code beneath it.
-
-7. **Compute deadlines at publish time, not draft time.** Use `computeDeadlineIso()` from `lib/post-submission-window.ts` to convert window keys (e.g. `"7"`, `"14"`, `"15m"`) to ISO timestamps when the user publishes, not when they select.
+1. **No raw hex in shadows.** `shadow-[4px_4px_0px_#16a34a]` breaks theme switching. Use CSS vars: `shadow-[4px_4px_0px_var(--color-emerald-600)]`.
+2. **No `role="radio"` on `<button>`.** Biome rejects it. Use `aria-pressed` instead.
+3. **No `#000` anywhere.** Use `warm-900` (`#1E1B18`) for near-black — text, borders, shadows, backgrounds.
+4. **Select-type inputs use predefined options**, not free-form. Deadline, distribution, dispute window use curated lists from `guided-prompts.ts`.
+5. **Nav closing tags.** Changing `<div>` to `<nav>` requires updating both tags. Mismatched tags cause silent hydration errors.
+6. **Biome-ignore comments are positional.** Move or remove them when refactoring the targeted line.
+7. **Compute deadlines at publish time, not draft time.** Use `computeDeadlineIso()` from `lib/post-submission-window.ts`.

@@ -48,6 +48,8 @@ export async function createExternalAuthoringDraft(input: {
   const db = createSupabaseClientImpl(true);
   const uploadedArtifacts = await normalizeExternalArtifactsForDraftImpl({
     artifacts: input.body.artifacts,
+    logger: input.logger,
+    provider: input.provider,
   });
 
   const externalId = input.body.external_id ?? null;
@@ -80,7 +82,7 @@ export async function createExternalAuthoringDraft(input: {
       });
       const refreshed = await refreshDraftIr({
         db,
-        session: existingDraft,
+        draft: existingDraft,
         state: buildDraftUpdatedState(existingDraft.state),
         intentJson: existingDraft.intent_json,
         authoringIrJson: authoringIr,
@@ -88,6 +90,7 @@ export async function createExternalAuthoringDraft(input: {
         expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
         updateAuthoringDraftImpl,
         getAuthoringDraftViewByIdImpl,
+        logger: input.logger,
       });
       await upsertAuthoringSourceLinkImpl(db, {
         provider: input.provider,
@@ -120,7 +123,7 @@ export async function createExternalAuthoringDraft(input: {
       raw_context: input.body.raw_context ?? null,
     },
   });
-  const session = await createDraft({
+  const draft = await createDraft({
     db,
     state: "draft",
     authoringIrJson: authoringIr,
@@ -128,13 +131,14 @@ export async function createExternalAuthoringDraft(input: {
     expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
     createAuthoringDraftImpl,
     getAuthoringDraftViewByIdImpl,
+    logger: input.logger,
   });
 
   if (externalId) {
     await upsertAuthoringSourceLinkImpl(db, {
       provider: input.provider,
       external_id: externalId,
-      draft_id: session.id,
+      draft_id: draft.id,
       external_url: input.body.external_url ?? null,
     });
   }
@@ -143,12 +147,12 @@ export async function createExternalAuthoringDraft(input: {
     {
       event: "authoring.drafts.created",
       provider: input.provider,
-      draftId: session.id,
+      draftId: draft.id,
       externalId,
       ambiguityClasses: authoringIr.ambiguity.classes,
     },
     "Created authoring draft from external source",
   );
 
-  return session;
+  return draft;
 }

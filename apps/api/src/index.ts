@@ -2,6 +2,7 @@ import {
   getAgoraRuntimeIdentity,
   getAgoraRuntimeVersion,
   loadConfig,
+  readAuthoringPartnerRuntimeConfig,
 } from "@agora/common";
 import {
   WORKER_RUNTIME_TYPE,
@@ -20,6 +21,7 @@ import {
 async function start() {
   initApiObservability();
   const config = loadConfig();
+  const authoringPartnerRuntime = readAuthoringPartnerRuntimeConfig();
   const port = config.AGORA_API_PORT ?? 3000;
   const db = createSupabaseClient(true);
   await assertRuntimeDatabaseSchema(db);
@@ -31,6 +33,16 @@ async function start() {
   const runtimeIdentity = getAgoraRuntimeIdentity(config);
 
   serve({ fetch: app.fetch, port });
+
+  if ((authoringPartnerRuntime.callbackSecretFallbackProviders?.length ?? 0) > 0) {
+    apiLogger.warn(
+      {
+        event: "api.authoring.callback_secret_fallback",
+        providers: authoringPartnerRuntime.callbackSecretFallbackProviders,
+      },
+      "Authoring callback signing is falling back to partner bearer keys for some providers",
+    );
+  }
 
   apiLogger.info(
     {

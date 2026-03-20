@@ -164,7 +164,55 @@ FROM challenges
 WHERE status = 'open' AND deadline < NOW();
 ```
 
-### 9. Docker / Executor (if remote)
+### 9. Code ↔ DB Schema Drift
+
+Verify that code-referenced columns actually exist in the live database. This catches renames, dropped columns, and migrations that were written but never applied.
+
+**Column audit:** Compare columns referenced in `packages/db/src/queries/*.ts` against the live schema:
+
+```sql
+-- Full column inventory for core tables
+SELECT table_name, column_name, data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name IN (
+    'challenges', 'submissions', 'submission_intents', 'score_jobs',
+    'challenge_payouts', 'proof_bundles', 'indexed_events',
+    'worker_runtime_state', 'worker_runtime_control',
+    'authoring_drafts', 'authoring_source_links',
+    'authoring_callback_targets', 'published_challenge_links',
+    'authoring_callback_deliveries'
+  )
+ORDER BY table_name, ordinal_position;
+```
+
+Then grep the query files for any column name not in that result:
+
+```bash
+# Extract column names referenced in DB query files
+grep -ohE "'[a-z_]+'" packages/db/src/queries/*.ts | sort -u
+```
+
+Any column in code but missing from DB = unapplied migration or stale query. Any column in DB but unreferenced in code = potential migration residue (harmless but worth noting).
+
+**PostgREST cache probe:** After recent migrations, verify the API can actually use new columns — a stale PostgREST cache silently 400s:
+
+```bash
+# Hit an endpoint that reads a recently-added column
+# If it returns 400 with "Could not find column", cache is stale
+curl -sS "$API_URL/api/challenges?limit=1" | head -c 200
+curl -sS "$API_URL/api/worker-health" | head -c 200
+```
+
+**Zod ↔ DB alignment:** Spot-check that Zod schema field names in `packages/common/src/schemas/` match DB column names in the query layer. Key pairs to verify:
+
+| Zod schema file | DB query file | Watch for |
+|---|---|---|
+| `challenge-spec.ts` | `queries/challenges.ts` | `evaluation` shape vs `evaluation_plan_json` column |
+| `submission.ts` | `queries/submissions.ts` | `resultCid` vs `result_cid` (camelCase ↔ snake_case mapping) |
+| `managed-authoring.ts` | `queries/authoring-drafts.ts` | `intent_json` / `authoring_ir_json` shape alignment |
+
+### 10. Docker / Executor (if remote)
 
 If `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`:
 - `GET <executor-url>/healthz` returns `{"ok":true,"service":"executor","backend":"local_docker"}`
@@ -199,6 +247,7 @@ For local dev, Railway and remote executor checks may not apply — skip and not
 | Indexer lag | ok/warning/critical | X blocks behind |
 | Worker readiness | pass/fail | ... |
 | DB consistency | pass/fail | ... |
+| Code ↔ DB drift | pass/fail | stale columns, missing columns, PostgREST cache |
 | Executor | pass/fail/skipped | ... |
 
 ### Issues Found
@@ -217,3 +266,5 @@ For local dev, Railway and remote executor checks may not apply — skip and not
 5. **`agora doctor` is complementary, not redundant.** It checks RPC/Supabase/factory connectivity from the CLI perspective. This skill checks the full service mesh. Run both.
 6. **Railway CLI requires login.** If `railway` CLI returns auth errors, run `railway login` first. If CLI is not installed, skip Railway checks and note it — don't fail the report.
 7. **Supabase MCP vs local schema:verify.** They check different things. Local checks code-side migration files. MCP checks the actual deployed database. Both should pass.
+8. **Column name casing.** DB columns are `snake_case`, TypeScript/Zod fields are `camelCase`. The DB query layer handles the mapping. Drift check should compare at the `snake_case` level — don't false-positive on casing differences that the query layer already bridges.
+9. **PostgREST cache is invisible.** A migration can succeed in Postgres while PostgREST still serves the old schema. The only reliable detection is probing an API endpoint that reads the new column. If it 400s with "Could not find column," reload the cache.

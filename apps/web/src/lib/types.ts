@@ -1,7 +1,13 @@
 import type { ChallengeStatus } from "@agora/common";
 
 export type ChallengeEvaluation = {
-  runtime_family: string;
+  preset_id: string;
+  backend_kind:
+    | "preset_interpreter"
+    | "definition_only"
+    | "generated_scorer"
+    | "oci_image";
+  execution_runtime_family?: string;
   metric: string;
   scorer_image?: string;
 };

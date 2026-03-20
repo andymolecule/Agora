@@ -62,7 +62,7 @@ function SubmissionRow({ submission }: { submission: SolverSubmission }) {
 
   return (
     <tr className="border-b last:border-b-0 border-warm-900 hover:bg-warm-900/5 transition-colors">
-      <td className="py-3 px-4 border-r border-warm-900">
+      <td className="py-3 px-4 border-r border-warm-200">
         <Link
           href={`/challenges/${challenge.id}`}
           className="font-semibold text-warm-900 text-sm hover:underline no-underline flex items-center gap-1.5"
@@ -71,21 +71,21 @@ function SubmissionRow({ submission }: { submission: SolverSubmission }) {
           <ExternalLink className="w-3 h-3 opacity-40 flex-shrink-0" />
         </Link>
       </td>
-      <td className="py-3 px-4 border-r border-warm-900">
+      <td className="py-3 px-4 border-r border-warm-200">
         <span className="px-2 py-1 text-[10px] font-mono font-bold uppercase tracking-wider bg-warm-900 text-white">
           {challenge.domain}
         </span>
       </td>
-      <td className="py-3 px-4 border-r border-warm-900 text-right">
+      <td className="py-3 px-4 border-r border-warm-200 text-right">
         <span className="font-mono text-xs font-bold tabular-nums">
           {challenge.status === CHALLENGE_STATUS.open
             ? "Hidden"
             : formatWadToScore(submission.score)}
         </span>
       </td>
-      <td className="py-3 px-4 border-r border-warm-900">
+      <td className="py-3 px-4 border-r border-warm-200">
         <span
-          className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-[2px] border"
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded border"
           style={{
             backgroundColor: statusStyle.bg,
             color: statusStyle.text,
@@ -95,17 +95,17 @@ function SubmissionRow({ submission }: { submission: SolverSubmission }) {
           {getChallengeBadgeLabel(challenge.status as ChallengeStatus)}
         </span>
         {hasClaimable && (
-          <span className="ml-2 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider bg-green-100 text-green-700 border border-green-300 rounded-[2px]">
+          <span className="ml-2 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider bg-green-100 text-green-700 border border-green-300 rounded">
             Payout Available
           </span>
         )}
         {!hasClaimable && hasEarned && (
-          <span className="ml-2 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider bg-warm-900/[0.06] text-warm-900/70 border border-warm-900/20 rounded-[2px]">
+          <span className="ml-2 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider bg-warm-900/[0.06] text-warm-900/70 border border-warm-900/20 rounded">
             Paid
           </span>
         )}
       </td>
-      <td className="py-3 px-4 text-right border-r border-warm-900">
+      <td className="py-3 px-4 text-right border-r border-warm-200">
         <span className="font-mono text-xs font-bold tabular-nums">
           {formatUsdc(challenge.reward_amount)} USDC
         </span>
@@ -175,7 +175,7 @@ export function PortfolioClient() {
             Solver Portfolio
           </h1>
         </section>
-        <div className="border border-warm-900 p-12 text-center">
+        <div className="rounded-md bg-white p-12 text-center">
           <p className="font-mono font-bold text-sm uppercase tracking-wider text-warm-900/60">
             Connect your wallet to view your portfolio.
           </p>
@@ -196,7 +196,7 @@ export function PortfolioClient() {
             {address}
           </p>
         </section>
-        <div className="border border-warm-900 p-12 text-center">
+        <div className="rounded-md bg-white p-12 text-center">
           <p className="font-mono font-bold text-sm uppercase tracking-wider text-warm-900/60">
             Switch to {APP_CHAIN_NAME} (chain {CHAIN_ID}) to sign in and view
             your portfolio.
@@ -218,7 +218,7 @@ export function PortfolioClient() {
             {address}
           </p>
         </section>
-        <div className="border border-warm-900 p-12 text-center space-y-4">
+        <div className="rounded-md bg-white p-12 text-center space-y-4">
           <p className="font-mono font-bold text-sm uppercase tracking-wider text-warm-900/60">
             Sign a SIWE message to load your private portfolio.
           </p>
@@ -226,7 +226,7 @@ export function PortfolioClient() {
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex items-center justify-center gap-2 px-5 py-3 border border-warm-900 bg-white text-sm font-bold font-mono uppercase tracking-wider hover:bg-warm-900 hover:text-white transition-colors"
+              className="inline-flex items-center justify-center gap-2 px-5 py-3 btn-primary rounded text-sm font-bold font-mono uppercase tracking-wider transition-colors"
             >
               Clear Session
             </button>
@@ -235,7 +235,7 @@ export function PortfolioClient() {
               type="button"
               onClick={() => void handleSignIn()}
               disabled={isSigning}
-              className="inline-flex items-center justify-center gap-2 px-5 py-3 border border-warm-900 bg-white text-sm font-bold font-mono uppercase tracking-wider hover:bg-warm-900 hover:text-white transition-colors disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 px-5 py-3 btn-primary rounded text-sm font-bold font-mono uppercase tracking-wider transition-colors disabled:opacity-50"
             >
               {isSigning ? "Signing..." : "Sign In"}
             </button>
@@ -259,7 +259,7 @@ export function PortfolioClient() {
 
       {portfolioQuery.data && (
         <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
-          <div className="border border-warm-900 p-4 text-center">
+          <div className="rounded-md bg-white p-4 text-center">
             <div className="flex items-center justify-center gap-2 mb-1">
               <FileText className="w-4 h-4 opacity-60" />
               <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/60">
@@ -270,7 +270,7 @@ export function PortfolioClient() {
               {portfolioQuery.data.totalSubmissions}
             </span>
           </div>
-          <div className="border border-warm-900 p-4 text-center">
+          <div className="rounded-md bg-white p-4 text-center">
             <div className="flex items-center justify-center gap-2 mb-1">
               <FlaskConical className="w-4 h-4 opacity-60" />
               <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/60">
@@ -291,46 +291,46 @@ export function PortfolioClient() {
           ))}
         </div>
       ) : portfolioQuery.error ? (
-        <div className="border border-warm-900 p-8 text-center">
+        <div className="rounded-md bg-white p-8 text-center">
           <div className="font-mono font-bold text-sm uppercase tracking-wider text-warm-900/60">
             Unable to load portfolio data.
           </div>
           <button
             type="button"
             onClick={() => portfolioQuery.refetch()}
-            className="mt-4 px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider border border-warm-900 bg-white text-warm-900 hover:bg-warm-900 hover:text-white transition-colors"
+            className="btn-secondary mt-4 px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider transition-colors"
           >
             Retry
           </button>
         </div>
       ) : portfolioQuery.data &&
         portfolioQuery.data.submissions.length === 0 ? (
-        <div className="border border-warm-900 p-12 text-center">
+        <div className="rounded-md bg-white p-12 text-center">
           <p className="font-mono font-bold text-sm uppercase tracking-wider text-warm-900/60">
             No submissions yet. Browse challenges to get started.
           </p>
         </div>
       ) : portfolioQuery.data ? (
-        <div className="border border-warm-900 rounded-[2px] overflow-hidden">
+        <div className="rounded-md bg-white overflow-hidden">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-[#f4f4f0]">
-                <th className="text-left py-3 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900 border-r border-b border-warm-900">
+                <th className="text-left py-3 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900 border-r border-b border-warm-200">
                   Challenge
                 </th>
-                <th className="text-left py-3 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900 border-r border-b border-warm-900">
+                <th className="text-left py-3 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900 border-r border-b border-warm-200">
                   Domain
                 </th>
-                <th className="text-right py-3 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900 border-r border-b border-warm-900">
+                <th className="text-right py-3 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900 border-r border-b border-warm-200">
                   Score
                 </th>
-                <th className="text-left py-3 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900 border-r border-b border-warm-900">
+                <th className="text-left py-3 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900 border-r border-b border-warm-200">
                   Status
                 </th>
-                <th className="text-right py-3 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900 border-r border-b border-warm-900">
+                <th className="text-right py-3 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900 border-r border-b border-warm-200">
                   Reward
                 </th>
-                <th className="text-right py-3 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900 border-b border-warm-900">
+                <th className="text-right py-3 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900 border-b border-warm-200">
                   Submitted
                 </th>
               </tr>

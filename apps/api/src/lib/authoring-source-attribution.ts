@@ -37,6 +37,7 @@ export function getAuthoringDraftSourceAttribution(
     provider: origin.provider,
     externalId: origin.external_id ?? null,
     externalUrl: origin.external_url ?? null,
+    // Prefer the normalized Agora field first, then older provider-specific aliases.
     agentHandle: firstStringValue(rawContext, [
       "source_agent_handle",
       "agent_handle",

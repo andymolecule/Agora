@@ -35,11 +35,24 @@ test("worker scoring skips submissions that exceed configured limits", async () 
     id: "challenge-1",
     contract_address: "0x0000000000000000000000000000000000000001",
     runtime_family: "reproducibility",
-    evaluation_json: {
-      runtime_family: "reproducibility",
+    evaluation_plan_json: {
+      version: "v2",
+      presetId: "reproducibility",
+      backendKind: "preset_interpreter",
+      executionRuntimeFamily: "reproducibility",
+      image: "ghcr.io/andymolecule/gems-match-scorer:v1",
       metric: "exact_match",
-      scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
-      evaluation_bundle: "ipfs://bafybeigdyrzt3",
+      evaluationBundleCid: "ipfs://bafybeigdyrzt3",
+      mount: {
+        evaluationBundleName: "evaluation.json",
+        submissionFileName: "submission.json",
+      },
+      limits: {
+        memory: "2g",
+        cpus: "2",
+        pids: 64,
+        timeoutMs: 600_000,
+      },
     },
     max_submissions_total: 1,
     max_submissions_per_solver: 1,

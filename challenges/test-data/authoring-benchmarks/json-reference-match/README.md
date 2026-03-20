@@ -9,7 +9,7 @@ This benchmark exists to cover a broad non-ML use case:
 - solvers submit one JSON artifact
 - payout is determined by exact match against the hidden reference
 
-It should land in the semi-custom executable path rather than a managed ML family.
+It should land in the executable definition-backed path rather than a managed ML family.
 
 ## Benchmark Goal
 
@@ -29,7 +29,7 @@ poster speaks in operational language, not runtime-family vocabulary.
 
 This benchmark passes when:
 
-- the draft routes to `semi_custom`
+- the draft routes to `definition_backed`
 - the evaluator archetype is `exact_artifact_match`
 - the artifact roles stay generic: `public_inputs` and `hidden_reference`
 - the submission contract is a JSON file contract

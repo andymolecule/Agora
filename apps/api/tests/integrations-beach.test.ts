@@ -23,7 +23,7 @@ function buildStubArtifactFromSourceUrl(sourceUrl: string) {
   };
 }
 
-function createSession(
+function createDraft(
   overrides: Partial<AuthoringDraftViewRow> = {},
 ): AuthoringDraftViewRow {
   const uploadedArtifacts = overrides.uploaded_artifacts_json ?? [
@@ -94,22 +94,22 @@ function partnerConfig() {
 test("beach integration imports a thread into a beach-owned authoring draft", async () => {
   let capturedPayload: Record<string, unknown> | null = null;
   const quotaCalls: string[] = [];
-  let storedSession = createSession();
+  let storedDraft = createDraft();
 
   const router = createBeachIntegrationsRouter({
     createSupabaseClient: () => ({}) as never,
     createAuthoringDraft: async (_db, payload) => {
       capturedPayload = payload as Record<string, unknown>;
-      storedSession = createSession({
+      storedDraft = createDraft({
         state: payload.state,
         intent_json: payload.intent_json ?? null,
         authoring_ir_json: payload.authoring_ir_json ?? null,
         uploaded_artifacts_json: payload.uploaded_artifacts_json ?? [],
         expires_at: payload.expires_at,
       });
-      return storedSession as never;
+      return storedDraft as never;
     },
-    getAuthoringDraftViewById: async () => storedSession as never,
+    getAuthoringDraftViewById: async () => storedDraft as never,
     getAuthoringSourceLink: async () => null as never,
     upsertAuthoringSourceLink: async (_db, payload) =>
       ({

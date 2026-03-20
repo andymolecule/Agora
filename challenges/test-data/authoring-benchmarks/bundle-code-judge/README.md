@@ -1,6 +1,6 @@
 # Bundle Code Judge
 
-Typed-only semi-custom benchmark for deterministic bundle or code submissions.
+Typed-only definition-backed benchmark for deterministic bundle or code submissions.
 
 This benchmark covers challenges where:
 - solvers submit one packaged `.zip` bundle
@@ -8,7 +8,7 @@ This benchmark covers challenges where:
 - the scoring rule is deterministic, but there is no configured execution template yet
 
 Use this benchmark to check that authoring:
-- routes the draft to `semi_custom`
+- routes the draft to `definition_backed`
 - selects the `bundle_or_code_judge` evaluator archetype
 - keeps artifact roles generic (`public_inputs`, `hidden_reference`)
 - preserves the packaged submission contract as an opaque `.zip` file

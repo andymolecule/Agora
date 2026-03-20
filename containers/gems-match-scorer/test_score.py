@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-MODULE_PATH = ROOT_DIR / "containers" / "repro-scorer" / "score.py"
+MODULE_PATH = ROOT_DIR / "containers" / "gems-match-scorer" / "score.py"
 
 
 def load_scorer_module():
@@ -30,7 +30,7 @@ def run_case(
     submission_payload: str | bytes,
 ):
     module = load_scorer_module()
-    workspace = Path(tempfile.mkdtemp(prefix="agora-repro-scorer-"))
+    workspace = Path(tempfile.mkdtemp(prefix="agora-gems-match-scorer-"))
     input_dir = workspace / "input"
     output_dir = workspace / "output"
     input_dir.mkdir()
@@ -62,7 +62,7 @@ def run_case(
 
 csv_runtime_config = {
     "version": "v1",
-    "runtime_family": "semi_custom",
+    "runtime_family": "reproducibility",
     "metric": "exact_match",
     "mount": {
         "evaluation_bundle_name": "ground_truth.csv",
@@ -97,7 +97,7 @@ assert payload["details"]["comparison_kind"] == "csv_table", payload
 
 json_runtime_config = {
     "version": "v1",
-    "runtime_family": "semi_custom",
+    "runtime_family": "reproducibility",
     "metric": "exact_match",
     "mount": {
         "evaluation_bundle_name": "ground_truth.json",
@@ -137,7 +137,7 @@ assert payload["score"] == 0.0, payload
 
 structured_record_runtime_config = {
     "version": "v1",
-    "runtime_family": "semi_custom",
+    "runtime_family": "reproducibility",
     "metric": "validation_score",
     "mount": {
         "evaluation_bundle_name": "ground_truth.json",
@@ -222,7 +222,7 @@ assert "allowed_value:severity" in payload["details"]["failed_checks"], payload
 
 opaque_runtime_config = {
     "version": "v1",
-    "runtime_family": "semi_custom",
+    "runtime_family": "reproducibility",
     "metric": "exact_match",
     "mount": {
         "evaluation_bundle_name": "ground_truth.bin",

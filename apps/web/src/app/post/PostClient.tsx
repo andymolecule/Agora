@@ -263,11 +263,11 @@ async function getAuthoringDraft(draftId: string) {
   return payload.data.draft;
 }
 
-function getCompilation(session: AuthoringDraftOutput | null | undefined) {
-  return (session?.compilation ?? null) as CompilationResultOutput | null;
+function getCompilation(draft: AuthoringDraftOutput | null | undefined) {
+  return (draft?.compilation ?? null) as CompilationResultOutput | null;
 }
 
-function clearCompiledSessionData(
+function clearCompiledDraftData(
   current: AuthoringDraftOutput | null,
 ): AuthoringDraftOutput | null {
   if (!current) {
@@ -294,7 +294,7 @@ export function PostClient() {
     undefined,
     () => createInitialGuidedState(),
   );
-  const [session, setSession] = useState<AuthoringDraftOutput | null>(null);
+  const [draft, setDraft] = useState<AuthoringDraftOutput | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCompiling, setIsCompiling] = useState(false);
@@ -339,14 +339,14 @@ export function PostClient() {
     [guidedState],
   );
 
-  const compilation = getCompilation(session);
-  const clarificationQuestions = session?.clarification_questions ?? [];
-  const reviewSummary = session?.review_summary ?? null;
-  const isReviewQueued = session?.state === "needs_review";
-  const isSemiCustomReview =
-    session?.state === "needs_review" &&
+  const compilation = getCompilation(draft);
+  const clarificationQuestions = draft?.clarification_questions ?? [];
+  const reviewSummary = draft?.review_summary ?? null;
+  const isReviewQueued = draft?.state === "needs_review";
+  const isDefinitionBackedReview =
+    draft?.state === "needs_review" &&
     !compilation &&
-    session.authoring_ir?.routing.mode === "semi_custom";
+    draft.authoring_ir?.routing.mode === "definition_backed";
   const shouldSuggestExpertMode =
     reviewSummary?.recommended_action === "send_to_expert_mode";
   const rewardInput =
@@ -417,43 +417,43 @@ export function PostClient() {
 
   useEffect(() => {
     const restoreDraftId = hostedDraftId ?? guidedState.draftId;
-    if (!restoreDraftId || session?.id === restoreDraftId) {
+    if (!restoreDraftId || draft?.id === restoreDraftId) {
       return;
     }
 
     let cancelled = false;
 
     void getAuthoringDraft(restoreDraftId)
-      .then((restoredSession) => {
+      .then((restoredDraft) => {
         if (cancelled) {
           return;
         }
-        setSession(restoredSession);
-        dispatch({ type: "set_draft_id", draftId: restoredSession.id });
+        setDraft(restoredDraft);
+        dispatch({ type: "set_draft_id", draftId: restoredDraft.id });
         if (hostedDraftId) {
           dispatch({
             type: "hydrate",
-            state: hydrateGuidedStateFromAuthoringDraft(restoredSession),
+            state: hydrateGuidedStateFromAuthoringDraft(restoredDraft),
           });
         }
-        if (restoredSession.state === "ready") {
+        if (restoredDraft.state === "ready") {
           dispatch({ type: "set_compile_state", compileState: "ready" });
           setStep(2);
-        } else if (restoredSession.state === "needs_review") {
+        } else if (restoredDraft.state === "needs_review") {
           dispatch({
             type: "set_compile_state",
             compileState: "needs_review",
           });
           setStep(2);
-        } else if (restoredSession.state === "needs_clarification") {
+        } else if (restoredDraft.state === "needs_clarification") {
           dispatch({
             type: "apply_clarification",
             field: clarificationTargetFromQuestions(
-              restoredSession.clarification_questions ?? [],
+              restoredDraft.clarification_questions ?? [],
             ),
           });
           setStep(1);
-        } else if (restoredSession.state === "published") {
+        } else if (restoredDraft.state === "published") {
           dispatch({ type: "set_compile_state", compileState: "ready" });
           setStep(3);
           setStatusMessage(
@@ -479,13 +479,13 @@ export function PostClient() {
     return () => {
       cancelled = true;
     };
-  }, [guidedState.draftId, hostedDraftId, session?.id]);
+  }, [draft?.id, guidedState.draftId, hostedDraftId]);
 
   useEffect(() => {
     if (
-      !session?.id ||
-      session.state !== "needs_review" ||
-      isSemiCustomReview
+      !draft?.id ||
+      draft.state !== "needs_review" ||
+      isDefinitionBackedReview
     ) {
       return;
     }
@@ -493,18 +493,18 @@ export function PostClient() {
     let cancelled = false;
     const intervalId = window.setInterval(async () => {
       try {
-        const refreshedSession = await getAuthoringDraft(session.id);
+        const refreshedDraft = await getAuthoringDraft(draft.id);
         if (cancelled) {
           return;
         }
         setErrorMessage(null);
-        if (refreshedSession.state === "needs_review") {
+        if (refreshedDraft.state === "needs_review") {
           return;
         }
 
-        setSession(refreshedSession);
+        setDraft(refreshedDraft);
 
-        if (refreshedSession.state === "ready") {
+        if (refreshedDraft.state === "ready") {
           dispatch({ type: "set_compile_state", compileState: "ready" });
           setStatusMessage(
             "Operator review approved this draft. You can continue to publish now.",
@@ -514,11 +514,11 @@ export function PostClient() {
           return;
         }
 
-        if (refreshedSession.state === "needs_clarification") {
+        if (refreshedDraft.state === "needs_clarification") {
           dispatch({
             type: "apply_clarification",
             field: clarificationTargetFromQuestions(
-              refreshedSession.clarification_questions ?? [],
+              refreshedDraft.clarification_questions ?? [],
             ),
           });
           setStatusMessage(
@@ -529,14 +529,14 @@ export function PostClient() {
           return;
         }
 
-        if (refreshedSession.state === "failed") {
+        if (refreshedDraft.state === "failed") {
           dispatch({
             type: "set_compile_state",
             compileState: compileReady ? "ready_to_compile" : "idle",
           });
           setStatusMessage(null);
           setErrorMessage(
-            refreshedSession.failure_message ??
+            refreshedDraft.failure_message ??
               "This draft could not be approved for managed publishing.",
           );
           setStep(1);
@@ -561,7 +561,7 @@ export function PostClient() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [compileReady, isSemiCustomReview, session?.id, session?.state]);
+  }, [compileReady, draft?.id, draft?.state, isDefinitionBackedReview]);
 
   /* ── Handlers ─────────────────────────────────────────── */
 
@@ -569,7 +569,7 @@ export function PostClient() {
     setStep(1);
     setStatusMessage(null);
     setErrorMessage(null);
-    setSession((current) => clearCompiledSessionData(current));
+    setDraft((current) => clearCompiledDraftData(current));
   }
 
   function dispatchCompileState(compileState: GuidedCompileState) {
@@ -577,7 +577,7 @@ export function PostClient() {
   }
 
   function clearRemoteAuthoringDraft(message: string) {
-    setSession(null);
+    setDraft(null);
     setHostReturnUrl(null);
     setHostReturnSource(null);
     dispatch({ type: "set_draft_id", draftId: null });
@@ -756,7 +756,7 @@ export function PostClient() {
         intent: managedIntent,
         uploads: guidedStateRef.current.uploads,
       });
-      setSession(compiledSession);
+      setDraft(compiledSession);
       dispatch({ type: "set_draft_id", draftId: compiledSession.id });
 
       if (compiledSession.state === "needs_clarification") {
@@ -774,8 +774,8 @@ export function PostClient() {
         dispatchCompileState("needs_review");
         setStep(2);
         setStatusMessage(
-          compiledSession.authoring_ir?.routing.mode === "semi_custom"
-            ? "This draft is deterministic enough for a semi-custom evaluator, but it does not fit a current managed template."
+          compiledSession.authoring_ir?.routing.mode === "definition_backed"
+            ? "This draft is deterministic enough for a definition-backed evaluator, but it does not fit a current managed preset."
             : "Agora compiled a contract and queued it for operator review before publish.",
         );
       } else {
@@ -845,7 +845,7 @@ export function PostClient() {
     if (!compilation || !publicClient || !writeContractAsync || !address) {
       return;
     }
-    if (!session) {
+    if (!draft) {
       setErrorMessage("No authoring draft found. Recompile the draft first.");
       return;
     }
@@ -883,7 +883,7 @@ export function PostClient() {
 
       setStatusMessage("Pinning the compiled challenge spec...");
       const prepared = await publishManagedAuthoringDraft({
-        draftId: session.id,
+        draftId: draft.id,
         spec: compilation.challenge_spec,
         address,
         chainId: CHAIN_ID,
@@ -955,7 +955,7 @@ export function PostClient() {
       setPostedChallengeId(registration.challengeId);
       const nextHostReturnUrl = buildHostReturnUrl({
         baseUrl: prepared.returnTo,
-        draftId: session.id,
+        draftId: draft.id,
         challengeId: registration.challengeId,
         specCid: prepared.specCid,
       });
@@ -990,7 +990,7 @@ export function PostClient() {
     }
   }
 
-  const managedReviewTitle = session?.intent?.title ?? managedIntent.title;
+  const managedReviewTitle = draft?.intent?.title ?? managedIntent.title;
 
   function handleRefreshCompiledDeadline() {
     resetInterviewForEdit();
@@ -1005,7 +1005,7 @@ export function PostClient() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 pb-24">
       {/* Header */}
-      <header className="rounded-[2px] border-2 border-warm-900 bg-white p-6 shadow-[4px_4px_0px_var(--color-warm-900)]">
+      <header className="rounded-md bg-white p-6">
         <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-500">
           Agora · Post
         </div>
@@ -1041,7 +1041,7 @@ export function PostClient() {
               {hostReturnUrl ? (
                 <a
                   href={hostReturnUrl}
-                  className="btn-secondary inline-flex items-center gap-2 rounded-[2px] px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider"
+                  className="btn-secondary inline-flex items-center gap-2 rounded px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider"
                 >
                   {hostReturnSource === "requested"
                     ? "Return to host"
@@ -1051,7 +1051,7 @@ export function PostClient() {
               ) : null}
               <Link
                 href={`/challenges/${postedChallengeId}`}
-                className="btn-secondary inline-flex items-center gap-2 rounded-[2px] px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider"
+                className="btn-secondary inline-flex items-center gap-2 rounded px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider"
               >
                 View challenge
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -1108,23 +1108,23 @@ export function PostClient() {
         />
       ) : null}
 
-      {!expertMode && step === 2 && isSemiCustomReview ? (
+      {!expertMode && step === 2 && isDefinitionBackedReview ? (
         <PostNotice tone="warning">
           <div className="space-y-3">
             <div className="space-y-1">
               <div className="font-mono text-xs font-bold uppercase tracking-wider">
-                Semi-Custom Evaluator Needed
+                Custom Evaluator Needed
               </div>
               <p>
                 {reviewSummary?.summary ??
-                  "This draft is deterministic enough to continue, but it does not map cleanly to a current managed runtime family."}
+                  "This draft is deterministic enough to continue, but Agora could not compile it into a current executable preset yet."}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => handleSetPostingMode("expert")}
-                className="btn-primary inline-flex items-center gap-2 rounded-[2px] px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider"
+                className="btn-primary inline-flex items-center gap-2 rounded px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider"
               >
                 Open Expert Mode
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -1161,8 +1161,8 @@ export function PostClient() {
           compileReady={compileReady}
           isReviewQueued={isReviewQueued}
           reviewMode={
-            isSemiCustomReview
-              ? "semi_custom"
+            isDefinitionBackedReview
+              ? "definition_backed"
               : isReviewQueued
                 ? "operator_review"
                 : null

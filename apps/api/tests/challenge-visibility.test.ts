@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CHALLENGE_STATUS } from "@agora/common";
+import {
+  CHALLENGE_STATUS,
+  challengeSpecSchema,
+  createOpaqueFileSubmissionContract,
+  resolveEvaluationPlan,
+} from "@agora/common";
 import {
   canExposeChallengeResults,
   getChallengeLeaderboardData,
@@ -10,12 +15,40 @@ import {
   listChallengesQuerySchema,
 } from "../src/routes/challenges-shared.js";
 
-const reproducibilityEvaluation = {
-  runtime_family: "reproducibility",
-  metric: "exact_match",
-  scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
-  evaluation_bundle: "ipfs://bundle",
-} as const;
+const reproducibilityEvaluationPlan = resolveEvaluationPlan(
+  challengeSpecSchema.parse({
+    schema_version: 4,
+    id: "challenge-visibility-repro",
+    title: "Repro challenge",
+    description: "deterministic verification",
+    domain: "other",
+    type: "custom",
+    evaluation: {
+      preset_id: "reproducibility",
+      backend_kind: "preset_interpreter",
+      execution_runtime_family: "reproducibility",
+      metric: "exact_match",
+      scorer_image: "ghcr.io/andymolecule/gems-match-scorer:v1",
+      evaluation_bundle: "ipfs://bundle",
+    },
+    artifacts: [
+      {
+        role: "public_input",
+        visibility: "public",
+        uri: "ipfs://artifact",
+      },
+    ],
+    submission_contract: createOpaqueFileSubmissionContract({
+      extension: ".json",
+      mime: "application/json",
+    }),
+    reward: {
+      total: "10",
+      distribution: "winner_take_all",
+    },
+    deadline: "2026-03-20T00:00:00.000Z",
+  }),
+);
 
 test("open challenge detail redacts submissions and leaderboard", async () => {
   let submissionReads = 0;
@@ -33,7 +66,7 @@ test("open challenge detail redacts submissions and leaderboard", async () => {
         id: "challenge-1",
         contract_address: "0x0000000000000000000000000000000000000001",
         runtime_family: "reproducibility",
-        evaluation_json: reproducibilityEvaluation,
+        evaluation_plan_json: reproducibilityEvaluationPlan,
         artifacts_json: [],
         status: CHALLENGE_STATUS.open,
       }) as never,
@@ -73,7 +106,7 @@ test("challenge detail floors submissions_count when settlement state is ahead o
         id: "challenge-1",
         contract_address: "0x0000000000000000000000000000000000000001",
         runtime_family: "reproducibility",
-        evaluation_json: reproducibilityEvaluation,
+        evaluation_plan_json: reproducibilityEvaluationPlan,
         artifacts_json: [],
         status: CHALLENGE_STATUS.finalized,
         winning_on_chain_sub_id: 0,

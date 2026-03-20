@@ -125,28 +125,28 @@ async function sendAuthoringCallbackEventAttempt(input: {
 
 function buildAuthoringDraftLifecyclePayload(input: {
   event: AuthoringDraftLifecycleEventOutput["event"];
-  session: AuthoringDraftViewRow;
+  draft: AuthoringDraftViewRow;
 }) {
   return authoringDraftLifecycleEventSchema.parse({
     event: input.event,
     occurred_at: new Date().toISOString(),
-    draft_id: input.session.id,
-    provider: draftProvider(input.session),
-    state: input.session.state,
-    card: buildAuthoringDraftCard(input.session),
+    draft_id: input.draft.id,
+    provider: draftProvider(input.draft),
+    state: input.draft.state,
+    card: buildAuthoringDraftCard(input.draft),
   });
 }
 
 function buildChallengeLifecyclePayload(input: {
   event: ChallengeLifecycleEventOutput["event"];
-  session: AuthoringDraftViewRow;
+  draft: AuthoringDraftViewRow;
   challenge: AuthoringCallbackChallengeOutput;
 }) {
   return challengeLifecycleEventSchema.parse({
     event: input.event,
     occurred_at: new Date().toISOString(),
-    draft_id: input.session.id,
-    provider: draftProvider(input.session),
+    draft_id: input.draft.id,
+    provider: draftProvider(input.draft),
     challenge: input.challenge,
   });
 }
@@ -197,7 +197,7 @@ async function queueAuthoringCallbackEventRetry(input: {
 
 async function deliverAuthoringCallbackEvent(input: {
   payload: AuthoringCallbackEventOutput;
-  session: AuthoringDraftViewRow;
+  draft: AuthoringDraftViewRow;
   fetchImpl?: typeof fetch;
   logger?: AgoraLogger;
   retryDelayMs?: number;
@@ -205,16 +205,16 @@ async function deliverAuthoringCallbackEvent(input: {
   createSupabaseClientImpl?: typeof createSupabaseClient;
   createAuthoringCallbackDeliveryImpl?: typeof createAuthoringCallbackDelivery;
 }) {
-  const callbackUrl = input.session.source_callback_url?.trim();
+  const callbackUrl = input.draft.source_callback_url?.trim();
   if (!callbackUrl) {
     return false;
   }
-  const provider = draftProvider(input.session);
+  const provider = draftProvider(input.draft);
   if (provider === "direct") {
     input.logger?.warn(
       {
         event: "authoring.callback.direct_provider_ignored",
-        draftId: input.session.id,
+        draftId: input.draft.id,
         callbackUrl,
         eventType: input.payload.event,
       },
@@ -291,7 +291,7 @@ async function deliverAuthoringCallbackEvent(input: {
     input.logger?.warn(
       {
         event: "authoring.callback.delivery_failed",
-        draftId: input.session.id,
+        draftId: input.draft.id,
         provider,
         callbackUrl,
         eventType: input.payload.event,
@@ -304,52 +304,52 @@ async function deliverAuthoringCallbackEvent(input: {
 }
 
 function firstPosterMessage(
-  session: Pick<AuthoringDraftViewRow, "authoring_ir_json">,
+  draft: Pick<AuthoringDraftViewRow, "authoring_ir_json">,
 ) {
   return (
-    session.authoring_ir_json?.source.poster_messages.find(
+    draft.authoring_ir_json?.source.poster_messages.find(
       (message) => message.role === "poster",
     )?.content ?? null
   );
 }
 
-function draftTitle(session: AuthoringDraftViewRow) {
+function draftTitle(draft: AuthoringDraftViewRow) {
   return (
-    session.intent_json?.title ??
-    session.compilation_json?.challenge_spec.title ??
-    session.authoring_ir_json?.problem.normalized_summary ??
-    firstPosterMessage(session)
+    draft.intent_json?.title ??
+    draft.compilation_json?.challenge_spec.title ??
+    draft.authoring_ir_json?.problem.normalized_summary ??
+    firstPosterMessage(draft)
   );
 }
 
-function draftSummary(session: AuthoringDraftViewRow) {
+function draftSummary(draft: AuthoringDraftViewRow) {
   const clarificationQuestions =
-    getAuthoringDraftClarificationQuestions(session);
-  const reviewSummary = getAuthoringDraftReviewSummary(session);
-  if (session.state === "needs_review") {
+    getAuthoringDraftClarificationQuestions(draft);
+  const reviewSummary = getAuthoringDraftReviewSummary(draft);
+  if (draft.state === "needs_review") {
     return reviewSummary?.summary ?? null;
   }
-  if (session.state === "failed") {
-    return session.failure_message;
+  if (draft.state === "failed") {
+    return draft.failure_message;
   }
   if (clarificationQuestions.length > 0) {
     return clarificationQuestions[0]?.next_step ?? null;
   }
-  if (session.compilation_json?.confirmation_contract) {
-    return session.compilation_json.confirmation_contract.scoring_summary;
+  if (draft.compilation_json?.confirmation_contract) {
+    return draft.compilation_json.confirmation_contract.scoring_summary;
   }
 
   return (
-    session.authoring_ir_json?.objective.winning_definition ??
-    session.authoring_ir_json?.routing.recommended_next_action ??
+    draft.authoring_ir_json?.objective.winning_definition ??
+    draft.authoring_ir_json?.routing.recommended_next_action ??
     null
   );
 }
 
 function draftProvider(
-  session: Pick<AuthoringDraftViewRow, "authoring_ir_json">,
+  draft: Pick<AuthoringDraftViewRow, "authoring_ir_json">,
 ): AuthoringDraftCardOutput["provider"] {
-  return session.authoring_ir_json?.origin.provider ?? "direct";
+  return draft.authoring_ir_json?.origin.provider ?? "direct";
 }
 
 function normalizeAllowedReturnOrigin(url: string) {
@@ -365,11 +365,11 @@ function normalizeAllowedReturnOrigin(url: string) {
 }
 
 export function resolveAuthoringDraftReturnUrl(input: {
-  session: Pick<AuthoringDraftViewRow, "authoring_ir_json">;
+  draft: Pick<AuthoringDraftViewRow, "authoring_ir_json">;
   requestedReturnTo?: string | null;
   runtimeConfig?: AgoraAuthoringPartnerRuntimeConfig;
 }) {
-  const provider = draftProvider(input.session);
+  const provider = draftProvider(input.draft);
   if (provider === "direct") {
     if (input.requestedReturnTo == null) {
       return {
@@ -399,7 +399,7 @@ export function resolveAuthoringDraftReturnUrl(input: {
   // When a host does not pass return_to on a specific publish action, Agora can
   // fall back to the stored external thread URL as a passive return target.
   const fallbackReturnTo =
-    input.session.authoring_ir_json?.origin.external_url?.trim() ?? null;
+    input.draft.authoring_ir_json?.origin.external_url?.trim() ?? null;
   const candidate = requestedReturnTo ?? fallbackReturnTo;
 
   if (!candidate) {
@@ -447,48 +447,48 @@ export function resolveAuthoringDraftReturnUrl(input: {
 }
 
 export function buildAuthoringDraftCard(
-  session: AuthoringDraftViewRow,
+  draft: AuthoringDraftViewRow,
 ): AuthoringDraftCardOutput {
-  const provider = draftProvider(session);
+  const provider = draftProvider(draft);
   const clarificationQuestions =
-    getAuthoringDraftClarificationQuestions(session);
-  const reviewSummary = getAuthoringDraftReviewSummary(session);
+    getAuthoringDraftClarificationQuestions(draft);
+  const reviewSummary = getAuthoringDraftReviewSummary(draft);
   return authoringDraftCardSchema.parse({
-    draft_id: session.id,
+    draft_id: draft.id,
     provider,
-    state: session.state,
-    title: draftTitle(session) ?? null,
-    summary: draftSummary(session) ?? null,
-    reward_total: session.intent_json?.reward_total ?? null,
-    distribution: session.intent_json?.distribution ?? null,
-    submission_deadline: session.intent_json?.deadline ?? null,
-    routing_mode: session.authoring_ir_json?.routing.mode ?? null,
-    ambiguity_classes: session.authoring_ir_json?.ambiguity.classes ?? [],
+    state: draft.state,
+    title: draftTitle(draft) ?? null,
+    summary: draftSummary(draft) ?? null,
+    reward_total: draft.intent_json?.reward_total ?? null,
+    distribution: draft.intent_json?.distribution ?? null,
+    submission_deadline: draft.intent_json?.deadline ?? null,
+    routing_mode: draft.authoring_ir_json?.routing.mode ?? null,
+    ambiguity_classes: draft.authoring_ir_json?.ambiguity.classes ?? [],
     clarification_count: clarificationQuestions.length,
     next_question: clarificationQuestions[0] ?? null,
     review_recommended_action: reviewSummary?.recommended_action ?? null,
-    published_challenge_id: session.published_challenge_id ?? null,
-    published_spec_cid: session.published_spec_cid ?? null,
+    published_challenge_id: draft.published_challenge_id ?? null,
+    published_spec_cid: draft.published_spec_cid ?? null,
     callback_registered:
       provider !== "direct" &&
-      typeof session.source_callback_url === "string" &&
-      session.source_callback_url.length > 0,
-    expires_at: session.expires_at,
-    updated_at: session.updated_at,
+      typeof draft.source_callback_url === "string" &&
+      draft.source_callback_url.length > 0,
+    expires_at: draft.expires_at,
+    updated_at: draft.updated_at,
   });
 }
 
-export function buildAuthoringDraftResponse(session: AuthoringDraftViewRow) {
+export function buildAuthoringDraftResponse(draft: AuthoringDraftViewRow) {
   return {
-    draft: toAuthoringDraftPayload(session),
-    card: buildAuthoringDraftCard(session),
-    assessment: buildAuthoringDraftAssessment(session),
+    draft: toAuthoringDraftPayload(draft),
+    card: buildAuthoringDraftCard(draft),
+    assessment: buildAuthoringDraftAssessment(draft),
   };
 }
 
 export async function deliverAuthoringDraftLifecycleEvent(input: {
   event: AuthoringDraftLifecycleEventOutput["event"];
-  session: AuthoringDraftViewRow;
+  draft: AuthoringDraftViewRow;
   fetchImpl?: typeof fetch;
   logger?: AgoraLogger;
   retryDelayMs?: number;
@@ -499,9 +499,9 @@ export async function deliverAuthoringDraftLifecycleEvent(input: {
   return deliverAuthoringCallbackEvent({
     payload: buildAuthoringDraftLifecyclePayload({
       event: input.event,
-      session: input.session,
+      draft: input.draft,
     }),
-    session: input.session,
+    draft: input.draft,
     fetchImpl: input.fetchImpl,
     logger: input.logger,
     retryDelayMs: input.retryDelayMs,
@@ -515,7 +515,7 @@ export async function deliverAuthoringDraftLifecycleEvent(input: {
 
 export async function deliverChallengeLifecycleEvent(input: {
   event: ChallengeLifecycleEventOutput["event"];
-  session: AuthoringDraftViewRow;
+  draft: AuthoringDraftViewRow;
   challenge: AuthoringCallbackChallengeOutput;
   fetchImpl?: typeof fetch;
   logger?: AgoraLogger;
@@ -527,10 +527,10 @@ export async function deliverChallengeLifecycleEvent(input: {
   return deliverAuthoringCallbackEvent({
     payload: buildChallengeLifecyclePayload({
       event: input.event,
-      session: input.session,
+      draft: input.draft,
       challenge: input.challenge,
     }),
-    session: input.session,
+    draft: input.draft,
     fetchImpl: input.fetchImpl,
     logger: input.logger,
     retryDelayMs: input.retryDelayMs,
@@ -681,10 +681,10 @@ export function buildExpiredDraftError() {
 }
 
 export function draftBelongsToProvider(
-  session: Pick<AuthoringDraftViewRow, "authoring_ir_json" | "state">,
+  draft: Pick<AuthoringDraftViewRow, "authoring_ir_json" | "state">,
   provider: ExternalSourceProviderOutput,
 ) {
-  return session.authoring_ir_json?.origin.provider === provider;
+  return draft.authoring_ir_json?.origin.provider === provider;
 }
 
 export function buildDraftUpdatedState(

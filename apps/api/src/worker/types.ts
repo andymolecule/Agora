@@ -1,6 +1,7 @@
 import type {
   ChallengeArtifact,
   ChallengeEvalRow,
+  EvaluationPlan,
   SubmissionContractOutput,
 } from "@agora/common";
 
@@ -9,9 +10,9 @@ export interface ChallengeRow extends ChallengeEvalRow {
   contract_address: string;
   spec_cid?: string | null;
   runtime_family: string;
+  evaluation_plan_json?: EvaluationPlan | null;
   artifacts_json?: ChallengeArtifact[] | null;
   submission_contract_json?: SubmissionContractOutput | null;
-  scoring_env_json?: Record<string, string> | null;
   max_submissions_total?: number | null;
   max_submissions_per_solver?: number | null;
 }

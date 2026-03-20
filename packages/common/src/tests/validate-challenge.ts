@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import {
+  buildGeneratedScorerProgramForManagedPreset,
+  buildGeneratedScorerProgramFromDefinitionBackedEvaluator,
+} from "../generated-scorers.js";
+import {
   canonicalizeChallengeSpec,
   challengeSpecSchema,
   parseChallengeSpecDocument,
@@ -9,41 +13,42 @@ import {
 } from "../schemas/challenge-spec.js";
 
 const sample = {
-  schema_version: 3,
+  schema_version: 4,
   id: "ch-001",
   title: "Predict assay response",
   domain: "omics",
   type: "prediction",
   description: "Predict the held-out labels.",
   evaluation: {
-    runtime_family: "tabular_regression",
+    preset_id: "tabular_regression",
+    backend_kind: "preset_interpreter" as const,
+    execution_runtime_family: "tabular_regression",
     metric: "r2",
-    scorer_image: "ghcr.io/placeholder/will-be-overridden:v1",
     evaluation_bundle: "ipfs://QmHiddenLabels",
   },
   artifacts: [
     {
       role: "training_data",
-      visibility: "public",
+      visibility: "public" as const,
       uri: "ipfs://QmTrain",
       file_name: "train.csv",
     },
     {
       role: "evaluation_features",
-      visibility: "public",
+      visibility: "public" as const,
       uri: "ipfs://QmTest",
       file_name: "test.csv",
     },
     {
       role: "hidden_labels",
-      visibility: "private",
+      visibility: "private" as const,
       uri: "ipfs://QmHiddenLabels",
       file_name: "hidden_labels.csv",
     },
   ],
   submission_contract: {
-    version: "v1",
-    kind: "csv_table",
+    version: "v1" as const,
+    kind: "csv_table" as const,
     file: {
       extension: ".csv",
       mime: "text/csv",
@@ -58,7 +63,7 @@ const sample = {
   },
   reward: {
     total: "25",
-    distribution: "winner_take_all",
+    distribution: "winner_take_all" as const,
   },
   deadline: "2026-03-20T00:00:00Z",
   dispute_window_hours: 0,
@@ -75,7 +80,7 @@ if (!result.success) {
 }
 
 const resolved = resolveChallengeEvaluation(result.data);
-assert.equal(resolved.runtimeFamily, "tabular_regression");
+assert.equal(resolved.executionRuntimeFamily, "tabular_regression");
 assert.equal(resolved.metric, "r2");
 assert.equal(resolved.evaluationBundleCid, "ipfs://QmHiddenLabels");
 
@@ -87,8 +92,43 @@ const canonicalized = await canonicalizeChallengeSpec(result.data, {
 });
 assert.equal(
   canonicalized.evaluation.scorer_image,
-  "ghcr.io/andymolecule/regression-scorer:v1",
+  "ghcr.io/andymolecule/gems-tabular-scorer:v1",
   "managed challenges should canonicalize their scorer image from the registry",
+);
+
+const generatedManagedSpec = challengeSpecSchema.safeParse({
+  ...sample,
+  evaluation: {
+    preset_id: "tabular_regression",
+    backend_kind: "generated_scorer" as const,
+    execution_runtime_family: "tabular_regression",
+    metric: "r2",
+    generated_scorer: buildGeneratedScorerProgramForManagedPreset({
+      presetId: "tabular_regression",
+      metric: "r2",
+    }),
+  },
+});
+assert.equal(
+  generatedManagedSpec.success,
+  true,
+  "managed generated-scorer specs should validate for collapsed preset families",
+);
+
+if (!generatedManagedSpec.success) {
+  throw new Error("Expected managed generated scorer spec to parse");
+}
+
+const generatedManagedCanonical = await canonicalizeChallengeSpec(
+  generatedManagedSpec.data,
+  {
+    resolveOfficialPresetDigests: false,
+  },
+);
+assert.equal(
+  generatedManagedCanonical.evaluation.scorer_image,
+  "ghcr.io/andymolecule/gems-generated-scorer:v1",
+  "collapsed managed specs should canonicalize to the generated scorer",
 );
 
 const invalidMetric = challengeSpecSchema.safeParse({
@@ -100,26 +140,28 @@ const invalidMetric = challengeSpecSchema.safeParse({
 });
 assert.equal(invalidMetric.success, false, "unsupported metric should fail");
 
-const expertSpec = challengeSpecSchema.safeParse({
+const customImageSpec = challengeSpecSchema.safeParse({
   ...sample,
   type: "custom",
   evaluation: {
-    runtime_family: "expert_custom",
+    preset_id: "custom",
+    backend_kind: "oci_image" as const,
     metric: "custom",
-    scorer_image: "ghcr.io/acme/expert@sha256:1234",
+    scorer_image: `ghcr.io/acme/expert@sha256:${"1".repeat(64)}`,
   },
 });
 assert.equal(
-  expertSpec.success,
+  customImageSpec.success,
   true,
-  "expert spec should accept pinned digests",
+  "custom image specs should accept pinned digests",
 );
 
-const semiCustomSpec = challengeSpecSchema.safeParse({
+const definitionOnlySpec = challengeSpecSchema.safeParse({
   ...sample,
   type: "custom",
   evaluation: {
-    runtime_family: "semi_custom",
+    preset_id: "structured_record_score",
+    backend_kind: "definition_only" as const,
     metric: "validation_score",
     evaluator_contract: {
       version: "v1",
@@ -148,43 +190,94 @@ const semiCustomSpec = challengeSpecSchema.safeParse({
   },
 });
 assert.equal(
-  semiCustomSpec.success,
+  definitionOnlySpec.success,
   true,
-  "semi-custom specs should validate when they include an evaluator contract",
+  "definition-only specs should validate when they include an evaluator contract",
 );
 
-if (!semiCustomSpec.success) {
-  throw new Error("Expected semi-custom spec to parse");
+if (!definitionOnlySpec.success) {
+  throw new Error("Expected definition-only spec to parse");
 }
 
-const semiCustomResolved = resolveChallengeEvaluation(semiCustomSpec.data);
-assert.equal(semiCustomResolved.runtimeFamily, "semi_custom");
+const definitionOnlyResolved = resolveChallengeEvaluation(definitionOnlySpec.data);
 assert.equal(
-  semiCustomResolved.evaluatorContract?.archetype,
+  definitionOnlyResolved.evaluatorContract?.archetype,
   "structured_record_score",
 );
-
-const semiCustomScoreability = validateChallengeScoreability(
-  semiCustomSpec.data,
-);
 assert.equal(
-  semiCustomScoreability.ok,
+  validateChallengeScoreability(definitionOnlySpec.data).ok,
   false,
-  "semi-custom specs should not be treated as executable until the runtime path exists",
-);
-assert.match(
-  semiCustomScoreability.errors[0] ?? "",
-  /typed but not executable/i,
+  "definition-only specs should not be treated as executable until the runtime path exists",
 );
 
-const executableStructuredRecordSemiCustomSpec = challengeSpecSchema.safeParse({
+const invalidDefinitionOnlyWithExecution = challengeSpecSchema.safeParse({
   ...sample,
   type: "custom",
   evaluation: {
-    runtime_family: "semi_custom",
+    preset_id: "bundle_or_code_judge",
+    backend_kind: "definition_only" as const,
+    metric: "validation_score",
+    evaluator_contract: {
+      version: "v1",
+      archetype: "bundle_or_code_judge",
+      summary: "Validate a bundle against a deterministic manifest.",
+      artifact_roles: {
+        solver_visible: ["training_data"],
+        hidden: ["hidden_labels"],
+      },
+      submission: {
+        kind: "bundle_or_code",
+        schema_requirements: {
+          expected_extension: ".zip",
+          expected_mime: "application/zip",
+        },
+        validation_rules: ["Submission must be a valid zip bundle."],
+      },
+      scoring: {
+        metric: "validation_score",
+        comparator: "maximize",
+        deterministic_rule:
+          "Validate the submitted bundle against the hidden manifest and rank by validation score.",
+        minimum_threshold: null,
+      },
+      execution: {
+        template: "official_bundle_manifest_v1",
+        evaluation_artifact_role: "hidden_labels",
+        policies: {
+          coverage_policy: "reject",
+          duplicate_id_policy: "reject",
+          invalid_value_policy: "reject",
+        },
+      },
+      notes: [],
+    },
+  },
+  submission_contract: {
+    version: "v1" as const,
+    kind: "opaque_file" as const,
+    file: {
+      extension: ".zip",
+      mime: "application/zip",
+      max_bytes: 10_000_000,
+    },
+  },
+});
+assert.equal(
+  invalidDefinitionOnlyWithExecution.success,
+  false,
+  "definition-only specs should reject attached execution templates",
+);
+
+const executableStructuredRecordSpec = challengeSpecSchema.safeParse({
+  ...sample,
+  type: "custom",
+  evaluation: {
+    preset_id: "structured_record_score",
+    backend_kind: "preset_interpreter" as const,
+    execution_runtime_family: "reproducibility",
     metric: "validation_score",
     scorer_image:
-      "ghcr.io/andymolecule/repro-scorer@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      `ghcr.io/andymolecule/gems-match-scorer@sha256:${"2".repeat(64)}`,
     evaluator_contract: {
       version: "v1",
       archetype: "structured_record_score",
@@ -222,20 +315,20 @@ const executableStructuredRecordSemiCustomSpec = challengeSpecSchema.safeParse({
   artifacts: [
     {
       role: "training_data",
-      visibility: "public",
+      visibility: "public" as const,
       uri: "ipfs://QmPrompt",
     },
     {
       role: "hidden_labels",
-      visibility: "private",
+      visibility: "private" as const,
       uri: "ipfs://QmRubric",
       file_name: "validation_rubric.json",
       mime_type: "application/json",
     },
   ],
   submission_contract: {
-    version: "v1",
-    kind: "opaque_file",
+    version: "v1" as const,
+    kind: "opaque_file" as const,
     file: {
       extension: ".json",
       mime: "application/json",
@@ -244,23 +337,27 @@ const executableStructuredRecordSemiCustomSpec = challengeSpecSchema.safeParse({
   },
 });
 assert.equal(
-  executableStructuredRecordSemiCustomSpec.success,
+  executableStructuredRecordSpec.success,
   true,
-  "semi-custom structured-record specs should validate when they use the supported execution template",
+  "definition-backed structured-record specs should validate when they use the supported execution template",
 );
 
-if (!executableStructuredRecordSemiCustomSpec.success) {
+if (!executableStructuredRecordSpec.success) {
   throw new Error(
-    "Expected executable structured-record semi-custom spec to parse",
+    "Expected executable structured-record definition-backed spec to parse",
   );
 }
 
 const executableStructuredRecordResolved = resolveChallengeEvaluation(
-  executableStructuredRecordSemiCustomSpec.data,
+  executableStructuredRecordSpec.data,
 );
-assert.equal(executableStructuredRecordResolved.runtimeFamily, "semi_custom");
 assert.equal(
-  executableStructuredRecordResolved.semiCustomExecution?.runner_runtime_family,
+  executableStructuredRecordResolved.executionRuntimeFamily,
+  "reproducibility",
+);
+assert.equal(
+  executableStructuredRecordResolved.definitionBackedExecution
+    ?.runner_runtime_family,
   "reproducibility",
 );
 assert.equal(
@@ -271,61 +368,22 @@ assert.equal(
   executableStructuredRecordResolved.mount.submissionFileName,
   "submission.json",
 );
-
-const executableStructuredRecordScoreability = validateChallengeScoreability(
-  executableStructuredRecordSemiCustomSpec.data,
-);
 assert.equal(
-  executableStructuredRecordScoreability.ok,
+  validateChallengeScoreability(executableStructuredRecordSpec.data).ok,
   true,
-  "supported semi-custom structured-record specs should be scoreable",
+  "supported structured-record specs should be scoreable",
 );
 
-const mismatchedSemiCustomSpec = challengeSpecSchema.safeParse({
+const executableTableSpec = challengeSpecSchema.safeParse({
   ...sample,
   type: "custom",
   evaluation: {
-    runtime_family: "semi_custom",
-    metric: "validation_score",
-    evaluator_contract: {
-      version: "v1",
-      archetype: "structured_record_score",
-      summary: "This should fail because the submission kind is wrong.",
-      artifact_roles: {
-        solver_visible: ["training_data"],
-        hidden: ["hidden_labels"],
-      },
-      submission: {
-        kind: "csv_table",
-        schema_requirements: {
-          suggested_columns: ["id", "score"],
-        },
-        validation_rules: ["Submission must be valid CSV."],
-      },
-      scoring: {
-        metric: "validation_score",
-        comparator: "maximize",
-        deterministic_rule: "Invalid mismatch test.",
-        minimum_threshold: null,
-      },
-      notes: [],
-    },
-  },
-});
-assert.equal(
-  mismatchedSemiCustomSpec.success,
-  false,
-  "semi-custom specs should reject mismatched archetype and submission kind pairs",
-);
-
-const executableSemiCustomSpec = challengeSpecSchema.safeParse({
-  ...sample,
-  type: "custom",
-  evaluation: {
-    runtime_family: "semi_custom",
+    preset_id: "structured_table_score",
+    backend_kind: "preset_interpreter" as const,
+    execution_runtime_family: "tabular_regression",
     metric: "rmse",
     scorer_image:
-      "ghcr.io/andymolecule/regression-scorer@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      `ghcr.io/andymolecule/gems-tabular-scorer@sha256:${"3".repeat(64)}`,
     evaluator_contract: {
       version: "v1",
       archetype: "structured_table_score",
@@ -371,125 +429,43 @@ const executableSemiCustomSpec = challengeSpecSchema.safeParse({
   },
 });
 assert.equal(
-  executableSemiCustomSpec.success,
+  executableTableSpec.success,
   true,
-  "semi-custom specs should validate when they use a supported execution template",
+  "definition-backed table specs should validate when they use a supported execution template",
 );
 
-if (!executableSemiCustomSpec.success) {
-  throw new Error("Expected executable semi-custom spec to parse");
+if (!executableTableSpec.success) {
+  throw new Error("Expected executable table spec to parse");
 }
 
-const executableSemiCustomResolved = resolveChallengeEvaluation(
-  executableSemiCustomSpec.data,
+const executableTableResolved = resolveChallengeEvaluation(
+  executableTableSpec.data,
 );
-assert.equal(executableSemiCustomResolved.runtimeFamily, "semi_custom");
+assert.equal(executableTableResolved.executionRuntimeFamily, "tabular_regression");
 assert.equal(
-  executableSemiCustomResolved.image,
-  "ghcr.io/andymolecule/regression-scorer@sha256:1111111111111111111111111111111111111111111111111111111111111111",
-);
-assert.equal(
-  executableSemiCustomResolved.evaluationBundleCid,
+  executableTableResolved.evaluationBundleCid,
   "ipfs://QmHiddenLabels",
 );
 assert.equal(
-  executableSemiCustomResolved.semiCustomExecution?.runner_runtime_family,
+  executableTableResolved.definitionBackedExecution?.runner_runtime_family,
   "tabular_regression",
 );
-
-const executableSemiCustomScoreability = validateChallengeScoreability(
-  executableSemiCustomSpec.data,
-);
 assert.equal(
-  executableSemiCustomScoreability.ok,
+  validateChallengeScoreability(executableTableSpec.data).ok,
   true,
-  "supported semi-custom table specs should be scoreable",
+  "supported table specs should be scoreable",
 );
 
-const executableExactMatchSemiCustomSpec = challengeSpecSchema.safeParse({
+const executableJsonExactMatchSpec = challengeSpecSchema.safeParse({
   ...sample,
   type: "custom",
   evaluation: {
-    runtime_family: "semi_custom",
+    preset_id: "exact_artifact_match",
+    backend_kind: "preset_interpreter" as const,
+    execution_runtime_family: "reproducibility",
     metric: "exact_match",
     scorer_image:
-      "ghcr.io/andymolecule/repro-scorer@sha256:3333333333333333333333333333333333333333333333333333333333333333",
-    evaluator_contract: {
-      version: "v1",
-      archetype: "exact_artifact_match",
-      summary:
-        "Compare a CSV solver output directly against a hidden reference output.",
-      artifact_roles: {
-        solver_visible: ["training_data", "evaluation_features"],
-        hidden: ["hidden_labels"],
-      },
-      submission: {
-        kind: "csv_table",
-        schema_requirements: {
-          suggested_columns: ["id", "prediction"],
-        },
-        validation_rules: ["Submission must be valid CSV."],
-      },
-      scoring: {
-        metric: "exact_match",
-        comparator: "maximize",
-        deterministic_rule:
-          "Compare the submission CSV directly against the hidden reference output and rank by exact row match.",
-        minimum_threshold: null,
-      },
-      execution: {
-        template: "official_exact_match_v1",
-        evaluation_artifact_role: "hidden_labels",
-        policies: {
-          coverage_policy: "reject",
-          duplicate_id_policy: "reject",
-          invalid_value_policy: "reject",
-        },
-      },
-      notes: [],
-    },
-  },
-});
-assert.equal(
-  executableExactMatchSemiCustomSpec.success,
-  true,
-  "semi-custom exact artifact match specs should validate when they use a supported execution template",
-);
-
-if (!executableExactMatchSemiCustomSpec.success) {
-  throw new Error("Expected executable exact-match semi-custom spec to parse");
-}
-
-const executableExactMatchResolved = resolveChallengeEvaluation(
-  executableExactMatchSemiCustomSpec.data,
-);
-assert.equal(executableExactMatchResolved.runtimeFamily, "semi_custom");
-assert.equal(
-  executableExactMatchResolved.image,
-  "ghcr.io/andymolecule/repro-scorer@sha256:3333333333333333333333333333333333333333333333333333333333333333",
-);
-assert.equal(
-  executableExactMatchResolved.semiCustomExecution?.runner_runtime_family,
-  "reproducibility",
-);
-
-const executableExactMatchScoreability = validateChallengeScoreability(
-  executableExactMatchSemiCustomSpec.data,
-);
-assert.equal(
-  executableExactMatchScoreability.ok,
-  true,
-  "supported semi-custom exact-match specs should be scoreable",
-);
-
-const executableJsonExactMatchSemiCustomSpec = challengeSpecSchema.safeParse({
-  ...sample,
-  type: "custom",
-  evaluation: {
-    runtime_family: "semi_custom",
-    metric: "exact_match",
-    scorer_image:
-      "ghcr.io/andymolecule/repro-scorer@sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      `ghcr.io/andymolecule/gems-match-scorer@sha256:${"5".repeat(64)}`,
     evaluator_contract: {
       version: "v1",
       archetype: "exact_artifact_match",
@@ -528,20 +504,20 @@ const executableJsonExactMatchSemiCustomSpec = challengeSpecSchema.safeParse({
   artifacts: [
     {
       role: "source_data",
-      visibility: "public",
+      visibility: "public" as const,
       uri: "ipfs://QmJsonInput",
     },
     {
       role: "reference_output",
-      visibility: "private",
+      visibility: "private" as const,
       uri: "ipfs://QmHiddenJson",
       file_name: "reference_output.json",
       mime_type: "application/json",
     },
   ],
   submission_contract: {
-    version: "v1",
-    kind: "opaque_file",
+    version: "v1" as const,
+    kind: "opaque_file" as const,
     file: {
       extension: ".json",
       mime: "application/json",
@@ -549,20 +525,12 @@ const executableJsonExactMatchSemiCustomSpec = challengeSpecSchema.safeParse({
     },
   },
 });
-assert.equal(
-  executableJsonExactMatchSemiCustomSpec.success,
-  true,
-  "semi-custom JSON exact-match specs should validate when they use the supported execution template",
-);
-
-if (!executableJsonExactMatchSemiCustomSpec.success) {
-  throw new Error(
-    "Expected executable JSON exact-match semi-custom spec to parse",
-  );
+assert.equal(executableJsonExactMatchSpec.success, true);
+if (!executableJsonExactMatchSpec.success) {
+  throw new Error("Expected executable JSON exact-match spec to parse");
 }
-
 const executableJsonExactMatchResolved = resolveChallengeEvaluation(
-  executableJsonExactMatchSemiCustomSpec.data,
+  executableJsonExactMatchSpec.data,
 );
 assert.equal(
   executableJsonExactMatchResolved.evaluationBundleCid,
@@ -577,23 +545,16 @@ assert.equal(
   "submission.json",
 );
 
-const executableJsonExactMatchScoreability = validateChallengeScoreability(
-  executableJsonExactMatchSemiCustomSpec.data,
-);
-assert.equal(
-  executableJsonExactMatchScoreability.ok,
-  true,
-  "supported semi-custom JSON exact-match specs should be scoreable",
-);
-
-const executableOpaqueExactMatchSemiCustomSpec = challengeSpecSchema.safeParse({
+const executableOpaqueExactMatchSpec = challengeSpecSchema.safeParse({
   ...sample,
   type: "custom",
   evaluation: {
-    runtime_family: "semi_custom",
+    preset_id: "exact_artifact_match",
+    backend_kind: "preset_interpreter" as const,
+    execution_runtime_family: "reproducibility",
     metric: "exact_match",
     scorer_image:
-      "ghcr.io/andymolecule/repro-scorer@sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      `ghcr.io/andymolecule/gems-match-scorer@sha256:${"7".repeat(64)}`,
     evaluator_contract: {
       version: "v1",
       archetype: "exact_artifact_match",
@@ -632,20 +593,20 @@ const executableOpaqueExactMatchSemiCustomSpec = challengeSpecSchema.safeParse({
   artifacts: [
     {
       role: "source_documents",
-      visibility: "public",
+      visibility: "public" as const,
       uri: "ipfs://QmPublicPdf",
     },
     {
       role: "reference_output",
-      visibility: "private",
+      visibility: "private" as const,
       uri: "ipfs://QmHiddenPdf",
       file_name: "reference_output.pdf",
       mime_type: "application/pdf",
     },
   ],
   submission_contract: {
-    version: "v1",
-    kind: "opaque_file",
+    version: "v1" as const,
+    kind: "opaque_file" as const,
     file: {
       extension: ".pdf",
       mime: "application/pdf",
@@ -653,20 +614,12 @@ const executableOpaqueExactMatchSemiCustomSpec = challengeSpecSchema.safeParse({
     },
   },
 });
-assert.equal(
-  executableOpaqueExactMatchSemiCustomSpec.success,
-  true,
-  "semi-custom opaque exact-match specs should validate when they use the supported execution template",
-);
-
-if (!executableOpaqueExactMatchSemiCustomSpec.success) {
-  throw new Error(
-    "Expected executable opaque exact-match semi-custom spec to parse",
-  );
+assert.equal(executableOpaqueExactMatchSpec.success, true);
+if (!executableOpaqueExactMatchSpec.success) {
+  throw new Error("Expected executable opaque exact-match spec to parse");
 }
-
 const executableOpaqueExactMatchResolved = resolveChallengeEvaluation(
-  executableOpaqueExactMatchSemiCustomSpec.data,
+  executableOpaqueExactMatchSpec.data,
 );
 assert.equal(
   executableOpaqueExactMatchResolved.evaluationBundleCid,
@@ -681,13 +634,115 @@ assert.equal(
   "submission.bin",
 );
 
-const executableOpaqueExactMatchScoreability = validateChallengeScoreability(
-  executableOpaqueExactMatchSemiCustomSpec.data,
-);
+const generatedExactMatchProgram =
+  buildGeneratedScorerProgramFromDefinitionBackedEvaluator({
+    version: "v1",
+    archetype: "exact_artifact_match",
+    summary: "Compare JSON submissions directly against a hidden reference file.",
+    artifact_roles: {
+      solver_visible: ["source_data"],
+      hidden: ["reference_output"],
+    },
+    submission: {
+      kind: "json_file",
+      schema_requirements: null,
+      validation_rules: ["Submission must be valid JSON."],
+    },
+    scoring: {
+      metric: "exact_match",
+      comparator: "maximize",
+      deterministic_rule: "JSON must match exactly.",
+      minimum_threshold: null,
+    },
+    execution: {
+      template: "official_exact_match_v1",
+      evaluation_artifact_role: "reference_output",
+      policies: {
+        coverage_policy: "reject",
+        duplicate_id_policy: "reject",
+        invalid_value_policy: "reject",
+      },
+    },
+    notes: [],
+  });
+if (!generatedExactMatchProgram) {
+  throw new Error("Expected generated exact-match program");
+}
+
+const generatedExactMatchSpec = challengeSpecSchema.safeParse({
+  ...sample,
+  type: "custom",
+  evaluation: {
+    preset_id: "exact_artifact_match",
+    backend_kind: "generated_scorer" as const,
+    execution_runtime_family: "reproducibility",
+    metric: "exact_match",
+    generated_scorer: generatedExactMatchProgram,
+    evaluator_contract: {
+      version: "v1",
+      archetype: "exact_artifact_match",
+      summary:
+        "Compare a JSON solver output directly against a hidden reference document.",
+      artifact_roles: {
+        solver_visible: ["source_data"],
+        hidden: ["reference_output"],
+      },
+      submission: {
+        kind: "json_file",
+        schema_requirements: null,
+        validation_rules: ["Submission must be valid JSON."],
+      },
+      scoring: {
+        metric: "exact_match",
+        comparator: "maximize",
+        deterministic_rule:
+          "Compare the submission JSON directly against the hidden reference output.",
+        minimum_threshold: null,
+      },
+      execution: {
+        template: "official_exact_match_v1",
+        evaluation_artifact_role: "reference_output",
+        policies: {
+          coverage_policy: "reject",
+          duplicate_id_policy: "reject",
+          invalid_value_policy: "reject",
+        },
+      },
+      notes: [],
+    },
+  },
+  artifacts: [
+    {
+      role: "source_data",
+      visibility: "public" as const,
+      uri: "ipfs://QmJsonInput",
+    },
+    {
+      role: "reference_output",
+      visibility: "private" as const,
+      uri: "ipfs://QmHiddenJson",
+      file_name: "reference_output.json",
+      mime_type: "application/json",
+    },
+  ],
+  submission_contract: {
+    version: "v1" as const,
+    kind: "opaque_file" as const,
+    file: {
+      extension: ".json",
+      mime: "application/json",
+      max_bytes: 1024 * 1024,
+    },
+  },
+});
+assert.equal(generatedExactMatchSpec.success, true);
+if (!generatedExactMatchSpec.success) {
+  throw new Error("Expected generated exact-match spec to parse");
+}
 assert.equal(
-  executableOpaqueExactMatchScoreability.ok,
+  validateChallengeScoreability(generatedExactMatchSpec.data).ok,
   true,
-  "supported semi-custom opaque exact-match specs should be scoreable",
+  "generated scorer specs should be scoreable",
 );
 
 const missingBundleParse = challengeSpecSchema.safeParse({
@@ -700,20 +755,21 @@ const missingBundleParse = challengeSpecSchema.safeParse({
 assert.equal(
   missingBundleParse.success,
   false,
-  "managed runtime families should require an evaluation bundle",
+  "managed presets should require an evaluation bundle",
 );
 
 const yamlDocument = `
-schema_version: 3
+schema_version: 4
 id: ch-yaml
 title: YAML challenge
 domain: omics
 type: prediction
 description: Parse from pinned YAML
 evaluation:
-  runtime_family: tabular_regression
+  preset_id: tabular_regression
+  backend_kind: preset_interpreter
+  execution_runtime_family: tabular_regression
   metric: r2
-  scorer_image: ghcr.io/placeholder/will-be-overridden:v1
   evaluation_bundle: ipfs://QmHiddenLabels
 artifacts:
   - role: training_data

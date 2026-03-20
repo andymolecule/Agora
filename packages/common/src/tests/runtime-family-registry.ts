@@ -40,12 +40,12 @@ assert.equal(
 );
 
 assert.ok(
-  validateScorerImage("ghcr.io/andymolecule/repro-scorer:latest")?.includes(
+  validateScorerImage("ghcr.io/andymolecule/gems-match-scorer:latest")?.includes(
     "not allowed",
   ),
 );
 assert.ok(
-  validateExpertScorerImage("ghcr.io/andymolecule/repro-scorer:v1")?.includes(
+  validateExpertScorerImage("ghcr.io/andymolecule/gems-match-scorer:v1")?.includes(
     "pinned digest",
   ),
 );

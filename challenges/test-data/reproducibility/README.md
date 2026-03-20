@@ -1,6 +1,6 @@
 # Reproducibility Test Data
 
-Test fixtures for the current Agora reproducibility flow using the CSV comparison scorer in `containers/repro-scorer`.
+Test fixtures for the current Agora reproducibility flow using the GEMS Match Scorer in `containers/gems-match-scorer`.
 
 This folder is meant to feel like a small but believable computational reproducibility bounty:
 - public input data is given to solvers
@@ -21,7 +21,7 @@ The official `reproducibility` runtime family currently resolves to:
 - evaluation bundle -> `ground_truth.csv`
 - solver artifact -> `submission.csv`
 
-The reproducibility scorer currently expects:
+The GEMS Match Scorer currently expects:
 - `ground_truth.csv`: the reference output artifact
 - `submission.csv`: the solver's reproduced output
 - identical column names between both files
@@ -33,7 +33,7 @@ scoring, and the worker reads that contract from the DB cache first.
 
 The built-in runtime family is:
 - `CSV Comparison`
-- official container: `ghcr.io/andymolecule/repro-scorer:v1`
+- official container: `ghcr.io/andymolecule/gems-match-scorer:v1`
 
 ## Files
 

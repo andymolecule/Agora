@@ -3,7 +3,6 @@ import os from "node:os";
 import { pathToFileURL } from "node:url";
 import {
   CHALLENGE_STATUS,
-  EXPERT_RUNTIME_FAMILY_ID,
   getAgoraRuntimeIdentity,
   getAgoraRuntimeVersion,
   hasSubmissionSealPublicConfig,
@@ -11,6 +10,7 @@ import {
   isOfficialScorerImage,
   loadConfig,
   readWorkerTimingConfig,
+  resolveEvaluationPlan,
   resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeyPem,
   runSubmissionSealSelfCheck,
@@ -41,7 +41,7 @@ import { processJob } from "./jobs.js";
 import { sleep } from "./policy.js";
 import {
   type ResolvedRunnerPolicy,
-  resolveRunnerPolicyForChallenge,
+  resolveRunnerPolicyForEvaluationPlan,
 } from "./scoring.js";
 import type { ScoreJobRow, WorkerLogFn } from "./types.js";
 
@@ -63,7 +63,7 @@ const log: WorkerLogFn = (level, message, meta) => {
   structuredWorkerLogger[level](meta ?? {}, message);
 };
 
-export { resolveRunnerPolicyForChallenge };
+export { resolveRunnerPolicyForEvaluationPlan };
 export type { ResolvedRunnerPolicy };
 
 export function shouldExitForRuntimeMismatch(
@@ -186,7 +186,7 @@ async function preflightOfficialScoringImagesForWorker(
 ) {
   const { data, error } = await db
     .from("challenges")
-    .select("runtime_family, evaluation_json")
+    .select("evaluation_plan_json")
     .eq("status", CHALLENGE_STATUS.scoring);
 
   if (error) {
@@ -198,15 +198,9 @@ async function preflightOfficialScoringImagesForWorker(
   const images = Array.from(
     new Set(
       (data ?? [])
-        .filter((row) => row.runtime_family !== EXPERT_RUNTIME_FAMILY_ID)
-        .map((row) =>
-          row.evaluation_json &&
-          typeof row.evaluation_json === "object" &&
-          "scorer_image" in row.evaluation_json &&
-          typeof row.evaluation_json.scorer_image === "string"
-            ? row.evaluation_json.scorer_image
-            : null,
-        )
+        .map((row) => resolveEvaluationPlan(row))
+        .filter((plan) => plan.backendKind !== "oci_image")
+        .map((plan) => plan.image ?? null)
         .filter(
           (value): value is string =>
             typeof value === "string" &&

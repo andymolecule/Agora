@@ -1,8 +1,9 @@
 import {
   CHALLENGE_STATUS,
-  EXPERT_RUNTIME_FAMILY_ID,
+  type EvaluationPlan,
   isMetadataBlockedScoreJobError,
   isTerminalScoreJobError,
+  resolveEvaluationPlan,
   validateExpertScorerImage,
   validateScorerImage,
 } from "@agora/common";
@@ -34,12 +35,7 @@ interface FailedJobWithContext {
     id: string;
     title: string | null;
     status: string;
-    runtime_family: string;
-    evaluation_json:
-      | {
-          scorer_image?: string | null;
-        }
-      | null;
+    evaluation_plan_json?: EvaluationPlan | null;
   } | null;
 }
 
@@ -73,12 +69,23 @@ function classifyFailedJob(
   }
 
   if (
-    job.challenges?.runtime_family &&
-    job.challenges.runtime_family.trim().length > 0
+    job.challenges &&
+    (job.challenges.evaluation_plan_json == null ||
+      typeof job.challenges.evaluation_plan_json !== "object")
   ) {
-    const scorerImage = job.challenges.evaluation_json?.scorer_image;
+    throw new Error(
+      `Challenge ${job.challenge_id} is missing evaluation_plan_json. Next step: rebuild the challenge projection and retry.`,
+    );
+  }
+
+  if (
+    job.challenges?.evaluation_plan_json &&
+    typeof job.challenges.evaluation_plan_json === "object"
+  ) {
+    const evaluationPlan = resolveEvaluationPlan(job.challenges);
+    const scorerImage = evaluationPlan.image;
     const integrityError =
-      job.challenges.runtime_family === EXPERT_RUNTIME_FAMILY_ID
+      evaluationPlan.backendKind === "oci_image"
         ? validateExpertScorerImage(scorerImage ?? "")
         : validateScorerImage(scorerImage ?? "");
     if (scorerImage && integrityError) {
@@ -147,7 +154,7 @@ export function buildCleanFailedJobsCommand() {
         let query = db
           .from("score_jobs")
           .select(
-            "id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at, submissions(id, result_cid, solver_address), challenges(id, title, status, runtime_family, evaluation_json)",
+            "id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at, submissions(id, result_cid, solver_address), challenges(id, title, status, evaluation_plan_json)",
           )
           .eq("status", "failed")
           .order("updated_at", { ascending: false });

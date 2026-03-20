@@ -2,7 +2,7 @@
 
 Expected compile outcome:
 - state: `needs_review`
-- runtime family: `semi_custom`
+- evaluation backend: `definition_only`
 - evaluator archetype: `bundle_or_code_judge`
 - submission contract: opaque `.zip` bundle
 - recommended action: not `approve_after_review`

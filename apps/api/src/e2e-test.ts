@@ -31,6 +31,8 @@ import {
   loadConfig,
   resolveRuntimePrivateKey,
   sealSubmission,
+  type ChallengeSpecOutput,
+  type CompilationResultOutput,
 } from "@agora/common";
 import {
   claimNextJob,
@@ -39,6 +41,8 @@ import {
 } from "@agora/db";
 import { pinFile, pinJSON } from "@agora/ipfs";
 import { createApp } from "./app.js";
+import { createDraft } from "./lib/authoring-draft-transitions.js";
+import { sponsorAndPublishAuthoringDraft } from "./lib/authoring-sponsored-publish.js";
 import { processJob } from "./worker/jobs.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
@@ -164,7 +168,7 @@ async function ensureWalletMatchesOracle(
 
 function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
   return {
-    schema_version: 3 as const,
+    schema_version: 4 as const,
     id: `e2e-${Date.now()}`,
     title: `E2E Reproducibility ${Date.now()}`,
     description:
@@ -184,7 +188,9 @@ function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
       },
     ],
     evaluation: {
-      runtime_family: "reproducibility",
+      preset_id: "reproducibility",
+      backend_kind: "preset_interpreter" as const,
+      execution_runtime_family: "reproducibility",
       metric: "exact_match",
       scorer_image: OFFICIAL_SCORER_IMAGES.reproducibility,
       evaluation_bundle: input.expectedCid,
@@ -196,7 +202,7 @@ function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
       total: String(E2E_REWARD_USDC),
       distribution: "top_3" as const,
     },
-    deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    deadline: new Date(Date.now() + E2E_DEADLINE_SECONDS * 1000).toISOString(),
     lab_tba: ZERO_ADDRESS,
   };
 }
@@ -207,7 +213,7 @@ function buildPredictionE2ESpec(input: {
   hiddenLabelsCid: string;
 }) {
   return {
-    schema_version: 3 as const,
+    schema_version: 4 as const,
     id: `e2e-prediction-${Date.now()}`,
     title: `E2E Prediction ${Date.now()}`,
     description:
@@ -232,7 +238,9 @@ function buildPredictionE2ESpec(input: {
       },
     ],
     evaluation: {
-      runtime_family: "tabular_regression",
+      preset_id: "tabular_regression",
+      backend_kind: "preset_interpreter" as const,
+      execution_runtime_family: "tabular_regression",
       metric: "r2",
       scorer_image: OFFICIAL_SCORER_IMAGES.tabular,
       evaluation_bundle: input.hiddenLabelsCid,
@@ -246,8 +254,45 @@ function buildPredictionE2ESpec(input: {
       total: String(E2E_REWARD_USDC),
       distribution: "top_3" as const,
     },
-    deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    deadline: new Date(Date.now() + E2E_DEADLINE_SECONDS * 1000).toISOString(),
     lab_tba: ZERO_ADDRESS,
+  };
+}
+
+function buildE2EDraftCompilation(
+  spec: ChallengeSpecOutput,
+): CompilationResultOutput {
+  return {
+    authoring_path: "preset_supported",
+    challenge_type: spec.type,
+    preset_id: spec.evaluation.preset_id,
+    definition_id: null,
+    backend_kind: spec.evaluation.backend_kind,
+    execution_runtime_family:
+      spec.evaluation.execution_runtime_family ?? null,
+    metric: spec.evaluation.metric,
+    resolved_artifacts: spec.artifacts,
+    submission_contract: spec.submission_contract,
+    dry_run: {
+      status: "validated",
+      summary: "Local E2E draft fixture validated successfully.",
+      sample_score: "1.0",
+    },
+    confidence_score: 0.99,
+    reason_codes: ["e2e_fixture"],
+    warnings: [],
+    confirmation_contract: {
+      solver_submission: "Submit the deterministic artifact described in the compiled contract.",
+      scoring_summary: `Agora will score submissions with ${spec.evaluation.metric}.`,
+      public_private_summary: [
+        "Public artifacts are visible to solvers before the challenge opens.",
+        "Private evaluation artifacts stay hidden until scoring begins.",
+      ],
+      reward_summary: `Reward total: ${spec.reward.total} USDC.`,
+      deadline_summary: `Submission deadline: ${spec.deadline}.`,
+      dry_run_summary: "The compiled scoring contract passed a dry run for the fixture inputs.",
+    },
+    challenge_spec: spec,
   };
 }
 
@@ -265,6 +310,30 @@ async function waitFor<T>(
     await new Promise((resolve) => setTimeout(resolve, E2E_POLL_INTERVAL_MS));
   }
   throw new Error(`Timed out waiting for ${description}.`);
+}
+
+async function assertLifecycleProjectionPrerequisites(
+  db: ReturnType<typeof createSupabaseClient>,
+) {
+  const { error: challengeProjectionError } = await db
+    .from("challenges")
+    .select("id,evaluation_plan_json")
+    .limit(1);
+  if (challengeProjectionError) {
+    throw new Error(
+      `Lifecycle E2E requires challenges.evaluation_plan_json in the PostgREST schema cache. Next step: apply migration 029_add_challenge_evaluation_plan.sql, apply migration 030_make_challenge_runtime_caches_optional.sql, reload the PostgREST schema cache, and retry. ${challengeProjectionError.message}`,
+    );
+  }
+
+  const { error: budgetReservationError } = await db
+    .from("authoring_sponsor_budget_reservations")
+    .select("draft_id,status")
+    .limit(1);
+  if (budgetReservationError) {
+    throw new Error(
+      `Lifecycle E2E requires authoring_sponsor_budget_reservations in the PostgREST schema cache. Next step: apply migration 028_add_authoring_sponsor_budget_reservations.sql, reload the PostgREST schema cache, and retry. ${budgetReservationError.message}`,
+    );
+  }
 }
 
 function readNumber(value: unknown) {
@@ -511,57 +580,29 @@ async function preparePredictionScenario() {
   } satisfies LifecycleScenarioPrepared;
 }
 
-async function runLifecycleScenario(input: {
+async function runPublishedChallengeLifecycle(input: {
   db: ReturnType<typeof createSupabaseClient>;
   publicClient: ReturnType<typeof getPublicClient>;
   app: ReturnType<typeof createApp>;
+  challenge: ChallengeListRow;
+  challengeAddress: `0x${string}`;
+  challengeFromBlock: bigint;
   accountAddress: `0x${string}`;
   useSealedSubmission: boolean;
   prepared: LifecycleScenarioPrepared;
 }) {
-  const { db, publicClient, app, accountAddress, useSealedSubmission, prepared } =
-    input;
-  const config = loadConfig();
-
-  console.log(`\n=== E2E TEST: ${prepared.label} ===\n`);
-  console.log("1. Base fixtures pinned");
-
-  const approveTxHash = await approve(
-    config.AGORA_FACTORY_ADDRESS,
-    E2E_REWARD_USDC,
-  );
-  await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
-
-  const latestBlock = await publicClient.getBlock();
-  const createTxHash = await createChallenge({
-    specCid: prepared.specCid,
-    rewardAmount: E2E_REWARD_USDC,
-    deadline: Number(latestBlock.timestamp + BigInt(E2E_DEADLINE_SECONDS)),
-    disputeWindowHours: E2E_DISPUTE_WINDOW_HOURS,
-    minimumScore: 0n,
-    distributionType: 1,
-    labTba: ZERO_ADDRESS,
-  });
-  const createReceipt = await publicClient.waitForTransactionReceipt({
-    hash: createTxHash,
-  });
-  const { challengeAddress } = parseChallengeCreatedReceipt(createReceipt);
-  console.log("2. Challenge created:", challengeAddress);
-
-  await projectFactoryReceipt({
+  const {
     db,
     publicClient,
-    txHash: createTxHash,
-    blockNumber: createReceipt.blockNumber,
-  });
-
-  const challenge = await waitFor("projected challenge row", async () => {
-    try {
-      return await getTrackedChallengeRow(db, challengeAddress);
-    } catch {
-      return null;
-    }
-  });
+    app,
+    challenge,
+    challengeAddress,
+    challengeFromBlock,
+    accountAddress,
+    useSealedSubmission,
+    prepared,
+  } = input;
+  const config = loadConfig();
 
   const submissionCid = useSealedSubmission
     ? await (async () => {
@@ -663,7 +704,7 @@ async function runLifecycleScenario(input: {
   console.log("5. Open gate confirmed on public verification");
 
   const deadlineSeconds =
-    latestBlock.timestamp + BigInt(E2E_DEADLINE_SECONDS) + 1n;
+    (await publicClient.getBlock()).timestamp + BigInt(E2E_DEADLINE_SECONDS) + 1n;
   await advanceTimeTo(publicClient, deadlineSeconds);
 
   const startTxHash = await startChallengeScoring(challengeAddress);
@@ -672,14 +713,21 @@ async function runLifecycleScenario(input: {
     db,
     publicClient,
     challenge,
-    challengeFromBlock: createReceipt.blockNumber,
+    challengeFromBlock,
     txHash: startTxHash,
   });
   console.log("6. startScoring projected:", startTxHash);
 
-  const scoreJob = await waitFor("score job", async () =>
-    claimNextJob(db, `lifecycle-e2e-${prepared.label}`),
-  );
+  const scoreJob = await waitFor("score job", async () => {
+    await projectChallengeReceipt({
+      db,
+      publicClient,
+      challenge,
+      challengeFromBlock,
+      txHash: startTxHash,
+    });
+    return claimNextJob(db, `lifecycle-e2e-${prepared.label}`);
+  });
   await processJob(db, scoreJob, (_level, message) =>
     console.log(`[worker] ${message}`),
   );
@@ -708,7 +756,7 @@ async function runLifecycleScenario(input: {
     db,
     publicClient,
     challenge,
-    challengeFromBlock: createReceipt.blockNumber,
+    challengeFromBlock,
     txHash: disputeTxHash,
   });
   console.log("9. Dispute opened:", disputeTxHash);
@@ -719,24 +767,34 @@ async function runLifecycleScenario(input: {
     db,
     publicClient,
     challenge,
-    challengeFromBlock: createReceipt.blockNumber,
+    challengeFromBlock,
     txHash: resolveTxHash,
   });
 
-  const { data: projectedPayouts, error: payoutError } = await db
-    .from("challenge_payouts")
-    .select("*")
-    .eq("challenge_id", challenge.id)
-    .order("rank", { ascending: true });
-  if (payoutError) {
-    throw new Error(`Failed to load projected payouts: ${payoutError.message}`);
-  }
-  if ((projectedPayouts ?? []).length !== 3) {
-    throw new Error(
-      `Expected 3 payout allocation rows after top_3 settlement, got ${(projectedPayouts ?? []).length}.`,
-    );
-  }
-  console.log("10. Canonical top_3 payout rows projected");
+  const projectedPayouts = await waitFor("projected payout rows", async () => {
+    await projectChallengeReceipt({
+      db,
+      publicClient,
+      challenge,
+      challengeFromBlock,
+      txHash: resolveTxHash,
+    });
+    const { data, error } = await db
+      .from("challenge_payouts")
+      .select("*")
+      .eq("challenge_id", challenge.id)
+      .order("rank", { ascending: true });
+    if (error) {
+      throw new Error(`Failed to load projected payouts: ${error.message}`);
+    }
+    if ((data ?? []).length !== 3) {
+      return null;
+    }
+    return data;
+  });
+  console.log(
+    `10. Canonical top_3 payout rows projected (${projectedPayouts.length})`,
+  );
 
   if (prepared.assertPublicApis) {
     await prepared.assertPublicApis({
@@ -761,7 +819,7 @@ async function runLifecycleScenario(input: {
     db,
     publicClient,
     challenge,
-    challengeFromBlock: createReceipt.blockNumber,
+    challengeFromBlock,
     txHash: claimTxHash,
   });
 
@@ -799,6 +857,161 @@ async function runLifecycleScenario(input: {
   );
 }
 
+async function runLifecycleScenario(input: {
+  db: ReturnType<typeof createSupabaseClient>;
+  publicClient: ReturnType<typeof getPublicClient>;
+  app: ReturnType<typeof createApp>;
+  accountAddress: `0x${string}`;
+  useSealedSubmission: boolean;
+  prepared: LifecycleScenarioPrepared;
+}) {
+  const { db, publicClient, app, accountAddress, useSealedSubmission, prepared } =
+    input;
+  const config = loadConfig();
+
+  console.log(`\n=== E2E TEST: ${prepared.label} ===\n`);
+  console.log("1. Base fixtures pinned");
+
+  const approveTxHash = await approve(
+    config.AGORA_FACTORY_ADDRESS,
+    E2E_REWARD_USDC,
+  );
+  await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+
+  const latestBlock = await publicClient.getBlock();
+  const createTxHash = await createChallenge({
+    specCid: prepared.specCid,
+    rewardAmount: E2E_REWARD_USDC,
+    deadline: Number(latestBlock.timestamp + BigInt(E2E_DEADLINE_SECONDS)),
+    disputeWindowHours: E2E_DISPUTE_WINDOW_HOURS,
+    minimumScore: 0n,
+    distributionType: 1,
+    labTba: ZERO_ADDRESS,
+  });
+  const createReceipt = await publicClient.waitForTransactionReceipt({
+    hash: createTxHash,
+  });
+  const { challengeAddress } = parseChallengeCreatedReceipt(createReceipt);
+  console.log("2. Challenge created:", challengeAddress);
+
+  await projectFactoryReceipt({
+    db,
+    publicClient,
+    txHash: createTxHash,
+    blockNumber: createReceipt.blockNumber,
+  });
+
+  const challenge = await waitFor("projected challenge row", async () => {
+    await projectFactoryReceipt({
+      db,
+      publicClient,
+      txHash: createTxHash,
+      blockNumber: createReceipt.blockNumber,
+    });
+    try {
+      return await getTrackedChallengeRow(db, challengeAddress);
+    } catch {
+      return null;
+    }
+  });
+
+  await runPublishedChallengeLifecycle({
+    db,
+    publicClient,
+    app,
+    challenge,
+    challengeAddress,
+    challengeFromBlock: createReceipt.blockNumber,
+    accountAddress,
+    useSealedSubmission,
+    prepared,
+  });
+}
+
+async function runAuthoringPublishLifecycleScenario(input: {
+  db: ReturnType<typeof createSupabaseClient>;
+  publicClient: ReturnType<typeof getPublicClient>;
+  app: ReturnType<typeof createApp>;
+  accountAddress: `0x${string}`;
+  sponsorPrivateKey: `0x${string}`;
+  useSealedSubmission: boolean;
+}) {
+  const reproducibilityDir = repoPath(
+    "challenges",
+    "test-data",
+    "reproducibility",
+  );
+  const trainCid = await pinFile(
+    path.join(reproducibilityDir, "input_dataset.csv"),
+    "e2e-authoring-input-dataset.csv",
+  );
+  const expectedCid = await pinFile(
+    path.join(reproducibilityDir, "expected_output.csv"),
+    "e2e-authoring-expected-output.csv",
+  );
+  const spec = buildE2ESpec({ trainCid, expectedCid });
+  const specCid = await pinJSON("e2e-authoring-publish-spec.json", spec);
+
+  console.log("\n=== E2E TEST: authoring_publish ===\n");
+  console.log("1. Authoring draft fixtures pinned");
+
+  const draft = await createDraft({
+    db: input.db,
+    state: "ready",
+    posterAddress: input.accountAddress,
+    intentJson: {
+      title: spec.title,
+      description: spec.description,
+      payout_condition: "Highest exact match wins.",
+      reward_total: spec.reward.total,
+      distribution: spec.reward.distribution,
+      deadline: spec.deadline,
+      domain: spec.domain,
+      tags: [],
+      timezone: "UTC",
+    },
+    compilationJson: buildE2EDraftCompilation(spec),
+    expiresInMs: 10 * 60 * 1000,
+  });
+
+  const publishResult = await sponsorAndPublishAuthoringDraft({
+    db: input.db,
+    draft,
+    spec,
+    specCid,
+    sponsorPrivateKey: input.sponsorPrivateKey,
+    expiresInMs: 10 * 60 * 1000,
+  });
+  console.log("2. Draft published through sponsor path:", publishResult.challenge.challengeAddress);
+
+  const createReceipt = await input.publicClient.getTransactionReceipt({
+    hash: publishResult.txHash,
+  });
+  const challenge = await getTrackedChallengeRow(
+    input.db,
+    publishResult.challenge.challengeAddress as `0x${string}`,
+  );
+
+  await runPublishedChallengeLifecycle({
+    db: input.db,
+    publicClient: input.publicClient,
+    app: input.app,
+    challenge,
+    challengeAddress: publishResult.challenge.challengeAddress as `0x${string}`,
+    challengeFromBlock: createReceipt.blockNumber,
+    accountAddress: input.accountAddress,
+    useSealedSubmission: input.useSealedSubmission,
+    prepared: {
+      label: "authoring_publish",
+      specCid,
+      submissionSourcePath: path.join(
+        reproducibilityDir,
+        "sample_submission.csv",
+      ),
+    },
+  });
+}
+
 export async function runLifecycleE2E() {
   const config = loadConfig();
   if (!config.AGORA_SUPABASE_SERVICE_KEY) {
@@ -815,7 +1028,8 @@ export async function runLifecycleE2E() {
   const publicClient = getPublicClient();
   const walletClient = getWalletClient();
   const account = walletClient.account;
-  if (!account || !resolveRuntimePrivateKey(config)) {
+  const sponsorPrivateKey = resolveRuntimePrivateKey(config);
+  if (!account || !sponsorPrivateKey) {
     throw new Error(
       "Wallet client account is not configured. Set AGORA_PRIVATE_KEY or AGORA_ORACLE_KEY and retry.",
     );
@@ -828,6 +1042,7 @@ export async function runLifecycleE2E() {
   );
 
   const db = createSupabaseClient(true);
+  await assertLifecycleProjectionPrerequisites(db);
   const app = createApp();
   const useSealedSubmission = hasSubmissionSealWorkerConfig(config);
   const scenarios = await Promise.all([
@@ -845,6 +1060,15 @@ export async function runLifecycleE2E() {
       prepared,
     });
   }
+
+  await runAuthoringPublishLifecycleScenario({
+    db,
+    publicClient,
+    app,
+    accountAddress: account.address,
+    sponsorPrivateKey,
+    useSealedSubmission,
+  });
 }
 
 function maybeRunLifecycleE2ECli(importMetaUrl: string, argv1?: string) {

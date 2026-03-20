@@ -2,14 +2,14 @@ import {
   CHALLENGE_STATUS,
   type ChallengeArtifact,
   type ChallengeEvaluation,
+  type EvaluationPlan,
   type ChallengeSpecOutput,
   type ChallengeStatus,
   SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
   defaultMinimumScoreForEvaluation,
   getChallengeCompatibilityTypeFromEvaluation,
-  resolveChallengeEvaluation,
-  resolveScoringEnvironmentFromSpec,
+  resolveEvaluationPlan,
   validateChallengeScoreability,
 } from "@agora/common";
 import type { AgoraDbClient } from "../index";
@@ -28,9 +28,12 @@ export interface ChallengeInsert {
   challenge_type: string;
   runtime_family: string;
   spec_cid: string;
-  evaluation_json: ChallengeEvaluation;
+  // Deprecated compatibility cache. evaluation_plan_json is the canonical runtime shape.
+  evaluation_json?: ChallengeEvaluation | null;
+  evaluation_plan_json?: EvaluationPlan | null;
   artifacts_json: ChallengeArtifact[];
   submission_contract_json?: ChallengeSpecOutput["submission_contract"] | null;
+  // Deprecated compatibility cache. Keep null so the plan remains the single source of truth.
   scoring_env_json?: Record<string, string> | null;
   minimum_score?: number | null;
   max_submissions_total?: number | null;
@@ -70,12 +73,11 @@ export async function buildChallengeInsert(
   const canonicalSpec = await canonicalizeChallengeSpec(input.spec, {
     resolveOfficialPresetDigests: requirePinnedPresetDigest,
   });
-  const scoreability = validateChallengeScoreability(canonicalSpec);
+  const evaluationPlan = resolveEvaluationPlan(canonicalSpec);
+  const scoreability = validateChallengeScoreability(canonicalSpec, evaluationPlan);
   if (!scoreability.ok) {
     throw new Error(scoreability.errors[0] ?? "Challenge is not scoreable.");
   }
-  const resolvedEvalPlan = resolveChallengeEvaluation(canonicalSpec);
-  const scoringEnv = resolveScoringEnvironmentFromSpec(canonicalSpec);
 
   return {
     chain_id: input.chainId,
@@ -91,24 +93,14 @@ export async function buildChallengeInsert(
     challenge_type: getChallengeCompatibilityTypeFromEvaluation(
       canonicalSpec.evaluation,
     ),
-    runtime_family: canonicalSpec.evaluation.runtime_family,
+    runtime_family:
+      evaluationPlan.executionRuntimeFamily ?? evaluationPlan.presetId,
     spec_cid: input.specCid,
-    evaluation_json: {
-      runtime_family: resolvedEvalPlan.runtimeFamily,
-      metric: resolvedEvalPlan.metric,
-      ...(resolvedEvalPlan.image
-        ? { scorer_image: resolvedEvalPlan.image }
-        : {}),
-      ...(resolvedEvalPlan.evaluationBundleCid
-        ? { evaluation_bundle: resolvedEvalPlan.evaluationBundleCid }
-        : {}),
-      ...(resolvedEvalPlan.evaluatorContract
-        ? { evaluator_contract: resolvedEvalPlan.evaluatorContract }
-        : {}),
-    },
+    evaluation_json: null,
+    evaluation_plan_json: evaluationPlan,
     artifacts_json: canonicalSpec.artifacts,
     submission_contract_json: canonicalSpec.submission_contract,
-    scoring_env_json: scoringEnv ?? null,
+    scoring_env_json: null,
     minimum_score:
       canonicalSpec.minimum_score ??
       defaultMinimumScoreForEvaluation(canonicalSpec.evaluation) ??
@@ -143,6 +135,24 @@ export async function upsertChallenge(
     .select("*")
     .single();
   if (error) {
+    if (
+      /could not find the 'evaluation_plan_json' column of 'challenges' in the schema cache/i.test(
+        error.message,
+      )
+    ) {
+      throw new Error(
+        "Failed to upsert challenge: challenges.evaluation_plan_json is missing from the PostgREST schema cache. Next step: apply migration 029_add_challenge_evaluation_plan.sql, reload the PostgREST schema cache, and retry.",
+      );
+    }
+    if (
+      /null value in column "evaluation_json".+not-null constraint/i.test(
+        error.message,
+      )
+    ) {
+      throw new Error(
+        "Failed to upsert challenge: challenges.evaluation_json is still NOT NULL. Next step: apply migration 030_make_challenge_runtime_caches_optional.sql, reload the PostgREST schema cache, and retry.",
+      );
+    }
     throw new Error(`Failed to upsert challenge: ${error.message}`);
   }
   return data;

@@ -7,7 +7,10 @@ import {
   createCsvTableSubmissionContract,
   lookupManagedRuntimeFamily,
 } from "@agora/common";
-import type { AuthoringDraftViewRow } from "@agora/db";
+import {
+  type AuthoringDraftViewRow,
+  AuthoringDraftWriteConflictError,
+} from "@agora/db";
 import { resolveAuthoringDraftReturnUrl } from "../src/lib/authoring-drafts.js";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 import { createAuthoringDraftRoutes } from "../src/routes/authoring-drafts.js";
@@ -34,7 +37,7 @@ function createIntent() {
   };
 }
 
-function createReadySession(
+function createReadyDraft(
   overrides: Partial<AuthoringDraftViewRow> = {},
 ): AuthoringDraftViewRow {
   const runtimeFamily = lookupManagedRuntimeFamily("tabular_regression");
@@ -59,14 +62,16 @@ function createReadySession(
     },
   ];
   const challengeSpec = {
-    schema_version: 3 as const,
+    schema_version: 4 as const,
     id: "draft-1",
     title: intent.title,
     description: intent.description,
     domain: intent.domain,
     type: "prediction" as const,
     evaluation: {
-      runtime_family: "tabular_regression" as const,
+      preset_id: "tabular_regression" as const,
+      backend_kind: "preset_interpreter" as const,
+      execution_runtime_family: "tabular_regression" as const,
       metric: "r2",
       scorer_image: runtimeFamily.scorerImage,
       evaluation_bundle: "ipfs://bundle",
@@ -98,10 +103,10 @@ function createReadySession(
       buildManagedAuthoringIr({
         intent,
         uploadedArtifacts,
-        runtimeFamily: "tabular_regression",
+        presetId: "tabular_regression",
         metric: "r2",
         confidenceScore: 0.92,
-        routingMode: "managed_supported",
+        routingMode: "preset_supported",
         origin: {
           provider: "beach_science",
           external_id: "thread-42",
@@ -111,8 +116,12 @@ function createReadySession(
       }),
     uploaded_artifacts_json: uploadedArtifacts,
     compilation_json: overrides.compilation_json ?? {
+      authoring_path: "preset_supported",
       challenge_type: "prediction",
-      runtime_family: "tabular_regression",
+      preset_id: "tabular_regression",
+      definition_id: null,
+      backend_kind: "preset_interpreter",
+      execution_runtime_family: "tabular_regression",
       metric: "r2",
       resolved_artifacts: [
         {
@@ -152,7 +161,7 @@ function createReadySession(
   };
 }
 
-function createNonExecutableSemiCustomSession(
+function createNonExecutableDefinitionBackedDraft(
   overrides: Partial<AuthoringDraftViewRow> = {},
 ): AuthoringDraftViewRow {
   const intent = overrides.intent_json ?? createIntent();
@@ -168,14 +177,15 @@ function createNonExecutableSemiCustomSession(
   ];
 
   const challengeSpec = {
-    schema_version: 3 as const,
-    id: "draft-semi-custom",
+    schema_version: 4 as const,
+    id: "draft-definition-backed",
     title: intent.title,
     description: intent.description,
     domain: intent.domain,
     type: "custom" as const,
     evaluation: {
-      runtime_family: "semi_custom" as const,
+      preset_id: "structured_record_score" as const,
+      backend_kind: "definition_only" as const,
       metric: "validation_score",
       evaluator_contract: {
         version: "v1" as const,
@@ -228,7 +238,7 @@ function createNonExecutableSemiCustomSession(
   };
 
   return {
-    ...createReadySession(overrides),
+    ...createReadyDraft(overrides),
     state: overrides.state ?? "needs_review",
     authoring_ir_json:
       overrides.authoring_ir_json ??
@@ -246,20 +256,24 @@ function createNonExecutableSemiCustomSession(
     compilation_json:
       overrides.compilation_json ??
       ({
+        authoring_path: "definition_backed",
         challenge_type: "custom",
-        runtime_family: "semi_custom",
+        preset_id: null,
+        definition_id: "structured_record_score",
+        backend_kind: "definition_only",
+        execution_runtime_family: null,
         metric: "validation_score",
         resolved_artifacts: challengeSpec.artifacts,
         submission_contract: challengeSpec.submission_contract,
         dry_run: {
           status: "skipped",
           summary:
-            "Semi-custom evaluator contract is typed but not executable.",
+            "Definition-backed evaluator contract is typed but not executable.",
         },
         confidence_score: 0.55,
-        reason_codes: ["semi_custom_contract_built"],
+        reason_codes: ["evaluator_definition_built"],
         warnings: [
-          "Semi-custom evaluator contract is typed and reviewable, but the scorer execution path is not configured yet.",
+          "The evaluator definition is typed and reviewable, but the execution backend is not configured yet.",
         ],
         confirmation_contract: {
           solver_submission: "JSON file",
@@ -268,7 +282,7 @@ function createNonExecutableSemiCustomSession(
           reward_summary: "10 USDC winner take all",
           deadline_summary: "Deadline in UTC",
           dry_run_summary:
-            "Semi-custom evaluator contract is typed but not executable.",
+            "Definition-backed evaluator contract is typed but not executable.",
         },
         challenge_spec: challengeSpec,
       } as AuthoringDraftViewRow["compilation_json"]),
@@ -276,10 +290,10 @@ function createNonExecutableSemiCustomSession(
 }
 
 function createRouterForPublish(input: {
-  session: AuthoringDraftViewRow;
+  draft: AuthoringDraftViewRow;
   deliveredEvents?: string[];
 }) {
-  let storedSession = input.session;
+  let storedDraft = input.draft;
   let publishedLink: {
     draft_id: string;
     challenge_id: string | null;
@@ -291,15 +305,15 @@ function createRouterForPublish(input: {
     published_at: string;
     created_at: string;
     updated_at: string;
-  } | null = storedSession.published_spec_cid
+  } | null = storedDraft.published_spec_cid
     ? {
-        draft_id: storedSession.id,
+        draft_id: storedDraft.id,
         challenge_id: null,
         published_spec_json:
-          storedSession.published_spec_json ??
-          storedSession.compilation_json?.challenge_spec ??
+          storedDraft.published_spec_json ??
+          storedDraft.compilation_json?.challenge_spec ??
           null,
-        published_spec_cid: storedSession.published_spec_cid,
+        published_spec_cid: storedDraft.published_spec_cid,
         return_to: null,
         published_at: "2026-03-19T01:00:00.000Z",
         created_at: "2026-03-19T01:00:00.000Z",
@@ -316,21 +330,20 @@ function createRouterForPublish(input: {
     createSupabaseClient: () => ({}) as never,
     getAuthoringDraftViewById: async () =>
       ({
-        ...storedSession,
+        ...storedDraft,
         published_spec_json:
-          publishedLink?.published_spec_json ??
-          storedSession.published_spec_json,
+          publishedLink?.published_spec_json ?? storedDraft.published_spec_json,
         published_spec_cid:
-          publishedLink?.published_spec_cid ?? storedSession.published_spec_cid,
+          publishedLink?.published_spec_cid ?? storedDraft.published_spec_cid,
       }) as never,
     getPublishedChallengeLinkByDraftId: async () => publishedLink as never,
     updateAuthoringDraft: async (_db, patch) => {
-      storedSession = {
-        ...storedSession,
+      storedDraft = {
+        ...storedDraft,
         ...patch,
         updated_at: "2026-03-19T01:00:00.000Z",
       } as AuthoringDraftViewRow;
-      return storedSession as never;
+      return storedDraft as never;
     },
     upsertPublishedChallengeLink: async (_db, payload) => {
       publishedLink = {
@@ -374,8 +387,8 @@ function createRouterForPublish(input: {
   });
 }
 
-function buildPublishRequestBody(session: AuthoringDraftViewRow) {
-  const spec = session.compilation_json?.challenge_spec;
+function buildPublishRequestBody(draft: AuthoringDraftViewRow) {
+  const spec = draft.compilation_json?.challenge_spec;
   if (!spec) {
     throw new Error("publish fixture requires a compiled challenge spec");
   }
@@ -391,8 +404,8 @@ function buildPublishRequestBody(session: AuthoringDraftViewRow) {
 }
 
 test("authoring draft publish accepts an explicit allowlisted return_to", async () => {
-  const draft = createReadySession();
-  const router = createRouterForPublish({ session: draft });
+  const draft = createReadyDraft();
+  const router = createRouterForPublish({ draft: draft });
 
   const response = await router.request(
     new Request(`http://localhost/drafts/${draft.id}/publish`, {
@@ -426,8 +439,8 @@ test("authoring draft publish accepts an explicit allowlisted return_to", async 
 });
 
 test("authoring draft publish falls back to the stored origin external_url", async () => {
-  const draft = createReadySession();
-  const router = createRouterForPublish({ session: draft });
+  const draft = createReadyDraft();
+  const router = createRouterForPublish({ draft: draft });
 
   const response = await router.request(
     new Request(`http://localhost/drafts/${draft.id}/publish`, {
@@ -454,7 +467,7 @@ test("authoring draft publish falls back to the stored origin external_url", asy
 });
 
 test("authoring draft publish rejects return_to for direct drafts", async () => {
-  const draft = createReadySession({
+  const draft = createReadyDraft({
     authoring_ir_json: buildManagedAuthoringIr({
       intent: createIntent(),
       uploadedArtifacts: [
@@ -467,10 +480,10 @@ test("authoring draft publish rejects return_to for direct drafts", async () => 
           detected_columns: ["id", "feature_a", "label"],
         },
       ],
-      runtimeFamily: "tabular_regression",
+      presetId: "tabular_regression",
       metric: "r2",
       confidenceScore: 0.92,
-      routingMode: "managed_supported",
+      routingMode: "preset_supported",
       origin: {
         provider: "direct",
         external_id: null,
@@ -479,7 +492,7 @@ test("authoring draft publish rejects return_to for direct drafts", async () => 
       },
     }),
   });
-  const router = createRouterForPublish({ session: draft });
+  const router = createRouterForPublish({ draft: draft });
 
   const response = await router.request(
     new Request(`http://localhost/drafts/${draft.id}/publish`, {
@@ -499,9 +512,9 @@ test("authoring draft publish rejects return_to for direct drafts", async () => 
   );
 });
 
-test("authoring review approval rejects non-scoreable semi-custom drafts", async () => {
-  const draft = createNonExecutableSemiCustomSession();
-  const router = createRouterForPublish({ session: draft });
+test("authoring review approval rejects non-scoreable definition-backed drafts", async () => {
+  const draft = createNonExecutableDefinitionBackedDraft();
+  const router = createRouterForPublish({ draft: draft });
 
   const response = await router.request(
     new Request(`http://localhost/review/drafts/${draft.id}/decision`, {
@@ -524,10 +537,10 @@ test("authoring review approval rejects non-scoreable semi-custom drafts", async
 });
 
 test("authoring draft publish rejects non-scoreable ready drafts", async () => {
-  const draft = createNonExecutableSemiCustomSession({
+  const draft = createNonExecutableDefinitionBackedDraft({
     state: "ready",
   });
-  const router = createRouterForPublish({ session: draft });
+  const router = createRouterForPublish({ draft: draft });
 
   const response = await router.request(
     new Request(`http://localhost/drafts/${draft.id}/publish`, {
@@ -541,5 +554,155 @@ test("authoring draft publish rejects non-scoreable ready drafts", async () => {
   assert.equal(
     ((await response.json()) as { code: string }).code,
     "AUTHORING_DRAFT_NOT_SCOREABLE",
+  );
+});
+
+test("authoring draft publish restores the prior draft state when link persistence fails", async () => {
+  let storedDraft = createReadyDraft();
+  const partnerRuntimeConfig: AgoraAuthoringPartnerRuntimeConfig = {
+    partnerKeys: { beach_science: "partner-key" },
+    callbackSecrets: { beach_science: "callback-secret" },
+    returnOrigins: { beach_science: ["https://beach.science"] },
+  };
+  const router = createAuthoringDraftRoutes({
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringDraftViewById: async () => storedDraft as never,
+    updateAuthoringDraft: async (_db, patch) => {
+      storedDraft = {
+        ...storedDraft,
+        ...patch,
+        updated_at: "2026-03-19T01:00:00.000Z",
+      } as AuthoringDraftViewRow;
+      return storedDraft as never;
+    },
+    upsertPublishedChallengeLink: async () => {
+      throw new Error("link write failed");
+    },
+    pinJSON: async () => "bafy-published-spec" as never,
+    getPublicClient: () =>
+      ({
+        verifyTypedData: async () => true,
+      }) as never,
+    consumeNonce: async () => true,
+    canonicalizeChallengeSpec: async (spec) => spec,
+    readApiServerRuntimeConfig: () => ({
+      nodeEnv: "test",
+      apiPort: 3000,
+      chainId: 84532,
+      corsOrigins: [],
+    }),
+    readAuthoringReviewRuntimeConfig: () => ({
+      token: "review-token",
+    }),
+    requireWriteQuota: allowQuota() as never,
+    resolveAuthoringDraftReturnUrl: (resolveInput) =>
+      resolveAuthoringDraftReturnUrl({
+        ...resolveInput,
+        runtimeConfig: partnerRuntimeConfig,
+      }),
+  });
+
+  const response = await router.request(
+    new Request(`http://localhost/drafts/${storedDraft.id}/publish`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(buildPublishRequestBody(storedDraft)),
+    }),
+  );
+
+  assert.equal(response.status, 500);
+  assert.equal(storedDraft.state, "ready");
+  assert.equal(storedDraft.published_spec_cid, null);
+});
+
+test("managed authoring compile returns 409 when the draft changed before compiling starts", async () => {
+  const draft = {
+    ...createReadyDraft({ state: "draft" }),
+    compilation_json: null,
+    published_challenge_id: null,
+    published_spec_json: null,
+    published_spec_cid: null,
+  };
+  const router = createAuthoringDraftRoutes({
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringDraftViewById: async () => draft as never,
+    updateAuthoringDraft: async () => {
+      throw new AuthoringDraftWriteConflictError("stale");
+    },
+    requireWriteQuota: allowQuota() as never,
+  });
+
+  const response = await router.request(
+    new Request(`http://localhost/drafts/${draft.id}/compile`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }),
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(
+    ((await response.json()) as { code: string }).code,
+    "AUTHORING_DRAFT_CONFLICT",
+  );
+});
+
+test("managed authoring compile rejects published drafts", async () => {
+  const publishedSpec =
+    createReadyDraft().compilation_json?.challenge_spec ?? null;
+  const draft = createReadyDraft({
+    state: "published",
+    published_spec_json: publishedSpec,
+    published_spec_cid: "bafy-published-spec",
+  });
+  const router = createAuthoringDraftRoutes({
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringDraftViewById: async () => draft as never,
+    requireWriteQuota: allowQuota() as never,
+  });
+
+  const response = await router.request(
+    new Request(`http://localhost/drafts/${draft.id}/compile`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }),
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(
+    ((await response.json()) as { code: string }).code,
+    "AUTHORING_DRAFT_PUBLISHED",
+  );
+});
+
+test("authoring review reject rejects non-review drafts", async () => {
+  const publishedSpec =
+    createReadyDraft().compilation_json?.challenge_spec ?? null;
+  const draft = createReadyDraft({
+    state: "published",
+    published_spec_json: publishedSpec,
+    published_spec_cid: "bafy-published-spec",
+  });
+  const router = createRouterForPublish({ draft });
+
+  const response = await router.request(
+    new Request(`http://localhost/review/drafts/${draft.id}/decision`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-agora-review-token": "review-token",
+      },
+      body: JSON.stringify({
+        action: "reject",
+        message: "Needs more work.",
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(
+    ((await response.json()) as { code: string }).code,
+    "AUTHORING_REVIEW_NOT_DECIDABLE",
   );
 });

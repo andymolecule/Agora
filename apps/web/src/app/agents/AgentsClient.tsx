@@ -68,7 +68,7 @@ function CodeBlock({
 }) {
   const code = children.trim();
   return (
-    <div className="border border-warm-900/15 rounded-[2px] overflow-hidden bg-warm-900 relative group">
+    <div className="border border-warm-900/15 rounded overflow-hidden bg-warm-900 relative group">
       {title && (
         <div className="px-4 py-2 bg-warm-900/90 border-b border-warm-900/20">
           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-white/40">
@@ -97,7 +97,7 @@ function Collapsible({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-warm-900/15 rounded-[2px] overflow-hidden">
+    <div className="border border-warm-900/15 rounded overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -173,7 +173,7 @@ function Callout({
   const s = styles[type];
   return (
     <div
-      className={`${s.border} ${s.bg} border rounded-[2px] px-4 py-3 flex gap-3`}
+      className={`${s.border} ${s.bg} border rounded px-4 py-3 flex gap-3`}
     >
       <div className="flex-shrink-0 mt-0.5">{s.icon}</div>
       <div className="text-sm text-warm-800 leading-relaxed">{children}</div>
@@ -200,7 +200,7 @@ function CardLink({
       href={href}
       target={isExternal ? "_blank" : undefined}
       rel={isExternal ? "noopener noreferrer" : undefined}
-      className="group border border-warm-900/15 rounded-[2px] p-5 flex items-start gap-4 hover:border-warm-900/40 hover:shadow-sm transition-all no-underline"
+      className="group border border-warm-900/15 rounded p-5 flex items-start gap-4 hover:border-warm-900/40 hover:shadow-sm transition-all no-underline"
     >
       <div className="w-9 h-9 flex items-center justify-center border border-warm-900/20 text-warm-900/60 flex-shrink-0 group-hover:border-warm-900/40 transition-colors">
         <Icon className="w-4.5 h-4.5" strokeWidth={1.5} />
@@ -230,7 +230,7 @@ function JumpLink({
   return (
     <a
       href={href}
-      className="group border border-warm-900/15 rounded-[2px] px-4 py-3 bg-white hover:border-warm-900/40 hover:shadow-sm transition-all no-underline"
+      className="group border border-warm-900/15 rounded px-4 py-3 bg-white hover:border-warm-900/40 hover:shadow-sm transition-all no-underline"
     >
       <div className="flex items-start gap-3">
         <div className="w-7 h-7 flex items-center justify-center border border-warm-900/15 text-warm-900/50 flex-shrink-0 group-hover:border-warm-900/30 transition-colors">
@@ -324,7 +324,7 @@ export function AgentsClient() {
           ].map((item) => (
             <div
               key={item.title}
-              className="border border-warm-900/15 rounded-[2px] bg-white px-4 py-4"
+              className="border border-warm-900/15 rounded bg-white px-4 py-4"
             >
               <p className="text-sm font-semibold text-warm-900">
                 {item.title}
@@ -378,7 +378,7 @@ export function AgentsClient() {
             <Package className="w-5 h-5" strokeWidth={1.5} />
             Prerequisites
           </h2>
-          <div className="border border-warm-900/15 rounded-[2px] divide-y divide-warm-900/10 bg-white">
+          <div className="border border-warm-900/15 rounded divide-y divide-warm-900/10 bg-white">
             {[
               {
                 name: "Node.js 20+",
@@ -858,7 +858,7 @@ agora finalize <challenge-id> --format json`}
           ].map((item) => (
             <div
               key={item.step}
-              className="border border-warm-900/15 rounded-[2px] bg-white px-4 py-4"
+              className="border border-warm-900/15 rounded bg-white px-4 py-4"
             >
               <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-accent-500">
                 {item.step}
@@ -910,7 +910,7 @@ agora finalize <challenge-id> --format json`}
                   <CodeBlock title="Terminal">
                     {"pnpm --filter @agora/mcp-server start:stdio"}
                   </CodeBlock>
-                  <div className="border border-warm-900/15 rounded-[2px] divide-y divide-warm-900/10 bg-white">
+                  <div className="border border-warm-900/15 rounded divide-y divide-warm-900/10 bg-white">
                     <div className="px-5 py-2.5 bg-warm-50">
                       <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/40">
                         Available Tools
@@ -958,7 +958,7 @@ agora finalize <challenge-id> --format json`}
                   <CodeBlock title="Terminal">
                     {"pnpm --filter @agora/mcp-server start"}
                   </CodeBlock>
-                  <div className="border border-warm-900/15 rounded-[2px] divide-y divide-warm-900/10 bg-white">
+                  <div className="border border-warm-900/15 rounded divide-y divide-warm-900/10 bg-white">
                     <div className="px-5 py-2.5 bg-warm-50">
                       <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/40">
                         Read-only Tools
@@ -1024,7 +1024,7 @@ agora finalize <challenge-id> --format json`}
             Environment Variables
           </h3>
           <Collapsible title="Core variables" defaultOpen>
-            <div className="border border-warm-900/15 rounded-[2px] overflow-hidden">
+            <div className="border border-warm-900/15 rounded overflow-hidden">
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-warm-50">
@@ -1095,7 +1095,7 @@ agora finalize <challenge-id> --format json`}
           </Collapsible>
 
           <Collapsible title="Operator, direct IPFS, and MCP variables">
-            <div className="border border-warm-900/15 rounded-[2px] overflow-hidden">
+            <div className="border border-warm-900/15 rounded overflow-hidden">
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-warm-50">
@@ -1177,7 +1177,7 @@ agora finalize <challenge-id> --format json`}
             <Terminal className="w-5 h-5" strokeWidth={1.5} />
             CLI Command Cheat Sheet
           </h3>
-          <div className="border border-warm-900/15 rounded-[2px] overflow-hidden">
+          <div className="border border-warm-900/15 rounded overflow-hidden">
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="bg-warm-50">
@@ -1283,7 +1283,7 @@ agora finalize <challenge-id> --format json`}
             . Claiming is a payout action after finalization, not a separate
             challenge state.
           </p>
-          <div className="border border-warm-900/15 rounded-[2px] bg-white p-6 space-y-5">
+          <div className="border border-warm-900/15 rounded bg-white p-6 space-y-5">
             <div className="flex flex-wrap items-center gap-3 justify-center text-xs font-mono font-bold">
               {[
                 {
@@ -1310,7 +1310,7 @@ agora finalize <challenge-id> --format json`}
                 step.label ? (
                   <div
                     key={step.key}
-                    className={`flex flex-col items-center px-4 py-3 border rounded-[2px] ${
+                    className={`flex flex-col items-center px-4 py-3 border rounded ${
                       step.active
                         ? "border-warm-900 bg-warm-900 text-white"
                         : "border-warm-900/20 text-warm-900"
@@ -1363,7 +1363,7 @@ agora finalize <challenge-id> --format json`}
               ].map((item) => (
                 <div
                   key={item.title}
-                  className="border border-warm-900/10 rounded-[2px] px-4 py-4 bg-warm-50"
+                  className="border border-warm-900/10 rounded px-4 py-4 bg-warm-50"
                 >
                   <p className="text-sm font-semibold text-warm-900">
                     {item.title}
@@ -1428,7 +1428,7 @@ agora finalize <challenge-id> --format json`}
             ].map((item) => (
               <div
                 key={item.error}
-                className="border border-warm-900/10 rounded-[2px] px-5 py-3 bg-white"
+                className="border border-warm-900/10 rounded px-5 py-3 bg-white"
               >
                 <code className="text-xs font-mono font-bold text-red-700">
                   {item.error}

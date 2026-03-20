@@ -59,11 +59,18 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
       "Apply migration 011_rename_worker_runtime_executor_ready.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
-    id: "challenge_scoring_config_columns",
+    id: "challenge_submission_contract_column",
     table: "challenges",
-    select: "submission_contract_json,scoring_env_json",
+    select: "submission_contract_json",
     nextStep:
       "Apply migration 007_cache_challenge_scoring_config.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
+    id: "challenge_evaluation_plan_column",
+    table: "challenges",
+    select: "evaluation_plan_json",
+    nextStep:
+      "Apply migration 029_add_challenge_evaluation_plan.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
     id: "challenge_factory_id_column",
@@ -75,7 +82,7 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
   {
     id: "challenge_runtime_v3_columns",
     table: "challenges",
-    select: "runtime_family,evaluation_json,artifacts_json",
+    select: "runtime_family,artifacts_json",
     nextStep:
       "Reset the database to the latest baseline schema, then reload the PostgREST schema cache before restarting services.",
   },
@@ -131,6 +138,14 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
       "draft_id,provider,callback_url,event,payload_json,status,attempts,max_attempts,last_attempt_at,next_attempt_at,delivered_at,last_error",
     nextStep:
       "Apply migrations 019_authoring_callback_deliveries.sql and 021_split_authoring_drafts.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
+    id: "authoring_sponsor_budget_reservations_table",
+    table: "authoring_sponsor_budget_reservations",
+    select:
+      "draft_id,provider,period_start,amount_usdc,status,reserved_at,consumed_at,released_at,release_reason",
+    nextStep:
+      "Apply migration 028_add_authoring_sponsor_budget_reservations.sql, then reload the PostgREST schema cache before restarting services.",
   },
 ];
 

@@ -10,29 +10,32 @@ import {
   type ConfirmationContractOutput,
   type DryRunPreviewOutput,
   PROTOCOL_FEE_PERCENT,
-  SEMI_CUSTOM_RUNTIME_FAMILY_ID,
   canonicalizeChallengeSpec,
   challengeSpecSchemaForChain,
+  buildGeneratedScorerProgramFromDefinitionBackedEvaluator,
+  buildGeneratedScorerProgramForManagedPreset,
   createCsvTableSubmissionContract,
-  createSubmissionContractFromSemiCustomEvaluatorContract,
+  createSubmissionContractFromDefinitionBackedEvaluatorContract,
   getChallengeCompatibilityType,
   getManagedRuntimeMetric,
   lookupManagedRuntimeFamily,
   readApiServerRuntimeConfig,
+  resolveGeneratedScorerImage,
   resolveOfficialImageToDigest,
-  resolveSemiCustomExecutionOfficialImage,
-  resolveSemiCustomExecutionPlan,
+  resolveDefinitionBackedExecutionOfficialImage,
+  resolveDefinitionBackedExecutionPlan,
   validateChallengeScoreability,
 } from "@agora/common";
+import type { AgoraLogger } from "@agora/common/server-observability";
 import type { getText } from "@agora/ipfs";
 import type { executeScoringPipeline } from "@agora/scorer";
 import {
   buildManagedReviewSummaryFromCompilation,
-  buildSemiCustomReviewSummary,
+  buildDefinitionBackedReviewSummary,
 } from "./authoring-draft-review-summary.js";
 import {
   type CompilerArtifactAssignment,
-  type SupportedRuntimeFamily,
+  type SupportedManagedPresetId,
   compileManagedAuthoringProposal,
 } from "./managed-authoring-compiler.js";
 import {
@@ -52,8 +55,9 @@ interface ParsedThreshold {
 
 const MIN_CONFIDENCE_SCORE = 0.75;
 // Challenge type stays "custom" to avoid widening the public challenge-type
-// taxonomy. Runtime family is the canonical discriminator for semi-custom.
-const SEMI_CUSTOM_CHALLENGE_TYPE: ChallengeSpecOutput["type"] = "custom";
+// taxonomy. Definition-backed drafts now emit the same v4 evaluation shape as
+// the rest of the system, but still publish as challenge type "custom".
+const DEFINITION_BACKED_CHALLENGE_TYPE: ChallengeSpecOutput["type"] = "custom";
 
 const CLARIFICATION_ERROR_CODES = new Set([
   "MANAGED_ARTIFACTS_INCOMPLETE",
@@ -74,6 +78,35 @@ export interface ManagedAuthoringDraftOutcome {
 interface DraftCompilation {
   proposal: Awaited<ReturnType<typeof compileManagedAuthoringProposal>>;
   compilation: CompilationResultOutput;
+}
+
+function logManagedAuthoringOutcome(input: {
+  logger?: AgoraLogger;
+  draftId?: string;
+  outcome: ManagedAuthoringDraftOutcome;
+}) {
+  input.logger?.info(
+    {
+      event: "authoring.compile.outcome",
+      draftId: input.draftId ?? null,
+      state: input.outcome.state,
+      routingMode: input.outcome.authoringIr.routing.mode,
+      confidenceScore: input.outcome.authoringIr.routing.confidence_score,
+      ambiguityClasses: input.outcome.authoringIr.ambiguity.classes,
+      presetId: input.outcome.compilation?.preset_id ?? null,
+      definitionId: input.outcome.compilation?.definition_id ?? null,
+      backendKind: input.outcome.compilation?.backend_kind ?? null,
+      executionRuntimeFamily:
+        input.outcome.compilation?.execution_runtime_family ?? null,
+      metric: input.outcome.compilation?.metric ?? null,
+      dryRunStatus: input.outcome.compilation?.dry_run.status ?? null,
+      clarificationCount: input.outcome.clarificationQuestions?.length ?? 0,
+      reviewRecommendedAction:
+        input.outcome.reviewSummary?.recommended_action ?? null,
+      reasonCodes: input.outcome.compilation?.reason_codes ?? [],
+    },
+    "Managed authoring compile chose a draft outcome",
+  );
 }
 
 function formatUsdc(value: number) {
@@ -140,7 +173,7 @@ function metricPattern(metric: string) {
 }
 
 function parsePayoutThreshold(
-  runtimeFamily: SupportedRuntimeFamily,
+  runtimeFamily: SupportedManagedPresetId,
   metric: string,
   sourceText: string,
 ): ParsedThreshold | undefined {
@@ -183,7 +216,7 @@ function inferIdColumn(artifact?: AuthoringArtifactOutput) {
 function ensureArtifactCount(
   uploadedArtifacts: AuthoringArtifactOutput[],
   minimum: number,
-  runtimeFamily: SupportedRuntimeFamily,
+  runtimeFamily: SupportedManagedPresetId,
 ) {
   if (uploadedArtifacts.length >= minimum) {
     return;
@@ -211,7 +244,7 @@ function defaultVisibilityForRole(role: string): "public" | "private" {
 }
 
 function assignArtifactsHeuristically(input: {
-  runtimeFamily: SupportedRuntimeFamily;
+  runtimeFamily: SupportedManagedPresetId;
   uploadedArtifacts: AuthoringArtifactOutput[];
 }) {
   const usedKeys = new Set<string>();
@@ -440,7 +473,7 @@ function assignArtifactsHeuristically(input: {
 }
 
 function assignArtifactsFromProposal(input: {
-  runtimeFamily: SupportedRuntimeFamily;
+  runtimeFamily: SupportedManagedPresetId;
   uploadedArtifacts: AuthoringArtifactOutput[];
   artifactAssignments?: CompilerArtifactAssignment[];
 }) {
@@ -609,7 +642,7 @@ function buildRewardSummary(input: {
 }
 
 function buildConfirmationContract(input: {
-  runtimeFamily: SupportedRuntimeFamily;
+  runtimeFamily: SupportedManagedPresetId;
   metric: string;
   challengeSpec: ChallengeSpecOutput;
   submissionContract: CompilationResultOutput["submission_contract"];
@@ -653,15 +686,15 @@ function buildConfirmationContract(input: {
   };
 }
 
-function buildSemiCustomDryRunPreview(): DryRunPreviewOutput {
+function buildDefinitionBackedDryRunPreview(): DryRunPreviewOutput {
   return {
     status: "skipped",
     summary:
-      "Agora captured a typed semi-custom evaluator contract, but dry-run execution is skipped until a semi-custom scorer path is configured.",
+      "Agora captured a typed evaluator definition, but dry-run execution is skipped until an execution backend is configured.",
   };
 }
 
-function buildSemiCustomConfirmationContract(input: {
+function buildDefinitionBackedConfirmationContract(input: {
   challengeSpec: ChallengeSpecOutput;
   dryRun: DryRunPreviewOutput;
 }): ConfirmationContractOutput {
@@ -688,7 +721,7 @@ function buildSemiCustomConfirmationContract(input: {
     solver_submission: solverSubmission,
     scoring_summary: evaluatorContract
       ? `Agora will score submissions with ${evaluatorContract.scoring.metric} using the ${evaluatorContract.archetype} evaluator contract. ${evaluatorContract.scoring.deterministic_rule} Comparator: ${comparatorLabel}.${input.challengeSpec.minimum_score !== undefined ? ` Submissions below ${input.challengeSpec.minimum_score} are ineligible for payout.` : ""}`
-      : "Agora will score submissions with the typed semi-custom evaluator contract once the execution path is configured.",
+      : "Agora will score submissions with the typed evaluator definition once the execution path is configured.",
     public_private_summary: input.challengeSpec.artifacts.map((artifact) => {
       const accessLabel =
         artifact.visibility === "private"
@@ -710,48 +743,77 @@ function buildSemiCustomConfirmationContract(input: {
   };
 }
 
-async function buildSemiCustomCompilation(input: {
+async function buildDefinitionBackedCompilation(input: {
   intent: ChallengeIntentOutput;
   authoringIr: ChallengeAuthoringIrOutput;
   fetchImpl?: typeof fetch;
   executeScoringPipelineImpl?: typeof executeScoringPipeline;
   getTextImpl?: typeof getText;
+  logger?: AgoraLogger;
+  draftId?: string;
 }): Promise<CompilationResultOutput> {
-  const evaluatorContract = input.authoringIr.evaluation.semi_custom_contract;
+  const evaluatorContract = input.authoringIr.evaluation.evaluator_definition;
   if (!evaluatorContract) {
     throw new AgoraError(
-      "Agora identified a semi-custom evaluator path, but the typed evaluator contract is missing. Next step: add the missing scoring contract details and retry.",
+      "Agora identified a definition-backed evaluator path, but the typed evaluator definition is missing. Next step: add the missing scoring contract details and retry.",
       {
-        code: "SEMI_CUSTOM_CONTRACT_MISSING",
+        code: "EVALUATOR_DEFINITION_MISSING",
         status: 422,
       },
     );
   }
 
   const submissionContract =
-    createSubmissionContractFromSemiCustomEvaluatorContract(evaluatorContract);
+    createSubmissionContractFromDefinitionBackedEvaluatorContract(
+      evaluatorContract,
+    );
   const apiRuntime = readApiServerRuntimeConfig();
-  const executionPlan = resolveSemiCustomExecutionPlan(evaluatorContract);
-  const scorerImage = executionPlan
-    ? await resolveOfficialImageToDigest(
-        resolveSemiCustomExecutionOfficialImage(executionPlan.template),
-        {
-          fetchImpl: input.fetchImpl,
-        },
-      )
-    : undefined;
+  const generatedScorer =
+    buildGeneratedScorerProgramFromDefinitionBackedEvaluator(
+      evaluatorContract,
+    );
+  const executionPlan =
+    resolveDefinitionBackedExecutionPlan(evaluatorContract);
+  const scorerImage = generatedScorer
+    ? await resolveOfficialImageToDigest(resolveGeneratedScorerImage(), {
+        fetchImpl: input.fetchImpl,
+      })
+    : executionPlan
+      ? await resolveOfficialImageToDigest(
+          resolveDefinitionBackedExecutionOfficialImage(
+            executionPlan.template,
+          ),
+          {
+            fetchImpl: input.fetchImpl,
+          },
+        )
+      : undefined;
+  const backendKind = generatedScorer
+    ? "generated_scorer"
+    : executionPlan
+      ? "preset_interpreter"
+      : "definition_only";
+  const executionRuntimeFamily =
+    generatedScorer?.runtime_family ??
+    executionPlan?.runner_runtime_family ??
+    null;
   const challengeSpec = challengeSpecSchemaForChain(apiRuntime.chainId).parse({
-    schema_version: 3,
+    schema_version: 4,
     id: `draft-${Date.now()}`,
     title: input.intent.title,
     domain: input.intent.domain as ChallengeSpecOutput["domain"],
-    type: SEMI_CUSTOM_CHALLENGE_TYPE,
+    type: DEFINITION_BACKED_CHALLENGE_TYPE,
     description: input.intent.description,
     evaluation: {
-      runtime_family: SEMI_CUSTOM_RUNTIME_FAMILY_ID,
+      preset_id: evaluatorContract.archetype,
+      backend_kind: backendKind,
+      ...(executionRuntimeFamily
+        ? { execution_runtime_family: executionRuntimeFamily }
+        : {}),
       metric: evaluatorContract.scoring.metric,
       ...(scorerImage ? { scorer_image: scorerImage } : {}),
       evaluator_contract: evaluatorContract,
+      ...(generatedScorer ? { generated_scorer: generatedScorer } : {}),
     },
     artifacts: input.authoringIr.artifacts.map((artifact) => ({
       role: artifact.selected_role ?? artifact.id,
@@ -781,29 +843,35 @@ async function buildSemiCustomCompilation(input: {
         {
           challengeSpec: canonicalSpec,
           timeoutMs: readManagedAuthoringRuntimeConfig().dryRunTimeoutMs,
+          logger: input.logger,
+          draftId: input.draftId,
         },
         {
           executeScoringPipelineImpl: input.executeScoringPipelineImpl,
           getTextImpl: input.getTextImpl,
         },
       )
-    : buildSemiCustomDryRunPreview();
+    : buildDefinitionBackedDryRunPreview();
 
   return {
-    challenge_type: SEMI_CUSTOM_CHALLENGE_TYPE,
-    runtime_family: SEMI_CUSTOM_RUNTIME_FAMILY_ID,
+    authoring_path: "definition_backed",
+    challenge_type: DEFINITION_BACKED_CHALLENGE_TYPE,
+    preset_id: null,
+    definition_id: evaluatorContract.archetype,
+    backend_kind: executable ? backendKind : "definition_only",
+    execution_runtime_family: executionRuntimeFamily,
     metric: evaluatorContract.scoring.metric,
     resolved_artifacts: canonicalSpec.artifacts,
     submission_contract: canonicalSpec.submission_contract,
     dry_run: dryRun,
     confidence_score: input.authoringIr.routing.confidence_score,
-    reason_codes: ["semi_custom_contract_built"],
+    reason_codes: [generatedScorer ? "generated_scorer_built" : "evaluator_definition_built"],
     warnings: executable
       ? []
       : [
-          "Semi-custom evaluator contract is typed and reviewable, but the scorer execution path is not configured yet.",
+          "The evaluator definition is typed and reviewable, but the execution backend is not configured yet.",
         ],
-    confirmation_contract: buildSemiCustomConfirmationContract({
+    confirmation_contract: buildDefinitionBackedConfirmationContract({
       challengeSpec: canonicalSpec,
       dryRun,
     }),
@@ -811,7 +879,7 @@ async function buildSemiCustomCompilation(input: {
   };
 }
 
-async function buildSemiCustomDraftReviewOutcome(input: {
+async function buildDefinitionBackedDraftReviewOutcome(input: {
   intent: ChallengeIntentOutput;
   authoringIr: ChallengeAuthoringIrOutput;
   fetchImpl?: typeof fetch;
@@ -819,18 +887,22 @@ async function buildSemiCustomDraftReviewOutcome(input: {
   getTextImpl?: typeof getText;
   triggerMessage?: string | null;
   message: string;
+  logger?: AgoraLogger;
+  draftId?: string;
 }): Promise<ManagedAuthoringDraftOutcome> {
-  const compilation = await buildSemiCustomCompilation({
+  const compilation = await buildDefinitionBackedCompilation({
     intent: input.intent,
     authoringIr: input.authoringIr,
     fetchImpl: input.fetchImpl,
     executeScoringPipelineImpl: input.executeScoringPipelineImpl,
     getTextImpl: input.getTextImpl,
+    logger: input.logger,
+    draftId: input.draftId,
   });
   return {
     state: "needs_review",
     compilation,
-    reviewSummary: buildSemiCustomReviewSummary({
+    reviewSummary: buildDefinitionBackedReviewSummary({
       authoringIr: input.authoringIr,
       executable: validateChallengeScoreability(compilation.challenge_spec).ok,
       triggerMessage: input.triggerMessage,
@@ -844,6 +916,8 @@ async function compileManagedAuthoringDraft(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
+    draftId?: string;
+    logger?: AgoraLogger;
   },
   dependencies: {
     fetchImpl?: typeof fetch;
@@ -870,6 +944,8 @@ async function compileManagedAuthoringDraft(
     intent: input.intent,
     uploadedArtifacts: input.uploadedArtifacts,
     fetchImpl: dependencies.fetchImpl,
+    draftId: input.draftId,
+    logger: input.logger,
   });
   if (
     !options.allowLowConfidence &&
@@ -890,19 +966,19 @@ async function compileManagedAuthoringDraft(
 
   const assigned =
     assignArtifactsFromProposal({
-      runtimeFamily: proposal.runtimeFamily,
+      runtimeFamily: proposal.presetId,
       uploadedArtifacts: input.uploadedArtifacts,
       artifactAssignments: proposal.artifactAssignments,
     }) ??
     assignArtifactsHeuristically({
-      runtimeFamily: proposal.runtimeFamily,
+      runtimeFamily: proposal.presetId,
       uploadedArtifacts: input.uploadedArtifacts,
     });
 
-  const runtimeFamily = lookupManagedRuntimeFamily(proposal.runtimeFamily);
+  const runtimeFamily = lookupManagedRuntimeFamily(proposal.presetId);
   if (!runtimeFamily) {
     throw new AgoraError(
-      `Unknown runtime family ${proposal.runtimeFamily}. Next step: choose a supported managed runtime and retry.`,
+      `Unknown managed preset ${proposal.presetId}. Next step: choose a supported managed preset and retry.`,
       {
         code: "MANAGED_RUNTIME_UNKNOWN",
         status: 500,
@@ -911,7 +987,7 @@ async function compileManagedAuthoringDraft(
   }
 
   const payoutThreshold = parsePayoutThreshold(
-    proposal.runtimeFamily,
+    proposal.presetId,
     proposal.metric,
     `${input.intent.description} ${input.intent.payout_condition}`,
   );
@@ -922,7 +998,7 @@ async function compileManagedAuthoringDraft(
         code: "MANAGED_THRESHOLD_UNSUPPORTED",
         status: 422,
         details: {
-          runtimeFamily: proposal.runtimeFamily,
+          runtimeFamily: proposal.presetId,
           metric: proposal.metric,
         },
       },
@@ -930,23 +1006,38 @@ async function compileManagedAuthoringDraft(
   }
   const minimumScore =
     payoutThreshold?.operator === "gte" ? payoutThreshold.value : undefined;
+  const generatedScorer = buildGeneratedScorerProgramForManagedPreset({
+    presetId: proposal.presetId,
+    metric: proposal.metric,
+  });
+  const backendKind = generatedScorer
+    ? "generated_scorer"
+    : ("preset_interpreter" as const);
   const challengeType = getChallengeCompatibilityType({
-    runtimeFamily: proposal.runtimeFamily,
+    presetId: proposal.presetId,
+    backendKind,
   });
   const apiRuntime = readApiServerRuntimeConfig();
 
   const draftSpec = {
-    schema_version: 3 as const,
+    schema_version: 4 as const,
     id: `draft-${Date.now()}`,
     title: input.intent.title,
     description: input.intent.description,
     domain: input.intent.domain as ChallengeSpecOutput["domain"],
     type: challengeType,
     evaluation: {
-      runtime_family: proposal.runtimeFamily,
+      preset_id: proposal.presetId,
+      backend_kind: backendKind,
+      execution_runtime_family: proposal.presetId,
       metric: proposal.metric,
-      scorer_image: runtimeFamily.scorerImage,
-      evaluation_bundle: assigned.evaluationBundle,
+      ...(backendKind === "preset_interpreter"
+        ? { scorer_image: runtimeFamily.scorerImage }
+        : {}),
+      ...(backendKind === "preset_interpreter"
+        ? { evaluation_bundle: assigned.evaluationBundle }
+        : {}),
+      ...(generatedScorer ? { generated_scorer: generatedScorer } : {}),
     },
     artifacts: assigned.resolvedArtifacts,
     submission_contract: assigned.submissionContract,
@@ -971,6 +1062,8 @@ async function compileManagedAuthoringDraft(
     {
       challengeSpec: canonicalSpec,
       timeoutMs: managedRuntime.dryRunTimeoutMs,
+      draftId: input.draftId,
+      logger: input.logger,
     },
     {
       executeScoringPipelineImpl: dependencies.executeScoringPipelineImpl,
@@ -979,7 +1072,7 @@ async function compileManagedAuthoringDraft(
   );
 
   const confirmationContract = buildConfirmationContract({
-    runtimeFamily: proposal.runtimeFamily,
+    runtimeFamily: proposal.presetId,
     metric: proposal.metric,
     challengeSpec: canonicalSpec,
     submissionContract: assigned.submissionContract,
@@ -989,8 +1082,12 @@ async function compileManagedAuthoringDraft(
   return {
     proposal,
     compilation: {
+      authoring_path: "preset_supported",
       challenge_type: challengeType,
-      runtime_family: proposal.runtimeFamily,
+      preset_id: proposal.presetId,
+      definition_id: null,
+      backend_kind: backendKind,
+      execution_runtime_family: proposal.presetId,
       metric: proposal.metric,
       resolved_artifacts: canonicalSpec.artifacts,
       submission_contract: canonicalSpec.submission_contract,
@@ -1008,6 +1105,8 @@ export async function compileManagedAuthoringSession(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
+    draftId?: string;
+    logger?: AgoraLogger;
   },
   dependencies: {
     fetchImpl?: typeof fetch;
@@ -1023,6 +1122,8 @@ export async function compileManagedAuthoringDraftOutcome(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
+    draftId?: string;
+    logger?: AgoraLogger;
   },
   dependencies: {
     fetchImpl?: typeof fetch;
@@ -1030,6 +1131,15 @@ export async function compileManagedAuthoringDraftOutcome(
     getTextImpl?: typeof getText;
   } = {},
 ): Promise<ManagedAuthoringDraftOutcome> {
+  input.logger?.info(
+    {
+      event: "authoring.compile.started",
+      draftId: input.draftId ?? null,
+      artifactCount: input.uploadedArtifacts.length,
+    },
+    "Started managed authoring compile",
+  );
+
   try {
     const result = await compileManagedAuthoringDraft(input, dependencies, {
       allowLowConfidence: true,
@@ -1037,24 +1147,32 @@ export async function compileManagedAuthoringDraftOutcome(
 
     if (result.proposal.confidenceScore < MIN_CONFIDENCE_SCORE) {
       if (result.proposal.reasonCodes.includes("no_supported_runtime_signal")) {
-        const semiCustomAuthoringIr = buildManagedAuthoringIr({
+        const definitionBackedAuthoringIr = buildManagedAuthoringIr({
           intent: input.intent,
           uploadedArtifacts: input.uploadedArtifacts,
           origin: { provider: "direct" },
           confidenceScore: result.proposal.confidenceScore,
         });
-        if (semiCustomAuthoringIr.routing.mode === "semi_custom") {
-          return buildSemiCustomDraftReviewOutcome({
+        if (definitionBackedAuthoringIr.routing.mode === "definition_backed") {
+          const outcome = await buildDefinitionBackedDraftReviewOutcome({
             intent: input.intent,
-            authoringIr: semiCustomAuthoringIr,
+            authoringIr: definitionBackedAuthoringIr,
             fetchImpl: dependencies.fetchImpl,
             executeScoringPipelineImpl: dependencies.executeScoringPipelineImpl,
             getTextImpl: dependencies.getTextImpl,
             triggerMessage:
-              "The compiler could not find a strong managed runtime fit.",
+              "The compiler could not find a strong managed preset fit.",
             message:
-              "Agora captured a deterministic draft, but it needs a semi-custom evaluator instead of a current managed template.",
+              "Agora captured a deterministic draft, but it needs a definition-backed evaluator path instead of a current managed preset.",
+            logger: input.logger,
+            draftId: input.draftId,
           });
+          logManagedAuthoringOutcome({
+            logger: input.logger,
+            draftId: input.draftId,
+            outcome,
+          });
+          return outcome;
         }
       }
 
@@ -1062,12 +1180,12 @@ export async function compileManagedAuthoringDraftOutcome(
         intent: input.intent,
         uploadedArtifacts: input.uploadedArtifacts,
         origin: { provider: "direct" },
-        runtimeFamily: result.proposal.runtimeFamily,
+        presetId: result.proposal.presetId,
         metric: result.proposal.metric,
         confidenceScore: result.proposal.confidenceScore,
-        routingMode: "managed_supported",
+        routingMode: "preset_supported",
       });
-      return {
+      const outcome: ManagedAuthoringDraftOutcome = {
         state: "needs_review",
         compilation: result.compilation,
         reviewSummary: buildManagedReviewSummaryFromCompilation(
@@ -1077,24 +1195,36 @@ export async function compileManagedAuthoringDraftOutcome(
         message:
           "Agora compiled a managed challenge contract, but it wants operator review before this draft can publish.",
       };
+      logManagedAuthoringOutcome({
+        logger: input.logger,
+        draftId: input.draftId,
+        outcome,
+      });
+      return outcome;
     }
 
     const authoringIr = buildManagedAuthoringIr({
       intent: input.intent,
       uploadedArtifacts: input.uploadedArtifacts,
       origin: { provider: "direct" },
-      runtimeFamily: result.proposal.runtimeFamily,
+      presetId: result.proposal.presetId,
       metric: result.proposal.metric,
       confidenceScore: result.proposal.confidenceScore,
-      routingMode: "managed_supported",
+      routingMode: "preset_supported",
     });
-    return {
+    const outcome: ManagedAuthoringDraftOutcome = {
       state: "ready",
       compilation: result.compilation,
       authoringIr,
       message:
         "Agora mapped your files, chose a managed runtime, and prepared a review contract.",
     };
+    logManagedAuthoringOutcome({
+      logger: input.logger,
+      draftId: input.draftId,
+      outcome,
+    });
+    return outcome;
   } catch (error) {
     if (
       error instanceof AgoraError &&
@@ -1104,9 +1234,9 @@ export async function compileManagedAuthoringDraftOutcome(
         intent: input.intent,
         uploadedArtifacts: input.uploadedArtifacts,
         origin: { provider: "direct" },
-        runtimeFamily:
+        presetId:
           typeof error.details?.runtimeFamily === "string"
-            ? (error.details.runtimeFamily as SupportedRuntimeFamily)
+            ? (error.details.runtimeFamily as SupportedManagedPresetId)
             : undefined,
         metric:
           typeof error.details?.metric === "string"
@@ -1115,7 +1245,7 @@ export async function compileManagedAuthoringDraftOutcome(
         confidenceScore: 0.4,
         error,
       });
-      return {
+      const outcome: ManagedAuthoringDraftOutcome = {
         state: "needs_clarification",
         authoringIr,
         clarificationQuestions:
@@ -1124,30 +1254,54 @@ export async function compileManagedAuthoringDraftOutcome(
           error.message ||
           "Agora needs a little more context before it can lock the challenge contract.",
       };
+      logManagedAuthoringOutcome({
+        logger: input.logger,
+        draftId: input.draftId,
+        outcome,
+      });
+      return outcome;
     }
 
-    const semiCustomAuthoringIr = buildManagedAuthoringIr({
+    const definitionBackedAuthoringIr = buildManagedAuthoringIr({
       intent: input.intent,
       uploadedArtifacts: input.uploadedArtifacts,
       origin: { provider: "direct" },
       confidenceScore: 0.55,
     });
     if (
-      semiCustomAuthoringIr.routing.mode === "semi_custom" &&
+      definitionBackedAuthoringIr.routing.mode === "definition_backed" &&
       error instanceof AgoraError &&
       error.code === "MANAGED_COMPILATION_LOW_CONFIDENCE"
     ) {
-      return buildSemiCustomDraftReviewOutcome({
+      const outcome = await buildDefinitionBackedDraftReviewOutcome({
         intent: input.intent,
-        authoringIr: semiCustomAuthoringIr,
+        authoringIr: definitionBackedAuthoringIr,
         fetchImpl: dependencies.fetchImpl,
         executeScoringPipelineImpl: dependencies.executeScoringPipelineImpl,
         getTextImpl: dependencies.getTextImpl,
         triggerMessage: error.message,
         message:
-          "Agora could not compile this draft into a current managed runtime, but it still looks deterministic enough for a semi-custom evaluator path.",
+          "Agora could not compile this draft into a current managed preset, but it still looks deterministic enough for a definition-backed evaluator path.",
+        logger: input.logger,
+        draftId: input.draftId,
       });
+      logManagedAuthoringOutcome({
+        logger: input.logger,
+        draftId: input.draftId,
+        outcome,
+      });
+      return outcome;
     }
+    input.logger?.warn(
+      {
+        event: "authoring.compile.failed",
+        draftId: input.draftId ?? null,
+        code: error instanceof AgoraError ? error.code : null,
+        status: error instanceof AgoraError ? error.status : null,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      "Managed authoring compile failed",
+    );
     throw error;
   }
 }

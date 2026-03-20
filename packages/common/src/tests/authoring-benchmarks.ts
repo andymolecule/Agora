@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
+const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const benchmarkRoot = path.resolve(
-  process.cwd(),
-  "../../challenges/test-data/authoring-benchmarks",
+  TEST_DIR,
+  "../../../../challenges/test-data/authoring-benchmarks",
 );
 
 const compileStateSchema = z.enum([
@@ -16,17 +18,24 @@ const compileStateSchema = z.enum([
 
 const benchmarkSchema = z.object({
   id: z.string().min(1),
-  managed_support: z.enum([
+  authoring_path_support: z.enum([
     "supported",
-    "semi_custom_executable",
-    "semi_custom_typed",
+    "definition_backed_executable",
+    "definition_backed_typed",
   ]),
   intent_family: z.string().min(1),
   artifacts_root: z.string().min(1),
   prompt_variants_root: z.string().min(1),
   solver_submissions_root: z.string().min(1),
   compile_invariants: z.object({
-    runtime_family: z.string().min(1),
+    preset_id: z.string().min(1),
+    backend_kind: z.enum([
+      "preset_interpreter",
+      "definition_only",
+      "generated_scorer",
+      "oci_image",
+    ]),
+    execution_runtime_family: z.string().min(1).nullable().optional(),
     metric: z.string().min(1),
     artifact_roles: z
       .array(
@@ -50,7 +59,7 @@ const benchmarkSchema = z.object({
   }),
   acceptable_compile_states: z.array(compileStateSchema).min(1),
   disallowed_outcomes: z.object({
-    runtime_families: z.array(z.string().min(1)),
+    preset_ids: z.array(z.string().min(1)),
     recommended_actions: z.array(z.string().min(1)),
   }),
   prompt_variants: z
@@ -84,8 +93,8 @@ assert.ok(
   "authoring benchmark corpus should cover more than one narrow benchmark family",
 );
 
-let sawSemiCustomExecutable = false;
-let sawSemiCustomTyped = false;
+let sawDefinitionBackedExecutable = false;
+let sawDefinitionBackedTyped = false;
 
 for (const benchmarkId of benchmarkEntries) {
   const benchmarkDir = path.join(benchmarkRoot, benchmarkId);
@@ -147,18 +156,19 @@ for (const benchmarkId of benchmarkEntries) {
     );
   }
 
-  sawSemiCustomExecutable ||=
-    benchmark.managed_support === "semi_custom_executable";
-  sawSemiCustomTyped ||= benchmark.managed_support === "semi_custom_typed";
+  sawDefinitionBackedExecutable ||=
+    benchmark.authoring_path_support === "definition_backed_executable";
+  sawDefinitionBackedTyped ||=
+    benchmark.authoring_path_support === "definition_backed_typed";
 }
 
 assert.ok(
-  sawSemiCustomExecutable,
-  "authoring benchmark corpus should include an executable semi-custom benchmark",
+  sawDefinitionBackedExecutable,
+  "authoring benchmark corpus should include an executable definition-backed benchmark",
 );
 assert.ok(
-  sawSemiCustomTyped,
-  "authoring benchmark corpus should include a typed-only semi-custom benchmark",
+  sawDefinitionBackedTyped,
+  "authoring benchmark corpus should include a typed-only definition-backed benchmark",
 );
 
 console.log("authoring benchmark corpus validation passed");

@@ -4,6 +4,8 @@ export * from "./types/submission.js";
 export * from "./types/scoring.js";
 export * from "./errors.js";
 export * from "./challenges/index.js";
+export * from "./evaluation-plan.js";
+export * from "./generated-scorers.js";
 export * from "./schemas/challenge-spec.js";
 export * from "./schemas/authoring-source.js";
 export * from "./schemas/evaluator-contract.js";

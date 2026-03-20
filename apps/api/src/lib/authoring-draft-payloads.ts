@@ -107,18 +107,25 @@ export function buildAuthoringDraftAssessment(
     draft.compilation_json?.confidence_score ??
     draft.authoring_ir_json?.routing.confidence_score ??
     0;
-  const runtimeFamily =
-    draft.compilation_json?.runtime_family ??
-    draft.authoring_ir_json?.evaluation.runtime_family ??
+  const presetId =
+    draft.compilation_json?.preset_id ??
+    draft.authoring_ir_json?.evaluation.preset_id ??
+    null;
+  const definitionId =
+    draft.compilation_json?.definition_id ??
+    draft.authoring_ir_json?.evaluation.definition_id ??
+    null;
+  const backendKind =
+    draft.compilation_json?.backend_kind ??
+    draft.authoring_ir_json?.evaluation.backend_kind ??
+    null;
+  const executionRuntimeFamily =
+    draft.compilation_json?.execution_runtime_family ??
+    draft.authoring_ir_json?.evaluation.execution_runtime_family ??
     null;
   const metric =
     draft.compilation_json?.metric ??
     draft.authoring_ir_json?.evaluation.metric ??
-    null;
-  const evaluatorArchetype =
-    draft.compilation_json?.challenge_spec.evaluation.evaluator_contract
-      ?.archetype ??
-    draft.authoring_ir_json?.evaluation.semi_custom_contract?.archetype ??
     null;
   const reasonCodes = [
     ...(draft.compilation_json?.reason_codes ?? []),
@@ -150,9 +157,11 @@ export function buildAuthoringDraftAssessment(
     requires_review: draft.state === "needs_review",
     confidence: toConfidenceBucket(confidenceScore),
     confidence_score: confidenceScore,
-    runtime_family: runtimeFamily,
+    preset_id: presetId,
+    definition_id: definitionId,
+    backend_kind: backendKind,
+    execution_runtime_family: executionRuntimeFamily,
     metric,
-    evaluator_archetype: evaluatorArchetype,
     reason_codes: [...new Set(reasonCodes)],
     missing: [...new Set(missing)],
     suggestions: [...new Set(suggestions)],

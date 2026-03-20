@@ -4,16 +4,18 @@ import { hydrateChallengeSpec } from "../src/lib/api";
 
 test("hydrateChallengeSpec accepts current specs", () => {
   const spec = hydrateChallengeSpec({
-    schema_version: 3,
+    schema_version: 4,
     id: "current-1",
     title: "Current spec",
     domain: "other",
     type: "reproducibility",
     description: "Pinned with the current schema",
     evaluation: {
-      runtime_family: "reproducibility",
+      preset_id: "reproducibility",
+      backend_kind: "preset_interpreter",
+      execution_runtime_family: "reproducibility",
       metric: "exact_match",
-      scorer_image: "ghcr.io/andymolecule/repro-scorer:v1",
+      scorer_image: "ghcr.io/andymolecule/gems-match-scorer:v1",
       evaluation_bundle: "ipfs://test",
     },
     artifacts: [
@@ -70,7 +72,7 @@ test("hydrateChallengeSpec rejects malformed historical specs with a clear error
         type: "reproducibility",
         description: "Pinned before submission_contract was added",
         scoring: {
-          container: "ghcr.io/andymolecule/repro-scorer:v1",
+          container: "ghcr.io/andymolecule/gems-match-scorer:v1",
           metric: "custom",
         },
         reward: {

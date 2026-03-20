@@ -17,6 +17,11 @@ const baseIntent = {
   timezone: "UTC",
 };
 
+const GENERATED_SCORER_IMAGE_DIGEST_PATTERN =
+  /^ghcr\.io\/andymolecule\/gems-generated-scorer@sha256:[a-f0-9]{64}$/;
+const GENERATED_SCORER_IMAGE_REFERENCE_PATTERN =
+  /^ghcr\.io\/andymolecule\/gems-generated-scorer(?::v1|@sha256:[a-f0-9]{64})$/;
+
 const uploadedArtifacts = [
   {
     id: "train",
@@ -76,7 +81,7 @@ function buildDryRunDependencies() {
           selected_metric: "rmse",
         },
         containerImageDigest:
-          "ghcr.io/andymolecule/regression-scorer@sha256:1234",
+          "ghcr.io/andymolecule/gems-tabular-scorer@sha256:1234",
         log: "",
         outputPath: "/tmp/output/score.json",
       },
@@ -103,7 +108,7 @@ function buildDockingDryRunDependencies() {
           selected_metric_value: 0.97,
           selected_metric: "spearman",
         },
-        containerImageDigest: "ghcr.io/andymolecule/docking-scorer@sha256:1234",
+        containerImageDigest: "ghcr.io/andymolecule/gems-ranking-scorer@sha256:1234",
         log: "",
         outputPath: "/tmp/output/score.json",
       },
@@ -144,7 +149,7 @@ function buildStructuredRecordDryRunDependencies() {
           checks_total: 7,
         },
         containerImageDigest:
-          "ghcr.io/andymolecule/repro-scorer@sha256:1234",
+          "ghcr.io/andymolecule/gems-match-scorer@sha256:1234",
         log: "",
         outputPath: "/tmp/output/score.json",
       },
@@ -171,9 +176,16 @@ test("managed authoring accepts RMSE regression challenges", async () => {
     buildDryRunDependencies(),
   );
 
-  assert.equal(result.runtime_family, "tabular_regression");
+  assert.equal(result.preset_id, "tabular_regression");
+  assert.equal(result.backend_kind, "generated_scorer");
+  assert.equal(result.execution_runtime_family, "tabular_regression");
   assert.equal(result.metric, "rmse");
   assert.equal(result.challenge_spec.evaluation.metric, "rmse");
+  assert.equal(result.challenge_spec.evaluation.backend_kind, "generated_scorer");
+  assert.match(
+    result.challenge_spec.evaluation.scorer_image ?? "",
+    GENERATED_SCORER_IMAGE_REFERENCE_PATTERN,
+  );
   assert.equal(result.challenge_spec.dispute_window_hours, 168);
   assert.equal(result.dry_run.status, "validated");
   assert.match(
@@ -196,6 +208,7 @@ test("managed authoring preserves explicit testnet dispute windows", async () =>
   );
 
   assert.equal(result.challenge_spec.dispute_window_hours, 0);
+  assert.equal(result.challenge_spec.evaluation.backend_kind, "generated_scorer");
 });
 
 test("managed authoring compiles docking challenges into the docking runtime family", async () => {
@@ -216,7 +229,9 @@ test("managed authoring compiles docking challenges into the docking runtime fam
   );
 
   assert.equal(result.challenge_type, "docking");
-  assert.equal(result.runtime_family, "docking");
+  assert.equal(result.preset_id, "docking");
+  assert.equal(result.backend_kind, "preset_interpreter");
+  assert.equal(result.execution_runtime_family, "docking");
   assert.equal(result.metric, "spearman");
   assert.equal(result.challenge_spec.type, "docking");
   assert.equal(
@@ -272,7 +287,7 @@ test("managed authoring uses openai-compatible compiler responses when configure
                 {
                   message: {
                     content: JSON.stringify({
-                      runtime_family: "tabular_regression",
+                      preset_id: "tabular_regression",
                       metric: "r2",
                       confidence_score: 0.94,
                       reason_codes: ["model_selected_runtime"],
@@ -307,7 +322,7 @@ test("managed authoring uses openai-compatible compiler responses when configure
       },
     );
 
-    assert.equal(result.runtime_family, "tabular_regression");
+    assert.equal(result.preset_id, "tabular_regression");
     assert.equal(result.metric, "r2");
     assert.deepEqual(result.reason_codes, ["model_selected_runtime"]);
   } finally {
@@ -340,7 +355,7 @@ test("managed authoring routes low-confidence drafts into operator review", asyn
                 {
                   message: {
                     content: JSON.stringify({
-                      runtime_family: "tabular_regression",
+                      preset_id: "tabular_regression",
                       metric: "r2",
                       confidence_score: 0.62,
                       reason_codes: ["weak_artifact_role_signals"],
@@ -378,7 +393,7 @@ test("managed authoring routes low-confidence drafts into operator review", asyn
     );
 
     assert.equal(result.state, "needs_review");
-    assert.equal(result.compilation?.runtime_family, "tabular_regression");
+    assert.equal(result.compilation?.preset_id, "tabular_regression");
     assert.equal(
       result.reviewSummary?.recommended_action,
       "approve_after_review",
@@ -389,7 +404,7 @@ test("managed authoring routes low-confidence drafts into operator review", asyn
   }
 });
 
-test("managed authoring routes low-confidence non-managed drafts into semi-custom review", async () => {
+test("managed authoring routes low-confidence non-managed drafts into definition-backed review", async () => {
   const originalEnv = { ...process.env };
   process.env.AGORA_MANAGED_AUTHORING_COMPILER_BACKEND = "openai_compatible";
   process.env.AGORA_MANAGED_AUTHORING_MODEL = "gpt-5-mini";
@@ -413,14 +428,30 @@ test("managed authoring routes low-confidence non-managed drafts into semi-custo
       },
       {
         ...buildDryRunDependencies(),
-        fetchImpl: async (_url: string | URL | Request, _init?: RequestInit) =>
-          new Response(
+        fetchImpl: async (url: string | URL | Request, _init?: RequestInit) => {
+          const requestUrl =
+            typeof url === "string"
+              ? url
+              : url instanceof URL
+                ? url.toString()
+                : url.url;
+          if (requestUrl.includes("ghcr.io/v2/")) {
+            return new Response(null, {
+              status: 200,
+              headers: {
+                "docker-content-digest":
+                  "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+              },
+            });
+          }
+
+          return new Response(
             JSON.stringify({
               choices: [
                 {
                   message: {
                     content: JSON.stringify({
-                      runtime_family: "tabular_regression",
+                      preset_id: "tabular_regression",
                       metric: "r2",
                       confidence_score: 0.41,
                       reason_codes: ["no_supported_runtime_signal"],
@@ -453,42 +484,55 @@ test("managed authoring routes low-confidence non-managed drafts into semi-custo
               status: 200,
               headers: { "content-type": "application/json" },
             },
-          ),
+          );
+        },
       },
     );
 
     assert.equal(result.state, "needs_review");
-    assert.equal(result.compilation?.runtime_family, "semi_custom");
+    assert.equal(result.compilation?.authoring_path, "definition_backed");
+    assert.equal(result.compilation?.definition_id, "structured_record_score");
     assert.equal(
-      result.compilation?.challenge_spec.evaluation.runtime_family,
-      "semi_custom",
+      result.compilation?.challenge_spec.evaluation.preset_id,
+      "structured_record_score",
     );
     assert.equal(
-      "scorer_image" in (result.compilation?.challenge_spec.evaluation ?? {}),
-      false,
+      result.compilation?.challenge_spec.evaluation.backend_kind,
+      "generated_scorer",
+    );
+    assert.match(
+      result.compilation?.challenge_spec.evaluation.scorer_image ?? "",
+      GENERATED_SCORER_IMAGE_DIGEST_PATTERN,
     );
     assert.equal(
       result.compilation?.challenge_spec.evaluation.evaluator_contract
         ?.archetype,
       "structured_record_score",
     );
-    assert.equal(result.compilation?.dry_run.status, "skipped");
-    assert.equal(result.authoringIr.routing.mode, "semi_custom");
     assert.equal(
-      result.authoringIr.evaluation.evaluator_candidates[0]?.kind,
-      "semi_custom",
+      result.compilation?.challenge_spec.evaluation.generated_scorer?.language,
+      "python",
+    );
+    assert.equal(result.compilation?.dry_run.status, "validated");
+    assert.equal(result.authoringIr.routing.mode, "definition_backed");
+    assert.equal(
+      result.authoringIr.evaluation.path_candidates[0]?.kind,
+      "definition_backed",
     );
     assert.equal(
       result.reviewSummary?.recommended_action,
-      "send_to_expert_mode",
+      "approve_after_review",
     );
-    assert.match(result.reviewSummary?.summary ?? "", /semi-custom evaluator/i);
+    assert.match(
+      result.reviewSummary?.summary ?? "",
+      /definition-backed evaluator/i,
+    );
   } finally {
     process.env = originalEnv;
   }
 });
 
-test("managed authoring can build an executable semi-custom table contract for review", async () => {
+test("managed authoring can build an executable definition-backed table contract for review", async () => {
   const originalEnv = { ...process.env };
   process.env.AGORA_MANAGED_AUTHORING_COMPILER_BACKEND = "openai_compatible";
   process.env.AGORA_MANAGED_AUTHORING_MODEL = "gpt-5-mini";
@@ -534,7 +578,7 @@ test("managed authoring can build an executable semi-custom table contract for r
                 {
                   message: {
                     content: JSON.stringify({
-                      runtime_family: "tabular_regression",
+                      preset_id: "tabular_regression",
                       metric: "rmse",
                       confidence_score: 0.43,
                       reason_codes: ["no_supported_runtime_signal"],
@@ -556,7 +600,13 @@ test("managed authoring can build an executable semi-custom table contract for r
     );
 
     assert.equal(result.state, "needs_review");
-    assert.equal(result.compilation?.runtime_family, "semi_custom");
+    assert.equal(result.compilation?.authoring_path, "definition_backed");
+    assert.equal(result.compilation?.definition_id, "structured_table_score");
+    assert.equal(result.compilation?.backend_kind, "generated_scorer");
+    assert.equal(
+      result.compilation?.execution_runtime_family,
+      "tabular_regression",
+    );
     assert.equal(result.compilation?.dry_run.status, "validated");
     assert.equal(
       result.compilation?.challenge_spec.evaluation.evaluator_contract
@@ -564,8 +614,12 @@ test("managed authoring can build an executable semi-custom table contract for r
       "official_table_metric_v1",
     );
     assert.equal(
-      result.compilation?.challenge_spec.evaluation.scorer_image,
-      "ghcr.io/andymolecule/regression-scorer@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      result.compilation?.challenge_spec.evaluation.backend_kind,
+      "generated_scorer",
+    );
+    assert.match(
+      result.compilation?.challenge_spec.evaluation.scorer_image ?? "",
+      GENERATED_SCORER_IMAGE_DIGEST_PATTERN,
     );
     assert.equal(
       result.reviewSummary?.recommended_action,
@@ -576,7 +630,7 @@ test("managed authoring can build an executable semi-custom table contract for r
   }
 });
 
-test("managed authoring can build an executable semi-custom exact-match contract for review", async () => {
+test("managed authoring can build an executable definition-backed exact-match contract for review", async () => {
   const originalEnv = { ...process.env };
   process.env.AGORA_MANAGED_AUTHORING_COMPILER_BACKEND = "openai_compatible";
   process.env.AGORA_MANAGED_AUTHORING_MODEL = "gpt-5-mini";
@@ -624,7 +678,7 @@ test("managed authoring can build an executable semi-custom exact-match contract
                 {
                   message: {
                     content: JSON.stringify({
-                      runtime_family: "reproducibility",
+                      preset_id: "reproducibility",
                       metric: "exact_match",
                       confidence_score: 0.41,
                       reason_codes: ["no_supported_runtime_signal"],
@@ -646,7 +700,13 @@ test("managed authoring can build an executable semi-custom exact-match contract
     );
 
     assert.equal(result.state, "needs_review");
-    assert.equal(result.compilation?.runtime_family, "semi_custom");
+    assert.equal(result.compilation?.authoring_path, "definition_backed");
+    assert.equal(result.compilation?.definition_id, "exact_artifact_match");
+    assert.equal(result.compilation?.backend_kind, "generated_scorer");
+    assert.equal(
+      result.compilation?.execution_runtime_family,
+      "reproducibility",
+    );
     assert.equal(result.compilation?.dry_run.status, "validated");
     assert.equal(
       result.compilation?.challenge_spec.evaluation.evaluator_contract
@@ -654,8 +714,12 @@ test("managed authoring can build an executable semi-custom exact-match contract
       "official_exact_match_v1",
     );
     assert.equal(
-      result.compilation?.challenge_spec.evaluation.scorer_image,
-      "ghcr.io/andymolecule/repro-scorer@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      result.compilation?.challenge_spec.evaluation.backend_kind,
+      "generated_scorer",
+    );
+    assert.match(
+      result.compilation?.challenge_spec.evaluation.scorer_image ?? "",
+      GENERATED_SCORER_IMAGE_DIGEST_PATTERN,
     );
     assert.equal(
       result.reviewSummary?.recommended_action,
@@ -727,7 +791,7 @@ test("managed authoring can build an executable JSON exact-match contract for re
                 {
                   message: {
                     content: JSON.stringify({
-                      runtime_family: "reproducibility",
+                      preset_id: "reproducibility",
                       metric: "exact_match",
                       confidence_score: 0.39,
                       reason_codes: ["no_supported_runtime_signal"],
@@ -749,7 +813,9 @@ test("managed authoring can build an executable JSON exact-match contract for re
     );
 
     assert.equal(result.state, "needs_review");
-    assert.equal(result.compilation?.runtime_family, "semi_custom");
+    assert.equal(result.compilation?.authoring_path, "definition_backed");
+    assert.equal(result.compilation?.definition_id, "exact_artifact_match");
+    assert.equal(result.compilation?.backend_kind, "generated_scorer");
     assert.equal(result.compilation?.dry_run.status, "validated");
     assert.equal(
       result.compilation?.challenge_spec.evaluation.evaluator_contract
@@ -763,7 +829,7 @@ test("managed authoring can build an executable JSON exact-match contract for re
     );
     assert.match(
       result.compilation?.challenge_spec.evaluation.scorer_image ?? "",
-      /^ghcr\.io\/andymolecule\/repro-scorer@sha256:[a-f0-9]{64}$/,
+      GENERATED_SCORER_IMAGE_DIGEST_PATTERN,
     );
     assert.equal(
       result.compilation?.challenge_spec.submission_contract.kind,
@@ -850,7 +916,7 @@ test("managed authoring can build an executable structured-record contract for r
                 {
                   message: {
                     content: JSON.stringify({
-                      runtime_family: "reproducibility",
+                      preset_id: "reproducibility",
                       metric: "exact_match",
                       confidence_score: 0.4,
                       reason_codes: ["no_supported_runtime_signal"],
@@ -872,7 +938,9 @@ test("managed authoring can build an executable structured-record contract for r
     );
 
     assert.equal(result.state, "needs_review");
-    assert.equal(result.compilation?.runtime_family, "semi_custom");
+    assert.equal(result.compilation?.authoring_path, "definition_backed");
+    assert.equal(result.compilation?.definition_id, "structured_record_score");
+    assert.equal(result.compilation?.backend_kind, "generated_scorer");
     assert.equal(result.compilation?.dry_run.status, "validated");
     assert.equal(
       result.compilation?.challenge_spec.evaluation.evaluator_contract
@@ -902,7 +970,7 @@ test("managed authoring can build an executable structured-record contract for r
     );
     assert.match(
       result.compilation?.challenge_spec.evaluation.scorer_image ?? "",
-      /^ghcr\.io\/andymolecule\/repro-scorer@sha256:[a-f0-9]{64}$/,
+      GENERATED_SCORER_IMAGE_DIGEST_PATTERN,
     );
     assert.equal(
       result.reviewSummary?.recommended_action,
@@ -974,7 +1042,7 @@ test("managed authoring can build an executable opaque exact-match contract for 
                 {
                   message: {
                     content: JSON.stringify({
-                      runtime_family: "reproducibility",
+                      preset_id: "reproducibility",
                       metric: "exact_match",
                       confidence_score: 0.4,
                       reason_codes: ["no_supported_runtime_signal"],
@@ -996,7 +1064,9 @@ test("managed authoring can build an executable opaque exact-match contract for 
     );
 
     assert.equal(result.state, "needs_review");
-    assert.equal(result.compilation?.runtime_family, "semi_custom");
+    assert.equal(result.compilation?.authoring_path, "definition_backed");
+    assert.equal(result.compilation?.definition_id, "exact_artifact_match");
+    assert.equal(result.compilation?.backend_kind, "generated_scorer");
     assert.equal(result.compilation?.dry_run.status, "validated");
     assert.equal(
       result.compilation?.challenge_spec.evaluation.evaluator_contract
@@ -1010,7 +1080,7 @@ test("managed authoring can build an executable opaque exact-match contract for 
     );
     assert.match(
       result.compilation?.challenge_spec.evaluation.scorer_image ?? "",
-      /^ghcr\.io\/andymolecule\/repro-scorer@sha256:[a-f0-9]{64}$/,
+      GENERATED_SCORER_IMAGE_DIGEST_PATTERN,
     );
     assert.equal(
       result.compilation?.challenge_spec.submission_contract.kind,

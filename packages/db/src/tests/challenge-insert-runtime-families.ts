@@ -6,7 +6,7 @@ import {
   createCsvTableSubmissionContract,
   createOpaqueFileSubmissionContract,
 } from "@agora/common";
-import { buildChallengeInsert } from "../queries/challenges";
+import { buildChallengeInsert, upsertChallenge } from "../queries/challenges";
 
 const predictionSubmissionContract = createCsvTableSubmissionContract({
   requiredColumns: ["id", "prediction"],
@@ -27,16 +27,17 @@ const baseInput = {
 };
 
 const regressionSpec = challengeSpecSchema.parse({
-  schema_version: 3,
+  schema_version: 4,
   id: "ch-1",
   title: "Regression challenge",
   domain: "omics",
   type: "prediction",
   description: "desc",
   evaluation: {
-    runtime_family: "tabular_regression",
+    preset_id: "tabular_regression",
+    backend_kind: "preset_interpreter",
+    execution_runtime_family: "tabular_regression",
     metric: "r2",
-    scorer_image: "ghcr.io/placeholder/will-be-overridden:v1",
     evaluation_bundle: "ipfs://QmHiddenLabelsOnly",
   },
   artifacts: [
@@ -68,13 +69,14 @@ const insertWithManagedRuntime = await buildChallengeInsert({
 });
 assert.equal(insertWithManagedRuntime.runtime_family, "tabular_regression");
 assert.equal(insertWithManagedRuntime.challenge_type, "prediction");
+assert.equal(insertWithManagedRuntime.evaluation_json, null);
 assert.equal(
-  insertWithManagedRuntime.evaluation_json.scorer_image,
-  "ghcr.io/andymolecule/regression-scorer:v1",
+  insertWithManagedRuntime.evaluation_plan_json?.executionRuntimeFamily,
+  "tabular_regression",
 );
 assert.equal(
-  insertWithManagedRuntime.evaluation_json.evaluation_bundle,
-  "ipfs://QmHiddenLabelsOnly",
+  insertWithManagedRuntime.evaluation_plan_json?.submissionContract?.kind,
+  "csv_table",
 );
 assert.equal(insertWithManagedRuntime.artifacts_json.length, 2);
 assert.equal(
@@ -114,14 +116,15 @@ assert.equal(
 );
 
 const customSpec = challengeSpecSchema.parse({
-  schema_version: 3,
+  schema_version: 4,
   id: "ch-4",
   title: "Custom challenge",
   domain: "other",
   type: "custom",
   description: "desc",
   evaluation: {
-    runtime_family: "expert_custom",
+    preset_id: "custom",
+    backend_kind: "oci_image",
     metric: "custom",
     scorer_image: `ghcr.io/acme/custom-scorer@sha256:${"a".repeat(64)}`,
   },
@@ -147,11 +150,9 @@ const customInsert = await buildChallengeInsert({
   ...baseInput,
   spec: customSpec,
 });
-assert.equal(customInsert.runtime_family, "expert_custom");
-assert.equal(
-  customInsert.evaluation_json.scorer_image,
-  customSpec.evaluation.scorer_image,
-);
+assert.equal(customInsert.runtime_family, "custom");
+assert.equal(customInsert.evaluation_json, null);
+assert.equal(customInsert.evaluation_plan_json?.backendKind, "oci_image");
 assert.equal(customInsert.submission_contract_json?.kind, "opaque_file");
 
 const managedWithLimits = challengeSpecSchema.parse({
@@ -166,6 +167,35 @@ const customLimitsInsert = await buildChallengeInsert({
 });
 assert.equal(customLimitsInsert.max_submissions_total, 25);
 assert.equal(customLimitsInsert.max_submissions_per_solver, 2);
+
+await assert.rejects(
+  () =>
+    upsertChallenge(
+      {
+        from() {
+          return {
+            upsert() {
+              return {
+                select() {
+                  return {
+                    single: async () => ({
+                      data: null,
+                      error: {
+                        message:
+                          'null value in column "evaluation_json" of relation "challenges" violates not-null constraint',
+                      },
+                    }),
+                  };
+                },
+              };
+            },
+          };
+        },
+      } as never,
+      insertWithManagedRuntime,
+    ),
+  /030_make_challenge_runtime_caches_optional\.sql/i,
+);
 
 const missingBundleSpec = challengeSpecSchema.safeParse({
   ...regressionSpec,

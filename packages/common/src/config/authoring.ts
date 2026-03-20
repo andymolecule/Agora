@@ -49,6 +49,7 @@ export interface AgoraAuthoringPartnerRuntimeConfig {
   partnerKeys: Partial<Record<AuthoringPartnerProviderOutput, string>>;
   callbackSecrets: Partial<Record<AuthoringPartnerProviderOutput, string>>;
   returnOrigins: Partial<Record<AuthoringPartnerProviderOutput, string[]>>;
+  callbackSecretFallbackProviders?: AuthoringPartnerProviderOutput[];
 }
 
 export interface AgoraAuthoringSponsorRuntimeConfig {
@@ -233,6 +234,9 @@ export function readAuthoringPartnerRuntimeConfig(
   const returnOrigins = parseAuthoringPartnerReturnOrigins(
     parsed.AGORA_AUTHORING_PARTNER_RETURN_ORIGINS,
   );
+  const callbackSecretFallbackProviders = (
+    Object.keys(partnerKeys) as AuthoringPartnerProviderOutput[]
+  ).filter((provider) => !callbackSecrets[provider]);
   return {
     partnerKeys,
     callbackSecrets: {
@@ -240,6 +244,7 @@ export function readAuthoringPartnerRuntimeConfig(
       ...callbackSecrets,
     },
     returnOrigins,
+    callbackSecretFallbackProviders,
   };
 }
 
@@ -290,11 +295,23 @@ export function readAuthoringSponsorRuntimeConfig(
       "AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS",
     ]),
   );
+  const partnerKeys = parseAuthoringPartnerKeys(env.AGORA_AUTHORING_PARTNER_KEYS);
+  const monthlyBudgetsUsdc = parseMonthlyBudgets(
+    parsed.AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS,
+  );
+  for (const provider of Object.keys(
+    monthlyBudgetsUsdc,
+  ) as AuthoringPartnerProviderOutput[]) {
+    if (partnerKeys[provider]) {
+      continue;
+    }
+    throw new Error(
+      `AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS configures ${provider} without a matching AGORA_AUTHORING_PARTNER_KEYS entry. Next step: add the partner key or remove the unused sponsor budget.`,
+    );
+  }
 
   return {
     privateKey: parsed.AGORA_AUTHORING_SPONSOR_PRIVATE_KEY,
-    monthlyBudgetsUsdc: parseMonthlyBudgets(
-      parsed.AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS,
-    ),
+    monthlyBudgetsUsdc,
   };
 }

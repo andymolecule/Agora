@@ -58,7 +58,13 @@ const checks: RuntimeSchemaCheck[] = [
   {
     id: "challenge_runtime_v3_columns",
     table: "challenges",
-    select: "runtime_family,evaluation_json,artifacts_json",
+    select: "runtime_family,artifacts_json",
+    nextStep: "apply migration",
+  },
+  {
+    id: "challenge_evaluation_plan_column",
+    table: "challenges",
+    select: "evaluation_plan_json",
     nextStep: "apply migration",
   },
   {
@@ -99,6 +105,13 @@ const checks: RuntimeSchemaCheck[] = [
     table: "authoring_callback_deliveries",
     select:
       "draft_id,provider,callback_url,event,payload_json,status,attempts,max_attempts,last_attempt_at,next_attempt_at,delivered_at,last_error",
+    nextStep: "apply migration",
+  },
+  {
+    id: "authoring_sponsor_budget_reservations_table",
+    table: "authoring_sponsor_budget_reservations",
+    select:
+      "draft_id,provider,period_start,amount_usdc,status,reserved_at,consumed_at,released_at,release_reason",
     nextStep: "apply migration",
   },
 ];

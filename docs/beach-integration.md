@@ -42,7 +42,7 @@ Beach does **not** need:
 Beach does need:
 
 - a server-side bearer token for calling Agora’s partner routes
-- no poster wallet for MVP; Agora’s internal sponsor wallet can fund and post the challenge
+- no poster wallet for the default MVP path; Agora’s internal sponsor wallet can fund and post the challenge
 - optionally a callback endpoint
 - optionally a return origin if a human should land back on Beach after publish
 
@@ -449,7 +449,7 @@ Agora will then:
 1. read the persisted source context and artifacts
 2. combine them with the provided challenge intent
 3. build or refresh authoring IR
-4. attempt managed or semi-custom compilation
+4. attempt managed or definition-backed compilation
 5. return one of:
    - `ready`
    - `needs_review`
@@ -588,6 +588,16 @@ For full callback contract details, see [Authoring Callbacks](authoring-callback
 
 For the OpenClaw MVP, publish is server-to-server.
 
+### Funding mode
+
+The publish contract is designed so sponsor funding is the default path and agent-owned funding can be added later without changing the Beach-side request shape.
+
+Today:
+
+- omit `funding` or set `funding: "sponsor"` to use Agora's internal sponsor wallet
+- `funding: "poster"` is reserved for a future self-funded path and is not enabled yet
+- `poster_address` is only valid when `funding = "poster"`
+
 ### Sponsored publish endpoint
 
 `POST /api/authoring/external/drafts/:id/publish`
@@ -596,6 +606,7 @@ Example:
 
 ```json
 {
+  "funding": "sponsor",
   "return_to": "https://beach.science/thread/42?tab=publish"
 }
 ```
@@ -621,6 +632,12 @@ The published challenge metadata also carries source attribution copied from the
 - `source.agent_handle`
 
 That keeps Beach/OpenClaw provenance attached to the challenge even though Agora’s internal sponsor wallet is the on-chain poster for MVP.
+
+Important:
+
+- funding choice does not change compile, assessment, callbacks, or source attribution
+- the only intended fork is at publish time, when Agora decides who funds and signs the challenge creation transaction
+- for now, only the sponsor branch is enabled
 
 ### Publish response
 

@@ -2,11 +2,9 @@ import {
   AgoraError,
   type ChallengeSpecOutput,
   type DryRunPreviewOutput,
-  resolveChallengeEvaluation,
-  resolveRuntimeFamilyLimits,
-  resolveRuntimeFamilyRuntimeDefaults,
-  resolveScoringEnvironmentFromSpec,
+  resolveEvaluationPlan,
 } from "@agora/common";
+import type { AgoraLogger } from "@agora/common/server-observability";
 import { getText } from "@agora/ipfs";
 import { executeScoringPipeline } from "@agora/scorer";
 
@@ -154,7 +152,7 @@ function buildStructuredRecordSampleSubmission(rubric: StructuredRecordRubric) {
 }
 
 function summarizeDryRunScore(input: {
-  runtimeFamily: string;
+  executionRuntimeFamily?: string;
   metric: string;
   score: number;
   details: Record<string, unknown>;
@@ -172,7 +170,7 @@ function summarizeDryRunScore(input: {
   }
 
   if (
-    input.runtimeFamily === "reproducibility" &&
+    input.executionRuntimeFamily === "reproducibility" &&
     typeof input.details.matched_rows === "number" &&
     typeof input.details.total_rows === "number"
   ) {
@@ -186,8 +184,8 @@ async function buildSubmissionSource(input: {
   challengeSpec: ChallengeSpecOutput;
   getTextImpl: GetTextFn;
 }) {
-  const evalPlan = resolveChallengeEvaluation(input.challengeSpec);
-  const evaluationUri = evalPlan.evaluationBundleCid;
+  const evaluationPlan = resolveEvaluationPlan(input.challengeSpec);
+  const evaluationUri = evaluationPlan.evaluationBundleCid;
   if (!evaluationUri) {
     throw new AgoraError(
       "This challenge needs a deterministic evaluation artifact before dry-run execution. Next step: attach the missing evaluation artifact or use Expert Mode.",
@@ -198,10 +196,11 @@ async function buildSubmissionSource(input: {
     );
   }
 
-  const runtimeFamily = input.challengeSpec.evaluation.runtime_family;
-  const effectiveRuntimeFamily =
-    evalPlan.semiCustomExecution?.runner_runtime_family ?? runtimeFamily;
-  if (evalPlan.semiCustomExecution?.template === "official_structured_record_v1") {
+  const runtimeFamily =
+    input.challengeSpec.evaluation.execution_runtime_family ??
+    input.challengeSpec.evaluation.preset_id;
+  const executionRuntimeFamily = evaluationPlan.executionRuntimeFamily;
+  if (evaluationPlan.executionTemplate === "official_structured_record_v1") {
     const rubricText = await input.getTextImpl(evaluationUri);
     return {
       content: buildStructuredRecordSampleSubmission(
@@ -210,7 +209,7 @@ async function buildSubmissionSource(input: {
     };
   }
 
-  if (effectiveRuntimeFamily === "reproducibility") {
+  if (executionRuntimeFamily === "reproducibility") {
     return { cid: evaluationUri };
   }
 
@@ -248,11 +247,7 @@ async function buildSubmissionSource(input: {
       },
     );
   }
-  const evaluationContract =
-    evalPlan.semiCustomExecution?.evaluation_contract ??
-    resolveRuntimeFamilyRuntimeDefaults(
-      input.challengeSpec.evaluation.runtime_family,
-    )?.evaluationContract;
+  const evaluationContract = evaluationPlan.evaluationContract;
   const evaluationIdColumn = evaluationContract?.columns.id;
   const evaluationValueColumn = evaluationContract?.columns.value;
   if (!evaluationIdColumn || !evaluationValueColumn) {
@@ -297,6 +292,8 @@ export async function executeManagedAuthoringDryRun(
   input: {
     challengeSpec: ChallengeSpecOutput;
     timeoutMs: number;
+    draftId?: string;
+    logger?: AgoraLogger;
   },
   dependencies: {
     executeScoringPipelineImpl?: ExecuteScoringPipelineFn;
@@ -310,6 +307,8 @@ export async function executeAuthoringDryRun(
   input: {
     challengeSpec: ChallengeSpecOutput;
     timeoutMs: number;
+    draftId?: string;
+    logger?: AgoraLogger;
   },
   dependencies: {
     executeScoringPipelineImpl?: ExecuteScoringPipelineFn;
@@ -319,43 +318,59 @@ export async function executeAuthoringDryRun(
   const executeScoringPipelineImpl =
     dependencies.executeScoringPipelineImpl ?? executeScoringPipeline;
   const getTextImpl = dependencies.getTextImpl ?? getText;
-  const evalPlan = resolveChallengeEvaluation(input.challengeSpec);
-  const runnerLimits = resolveRuntimeFamilyLimits(
-    evalPlan.semiCustomExecution?.runner_runtime_family ??
-      evalPlan.runtimeFamily,
+  const evaluationPlan = resolveEvaluationPlan(input.challengeSpec);
+  const runnerLimits = evaluationPlan.limits;
+  const startedAt = Date.now();
+  const appliedTimeoutMs = Math.min(
+    input.timeoutMs,
+    runnerLimits?.timeoutMs ?? input.timeoutMs,
   );
-  const submission = await buildSubmissionSource({
-    challengeSpec: input.challengeSpec,
-    getTextImpl,
-  });
+  input.logger?.info(
+    {
+      event: "authoring.dry_run.started",
+      draftId: input.draftId ?? null,
+      presetId: evaluationPlan.presetId,
+      executionRuntimeFamily: evaluationPlan.executionRuntimeFamily ?? null,
+      metric: evaluationPlan.metric,
+      scorerImage: evaluationPlan.image ?? null,
+      timeoutMs: appliedTimeoutMs,
+      hasEvaluationBundle: Boolean(evaluationPlan.evaluationBundleCid),
+    },
+    "Started authoring dry run",
+  );
 
-  const run = await executeScoringPipelineImpl({
-    image: evalPlan.image,
-    runtimeFamily: evalPlan.runtimeFamily,
-    evaluationBundle: evalPlan.evaluationBundleCid
-      ? { cid: evalPlan.evaluationBundleCid }
-      : undefined,
-    mount: evalPlan.mount,
-    submission,
-    submissionContract: input.challengeSpec.submission_contract,
-    evaluationContract: evalPlan.semiCustomExecution?.evaluation_contract,
-    metric: evalPlan.metric,
-    policies: evalPlan.semiCustomExecution?.policies,
-    env: resolveScoringEnvironmentFromSpec(input.challengeSpec),
-    timeoutMs: Math.min(
-      input.timeoutMs,
-      runnerLimits?.timeoutMs ?? input.timeoutMs,
-    ),
-    limits: runnerLimits
-      ? {
-          memory: runnerLimits.memory,
-          cpus: runnerLimits.cpus,
-          pids: runnerLimits.pids,
-        }
-      : undefined,
-  });
-
+  let run:
+    | Awaited<ReturnType<ExecuteScoringPipelineFn>>
+    | undefined;
   try {
+    const submission = await buildSubmissionSource({
+      challengeSpec: input.challengeSpec,
+      getTextImpl,
+    });
+
+    run = await executeScoringPipelineImpl({
+      image: evaluationPlan.image ?? "",
+      runtimeFamily: evaluationPlan.executionRuntimeFamily,
+      evaluationBundle: evaluationPlan.evaluationBundleCid
+        ? { cid: evaluationPlan.evaluationBundleCid }
+        : undefined,
+      mount: evaluationPlan.mount,
+      submission,
+      submissionContract: input.challengeSpec.submission_contract,
+      evaluationContract: evaluationPlan.evaluationContract,
+      metric: evaluationPlan.metric,
+      policies: evaluationPlan.policies,
+      env: evaluationPlan.env,
+      timeoutMs: appliedTimeoutMs,
+      limits: runnerLimits
+        ? {
+            memory: runnerLimits.memory,
+            cpus: runnerLimits.cpus,
+            pids: runnerLimits.pids,
+          }
+        : undefined,
+    });
+
     if (!run.result.ok) {
       throw new AgoraError(
         `Managed dry-run failed: ${run.result.error ?? "the scorer rejected the sample submission"}. Next step: fix the uploaded files or use Expert Mode.`,
@@ -368,18 +383,48 @@ export async function executeAuthoringDryRun(
     }
 
     const sampleScore = summarizeDryRunScore({
-      runtimeFamily: evalPlan.runtimeFamily,
-      metric: evalPlan.metric,
+      executionRuntimeFamily: evaluationPlan.executionRuntimeFamily,
+      metric: evaluationPlan.metric,
       score: run.result.score,
       details: run.result.details,
     });
 
-    return {
+    const preview: DryRunPreviewOutput = {
       status: "validated",
       summary: `Agora executed the official scorer against a sample submission derived from the uploaded evaluation artifacts and got ${sampleScore}.`,
       sample_score: sampleScore,
     };
+    input.logger?.info(
+      {
+        event: "authoring.dry_run.completed",
+        draftId: input.draftId ?? null,
+        presetId: evaluationPlan.presetId,
+        executionRuntimeFamily: evaluationPlan.executionRuntimeFamily ?? null,
+        metric: evaluationPlan.metric,
+        status: preview.status,
+        sampleScore: preview.sample_score,
+        durationMs: Date.now() - startedAt,
+      },
+      "Completed authoring dry run",
+    );
+    return preview;
+  } catch (error) {
+    input.logger?.warn(
+      {
+        event: "authoring.dry_run.failed",
+        draftId: input.draftId ?? null,
+        presetId: evaluationPlan.presetId,
+        executionRuntimeFamily: evaluationPlan.executionRuntimeFamily ?? null,
+        metric: evaluationPlan.metric,
+        code: error instanceof AgoraError ? error.code : null,
+        status: error instanceof AgoraError ? error.status : null,
+        message: error instanceof Error ? error.message : String(error),
+        durationMs: Date.now() - startedAt,
+      },
+      "Authoring dry run failed",
+    );
+    throw error;
   } finally {
-    await run.cleanup();
+    await run?.cleanup();
   }
 }

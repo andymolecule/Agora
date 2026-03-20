@@ -6,7 +6,7 @@ Expected authoring behavior:
 - keep `source_records.json` solver-visible
 - keep `reference_output.json` hidden
 - infer `exact_artifact_match` instead of a managed runtime family
-- build an executable semi-custom exact-match contract
+- build an executable definition-backed exact-match contract
 
 This benchmark should not:
 

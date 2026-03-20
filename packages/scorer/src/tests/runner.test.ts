@@ -10,11 +10,11 @@ import {
 
 test("parseDockerImageInspection returns repo digest and image id", () => {
   const parsed = parseDockerImageInspection(
-    "ghcr.io/andymolecule/repro-scorer@sha256:abc123|sha256:def456",
+    "ghcr.io/andymolecule/gems-match-scorer@sha256:abc123|sha256:def456",
   );
 
   assert.deepEqual(parsed, {
-    repoDigest: "ghcr.io/andymolecule/repro-scorer@sha256:abc123",
+    repoDigest: "ghcr.io/andymolecule/gems-match-scorer@sha256:abc123",
     imageId: "sha256:def456",
   });
 });

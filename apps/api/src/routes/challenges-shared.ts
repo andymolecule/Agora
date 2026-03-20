@@ -9,6 +9,7 @@ import {
   agentChallengesQuerySchema,
   getEffectiveChallengeStatus,
   isChallengeStatus,
+  resolveEvaluationPlan,
 } from "@agora/common";
 import {
   countSubmissionsForChallenge,
@@ -157,24 +158,19 @@ function cidToGatewayUrl(cid: string | null | undefined) {
 
 function toChallengeEvaluation(
   row: ChallengeRow | ChallengeListRow,
-): Pick<ChallengeEvaluation, "runtime_family" | "metric" | "scorer_image"> {
-  const evaluation = (row as { evaluation_json?: ChallengeEvaluation | null })
-    .evaluation_json;
-  if (
-    !evaluation ||
-    typeof evaluation.runtime_family !== "string" ||
-    typeof evaluation.metric !== "string"
-  ) {
-    throw new Error(
-      "Challenge projection is missing evaluation_json. Next step: rebuild the challenge projection and retry.",
-    );
-  }
+): {
+  runtime_family: string;
+  metric: string;
+  scorer_image?: string;
+} {
+  const evaluationPlan = resolveEvaluationPlan(row);
 
   return {
-    runtime_family: evaluation.runtime_family,
-    metric: evaluation.metric,
-    ...(typeof evaluation.scorer_image === "string"
-      ? { scorer_image: evaluation.scorer_image }
+    runtime_family:
+      evaluationPlan.executionRuntimeFamily ?? evaluationPlan.presetId,
+    metric: evaluationPlan.metric,
+    ...(typeof evaluationPlan.image === "string"
+      ? { scorer_image: evaluationPlan.image }
       : {}),
   };
 }
