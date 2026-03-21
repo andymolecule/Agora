@@ -84,7 +84,7 @@ function draftNotScoreableError(errors: string[]) {
   return toAgoraError({
     status: 409,
     code: "AUTHORING_DRAFT_NOT_SCOREABLE",
-    message: `Authoring draft cannot publish because the compiled challenge spec is not scoreable yet. ${errors.join(" ")} Next step: keep it in review or switch to Expert Mode.`,
+    message: `Authoring draft cannot publish because the compiled challenge spec is not scoreable yet. ${errors.join(" ")} Next step: fix the scoreability issues or switch to Expert Mode.`,
   });
 }
 

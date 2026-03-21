@@ -732,12 +732,12 @@ test("authoring source draft publish uses the internal sponsor path and returns 
   let storedSession = createSession({
     state: "ready",
     intent_json: intent,
-      authoring_ir_json: buildManagedAuthoringIr({
-        intent,
-        uploadedArtifacts: createSession().uploaded_artifacts_json,
-        runtimeFamily: "tabular_regression",
-        metric: "r2",
-        routingMode: "managed_supported",
+    authoring_ir_json: buildManagedAuthoringIr({
+      intent,
+      uploadedArtifacts: createSession().uploaded_artifacts_json,
+      runtimeFamily: "tabular_regression",
+      metric: "r2",
+      routingMode: "managed_supported",
       sourceMessages: [
         {
           id: "msg-1",
@@ -936,10 +936,10 @@ test("authoring source draft webhook registration persists callback metadata", a
   assert.equal(payload.data.card.callback_registered, true);
 });
 
-test("authoring callback sweep requires the internal review token", async () => {
+test("authoring callback sweep requires the internal operator token", async () => {
   const router = createTestRouter({
-    readAuthoringReviewRuntimeConfig: () => ({
-      token: "review-token",
+    readAuthoringOperatorRuntimeConfig: () => ({
+      token: "operator-token",
     }),
   });
 
@@ -952,14 +952,14 @@ test("authoring callback sweep requires the internal review token", async () => 
   assert.equal(response.status, 401);
   assert.equal(
     ((await response.json()) as { code: string }).code,
-    "AUTHORING_REVIEW_UNAUTHORIZED",
+    "AUTHORING_OPERATOR_UNAUTHORIZED",
   );
 });
 
 test("authoring callback sweep returns the durable delivery summary", async () => {
   const router = createTestRouter({
-    readAuthoringReviewRuntimeConfig: () => ({
-      token: "review-token",
+    readAuthoringOperatorRuntimeConfig: () => ({
+      token: "operator-token",
     }),
     sweepPendingAuthoringDraftLifecycleEvents: async ({ limit }) =>
       ({
@@ -977,7 +977,7 @@ test("authoring callback sweep returns the durable delivery summary", async () =
     new Request("http://localhost/callbacks/sweep?limit=17", {
       method: "POST",
       headers: {
-        "x-agora-review-token": "review-token",
+        "x-agora-operator-token": "operator-token",
       },
     }),
   );

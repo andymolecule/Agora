@@ -1,8 +1,8 @@
 import {
   type AuthoringPartnerProviderOutput,
   publishExternalAuthoringDraftRequestSchema,
+  readAuthoringOperatorRuntimeConfig,
   readAuthoringPartnerRuntimeConfig,
-  readAuthoringReviewRuntimeConfig,
   registerAuthoringDraftWebhookRequestSchema,
   submitAuthoringSourceDraftRequestSchema,
 } from "@agora/common";
@@ -22,7 +22,7 @@ import { getRequestLogger } from "../lib/observability.js";
 import { consumeWriteQuota } from "../lib/rate-limit.js";
 import type { ApiEnv } from "../types.js";
 
-const REVIEW_HEADER_NAME = "x-agora-review-token";
+const OPERATOR_HEADER_NAME = "x-agora-operator-token";
 
 function partnerWriteRateLimitError(
   c: Context<ApiEnv>,
@@ -48,7 +48,7 @@ function partnerWriteRateLimitError(
 type AuthoringSourcesRouteDependencies =
   AuthoringExternalWorkflowDependencies & {
     readAuthoringPartnerRuntimeConfig?: typeof readAuthoringPartnerRuntimeConfig;
-    readAuthoringReviewRuntimeConfig?: typeof readAuthoringReviewRuntimeConfig;
+    readAuthoringOperatorRuntimeConfig?: typeof readAuthoringOperatorRuntimeConfig;
     consumeWriteQuota?: typeof consumeWriteQuota;
   };
 
@@ -59,31 +59,31 @@ export function createAuthoringSourcesRouter(
   const readAuthoringPartnerRuntimeConfigImpl =
     dependencies.readAuthoringPartnerRuntimeConfig ??
     readAuthoringPartnerRuntimeConfig;
-  const readAuthoringReviewRuntimeConfigImpl =
-    dependencies.readAuthoringReviewRuntimeConfig ??
-    readAuthoringReviewRuntimeConfig;
+  const readAuthoringOperatorRuntimeConfigImpl =
+    dependencies.readAuthoringOperatorRuntimeConfig ??
+    readAuthoringOperatorRuntimeConfig;
   const consumeWriteQuotaImpl =
     dependencies.consumeWriteQuota ?? consumeWriteQuota;
   const workflow = createAuthoringExternalWorkflow(dependencies);
 
-  function requireAuthoringReviewAccess(c: Context<ApiEnv>) {
-    const runtime = readAuthoringReviewRuntimeConfigImpl();
+  function requireAuthoringOperatorAccess(c: Context<ApiEnv>) {
+    const runtime = readAuthoringOperatorRuntimeConfigImpl();
     if (!runtime.token) {
       return jsonError(c, {
         status: 503,
-        code: "AUTHORING_REVIEW_DISABLED",
+        code: "AUTHORING_OPERATOR_DISABLED",
         message:
-          "Authoring review access is not configured. Next step: set AGORA_AUTHORING_REVIEW_TOKEN on the API and web services, then retry.",
+          "Authoring operator access is not configured. Next step: set AGORA_AUTHORING_OPERATOR_TOKEN on the API and internal caller, then retry.",
       });
     }
 
-    const providedToken = c.req.header(REVIEW_HEADER_NAME);
+    const providedToken = c.req.header(OPERATOR_HEADER_NAME);
     if (providedToken !== runtime.token) {
       return jsonError(c, {
         status: 401,
-        code: "AUTHORING_REVIEW_UNAUTHORIZED",
+        code: "AUTHORING_OPERATOR_UNAUTHORIZED",
         message:
-          "Authoring review access denied. Next step: open the internal review surface or provide a valid review token.",
+          "Authoring operator access denied. Next step: provide a valid operator token and retry.",
       });
     }
 
@@ -91,7 +91,7 @@ export function createAuthoringSourcesRouter(
   }
 
   router.post("/callbacks/sweep", async (c) => {
-    const denied = requireAuthoringReviewAccess(c);
+    const denied = requireAuthoringOperatorAccess(c);
     if (denied) {
       return denied;
     }

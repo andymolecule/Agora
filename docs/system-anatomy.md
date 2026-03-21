@@ -793,7 +793,7 @@ Different API slices use different trust models:
 | public challenge reads | none |
 | direct browser authoring / portfolio | SIWE session or wallet-bound caller data |
 | partner authoring | bearer token per provider |
-| internal callback/maintenance ops | review token |
+| internal callback/maintenance ops | operator token |
 | executor service | bearer token shared with orchestrator |
 
 ### API trust boundaries at a glance

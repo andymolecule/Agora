@@ -146,7 +146,7 @@ Current operator path:
 
 `POST /api/authoring/callbacks/sweep`
 
-This endpoint is internal and protected by the authoring operator token (`AGORA_AUTHORING_REVIEW_TOKEN`).
+This endpoint is internal and protected by the authoring operator token (`AGORA_AUTHORING_OPERATOR_TOKEN`).
 
 The retry model is at-least-once, not exactly-once.
 

@@ -159,11 +159,11 @@ AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS='beach_science:500'
   - but it is better operationally to keep request auth and callback signing secrets separate
 - `AGORA_AUTHORING_PARTNER_RETURN_ORIGINS` is only required if you want browser redirects back to Beach after publish
 
-### Review token note
+### Operator token note
 
-Beach does **not** use the authoring review token.
+Beach does **not** use the authoring operator token.
 
-`AGORA_AUTHORING_REVIEW_TOKEN` is for Agora’s internal operator endpoints such as:
+`AGORA_AUTHORING_OPERATOR_TOKEN` is for Agora’s internal operator endpoints such as:
 
 - `POST /api/authoring/callbacks/sweep`
 
@@ -628,7 +628,7 @@ With an allowlist:
 AGORA_AUTHORING_PARTNER_KEYS='beach_science:beach-secret'
 AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS='beach_science:beach-callback-secret'
 AGORA_AUTHORING_PARTNER_RETURN_ORIGINS='beach_science:https://beach.science|https://staging.beach.science'
-AGORA_AUTHORING_REVIEW_TOKEN='internal-review-token'
+AGORA_AUTHORING_OPERATOR_TOKEN='internal-operator-token'
 AGORA_AUTHORING_SPONSOR_PRIVATE_KEY='0x1111111111111111111111111111111111111111111111111111111111111111'
 AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS='beach_science:500'
 ```
@@ -688,7 +688,7 @@ If a callback endpoint was registered and you want to flush retries:
 
 ```bash
 curl -X POST \
-  -H "x-agora-review-token: internal-review-token" \
+  -H "x-agora-operator-token: internal-operator-token" \
   "http://localhost:3000/api/authoring/callbacks/sweep?limit=25"
 ```
 
@@ -781,8 +781,8 @@ Meaning:
 
 Fix on Agora:
 
-- set `AGORA_AUTHORING_REVIEW_TOKEN`
-- call sweep with `x-agora-review-token`
+- set `AGORA_AUTHORING_OPERATOR_TOKEN`
+- call sweep with `x-agora-operator-token`
 
 This is not a Beach credential problem.
 
@@ -793,7 +793,7 @@ This is not a Beach credential problem.
 - `AGORA_AUTHORING_PARTNER_KEYS` set
 - `AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS` set
 - `AGORA_AUTHORING_PARTNER_RETURN_ORIGINS` set
-- `AGORA_AUTHORING_REVIEW_TOKEN` set for internal ops
+- `AGORA_AUTHORING_OPERATOR_TOKEN` set for internal ops
 - `AGORA_AUTHORING_SPONSOR_PRIVATE_KEY` set for agent-native publish
 - callback sweep cron configured if callbacks are enabled
 

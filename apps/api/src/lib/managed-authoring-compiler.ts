@@ -3,10 +3,10 @@ import {
   type AuthoringArtifactOutput,
   type ChallengeIntentOutput,
   lookupManagedRuntimeFamily,
+  readManagedAuthoringRuntimeConfig,
   validateRuntimeMetric,
 } from "@agora/common";
 import { z } from "zod";
-import { readManagedAuthoringRuntimeConfig } from "./managed-authoring-runtime.js";
 
 export type SupportedRuntimeFamily =
   | "reproducibility"

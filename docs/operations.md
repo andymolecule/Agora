@@ -551,7 +551,7 @@ Use this when an external host such as Beach stops reflecting draft state transi
 
 ```bash
 curl -X POST \
-  -H "x-agora-review-token: <token>" \
+  -H "x-agora-operator-token: <token>" \
   "<API_URL>/api/authoring/callbacks/sweep?limit=25"
 ```
 
@@ -582,13 +582,13 @@ curl -X POST \
 
 ```bash
 * * * * * curl -fsS -X POST \
-  -H "x-agora-review-token: ${AGORA_AUTHORING_REVIEW_TOKEN}" \
+  -H "x-agora-operator-token: ${AGORA_AUTHORING_OPERATOR_TOKEN}" \
   "https://api.example.com/api/authoring/callbacks/sweep?limit=25" \
   >/dev/null
 ```
 
 Use an internal network path or secret manager-backed environment where possible; do not hardcode the operator token in a checked-in crontab.
-8. If the sweep route returns `401` or `503`, verify `AGORA_AUTHORING_REVIEW_TOKEN` is configured consistently on the API and the caller.
+8. If the sweep route returns `401` or `503`, verify `AGORA_AUTHORING_OPERATOR_TOKEN` is configured consistently on the API and the caller.
 9. If the host remains stale after successful callback delivery, force a host-side pull refresh from:
    - `GET /api/authoring/external/drafts/:id/card` for draft state
    - `GET /api/authoring/external/drafts/:id` for fuller draft context

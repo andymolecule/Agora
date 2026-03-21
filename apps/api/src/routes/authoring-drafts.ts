@@ -378,7 +378,7 @@ export function createAuthoringDraftRoutes(
         return jsonError(c, {
           status: 409,
           code: "AUTHORING_DRAFT_NOT_SCOREABLE",
-          message: `Authoring draft cannot publish because the challenge spec is not scoreable yet. ${formatScoreabilityMessage(scoreability.errors)} Next step: return this draft to review or switch to Expert Mode.`,
+          message: `Authoring draft cannot publish because the challenge spec is not scoreable yet. ${formatScoreabilityMessage(scoreability.errors)} Next step: fix the scoreability issues or switch to Expert Mode.`,
         });
       }
       const expectedSpecHash = computeSpecHash(canonicalSpec);

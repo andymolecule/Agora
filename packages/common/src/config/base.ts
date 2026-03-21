@@ -63,19 +63,22 @@ export const configSchema = z.object({
       z.number().int(),
     )
     .optional(),
-  AGORA_MANAGED_AUTHORING_COMPILER_BACKEND: z
-    .enum(["heuristic", "openai_compatible"])
-    .default("heuristic"),
-  AGORA_MANAGED_AUTHORING_MODEL: z.string().min(1).optional(),
+  AGORA_MANAGED_AUTHORING_MODEL: z.string().min(1).default("claude-sonnet-4-5"),
   AGORA_MANAGED_AUTHORING_BASE_URL: z
     .string()
     .url()
-    .default("https://api.openai.com/v1"),
+    .default("https://api.anthropic.com/v1"),
   AGORA_MANAGED_AUTHORING_API_KEY: z.string().min(1).optional(),
+  AGORA_MANAGED_AUTHORING_TIMEOUT_MS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .default(30_000),
   AGORA_AUTHORING_PARTNER_KEYS: z.string().optional(),
   AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS: z.string().optional(),
   AGORA_AUTHORING_PARTNER_RETURN_ORIGINS: z.string().optional(),
-  AGORA_AUTHORING_REVIEW_TOKEN: z.string().min(1).optional(),
+  AGORA_AUTHORING_OPERATOR_TOKEN: z.string().min(1).optional(),
   AGORA_AUTHORING_SPONSOR_PRIVATE_KEY: z
     .string()
     .regex(/^0x[a-fA-F0-9]{64}$/, "must be a 32-byte hex private key")

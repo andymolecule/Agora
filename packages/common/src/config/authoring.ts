@@ -9,16 +9,16 @@ import {
 } from "./base.js";
 
 const managedAuthoringRuntimeConfigSchema = configSchema.pick({
-  AGORA_MANAGED_AUTHORING_COMPILER_BACKEND: true,
   AGORA_MANAGED_AUTHORING_MODEL: true,
   AGORA_MANAGED_AUTHORING_BASE_URL: true,
   AGORA_MANAGED_AUTHORING_API_KEY: true,
+  AGORA_MANAGED_AUTHORING_TIMEOUT_MS: true,
   AGORA_MANAGED_AUTHORING_DRY_RUN_TIMEOUT_MS: true,
 });
 
-const authoringReviewRuntimeConfigSchema = configSchema.pick({
+const authoringOperatorRuntimeConfigSchema = configSchema.pick({
   AGORA_API_URL: true,
-  AGORA_AUTHORING_REVIEW_TOKEN: true,
+  AGORA_AUTHORING_OPERATOR_TOKEN: true,
 });
 
 const authoringPartnerRuntimeConfigSchema = configSchema.pick({
@@ -33,14 +33,14 @@ const authoringSponsorRuntimeConfigSchema = configSchema.pick({
 });
 
 export interface AgoraManagedAuthoringRuntimeConfig {
-  compilerBackend: "heuristic" | "openai_compatible";
-  model?: string;
-  baseUrl?: string;
+  model: string;
+  baseUrl: string;
   apiKey?: string;
+  timeoutMs: number;
   dryRunTimeoutMs: number;
 }
 
-export interface AgoraAuthoringReviewRuntimeConfig {
+export interface AgoraAuthoringOperatorRuntimeConfig {
   apiUrl?: string;
   token?: string;
 }
@@ -181,42 +181,29 @@ export function readManagedAuthoringRuntimeConfig(
     ]),
   );
 
-  if (parsed.AGORA_MANAGED_AUTHORING_COMPILER_BACKEND === "openai_compatible") {
-    if (!parsed.AGORA_MANAGED_AUTHORING_MODEL) {
-      throw new Error(
-        "Managed authoring with openai_compatible backend requires AGORA_MANAGED_AUTHORING_MODEL. Next step: set the model id or switch AGORA_MANAGED_AUTHORING_COMPILER_BACKEND back to heuristic.",
-      );
-    }
-    if (!parsed.AGORA_MANAGED_AUTHORING_API_KEY) {
-      throw new Error(
-        "Managed authoring with openai_compatible backend requires AGORA_MANAGED_AUTHORING_API_KEY. Next step: set the API key or switch AGORA_MANAGED_AUTHORING_COMPILER_BACKEND back to heuristic.",
-      );
-    }
-  }
-
   return {
-    compilerBackend: parsed.AGORA_MANAGED_AUTHORING_COMPILER_BACKEND,
     model: parsed.AGORA_MANAGED_AUTHORING_MODEL,
     baseUrl: parsed.AGORA_MANAGED_AUTHORING_BASE_URL,
     apiKey: parsed.AGORA_MANAGED_AUTHORING_API_KEY,
+    timeoutMs: parsed.AGORA_MANAGED_AUTHORING_TIMEOUT_MS,
     dryRunTimeoutMs: parsed.AGORA_MANAGED_AUTHORING_DRY_RUN_TIMEOUT_MS,
   };
 }
 
-export function readAuthoringReviewRuntimeConfig(
+export function readAuthoringOperatorRuntimeConfig(
   env: Record<string, string | undefined> = process.env,
-): AgoraAuthoringReviewRuntimeConfig {
+): AgoraAuthoringOperatorRuntimeConfig {
   const parsed = parseConfigSection(
-    authoringReviewRuntimeConfigSchema,
+    authoringOperatorRuntimeConfigSchema,
     unsetBlankStringValues(env, [
       "AGORA_API_URL",
-      "AGORA_AUTHORING_REVIEW_TOKEN",
+      "AGORA_AUTHORING_OPERATOR_TOKEN",
     ]),
   );
 
   return {
     apiUrl: parsed.AGORA_API_URL,
-    token: parsed.AGORA_AUTHORING_REVIEW_TOKEN,
+    token: parsed.AGORA_AUTHORING_OPERATOR_TOKEN,
   };
 }
 

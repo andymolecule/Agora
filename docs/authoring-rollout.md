@@ -308,7 +308,7 @@ AGORA_RUNTIME_VERSION=
 ### New Authoring / Beach / Review Vars
 
 ```bash
-AGORA_AUTHORING_REVIEW_TOKEN=
+AGORA_AUTHORING_OPERATOR_TOKEN=
 AGORA_AUTHORING_PARTNER_KEYS='beach_science:...'
 AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS='beach_science:...'
 AGORA_AUTHORING_PARTNER_RETURN_ORIGINS='beach_science:https://beach.science'
@@ -340,7 +340,7 @@ Example:
 AGORA_AUTHORING_PARTNER_KEYS='beach_science:beach-prod-bearer'
 AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS='beach_science:beach-prod-callback-secret'
 AGORA_AUTHORING_PARTNER_RETURN_ORIGINS='beach_science:https://beach.science|https://staging.beach.science'
-AGORA_AUTHORING_REVIEW_TOKEN='internal-review-token'
+AGORA_AUTHORING_OPERATOR_TOKEN='internal-operator-token'
 AGORA_AUTHORING_SPONSOR_PRIVATE_KEY='0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS='beach_science:500'
 ```
@@ -357,7 +357,7 @@ NEXT_PUBLIC_AGORA_CHAIN_ID=
 NEXT_PUBLIC_AGORA_RPC_URL=
 ```
 
-`AGORA_AUTHORING_REVIEW_TOKEN` is only needed for internal callback sweep / maintenance callers. The normal hosted `/post` flow does not require that token in the web environment.
+`AGORA_AUTHORING_OPERATOR_TOKEN` is only needed for internal callback sweep / maintenance callers. The normal hosted `/post` flow does not require that token in the web environment.
 
 ---
 
@@ -456,7 +456,7 @@ Endpoint:
 Header:
 
 ```bash
-x-agora-review-token: ${AGORA_AUTHORING_REVIEW_TOKEN}
+x-agora-operator-token: ${AGORA_AUTHORING_OPERATOR_TOKEN}
 ```
 
 This can be called from cron or an internal operator job.

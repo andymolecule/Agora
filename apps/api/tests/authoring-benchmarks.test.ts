@@ -23,7 +23,9 @@ function findArtifactInvariant(
     );
   }
 
-  const invariant = artifactRoles.find((artifact) => artifact.file_name === fileName);
+  const invariant = artifactRoles.find(
+    (artifact) => artifact.file_name === fileName,
+  );
   if (!invariant) {
     throw new Error(
       `Benchmark ${benchmarkId} is missing compile invariants for ${fileName}.`,
@@ -37,11 +39,10 @@ for (const benchmarkCase of benchmarkCases) {
 
   test(`authoring benchmark ${benchmarkLabel} matches compile invariants`, async () => {
     const originalEnv = { ...process.env };
-    process.env.AGORA_MANAGED_AUTHORING_COMPILER_BACKEND = "openai_compatible";
-    process.env.AGORA_MANAGED_AUTHORING_MODEL = "gpt-5-mini";
+    process.env.AGORA_MANAGED_AUTHORING_MODEL = "claude-haiku-4-5";
     process.env.AGORA_MANAGED_AUTHORING_API_KEY = "sk-test";
     process.env.AGORA_MANAGED_AUTHORING_BASE_URL =
-      "https://compiler.example/v1";
+      "https://api.anthropic.test/v1";
 
     try {
       const result = await compileManagedAuthoringDraftOutcome(
@@ -53,7 +54,9 @@ for (const benchmarkCase of benchmarkCases) {
       );
 
       assert.equal(
-        benchmarkCase.benchmark.acceptable_compile_states.includes(result.state),
+        benchmarkCase.benchmark.acceptable_compile_states.includes(
+          result.state,
+        ),
         true,
         `${benchmarkLabel} should stay within benchmark-level acceptable states`,
       );
@@ -62,7 +65,9 @@ for (const benchmarkCase of benchmarkCases) {
         (candidate) => candidate.id === benchmarkCase.variantId,
       );
       if (!variant) {
-        throw new Error(`Missing prompt variant metadata for ${benchmarkLabel}`);
+        throw new Error(
+          `Missing prompt variant metadata for ${benchmarkLabel}`,
+        );
       }
 
       assert.equal(
