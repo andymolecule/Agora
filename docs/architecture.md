@@ -671,7 +671,7 @@ erDiagram
 | `GET` | `/api/authoring/external/drafts/:id/card` | Partner bearer | — | Read compact draft card view |
 | `POST` | `/api/authoring/external/drafts/:id/publish` | Partner bearer | — | Sponsor and publish an external draft |
 | `POST` | `/api/authoring/external/drafts/:id/webhook` | Partner bearer | — | Register/update a callback URL for draft events |
-| `POST` | `/api/authoring/callbacks/sweep` | Review token | — | Sweep pending authoring callback deliveries |
+| `POST` | `/api/authoring/callbacks/sweep` | Operator token | — | Sweep pending authoring callback deliveries |
 | `POST` | `/api/integrations/beach/drafts/submit` | Partner bearer | — | Submit a Beach thread plus intent into the external authoring flow |
 | `POST` | `/api/verify` | Rate limit | Paid | Re-run scorer verification |
 

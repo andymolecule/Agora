@@ -398,6 +398,12 @@ All of these use the same bearer token auth model as submit.
 
 Every external draft response now includes an `assessment` object. This is the machine-friendly contract OpenClaw should read after submit and publish.
 
+When submit returns `needs_input`, the canonical next-step contract is:
+
+- `draft.questions`
+
+Those are Agora-owned typed blocking questions. OpenClaw should answer them and resubmit, rather than inventing a separate Beach-side clarification format.
+
 Key fields:
 
 - `feasible`
