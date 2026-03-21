@@ -83,8 +83,20 @@ function stableSerialize(value: unknown): string {
     .filter(([, entryValue]) => entryValue !== undefined)
     .sort(([left], [right]) => left.localeCompare(right));
   return `{${entries
-    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableSerialize(entryValue)}`)
+    .map(
+      ([key, entryValue]) =>
+        `${JSON.stringify(key)}:${stableSerialize(entryValue)}`,
+    )
     .join(",")}}`;
+}
+
+function normalizeSourceMessages(messages: ExternalSourceMessageOutput[] = []) {
+  return messages.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    created_at: message.created_at ?? new Date().toISOString(),
+  }));
 }
 
 function computeAssessmentInputHash(input: {
@@ -186,7 +198,9 @@ export function createAuthoringIntakeWorkflow(
         return { draft: input.session };
       }
 
-      const missingFields = extractMissingIntentFields(effectiveIntentCandidate);
+      const missingFields = extractMissingIntentFields(
+        effectiveIntentCandidate,
+      );
       if (missingFields.length > 0) {
         const questions = buildAuthoringQuestions({
           missingFields,
@@ -308,13 +322,7 @@ export function createAuthoringIntakeWorkflow(
               input.sourceTitle ??
               outcome.authoringIr.source.title ??
               parsedIntent.data.title,
-            poster_messages:
-              (input.sourceMessages ?? []).map((message) => ({
-                id: message.id,
-                role: message.role,
-                content: message.content,
-                created_at: message.created_at ?? new Date().toISOString(),
-              })) ?? [],
+            poster_messages: normalizeSourceMessages(input.sourceMessages),
             uploaded_artifact_ids: input.uploadedArtifacts.map(
               (artifact, index) => artifact.id ?? `${index}:${artifact.uri}`,
             ),

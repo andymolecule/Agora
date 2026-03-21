@@ -47,6 +47,7 @@ export function useChatStream(options: UseChatStreamOptions) {
   const [draftId, setDraftId] = useState<string>("");
 
   const fieldsRef = useRef<IntakeField[]>([]);
+  const messagesRef = useRef<ChatMessage[]>([INITIAL_MESSAGE]);
   const idCounter = useRef(1);
 
   function nextId() {
@@ -59,7 +60,11 @@ export function useChatStream(options: UseChatStreamOptions) {
       id: nextId(),
       timestamp: new Date(),
     };
-    setMessages((prev) => [...prev, full]);
+    setMessages((prev) => {
+      const next = [...prev, full];
+      messagesRef.current = next;
+      return next;
+    });
     return full;
   }
 
@@ -220,7 +225,7 @@ export function useChatStream(options: UseChatStreamOptions) {
 
       // Collect the full problem description from all user messages
       const allUserText = [
-        ...messages,
+        ...messagesRef.current,
         { role: "user" as const, content: trimmed },
       ]
         .filter((m) => m.role === "user")
@@ -233,7 +238,7 @@ export function useChatStream(options: UseChatStreamOptions) {
 
       void attemptCompile(allUserText);
     },
-    [messages, uploads],
+    [uploads],
   );
 
   /* ── Public: handle file uploads ────────────────────── */
@@ -290,7 +295,7 @@ export function useChatStream(options: UseChatStreamOptions) {
     if (readyCount > 0) {
       appendMessage({
         role: "assistant",
-        content: `Got ${readyCount} file${readyCount > 1 ? "s" : ""}. I'll use ${readyCount === 1 ? "it" : "them"} when compiling your challenge.\n\nAnything else, or should I try compiling now?`,
+        content: `Got ${readyCount} file${readyCount > 1 ? "s" : ""}. I'll use ${readyCount === 1 ? "it" : "them"} when compiling your challenge.\n\nAdd anything else, then send another message when you're ready for the next compile.`,
       });
     }
   }, []);

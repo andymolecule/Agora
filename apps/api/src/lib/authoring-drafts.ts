@@ -332,10 +332,7 @@ function draftSummary(session: AuthoringDraftRow) {
   if (session.compilation_json?.confirmation_contract) {
     return session.compilation_json.confirmation_contract.scoring_summary;
   }
-
-  return (
-    session.authoring_ir_json?.questions.pending[0]?.prompt ?? null
-  );
+  return null;
 }
 
 function draftProvider(

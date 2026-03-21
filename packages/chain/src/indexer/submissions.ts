@@ -16,8 +16,8 @@ import {
   type DbClient,
   type ParsedLog,
   eventArg,
-  parseRequiredAddress,
   parseRequiredBigInt,
+  parseRequiredHexString,
 } from "./shared.js";
 
 type SubmissionRow = Awaited<ReturnType<typeof getSubmissionByChainId>>;
@@ -215,7 +215,7 @@ export async function handleScoredEvent(input: {
     eventArg(input.log.args, 1) ?? eventArg(input.log.args, "score"),
     "score",
   );
-  const proofBundleHash = parseRequiredAddress(
+  const proofBundleHash = parseRequiredHexString(
     eventArg(input.log.args, 2) ?? eventArg(input.log.args, "proofBundleHash"),
     "proofBundleHash",
   );

@@ -44,62 +44,63 @@ export function AuthoringQuestionList({
         Agora still needs these blocking inputs.
       </div>
       <div className="mt-3 space-y-3">
-        {questions.map((question) => (
-          <div key={question.id} className="space-y-1.5">
-            <div className="font-medium">{question.prompt}</div>
-            {question.why ? (
-              <div className={hintClass}>{question.why}</div>
-            ) : null}
-            {fieldHint(question) ? (
-              <div className={`text-xs ${hintClass}`}>
-                {fieldHint(question)}
-              </div>
-            ) : null}
+        {questions.map((question) => {
+          const hint = fieldHint(question);
+          return (
+            <div key={question.id} className="space-y-1.5">
+              <div className="font-medium">{question.prompt}</div>
+              {question.why ? (
+                <div className={hintClass}>{question.why}</div>
+              ) : null}
+              {hint ? (
+                <div className={`text-xs ${hintClass}`}>{hint}</div>
+              ) : null}
 
-            {question.options.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {question.options.map((option) => (
-                  <span
-                    key={option.id}
-                    className={`rounded-[2px] border px-2 py-1 font-mono text-[11px] ${optionClass}`}
-                  >
-                    {option.label}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-
-            {question.kind === "artifact_role_map" &&
-            question.artifact_roles.length > 0 ? (
-              <div className="space-y-1 pt-1 text-xs">
-                {question.artifact_roles.map((role) => (
-                  <div key={role.role} className={hintClass}>
-                    <span className="font-mono text-[11px] font-bold uppercase tracking-wider">
-                      {role.label}
+              {question.options.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {question.options.map((option) => (
+                    <span
+                      key={option.id}
+                      className={`rounded-[2px] border px-2 py-1 font-mono text-[11px] ${optionClass}`}
+                    >
+                      {option.label}
                     </span>
-                    {role.visibility
-                      ? ` · ${role.visibility} during scoring`
-                      : ""}
-                  </div>
-                ))}
-              </div>
-            ) : null}
+                  ))}
+                </div>
+              ) : null}
 
-            {question.kind === "artifact_role_map" &&
-            question.artifact_options.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {question.artifact_options.map((artifact) => (
-                  <span
-                    key={artifact.id}
-                    className={`rounded-[2px] border px-2 py-1 font-mono text-[11px] ${optionClass}`}
-                  >
-                    {artifact.label}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ))}
+              {question.kind === "artifact_role_map" &&
+              question.artifact_roles.length > 0 ? (
+                <div className="space-y-1 pt-1 text-xs">
+                  {question.artifact_roles.map((role) => (
+                    <div key={role.role} className={hintClass}>
+                      <span className="font-mono text-[11px] font-bold uppercase tracking-wider">
+                        {role.label}
+                      </span>
+                      {role.visibility
+                        ? ` · ${role.visibility} during scoring`
+                        : ""}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {question.kind === "artifact_role_map" &&
+              question.artifact_options.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {question.artifact_options.map((artifact) => (
+                    <span
+                      key={artifact.id}
+                      className={`rounded-[2px] border px-2 py-1 font-mono text-[11px] ${optionClass}`}
+                    >
+                      {artifact.label}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

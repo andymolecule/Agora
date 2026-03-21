@@ -62,6 +62,16 @@ export function parseRequiredAddress(
   throw new Error(`Invalid event arg '${field}': expected address string`);
 }
 
+export function parseRequiredHexString(
+  value: unknown,
+  field: string,
+): `0x${string}` {
+  if (typeof value === "string" && value.startsWith("0x")) {
+    return value as `0x${string}`;
+  }
+  throw new Error(`Invalid event arg '${field}': expected hex string`);
+}
+
 export function parseStatusValue(
   value: unknown,
   field: string,
