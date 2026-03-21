@@ -209,7 +209,7 @@ The repo is converging on this shape:
 - external Beach/OpenClaw flow already uses `submit + publish`
 - direct managed authoring is being collapsed onto the same `submit + publish` model
 - deterministic compile remains in [managed-authoring.ts](../apps/api/src/lib/managed-authoring.ts)
-- stale review-gated paths are being removed
+- stale split-path and review-era paths are being removed
 
 The next architectural step is not "more heuristics." It is one universal intake workflow backed by a structured LLM assessor and a deterministic compiler.
 

@@ -782,7 +782,7 @@ The API is the main remote boundary for:
 - CLI and agent-runtime clients
 - the MCP server tool layer
 - external partners like Beach
-- internal review and operations flows
+- internal maintenance and operations flows
 
 ### Authentication surfaces
 
@@ -793,7 +793,7 @@ Different API slices use different trust models:
 | public challenge reads | none |
 | direct browser authoring / portfolio | SIWE session or wallet-bound caller data |
 | partner authoring | bearer token per provider |
-| internal authoring review | review token |
+| internal callback/maintenance ops | review token |
 | executor service | bearer token shared with orchestrator |
 
 ### API trust boundaries at a glance
@@ -803,7 +803,7 @@ flowchart LR
     Public["Public read routes\nno auth"] --> API["API"]
     Wallet["Browser wallet / SIWE"] --> API
     Partner["Partner bearer token"] --> API
-    Review["Authoring review token"] --> API
+    Review["Authoring operator token"] --> API
     Operator["Operator-only maintenance callers"] --> API
 ```
 
@@ -812,7 +812,7 @@ This matters because "API" is not one trust zone. The server hosts:
 - public read surfaces
 - browser-authenticated write flows
 - partner-authenticated authoring
-- operator-only review / maintenance endpoints
+- operator-only maintenance endpoints
 
 ### Route map (key routes)
 
@@ -1142,7 +1142,7 @@ Need tool exposure inside another agent host?
 
 | Client | Best for | Talks to |
 |--------|----------|----------|
-| Browser | challenge discovery, authoring, wallet UX, review UI | API |
+| Browser | challenge discovery, authoring, wallet UX | API |
 | CLI | operator flows, local scoring, manual recovery, power-user posting | API, chain, local scorer |
 | Agent runtime | typed programmatic automation in TS | API |
 | MCP server | tool exposure to external agent hosts | API and local helper tooling |

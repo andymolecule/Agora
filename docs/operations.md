@@ -587,7 +587,7 @@ curl -X POST \
   >/dev/null
 ```
 
-Use an internal network path or secret manager-backed environment where possible; do not hardcode the review token in a checked-in crontab.
+Use an internal network path or secret manager-backed environment where possible; do not hardcode the operator token in a checked-in crontab.
 8. If the sweep route returns `401` or `503`, verify `AGORA_AUTHORING_REVIEW_TOKEN` is configured consistently on the API and the caller.
 9. If the host remains stale after successful callback delivery, force a host-side pull refresh from:
    - `GET /api/authoring/external/drafts/:id/card` for draft state

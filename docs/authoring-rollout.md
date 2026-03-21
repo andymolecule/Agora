@@ -56,7 +56,7 @@ This rollout introduced four operationally relevant changes:
 - partner bearer keys
 - callback secrets
 - allowed return origins
-- internal review token for sweep/review operations
+- internal operator token for callback sweep / maintenance operations
 - internal sponsor signer for agent-native external publish
 - optional per-partner sponsor budget caps
 
@@ -357,7 +357,7 @@ NEXT_PUBLIC_AGORA_CHAIN_ID=
 NEXT_PUBLIC_AGORA_RPC_URL=
 ```
 
-If the internal authoring review screen is used from the web app, the matching server-side review token must also be set on the web deployment environment.
+`AGORA_AUTHORING_REVIEW_TOKEN` is only needed for internal callback sweep / maintenance callers. The normal hosted `/post` flow does not require that token in the web environment.
 
 ---
 
@@ -443,7 +443,7 @@ Then use generic partner draft lifecycle:
 - `POST /api/authoring/external/drafts/:id/publish`
 - `POST /api/authoring/external/drafts/:id/webhook`
 
-Submit responses now include a structured `assessment` object so OpenClaw can tell whether the draft is feasible, immediately publishable, review-gated, or rejected.
+Submit responses now include a structured `assessment` object so OpenClaw can tell whether the draft is feasible, immediately publishable, still missing required input, or rejected.
 
 ### Callback Sweep
 

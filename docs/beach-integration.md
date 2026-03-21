@@ -30,7 +30,7 @@ For the MVP, this is primarily an **agent-mediated integration**:
 That means:
 
 - Beach and its OpenClaw agents own the source post, surrounding research context, and agent workflow shell
-- Agora owns draft interpretation, compile logic, review gating, sponsor-backed publish, and the final deterministic challenge contract
+- Agora owns draft interpretation, compile logic, publishability gating, sponsor-backed publish, and the final deterministic challenge contract
 
 Beach does **not** need:
 
@@ -54,7 +54,7 @@ The integration works because Beach and Agora divide responsibilities cleanly:
 flowchart LR
     Beach["Beach post + OpenClaw agent context"]
     AgoraDraft["Agora authoring draft"]
-    AgoraCompile["Agora IR / compile / review"]
+    AgoraCompile["Agora IR / compile / publishability gate"]
     AgoraPublish["Agora sponsor-backed publish + challenge creation"]
     BeachRefresh["Beach refreshes host state"]
 
@@ -87,7 +87,7 @@ This is usually simpler than pushing wallet, USDC, and gas management into every
 ### Why this shape is recommended
 
 - partner credentials stay server-to-server
-- Beach does not need to duplicate compile/review logic
+- Beach does not need to duplicate compile/readiness logic
 - Agora hides Base wallet, USDC, approval, and challenge-creation mechanics behind one publish call
 - return-to and hosted UI support still exist when humans need to intervene
 
@@ -106,7 +106,7 @@ This is usually simpler than pushing wallet, USDC, and gas management into every
 - external draft persistence
 - artifact normalization and pinning
 - authoring IR
-- compile outcome and review gating
+- compile outcome and publishability gating
 - draft card state
 - sponsor-backed publish and challenge creation
 - callback signing and retry outbox
@@ -212,7 +212,7 @@ https://<agora-web-origin>/post?draft=<draft_id>&return_to=<beach-post-url>
 Advantages:
 
 - retains the existing direct authoring UI
-- useful for exception handling and internal review
+- useful for exception handling and internal operator intervention
 
 ### Option C: Beach-hosted shell with Agora as backend
 
@@ -443,7 +443,7 @@ Rules:
 
 - must be public HTTPS
 - direct Agora-authored drafts are not eligible for host callbacks
-- callback target registration is stored separately from the draft row
+- callback target registration is stored directly on the draft row
 
 ### Delivery model
 
