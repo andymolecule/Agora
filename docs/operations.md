@@ -29,7 +29,7 @@ This doc is authoritative for: service startup, monitoring, incident response, s
 - Browser auth/session traffic goes through the web origin's same-origin `/api` proxy; the browser should not call the backend API origin directly for SIWE/session flows
 - Indexer polls factory logs every 30s and only continuously polls active challenges; Worker polls score_jobs after challenges enter Scoring
 - Worker publishes readiness via `worker_runtime_state`, only claims jobs while `ready=true`, and uses a scorer execution backend (`local_docker` in dev, `remote_http` in production)
-- Health monitoring via /healthz, /api/indexer-health, /api/worker-health, /api/authoring/health, agora doctor
+- Health monitoring via /healthz, /api/indexer-health, /api/worker-health, and agora doctor
 - API, worker, executor, and indexer emit structured JSON logs. HTTP surfaces return `x-request-id`; include that header when tracing a failed request across logs or Sentry.
 
 ---
@@ -190,7 +190,6 @@ Verification checklist:
 ```bash
 curl -sS http://localhost:3000/healthz
 curl -sS http://localhost:3000/api/worker-health
-curl -sS http://localhost:3000/api/authoring/health
 curl -sS http://localhost:3000/api/submissions/public-key
 pnpm schema:verify
 pnpm scorers:verify
@@ -201,7 +200,7 @@ Expected results:
 - `/healthz` returns `{"ok":true,"service":"api","runtimeVersion":"..."}` for API liveness plus deployed version.
 - API responses include `x-request-id`; if you pass one in the request header, the API preserves it for end-to-end correlation.
 - `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and `sealing.workerReady=true` for the active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
-- `/api/authoring/health` returns `status: ok|warning|critical` and exposes authoring backlog metrics such as expired sessions and stale ready/awaiting-input sessions.
+- Managed authoring has no dedicated health endpoint. Validate it with a create/respond/publish canary and inspect API logs or session rows directly when investigating backlog or expiry issues.
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"` whenever sealing is configured successfully.
 
 Existing testnet DBs:
@@ -333,7 +332,7 @@ Check every 15-30 minutes during first launch window:
 3. `indexed_events` block number continues advancing.
 4. `agora doctor` passes all required checks.
 5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version. If `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`, this also implies the executor passed the worker readiness checks.
-6. Authoring health: `curl <API_URL>/api/authoring/health` stays `ok` during normal operation. `warning` or `critical` means expired sessions or stale authoring work need attention.
+6. Authoring canary: create/respond/publish flows succeed for the intended caller type. There is no separate `/api/authoring/health` endpoint.
 7. Web proxy health: `curl <WEB_URL>/api/healthz` and `curl <WEB_URL>/api/worker-health` succeed without the `AGORA_API_URL` proxy-misconfiguration error.
 8. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
 
@@ -343,7 +342,6 @@ Health commands:
 curl -sS http://localhost:3000/healthz
 curl -sS http://localhost:3000/api/indexer-health
 curl -sS http://localhost:3000/api/worker-health
-curl -sS http://localhost:3000/api/authoring/health
 agora doctor
 ```
 
@@ -351,7 +349,7 @@ Expected results:
 
 - API health returns `{"ok":true,"runtimeVersion":"..."}`.
 - Indexer health is `ok` or `warning`, not `critical`.
-- Authoring session health is `ok` during steady state. If it moves to `warning` or `critical`, inspect expired sessions and stale ready/awaiting-input sessions.
+- Authoring is validated through session canaries plus API logs, not through a separate health route.
 - `agora doctor` passes RPC/Supabase/factory checks.
 - If sealing is enabled, `/api/submissions/public-key` returns `sealed_submission_v2` whenever the public sealing key is configured.
 - If active scoring challenges use official Agora scorer images and those GHCR images are not pullable, the worker should stay alive but report `ready=false`, a `latestError`, and zero healthy workers for the active runtime version.
@@ -525,7 +523,7 @@ agora reindex --from-block <block_number>
 
 ### Managed Authoring Backlog
 
-1. Check `GET /api/authoring/health`.
+1. Check recent API logs and inspect affected rows in `authoring_sessions`.
 2. If `sessions.expired > 0`, confirm they are abandoned private workspaces. Sessions do not refresh in place; the caller starts a new session if they need to continue after expiry.
 3. If `sessions.stale_ready > 0` or `sessions.stale_awaiting_input > 0`, inspect recent API logs for interrupted authoring requests and confirm the caller is still polling `GET /api/authoring/sessions/:id`.
 4. If sponsor-funded publishes are stuck around reservation state after an API/indexer interruption, run `pnpm recover:authoring-publishes -- --stale-minutes=30` before retrying the publish flow.

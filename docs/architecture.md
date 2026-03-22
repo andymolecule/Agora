@@ -246,7 +246,7 @@ sequenceDiagram
     API->>API: compute resultHash
     API->>DB: store submission_intent
     Solver->>Chain: submit(resultHash)
-    Solver->>API: POST /api/submissions (required confirmation)
+    Solver->>API: POST /api/submissions (optional fast-path confirmation)
     API->>DB: upsert on-chain submission linked to registered intent
 
     Note over Solver,Worker: While challenge is Open, public verification stays locked.
@@ -386,7 +386,9 @@ Manual fallback:
 
 - API server:
   - `apps/api/src/app.ts` (route mounting, CORS, body guardrails)
-  - `apps/api/src/routes/*` (challenge/submission/auth/verification endpoints)
+  - `apps/api/src/routes/*` (challenge/submission/auth/verification/authoring endpoints)
+  - `apps/api/src/routes/agents.ts` + `apps/api/src/routes/authoring-sessions.ts` (direct agent registration, private session authoring, sponsor publish, wallet prepare/confirm publish)
+  - `apps/api/src/lib/managed-authoring.ts` + `apps/api/src/lib/authoring-sponsored-publish.ts` (managed compilation, dry-run scoring, and funded publish orchestration)
   - `/.well-known/openapi.json` is the canonical machine-readable contract for agents
 - MCP server:
   - `apps/mcp-server/src/index.ts` (stdio + HTTP transport, session handling)
@@ -537,6 +539,8 @@ Key properties:
 ## Database Schema
 
 > For detailed projection model, source-of-truth boundaries, and event-to-table mapping, see [Data and Indexing](data-and-indexing.md).
+>
+> This ERD is intentionally high-level. It omits runtime/support tables such as `authoring_sessions`, `authoring_sponsor_budget_reservations`, `auth_agents`, `auth_sessions`, `auth_nonces`, `submission_intents`, `score_jobs`, `worker_runtime_state`, and `worker_runtime_control`. Use [Data and Indexing](data-and-indexing.md) as the authoritative full schema reference.
 
 ```mermaid
 erDiagram
