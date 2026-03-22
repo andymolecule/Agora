@@ -128,11 +128,12 @@ function SidebarNav({
                 <button
                   type="button"
                   onClick={() => onNavigate(item.id)}
-                  className={`block w-full text-left text-[13px] font-medium pl-3 py-1.5 rounded-[2px] transition-colors ${
+                  className={`block w-full text-left text-[13px] font-medium rounded-[2px] px-3 py-2 border transition-all ${
                     activeId === item.id
-                      ? "text-warm-900 bg-warm-100"
-                      : "text-warm-600 hover:text-warm-900"
+                      ? "border-warm-900/10 bg-warm-50 text-warm-900 shadow-[0_1px_2px_rgba(17,21,25,0.04)]"
+                      : "border-transparent text-warm-600 hover:text-warm-900 hover:bg-white/70 hover:border-warm-900/10"
                   }`}
+                  aria-current={activeId === item.id ? "location" : undefined}
                 >
                   {item.label}
                 </button>
