@@ -16,13 +16,12 @@ import {
 import { buildOpenApiDocument } from "./lib/openapi.js";
 import { buildX402Metadata, createX402Middleware } from "./middleware/x402.js";
 import agentChallengeRoutes from "./routes/agent-challenges.js";
+import agentRoutes from "./routes/agents.js";
 import analyticsRoutes from "./routes/analytics.js";
 import authRoutes from "./routes/auth.js";
-import authoringDraftRoutes from "./routes/authoring-drafts.js";
-import authoringSourceRoutes from "./routes/authoring-sources.js";
+import authoringSessionRoutes from "./routes/authoring-sessions.js";
 import challengeRoutes from "./routes/challenges.js";
 import indexerHealthRoutes from "./routes/indexer-health.js";
-import beachIntegrationRoutes from "./routes/integrations-beach.js";
 import leaderboardRoutes from "./routes/leaderboard.js";
 import pinSpecRoutes from "./routes/pin-spec.js";
 import portfolioRoutes from "./routes/portfolio.js";
@@ -96,14 +95,13 @@ export function createApp() {
   app.use("*", x402Middleware);
 
   app.route("/api/analytics", analyticsRoutes);
-  app.route("/api/authoring", authoringSourceRoutes);
+  app.route("/api/agents", agentRoutes);
   app.route("/api/auth", authRoutes);
   app.route("/api/challenges", challengeRoutes);
   app.route("/api/indexer-health", indexerHealthRoutes);
-  app.route("/api/integrations/beach", beachIntegrationRoutes);
   app.route("/api/leaderboard", leaderboardRoutes);
   app.route("/api/pin-spec", pinSpecRoutes);
-  app.route("/api/authoring", authoringDraftRoutes);
+  app.route("/api/authoring", authoringSessionRoutes);
   app.route("/api/worker-health", workerHealthRoutes);
   app.route("/api/agent/challenges", agentChallengeRoutes);
   app.route("/api/submissions", submissionRoutes);

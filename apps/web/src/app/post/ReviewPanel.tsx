@@ -1,12 +1,10 @@
 "use client";
 
-import type { CompilationResultOutput } from "@agora/common";
+import type { AuthoringSessionOutput } from "@agora/common";
 import {
   ArrowRight,
   Check,
   ChevronRight,
-  Eye,
-  EyeOff,
   Filter,
   Loader2,
   Shield,
@@ -25,7 +23,7 @@ import type { PostingFundingState } from "./post-funding";
 /* ── Types ─────────────────────────────────────────────── */
 
 interface ReviewPanelProps {
-  compilation: CompilationResultOutput;
+  session: AuthoringSessionOutput | null;
   isOpen: boolean;
   onClose: () => void;
   onPublish: () => void;
@@ -66,23 +64,6 @@ function daysRemaining(deadline: string): string {
   return `${days} day${days === 1 ? "" : "s"} remaining`;
 }
 
-function VisibilityBadge({ visibility }: { visibility: string }) {
-  if (visibility === "private") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-amber-800">
-        <EyeOff className="h-2.5 w-2.5" />
-        Hidden
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-800">
-      <Eye className="h-2.5 w-2.5" />
-      Public
-    </span>
-  );
-}
-
 /* ── Field components ──────────────────────────────────── */
 
 function SelectField({
@@ -105,7 +86,7 @@ function SelectField({
 /* ── Main component ────────────────────────────────────── */
 
 export function ReviewPanel({
-  compilation,
+  session,
   isOpen,
   onClose,
   onPublish,
@@ -128,16 +109,12 @@ export function ReviewPanel({
   errorMessage,
 }: ReviewPanelProps) {
   const [showSpec, setShowSpec] = useState(false);
-  const spec = compilation.challenge_spec;
+  const checklist = session?.checklist;
+  const compilation = session?.compilation;
+  const artifacts = session?.artifacts ?? [];
 
   /* Extract description for intent section */
-  const description = spec?.description ?? "";
-  const descriptionLines = description
-    .split("\n")
-    .map((l: string) => l.trim())
-    .filter((l: string) => l.length > 0);
-  const technicalObjective = descriptionLines[0] ?? "";
-  const acceptanceCriteria = descriptionLines.slice(1, 4);
+  const description = session?.summary ?? "";
 
   return (
     <AnimatePresence>
@@ -153,7 +130,7 @@ export function ReviewPanel({
           <div className="flex items-center justify-between bg-warm-50/60 px-5 py-3">
             <div className="flex items-center gap-3">
               <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-400">
-                Live Draft Preview
+                Live Session Preview
               </div>
               <span className="rounded-full bg-warm-900 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-white">
                 Syncing
@@ -177,7 +154,7 @@ export function ReviewPanel({
                 Bounty Title
               </div>
               <h2 className="font-display text-2xl font-bold text-warm-900">
-                {spec?.title ?? "Untitled challenge"}
+                {checklist?.title ?? session?.summary ?? "Untitled challenge"}
               </h2>
             </div>
 
@@ -187,7 +164,7 @@ export function ReviewPanel({
                 Scoring Engine
               </div>
               <div className="space-y-2">
-                {compilation.runtime_family ? (
+                {compilation?.runtime_family ? (
                   <div className="flex justify-between text-sm">
                     <span className="text-warm-500">Runtime</span>
                     <span className="font-mono text-xs font-medium text-warm-800">
@@ -195,11 +172,11 @@ export function ReviewPanel({
                     </span>
                   </div>
                 ) : null}
-                {compilation.metric ? (
+                {compilation?.metric ? (
                   <div className="flex justify-between text-sm">
                     <span className="text-warm-500">Metric</span>
                     <span className="font-mono text-xs font-medium text-warm-800">
-                      {compilation.metric}
+                      {compilation.metric} {compilation.objective}
                     </span>
                   </div>
                 ) : null}
@@ -231,16 +208,16 @@ export function ReviewPanel({
                   Deadline
                 </div>
                 <div className="text-lg font-bold text-warm-900">
-                  {spec?.deadline
-                    ? new Date(spec.deadline).toLocaleDateString("en-US", {
+                  {compilation?.deadline
+                    ? new Date(compilation.deadline).toLocaleDateString("en-US", {
                         month: "short",
                         day: "numeric",
                       })
                     : "Not set"}
                 </div>
-                {spec?.deadline ? (
+                {compilation?.deadline ? (
                   <div className="mt-1 font-mono text-[11px] text-red-600">
-                    {daysRemaining(spec.deadline)}
+                    {daysRemaining(compilation.deadline)}
                   </div>
                 ) : null}
               </div>
@@ -252,7 +229,9 @@ export function ReviewPanel({
                 Distribution
               </div>
               <SelectField
-                value={spec?.reward?.distribution ?? "winner_take_all"}
+                value={
+                  compilation?.reward?.distribution ?? "winner_take_all"
+                }
                 options={GUIDED_DISTRIBUTION_OPTIONS}
                 disabled
               />
@@ -261,7 +240,7 @@ export function ReviewPanel({
                 Dispute Window
               </div>
               <SelectField
-                value={String(spec?.dispute_window_hours ?? "0")}
+                value={String(compilation?.dispute_window_hours ?? "0")}
                 options={GUIDED_DISPUTE_WINDOW_OPTIONS}
                 disabled
               />
@@ -277,36 +256,13 @@ export function ReviewPanel({
                   </div>
                 </div>
 
-                {technicalObjective ? (
+                {description ? (
                   <div>
                     <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-widest text-warm-400">
-                      Technical Objective
+                      Current Summary
                     </div>
                     <div className="border-l-2 border-warm-300 pl-4 text-sm leading-relaxed text-warm-700">
-                      {technicalObjective}
-                    </div>
-                  </div>
-                ) : null}
-
-                {acceptanceCriteria.length > 0 ? (
-                  <div>
-                    <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-widest text-warm-400">
-                      Acceptance Criteria
-                    </div>
-                    <div className="space-y-1">
-                      {acceptanceCriteria.map(
-                        (criterion: string, index: number) => (
-                          <div
-                            key={criterion}
-                            className="flex items-start gap-2 text-sm text-warm-700"
-                          >
-                            <span className="font-mono text-[11px] font-bold text-warm-400">
-                              {String(index + 1).padStart(2, "0")}.
-                            </span>
-                            <span className="leading-relaxed">{criterion}</span>
-                          </div>
-                        ),
-                      )}
+                      {description}
                     </div>
                   </div>
                 ) : null}
@@ -314,20 +270,20 @@ export function ReviewPanel({
             ) : null}
 
             {/* Artifacts */}
-            {spec?.artifacts && spec.artifacts.length > 0 ? (
+            {artifacts.length > 0 ? (
               <div className="space-y-3">
                 <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-400">
                   Artifacts
                 </div>
                 <div className="space-y-2">
-                  {spec.artifacts.map((artifact, index) => (
+                  {artifacts.map((artifact: NonNullable<typeof session>["artifacts"][number], index: number) => (
                     <div
-                      key={artifact.uri ?? index}
+                      key={artifact.artifact_id ?? index}
                       className="flex items-center justify-between rounded-md bg-warm-50 px-3 py-2"
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-sm text-warm-700">
-                          {artifact.file_name ?? artifact.role ?? "file"}
+                          {artifact.file_name}
                         </span>
                         {artifact.role ? (
                           <span className="font-mono text-[10px] text-warm-400">
@@ -335,38 +291,12 @@ export function ReviewPanel({
                           </span>
                         ) : null}
                       </div>
-                      <VisibilityBadge
-                        visibility={artifact.visibility ?? "public"}
-                      />
+                      <span className="font-mono text-[10px] text-warm-400">
+                        Agora artifact
+                      </span>
                     </div>
                   ))}
                 </div>
-              </div>
-            ) : null}
-
-            {/* Dry run */}
-            {compilation.dry_run?.summary ? (
-              <div className="rounded-md bg-emerald-50 p-4">
-                <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-widest text-emerald-600">
-                  Dry Run Passed
-                </div>
-                <div className="text-xs text-emerald-800">
-                  {compilation.dry_run.summary}
-                </div>
-              </div>
-            ) : null}
-
-            {/* Warnings */}
-            {compilation.warnings && compilation.warnings.length > 0 ? (
-              <div className="rounded-md bg-amber-50 p-4">
-                <div className="mb-2 font-mono text-[10px] font-bold uppercase tracking-widest text-amber-600">
-                  Warnings
-                </div>
-                <ul className="space-y-1 text-xs text-amber-800">
-                  {compilation.warnings.map((warning) => (
-                    <li key={warning}>{warning}</li>
-                  ))}
-                </ul>
               </div>
             ) : null}
 
@@ -379,12 +309,20 @@ export function ReviewPanel({
               <ChevronRight
                 className={`h-3 w-3 transition motion-reduce:transition-none ${showSpec ? "rotate-90" : ""}`}
               />
-              {showSpec ? "Hide" : "Show"} raw spec
+              {showSpec ? "Hide" : "Show"} raw session contract
             </button>
 
             {showSpec ? (
               <pre className="max-h-64 overflow-auto rounded-md bg-warm-900 p-4 font-mono text-[11px] leading-relaxed text-warm-200">
-                {JSON.stringify(spec, null, 2)}
+                {JSON.stringify(
+                  {
+                    checklist,
+                    compilation,
+                    artifacts,
+                  },
+                  null,
+                  2,
+                )}
               </pre>
             ) : null}
           </div>

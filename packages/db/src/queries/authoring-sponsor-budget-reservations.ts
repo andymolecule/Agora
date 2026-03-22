@@ -2,7 +2,7 @@ import type { AgoraDbClient } from "../index";
 
 export interface AuthoringSponsorBudgetReservationRow {
   id: string;
-  draft_id: string;
+  session_id: string;
   provider: string;
   period_start: string;
   period_end: string;
@@ -29,7 +29,7 @@ function normalizeReservationRow(
 export async function reserveAuthoringSponsorBudget(
   db: AgoraDbClient,
   input: {
-    draftId: string;
+    sessionId: string;
     provider: string;
     periodStart: string;
     periodEnd: string;
@@ -38,7 +38,7 @@ export async function reserveAuthoringSponsorBudget(
   },
 ) {
   const { data, error } = await db.rpc("reserve_authoring_sponsor_budget", {
-    p_draft_id: input.draftId,
+    p_session_id: input.sessionId,
     p_provider: input.provider,
     p_period_start: input.periodStart,
     p_period_end: input.periodEnd,
@@ -52,7 +52,7 @@ export async function reserveAuthoringSponsorBudget(
       error.message.includes("authoring_sponsor_budget_reservations")
     ) {
       throw new Error(
-        "Failed to reserve authoring sponsor budget: runtime schema is missing authoring sponsor budget reservations. Next step: apply migration 028_add_authoring_sponsor_budget_reservations.sql, reload the PostgREST schema cache, and retry.",
+        "Failed to reserve authoring sponsor budget: runtime schema is missing authoring sponsor budget reservations. Next step: reset the Supabase schema or apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, and retry.",
       );
     }
     throw new Error(
@@ -67,7 +67,7 @@ export async function reserveAuthoringSponsorBudget(
 export async function attachAuthoringSponsorBudgetReservationTx(
   db: AgoraDbClient,
   input: {
-    draftId: string;
+    sessionId: string;
     txHash: string;
   },
 ) {
@@ -78,7 +78,7 @@ export async function attachAuthoringSponsorBudgetReservationTx(
       tx_hash: input.txHash,
       updated_at: nowIso,
     })
-    .eq("draft_id", input.draftId)
+    .eq("session_id", input.sessionId)
     .eq("status", "reserved")
     .select("*")
     .maybeSingle();
@@ -86,7 +86,7 @@ export async function attachAuthoringSponsorBudgetReservationTx(
   if (error) {
     if (error.message.includes("authoring_sponsor_budget_reservations")) {
       throw new Error(
-        "Failed to attach authoring sponsor budget reservation tx hash: runtime schema is missing authoring sponsor budget reservations. Next step: apply migration 028_add_authoring_sponsor_budget_reservations.sql, reload the PostgREST schema cache, and retry.",
+        "Failed to attach authoring sponsor budget reservation tx hash: runtime schema is missing authoring sponsor budget reservations. Next step: reset the Supabase schema or apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, and retry.",
       );
     }
     throw new Error(
@@ -100,7 +100,7 @@ export async function attachAuthoringSponsorBudgetReservationTx(
 export async function consumeAuthoringSponsorBudgetReservation(
   db: AgoraDbClient,
   input: {
-    draftId: string;
+    sessionId: string;
     challengeId: string;
     txHash?: string | null;
   },
@@ -115,7 +115,7 @@ export async function consumeAuthoringSponsorBudgetReservation(
       consumed_at: nowIso,
       updated_at: nowIso,
     })
-    .eq("draft_id", input.draftId)
+    .eq("session_id", input.sessionId)
     .eq("status", "reserved")
     .select("*")
     .maybeSingle();
@@ -123,7 +123,7 @@ export async function consumeAuthoringSponsorBudgetReservation(
   if (error) {
     if (error.message.includes("authoring_sponsor_budget_reservations")) {
       throw new Error(
-        "Failed to consume authoring sponsor budget reservation: runtime schema is missing authoring sponsor budget reservations. Next step: apply migration 028_add_authoring_sponsor_budget_reservations.sql, reload the PostgREST schema cache, and retry.",
+        "Failed to consume authoring sponsor budget reservation: runtime schema is missing authoring sponsor budget reservations. Next step: reset the Supabase schema or apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, and retry.",
       );
     }
     throw new Error(
@@ -137,7 +137,7 @@ export async function consumeAuthoringSponsorBudgetReservation(
 export async function releaseAuthoringSponsorBudgetReservation(
   db: AgoraDbClient,
   input: {
-    draftId: string;
+    sessionId: string;
   },
 ) {
   const nowIso = new Date().toISOString();
@@ -148,7 +148,7 @@ export async function releaseAuthoringSponsorBudgetReservation(
       released_at: nowIso,
       updated_at: nowIso,
     })
-    .eq("draft_id", input.draftId)
+    .eq("session_id", input.sessionId)
     .eq("status", "reserved")
     .select("*")
     .maybeSingle();
@@ -156,7 +156,7 @@ export async function releaseAuthoringSponsorBudgetReservation(
   if (error) {
     if (error.message.includes("authoring_sponsor_budget_reservations")) {
       throw new Error(
-        "Failed to release authoring sponsor budget reservation: runtime schema is missing authoring sponsor budget reservations. Next step: apply migration 028_add_authoring_sponsor_budget_reservations.sql, reload the PostgREST schema cache, and retry.",
+        "Failed to release authoring sponsor budget reservation: runtime schema is missing authoring sponsor budget reservations. Next step: reset the Supabase schema or apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, and retry.",
       );
     }
     throw new Error(
@@ -181,7 +181,7 @@ export async function listStaleAuthoringSponsorBudgetReservations(
   if (error) {
     if (error.message.includes("authoring_sponsor_budget_reservations")) {
       throw new Error(
-        "Failed to list stale authoring sponsor budget reservations: runtime schema is missing authoring sponsor budget reservations. Next step: apply migration 028_add_authoring_sponsor_budget_reservations.sql, reload the PostgREST schema cache, and retry.",
+        "Failed to list stale authoring sponsor budget reservations: runtime schema is missing authoring sponsor budget reservations. Next step: reset the Supabase schema or apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, and retry.",
       );
     }
     throw new Error(

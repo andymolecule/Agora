@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 const benchmarkRoot = path.resolve(
-  process.cwd(),
-  "challenges/test-data/authoring-benchmarks",
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../../challenges/test-data/authoring-benchmarks",
 );
 
 const compileStateSchema = z.enum([
   "ready",
-  "needs_input",
-  "failed",
+  "awaiting_input",
+  "rejected",
 ]);
 
 const benchmarkSchema = z.object({

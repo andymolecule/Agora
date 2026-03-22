@@ -39,30 +39,37 @@ const NEEDS_INPUT_ERROR_CODES = new Set([
   "MANAGED_COMPILER_NEEDS_INPUT",
 ]);
 
-export interface ManagedAuthoringDraftOutcome {
-  state: "ready" | "needs_input" | "failed";
+export interface ManagedAuthoringSessionOutcome {
+  state: "ready" | "awaiting_input" | "rejected";
   compilation?: CompilationResultOutput;
   questions?: AuthoringQuestionOutput[];
   authoringIr: ChallengeAuthoringIrOutput;
   message?: string;
 }
 
-interface DraftCompilation {
+interface SessionCompilationCandidate {
   proposal: Awaited<ReturnType<typeof compileManagedAuthoringProposal>>;
   compilation: CompilationResultOutput;
 }
 
-async function compileManagedAuthoringDraft(
+async function compileManagedAuthoringSessionCandidate(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
+    runtimeFamilyOverride?: SupportedRuntimeFamily | null;
+    metricOverride?: string | null;
+    artifactAssignmentsOverride?: Array<{
+      artifactIndex: number;
+      role: string;
+      visibility: "public" | "private";
+    }>;
   },
   dependencies: {
     fetchImpl?: typeof fetch;
     executeScoringPipelineImpl?: typeof executeScoringPipeline;
     getTextImpl?: typeof getText;
   } = {},
-): Promise<DraftCompilation> {
+): Promise<SessionCompilationCandidate> {
   if (input.uploadedArtifacts.length === 0) {
     throw new AgoraError(
       "Managed authoring requires at least one uploaded file. Next step: attach your dataset or reference outputs and retry.",
@@ -73,16 +80,26 @@ async function compileManagedAuthoringDraft(
     );
   }
 
-  const proposal = await compileManagedAuthoringProposal({
-    intent: input.intent,
-    uploadedArtifacts: input.uploadedArtifacts,
-    fetchImpl: dependencies.fetchImpl,
-  });
+  const proposal =
+    input.runtimeFamilyOverride && input.metricOverride
+      ? {
+          runtimeFamily: input.runtimeFamilyOverride,
+          metric: input.metricOverride,
+          reasonCodes: [],
+          warnings: [],
+          artifactAssignments: input.artifactAssignmentsOverride ?? [],
+        }
+      : await compileManagedAuthoringProposal({
+          intent: input.intent,
+          uploadedArtifacts: input.uploadedArtifacts,
+          fetchImpl: dependencies.fetchImpl,
+        });
 
   const assigned = assignArtifactsFromProposal({
     runtimeFamily: proposal.runtimeFamily,
     uploadedArtifacts: input.uploadedArtifacts,
-    artifactAssignments: proposal.artifactAssignments,
+    artifactAssignments:
+      input.artifactAssignmentsOverride ?? proposal.artifactAssignments,
   });
   if (!assigned) {
     throw new AgoraError(
@@ -131,9 +148,9 @@ async function compileManagedAuthoringDraft(
   });
   const apiRuntime = readApiServerRuntimeConfig();
 
-  const draftSpec = {
+  const challengeSpecCandidate = {
     schema_version: 3 as const,
-    id: `draft-${Date.now()}`,
+    id: `challenge-${Date.now()}`,
     title: input.intent.title,
     description: input.intent.description,
     domain: input.intent.domain as ChallengeSpecOutput["domain"],
@@ -159,7 +176,7 @@ async function compileManagedAuthoringDraft(
   };
 
   const parsedSpec = challengeSpecSchemaForChain(apiRuntime.chainId).parse(
-    draftSpec,
+    challengeSpecCandidate,
   );
   const canonicalSpec = await canonicalizeChallengeSpec(parsedSpec);
   const managedRuntime = readManagedAuthoringRuntimeConfig();
@@ -203,6 +220,13 @@ export async function compileManagedAuthoringSession(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
+    runtimeFamilyOverride?: SupportedRuntimeFamily | null;
+    metricOverride?: string | null;
+    artifactAssignmentsOverride?: Array<{
+      artifactIndex: number;
+      role: string;
+      visibility: "public" | "private";
+    }>;
   },
   dependencies: {
     fetchImpl?: typeof fetch;
@@ -210,23 +234,36 @@ export async function compileManagedAuthoringSession(
     getTextImpl?: typeof getText;
   } = {},
 ): Promise<CompilationResultOutput> {
-  const result = await compileManagedAuthoringDraft(input, dependencies);
+  const result = await compileManagedAuthoringSessionCandidate(
+    input,
+    dependencies,
+  );
   return result.compilation;
 }
 
-export async function compileManagedAuthoringDraftOutcome(
+export async function compileManagedAuthoringSessionOutcome(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
+    runtimeFamilyOverride?: SupportedRuntimeFamily | null;
+    metricOverride?: string | null;
+    artifactAssignmentsOverride?: Array<{
+      artifactIndex: number;
+      role: string;
+      visibility: "public" | "private";
+    }>;
   },
   dependencies: {
     fetchImpl?: typeof fetch;
     executeScoringPipelineImpl?: typeof executeScoringPipeline;
     getTextImpl?: typeof getText;
   } = {},
-): Promise<ManagedAuthoringDraftOutcome> {
+): Promise<ManagedAuthoringSessionOutcome> {
   try {
-    const result = await compileManagedAuthoringDraft(input, dependencies);
+    const result = await compileManagedAuthoringSessionCandidate(
+      input,
+      dependencies,
+    );
 
     const authoringIr = buildManagedAuthoringIr({
       intent: input.intent,
@@ -288,13 +325,13 @@ export async function compileManagedAuthoringDraftOutcome(
           code: error.code,
           message: error.message,
         },
-        assessmentOutcome: "needs_input",
+        assessmentOutcome: "awaiting_input",
         assessmentReasonCodes: reasonCodes,
         assessmentWarnings: warnings,
         missingFields: questions.map((question) => question.field),
       });
       return {
-        state: "needs_input",
+        state: "awaiting_input",
         authoringIr,
         questions,
         message:
@@ -318,13 +355,13 @@ export async function compileManagedAuthoringDraftOutcome(
           code: error.code,
           message: error.message,
         },
-        assessmentOutcome: "failed",
+        assessmentOutcome: "rejected",
         assessmentReasonCodes: Array.isArray(error.details?.reasonCodes)
           ? (error.details.reasonCodes as string[])
           : [],
       });
       return {
-        state: "failed",
+        state: "rejected",
         authoringIr,
         message: error.message,
       };

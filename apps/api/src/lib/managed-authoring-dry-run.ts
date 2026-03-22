@@ -241,7 +241,7 @@ async function buildSubmissionSource(input: {
   const valueColumn = submissionColumns.value;
   if (!idColumn || !valueColumn) {
     throw new AgoraError(
-      "Managed dry-run needs a submission contract with id and value columns. Next step: recompile the draft or use Expert Mode.",
+      "Managed dry-run needs a submission contract with id and value columns. Next step: recompile the session or use Expert Mode.",
       {
         code: "MANAGED_DRY_RUN_INVALID_SUBMISSION_CONTRACT",
         status: 500,

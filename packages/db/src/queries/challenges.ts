@@ -127,7 +127,7 @@ export async function upsertChallenge(
   if (error) {
     if (error.message.includes("evaluation_plan_json")) {
       throw new Error(
-        "Failed to upsert challenge: challenges.evaluation_plan_json is missing from the runtime schema. Next step: apply the latest challenge-runtime migrations (029 through 031), reload the PostgREST schema cache, and retry.",
+        "Failed to upsert challenge: challenges.evaluation_plan_json is missing from the runtime schema. Next step: reset the Supabase schema or apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, and retry.",
       );
     }
     throw new Error(`Failed to upsert challenge: ${error.message}`);

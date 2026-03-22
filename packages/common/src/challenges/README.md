@@ -8,7 +8,7 @@ It does **not** own scorer runtime config. Official managed runtime config lives
 
 - `templates.ts`
   - Default challenge-type labels, runtime families, metrics, and authoring defaults
-  - Shared challenge draft construction used by the web posting flow
+  - Shared challenge spec candidate construction used by the web posting flow
   - Shared submission-contract builders for current challenge families
 
 - `index.ts`
@@ -19,6 +19,6 @@ It does **not** own scorer runtime config. Official managed runtime config lives
 If the question is:
 
 - "Which runtime family/type should this challenge default to?"
-- "How should a new challenge draft be assembled?"
+- "How should a new challenge spec candidate be assembled?"
 
 the answer belongs here.

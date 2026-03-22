@@ -1,19 +1,15 @@
 import {
-  CHALLENGE_LIMITS,
-  type ChallengeSpecOutput,
-  SUBMISSION_LIMITS,
-  computeSpecHash,
+  type AuthoringSessionOutput,
+  type WalletPublishPreparationOutput,
   erc20Abi,
-  getPinSpecAuthorizationTypedData,
 } from "@agora/common";
 import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json";
-import { type Abi, parseSignature, parseUnits, zeroAddress } from "viem";
+import { type Abi, parseSignature } from "viem";
 import type {
   usePublicClient,
   useSignTypedData,
   useWriteContract,
 } from "wagmi";
-import { accelerateChallengeIndex } from "../../lib/api";
 import {
   assertSupportedContractVersion,
   simulateAndWriteContract,
@@ -22,11 +18,6 @@ import {
 
 const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
 const PERMIT_LIFETIME_SECONDS = 60 * 60;
-const DISTRIBUTION_TO_ENUM = {
-  winner_take_all: 0,
-  top_3: 1,
-  proportional: 2,
-} as const;
 
 type WalletPublicClient = NonNullable<ReturnType<typeof usePublicClient>>;
 type SignTypedDataAsync = ReturnType<
@@ -37,15 +28,18 @@ type WriteContractAsync = ReturnType<
 >["writeContractAsync"];
 
 export interface PreparedManagedChallenge {
+  sessionId: string;
   specCid: string;
-  spec: ChallengeSpecOutput;
-  returnTo: string | null;
-  returnToSource: "requested" | "origin_external_url" | null;
+  factoryAddress: `0x${string}`;
+  usdcAddress: `0x${string}`;
   rewardUnits: bigint;
   deadlineSeconds: bigint;
   disputeWindowHours: bigint;
   minimumScoreWad: bigint;
   distributionType: number;
+  labTba: `0x${string}`;
+  maxSubmissionsTotal: bigint;
+  maxSubmissionsPerSolver: bigint;
 }
 
 export async function assertFactoryIsSupported(input: {
@@ -60,48 +54,17 @@ export async function assertFactoryIsSupported(input: {
   });
 }
 
-export async function publishManagedAuthoringDraft(input: {
-  draftId: string;
-  spec: ChallengeSpecOutput;
-  address: `0x${string}`;
-  chainId: number;
-  signTypedDataAsync: SignTypedDataAsync;
-  returnTo?: string;
+export async function publishManagedAuthoringSession(input: {
+  sessionId: string;
 }): Promise<PreparedManagedChallenge> {
-  const nonceResponse = await fetch("/api/pin-spec", {
-    method: "GET",
-    cache: "no-store",
-  });
-  if (!nonceResponse.ok) {
-    throw new Error(await nonceResponse.text());
-  }
-
-  const { nonce } = (await nonceResponse.json()) as { nonce: string };
-  const specHash = computeSpecHash(input.spec);
-  const typedData = getPinSpecAuthorizationTypedData({
-    chainId: input.chainId,
-    wallet: input.address,
-    specHash,
-    nonce,
-  });
-  const signature = await input.signTypedDataAsync({
-    account: input.address,
-    ...typedData,
-  });
-
   const publishResponse = await fetch(
-    `/api/authoring/drafts/${input.draftId}/publish`,
+    `/api/authoring/sessions/${input.sessionId}/publish`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        auth: {
-          address: input.address,
-          nonce,
-          signature,
-          specHash,
-        },
-        return_to: input.returnTo,
+        confirm_publish: true,
+        funding: "wallet",
       }),
     },
   );
@@ -109,33 +72,21 @@ export async function publishManagedAuthoringDraft(input: {
     throw new Error(await publishResponse.text());
   }
 
-  const payload = (await publishResponse.json()) as {
-    data: {
-      specCid: string;
-      spec: ChallengeSpecOutput;
-      returnTo?: string | null;
-      returnToSource?: "requested" | "origin_external_url" | null;
-    };
-  };
-  const spec = payload.data.spec;
+  const payload = (await publishResponse.json()) as WalletPublishPreparationOutput;
 
   return {
-    specCid: payload.data.specCid,
-    spec,
-    returnTo: payload.data.returnTo ?? null,
-    returnToSource: payload.data.returnToSource ?? null,
-    rewardUnits: parseUnits(String(spec.reward.total), 6),
-    deadlineSeconds: BigInt(
-      Math.floor(new Date(spec.deadline).getTime() / 1000),
-    ),
-    disputeWindowHours: BigInt(
-      spec.dispute_window_hours ?? CHALLENGE_LIMITS.defaultDisputeWindowHours,
-    ),
-    minimumScoreWad: parseUnits(String(spec.minimum_score ?? 0), 18),
-    distributionType:
-      DISTRIBUTION_TO_ENUM[
-        spec.reward.distribution as keyof typeof DISTRIBUTION_TO_ENUM
-      ] ?? 0,
+    sessionId: input.sessionId,
+    specCid: payload.spec_cid,
+    factoryAddress: payload.factory_address as `0x${string}`,
+    usdcAddress: payload.usdc_address as `0x${string}`,
+    rewardUnits: BigInt(payload.reward_units),
+    deadlineSeconds: BigInt(payload.deadline_seconds),
+    disputeWindowHours: BigInt(payload.dispute_window_hours),
+    minimumScoreWad: BigInt(payload.minimum_score_wad),
+    distributionType: payload.distribution_type,
+    labTba: payload.lab_tba as `0x${string}`,
+    maxSubmissionsTotal: BigInt(payload.max_submissions_total),
+    maxSubmissionsPerSolver: BigInt(payload.max_submissions_per_solver),
   };
 }
 
@@ -200,14 +151,13 @@ export async function createChallengeWithApproval(input: {
   publicClient: WalletPublicClient;
   writeContractAsync: WriteContractAsync;
   address: `0x${string}`;
-  factoryAddress: `0x${string}`;
   prepared: PreparedManagedChallenge;
 }) {
   return simulateAndWriteContract({
     publicClient: input.publicClient,
     writeContractAsync: input.writeContractAsync,
     account: input.address,
-    address: input.factoryAddress,
+    address: input.prepared.factoryAddress,
     abi: AgoraFactoryAbi,
     functionName: "createChallenge",
     args: [
@@ -217,9 +167,9 @@ export async function createChallengeWithApproval(input: {
       input.prepared.disputeWindowHours,
       input.prepared.minimumScoreWad,
       input.prepared.distributionType,
-      zeroAddress,
-      BigInt(SUBMISSION_LIMITS.maxPerChallenge),
-      BigInt(SUBMISSION_LIMITS.maxPerSolverPerChallenge),
+      input.prepared.labTba,
+      input.prepared.maxSubmissionsTotal,
+      input.prepared.maxSubmissionsPerSolver,
     ],
   });
 }
@@ -228,7 +178,6 @@ export async function createChallengeWithPermit(input: {
   publicClient: WalletPublicClient;
   writeContractAsync: WriteContractAsync;
   address: `0x${string}`;
-  factoryAddress: `0x${string}`;
   prepared: PreparedManagedChallenge;
   permit: Awaited<ReturnType<typeof signRewardPermit>>;
 }) {
@@ -236,7 +185,7 @@ export async function createChallengeWithPermit(input: {
     publicClient: input.publicClient,
     writeContractAsync: input.writeContractAsync,
     account: input.address,
-    address: input.factoryAddress,
+    address: input.prepared.factoryAddress,
     abi: AgoraFactoryAbi,
     functionName: "createChallengeWithPermit",
     args: [
@@ -246,9 +195,9 @@ export async function createChallengeWithPermit(input: {
       input.prepared.disputeWindowHours,
       input.prepared.minimumScoreWad,
       input.prepared.distributionType,
-      zeroAddress,
-      BigInt(SUBMISSION_LIMITS.maxPerChallenge),
-      BigInt(SUBMISSION_LIMITS.maxPerSolverPerChallenge),
+      input.prepared.labTba,
+      input.prepared.maxSubmissionsTotal,
+      input.prepared.maxSubmissionsPerSolver,
       input.permit.permitDeadline,
       input.permit.permitV,
       input.permit.permitR,
@@ -277,13 +226,27 @@ export async function approveUsdc(input: {
 }
 
 export async function finalizeManagedChallengePost(input: {
+  sessionId: string;
   createTx: `0x${string}`;
   publicClient: WalletPublicClient;
-}) {
+}): Promise<AuthoringSessionOutput> {
   await waitForTransactionReceiptWithTimeout({
     publicClient: input.publicClient,
     hash: input.createTx,
   });
 
-  return accelerateChallengeIndex({ txHash: input.createTx });
+  const response = await fetch(
+    `/api/authoring/sessions/${input.sessionId}/confirm-publish`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        tx_hash: input.createTx,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return (await response.json()) as AuthoringSessionOutput;
 }

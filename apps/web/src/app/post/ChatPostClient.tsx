@@ -3,7 +3,6 @@
 import { useChainModal, useConnectModal } from "@rainbow-me/rainbowkit";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import {
   useAccount,
@@ -32,7 +31,7 @@ import {
   createChallengeWithApproval,
   createChallengeWithPermit,
   finalizeManagedChallengePost,
-  publishManagedAuthoringDraft,
+  publishManagedAuthoringSession,
   signRewardPermit,
 } from "./managed-post-flow";
 import {
@@ -43,42 +42,15 @@ import {
 } from "./post-funding";
 import { useChatStream } from "./use-chat-stream";
 
-/* ── Helpers ───────────────────────────────────────────── */
-
-function buildHostReturnUrl(input: {
-  baseUrl: string | null;
-  draftId: string;
-  challengeId: string;
-  specCid: string;
-}) {
-  if (!input.baseUrl) return null;
-  const url = new URL(input.baseUrl);
-  url.searchParams.set("agora_event", "challenge_live");
-  url.searchParams.set("agora_draft_id", input.draftId);
-  url.searchParams.set("agora_challenge_id", input.challengeId);
-  url.searchParams.set("agora_spec_cid", input.specCid);
-  if (typeof window !== "undefined") {
-    url.searchParams.set(
-      "agora_challenge_url",
-      `${window.location.origin}/challenges/${input.challengeId}`,
-    );
-  }
-  return url.toString();
-}
-
 /* ── Main component ────────────────────────────────────── */
 
 export function ChatPostClient() {
-  const searchParams = useSearchParams();
-  const requestedReturnTo = searchParams.get("return_to")?.trim() || null;
-
   const [isPublishing, setIsPublishing] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [postedChallengeId, setPostedChallengeId] = useState<string | null>(
     null,
   );
-  const [hostReturnUrl, setHostReturnUrl] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -95,9 +67,10 @@ export function ChatPostClient() {
     messages,
     isStreaming,
     streamingText,
+    session,
     compilation,
     uploads,
-    draftId,
+    sessionId,
     sendMessage,
     sendFiles,
     removeUpload,
@@ -106,7 +79,7 @@ export function ChatPostClient() {
     onCompileReady: () => setReviewOpen(true),
   });
 
-  const rewardInput = compilation?.challenge_spec?.reward?.total ?? "10";
+  const rewardInput = compilation?.reward?.total ?? "10";
   const { feeUsdc, payoutUsdc } = computeProtocolFee(Number(rewardInput || 0));
 
   /* Funding */
@@ -177,19 +150,18 @@ export function ChatPostClient() {
   /* ── Publish on-chain ──────────────────────────── */
 
   async function handlePublish() {
-    if (!compilation || !publicClient || !writeContractAsync || !address)
+    if (!session || !compilation || !publicClient || !writeContractAsync || !address)
       return;
-    if (!draftId) {
-      setErrorMessage("No authoring draft found. Send more messages first.");
+    if (!sessionId) {
+      setErrorMessage("No authoring session found. Send more messages first.");
       return;
     }
 
     try {
       setIsPublishing(true);
       setErrorMessage(null);
-      setHostReturnUrl(null);
       const rewardUnits = getRewardUnitsFromInput(
-        compilation.challenge_spec.reward.total,
+        compilation.reward.total,
       );
       const latestFunding = await refreshPostingFundingState(rewardUnits);
       if (latestFunding.balance < rewardUnits) {
@@ -208,13 +180,8 @@ export function ChatPostClient() {
       });
 
       setStatusMessage("Pinning the compiled challenge spec...");
-      const prepared = await publishManagedAuthoringDraft({
-        draftId,
-        spec: compilation.challenge_spec,
-        address,
-        chainId: CHAIN_ID,
-        signTypedDataAsync,
-        returnTo: requestedReturnTo ?? undefined,
+      const prepared = await publishManagedAuthoringSession({
+        sessionId,
       });
 
       let createTx: `0x${string}`;
@@ -230,9 +197,9 @@ export function ChatPostClient() {
             tokenName: latestFunding.tokenName,
             permitVersion: latestFunding.permitVersion,
             chainId: CHAIN_ID,
-            usdcAddress: USDC_ADDRESS,
-            factoryAddress: FACTORY_ADDRESS,
-            rewardUnits,
+            usdcAddress: prepared.usdcAddress,
+            factoryAddress: prepared.factoryAddress,
+            rewardUnits: prepared.rewardUnits,
             signTypedDataAsync,
           });
           setStatusMessage("Creating the challenge on-chain...");
@@ -240,7 +207,6 @@ export function ChatPostClient() {
             publicClient,
             writeContractAsync,
             address,
-            factoryAddress: FACTORY_ADDRESS,
             prepared,
             permit,
           });
@@ -263,24 +229,17 @@ export function ChatPostClient() {
           publicClient,
           writeContractAsync,
           address,
-          factoryAddress: FACTORY_ADDRESS,
           prepared,
         });
       }
 
       setStatusMessage("Waiting for chain confirmation...");
-      const registration = await finalizeManagedChallengePost({
+      const publishedSession = await finalizeManagedChallengePost({
+        sessionId,
         createTx,
         publicClient,
       });
-      setPostedChallengeId(registration.challengeId);
-      const nextHostReturnUrl = buildHostReturnUrl({
-        baseUrl: prepared.returnTo,
-        draftId,
-        challengeId: registration.challengeId,
-        specCid: prepared.specCid,
-      });
-      setHostReturnUrl(nextHostReturnUrl);
+      setPostedChallengeId(publishedSession.challenge_id);
       setStatusMessage("Challenge published successfully.");
     } catch (error) {
       setErrorMessage(
@@ -320,15 +279,6 @@ export function ChatPostClient() {
               <span className="font-mono">{postedChallengeId}</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {hostReturnUrl ? (
-                <a
-                  href={hostReturnUrl}
-                  className="btn-secondary inline-flex items-center gap-2 rounded-[2px] px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider"
-                >
-                  Return to host
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </a>
-              ) : null}
               <Link
                 href={`/challenges/${postedChallengeId}`}
                 className="btn-secondary inline-flex items-center gap-2 rounded-[2px] px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider"
@@ -363,7 +313,7 @@ export function ChatPostClient() {
         {/* Review panel */}
         {compilation ? (
           <ReviewPanel
-            compilation={compilation}
+            session={session}
             isOpen={reviewOpen}
             onClose={() => setReviewOpen(false)}
             onPublish={() => void handlePublish()}

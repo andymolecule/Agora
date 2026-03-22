@@ -75,30 +75,24 @@ const checks: RuntimeSchemaCheck[] = [
     nextStep: "apply migration",
   },
   {
-    id: "authoring_drafts_table",
-    table: "authoring_drafts",
+    id: "auth_agents_table",
+    table: "auth_agents",
     select:
-      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,source_callback_url,source_callback_registered_at,published_challenge_id,published_spec_json,published_spec_cid,published_return_to,published_at,expires_at",
+      "telegram_bot_id,agent_name,description,api_key_hash,last_rotated_at",
     nextStep: "apply migration",
   },
   {
-    id: "authoring_source_links_table",
-    table: "authoring_source_links",
-    select: "provider,external_id,draft_id,external_url",
+    id: "authoring_sessions_table",
+    table: "authoring_sessions",
+    select:
+      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,published_challenge_id,published_spec_json,published_spec_cid,published_at,expires_at,creator_type,creator_agent_id",
     nextStep: "apply migration",
   },
   {
     id: "authoring_sponsor_budget_reservations_table",
     table: "authoring_sponsor_budget_reservations",
     select:
-      "draft_id,provider,period_start,period_end,amount_usdc,status,tx_hash,challenge_id,released_at,consumed_at",
-    nextStep: "apply migration",
-  },
-  {
-    id: "authoring_callback_deliveries_table",
-    table: "authoring_callback_deliveries",
-    select:
-      "draft_id,provider,callback_url,event,payload_json,status,attempts,max_attempts,last_attempt_at,next_attempt_at,delivered_at,last_error",
+      "session_id,provider,period_start,period_end,amount_usdc,status,tx_hash,challenge_id,released_at,consumed_at",
     nextStep: "apply migration",
   },
 ];

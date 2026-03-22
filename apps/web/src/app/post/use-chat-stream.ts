@@ -1,13 +1,17 @@
 "use client";
 
-import type { CompilationResultOutput } from "@agora/common";
+import type {
+  AuthoringSessionArtifactOutput,
+  AuthoringSessionOutput,
+} from "@agora/common";
 import { useCallback, useRef, useState } from "react";
 import type { ChatMessage } from "./chat-types";
 import type { UploadedArtifact } from "./guided-state";
 import {
-  getAuthoringDraftRequestStatus,
-  pinDataFile,
-  submitAuthoringDraft,
+  createAuthoringSession,
+  getAuthoringSessionRequestStatus,
+  respondToAuthoringSession,
+  uploadAuthoringSessionFile,
 } from "./post-authoring-api";
 
 interface IntakeField {
@@ -18,7 +22,7 @@ interface IntakeField {
 
 interface UseChatStreamOptions {
   posterAddress?: `0x${string}`;
-  onCompileReady?: (compilation: CompilationResultOutput) => void;
+  onCompileReady?: (session: AuthoringSessionOutput) => void;
 }
 
 const INITIAL_MESSAGE: ChatMessage = {
@@ -31,23 +35,23 @@ const INITIAL_MESSAGE: ChatMessage = {
 
 /**
  * Manages the chat conversation and bridges to the existing
- * authoring draft / compile pipeline.
+ * authoring session / compile pipeline.
  *
- * MVP: wraps the existing `submitAuthoringDraft` call and formats
- * responses as chat messages.  A future pass will stream from
- * `POST /api/authoring/drafts/stream` via SSE.
+ * MVP: wraps the session create/respond calls and formats responses
+ * as chat messages. A future pass may stream incremental authoring
+ * updates instead of waiting for each turn response.
  */
 export function useChatStream(options: UseChatStreamOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
-  const [compilation, setCompilation] =
-    useState<CompilationResultOutput | null>(null);
+  const [session, setSession] = useState<AuthoringSessionOutput | null>(null);
   const [uploads, setUploads] = useState<UploadedArtifact[]>([]);
-  const [draftId, setDraftId] = useState<string>("");
+  const [sessionId, setSessionId] = useState<string>("");
 
   const fieldsRef = useRef<IntakeField[]>([]);
   const messagesRef = useRef<ChatMessage[]>([INITIAL_MESSAGE]);
+  const sentUploadIdsRef = useRef<Set<string>>(new Set());
   const idCounter = useRef(1);
 
   function nextId() {
@@ -140,33 +144,61 @@ export function useChatStream(options: UseChatStreamOptions) {
 
   /* ── Attempt compile ────────────────────────────────── */
 
-  async function attemptCompile(problemText: string) {
+  function getUnsyncedUploadRefs() {
+    return uploads
+      .filter(
+        (upload) =>
+          upload.status === "ready" && !sentUploadIdsRef.current.has(upload.id),
+      )
+      .map((upload) => ({
+        type: "artifact" as const,
+        artifact_id: upload.id,
+      }));
+  }
+
+  function markUploadsSent(artifactIds: string[]) {
+    for (const artifactId of artifactIds) {
+      sentUploadIdsRef.current.add(artifactId);
+    }
+  }
+
+  async function attemptCompile(input: {
+    problemText: string;
+    latestMessage: string;
+  }) {
     setIsStreaming(true);
     setStreamingText("Compiling your challenge...");
 
     try {
-      const intent = buildManagedIntentFromChat(problemText);
-      const draft = await submitAuthoringDraft({
-        draftId,
-        posterAddress: options.posterAddress,
-        intent,
-        uploads: uploads.filter((u) => u.status === "ready"),
-      });
+      const unsyncedFiles = getUnsyncedUploadRefs();
+      const nextSession = sessionId
+        ? await respondToAuthoringSession({
+            sessionId,
+            body: {
+              ...(input.latestMessage.trim()
+                ? { context: input.latestMessage.trim() }
+                : {}),
+              ...(unsyncedFiles.length > 0 ? { files: unsyncedFiles } : {}),
+            },
+          })
+        : await createAuthoringSession({
+            summary: input.problemText,
+            ...(unsyncedFiles.length > 0 ? { files: unsyncedFiles } : {}),
+          });
 
-      setDraftId(draft.id);
+      setSession(nextSession);
+      setSessionId(nextSession.id);
+      markUploadsSent(unsyncedFiles.map((file) => file.artifact_id));
 
-      if (draft.state === "ready" && draft.compilation) {
-        const comp = draft.compilation as CompilationResultOutput;
-        setCompilation(comp);
-        options.onCompileReady?.(comp);
+      if (nextSession.state === "ready" && nextSession.compilation) {
+        options.onCompileReady?.(nextSession);
         appendMessage({
           role: "assistant",
           content:
             "Your challenge is ready to publish. Review the details in the panel on the right and hit Publish when you're happy.",
-          card: comp,
         });
-      } else if (draft.state === "needs_input") {
-        const questions = draft.questions ?? [];
+      } else if (nextSession.state === "awaiting_input") {
+        const questions = nextSession.questions ?? [];
         appendMessage({
           role: "assistant",
           content:
@@ -175,28 +207,34 @@ export function useChatStream(options: UseChatStreamOptions) {
               : "I need a bit more context before I can lock the contract.",
           questions,
         });
-      } else if (draft.state === "failed") {
+      } else if (nextSession.state === "rejected") {
         appendMessage({
           role: "assistant",
           content:
-            draft.failure_message ??
-            "This challenge type isn't supported by the managed runtime yet. You can try rephrasing or use Expert Mode from the CLI.",
+            "This challenge can’t become a supported managed session. Try rephrasing the task or switch to Expert Mode.",
         });
       } else {
         appendMessage({
           role: "assistant",
           content:
-            "I've saved your draft. Add more details or files and I'll try compiling again.",
+            "I've saved your session. Add more details or files and I'll try compiling again.",
         });
       }
     } catch (error) {
-      const status = getAuthoringDraftRequestStatus(error);
+      const status = getAuthoringSessionRequestStatus(error);
       const message =
-        status && status >= 500
+        status === 404 || status === 409
+          ? "This session is no longer available. Start a new one."
+          : status && status >= 500
           ? "Agora authoring is temporarily unavailable. Retry in a moment."
           : error instanceof Error
             ? error.message
             : "Something went wrong.";
+      if (status === 404 || status === 409) {
+        setSession(null);
+        setSessionId("");
+        sentUploadIdsRef.current.clear();
+      }
       appendMessage({
         role: "assistant",
         content:
@@ -236,9 +274,12 @@ export function useChatStream(options: UseChatStreamOptions) {
         })
         .join("\n\n");
 
-      void attemptCompile(allUserText);
+      void attemptCompile({
+        problemText: allUserText,
+        latestMessage: trimmed,
+      });
     },
-    [uploads],
+    [sessionId, uploads],
   );
 
   /* ── Public: handle file uploads ────────────────────── */
@@ -268,10 +309,11 @@ export function useChatStream(options: UseChatStreamOptions) {
       if (!artifact) continue;
 
       try {
-        const { cid } = await pinDataFile(file);
+        const uploadedArtifact = await uploadAuthoringSessionFile(file);
         const ready: UploadedArtifact = {
-          ...artifact,
-          uri: `ipfs://${cid}`,
+          ...uploadedArtifact,
+          id: uploadedArtifact.artifact_id,
+          uri: uploadedArtifact.uri,
           status: "ready",
         };
         results.push(ready);
@@ -310,9 +352,10 @@ export function useChatStream(options: UseChatStreamOptions) {
     messages,
     isStreaming,
     streamingText,
-    compilation,
+    session,
+    compilation: session?.compilation ?? null,
     uploads,
-    draftId,
+    sessionId,
     sendMessage,
     sendFiles,
     removeUpload,

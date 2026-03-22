@@ -39,7 +39,7 @@ const supportedRuntimeFamilyIds = [
 ] as const satisfies readonly SupportedRuntimeFamily[];
 
 const compilerToolResultSchema = z.object({
-  outcome: z.enum(["supported", "needs_input", "unsupported"]),
+  outcome: z.enum(["supported", "awaiting_input", "unsupported"]),
   runtime_family: z.enum(supportedRuntimeFamilyIds).nullable(),
   metric: z.string().trim().min(1).nullable(),
   reason_codes: z.array(z.string().trim().min(1)).default([]),
@@ -82,7 +82,7 @@ function buildSystemPrompt() {
     "You map poster intent and uploaded artifact metadata to one supported Agora Gems scoring family.",
     "Choose only from the supported runtime catalog.",
     "Do not invent runtime families, metrics, or artifact roles.",
-    `If the task is still missing required information, return outcome=needs_input and choose missing_fields only from: ${AUTHORING_QUESTION_FIELDS.join(", ")}.`,
+    `If the task is still missing required information, return outcome=awaiting_input and choose missing_fields only from: ${AUTHORING_QUESTION_FIELDS.join(", ")}.`,
     "If the task does not fit any current Gems scorer cleanly, return outcome=unsupported with specific reason codes.",
     "Do not produce prose outside the tool result.",
     `Supported runtime catalog: ${JSON.stringify(buildCompilerCatalog())}`,
@@ -117,7 +117,7 @@ function buildToolDefinition() {
       properties: {
         outcome: {
           type: "string",
-          enum: ["supported", "needs_input", "unsupported"],
+          enum: ["supported", "awaiting_input", "unsupported"],
         },
         runtime_family: {
           anyOf: [
@@ -266,7 +266,7 @@ export class AnthropicCompilerProvider {
       };
       const parsed = compilerToolResultSchema.parse(readToolResult(payload));
 
-      if (parsed.outcome === "needs_input") {
+      if (parsed.outcome === "awaiting_input") {
         throw new AgoraError(
           "Agora needs one or more missing details before it can choose a Gems scorer. Next step: answer the returned questions and resubmit.",
           {

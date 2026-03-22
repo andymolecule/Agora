@@ -2,145 +2,161 @@
 
 ## Purpose
 
-Define the poster-side intake contract between vague scientific intent and a publishable deterministic challenge.
+Define the typed intermediate representation that sits between rough authoring
+context and a compiled challenge spec.
 
-This is the authoring layer for:
+This is the durable interpretation layer used by:
 
-- Beach/OpenClaw submits
-- the guided `/post` flow
-- any future assisted CLI or agent intake path
+- the web `/post` flow
+- direct OpenClaw agent calls
+- any future caller that starts an authoring session through
+  `/api/authoring/sessions`
 
-It is **not** the final publish boundary. The final boundary is still the compiled challenge spec.
+It is not the public API contract. The public contract is the authoring session
+API in [specs/authoring-session-api.md](specs/authoring-session-api.md).
 
-## Design rule
+## Design Rule
 
-Agora should never go directly from natural language to scorer code.
+Agora should never jump directly from natural language to an on-chain publish.
 
 The safe path is:
 
 ```text
-raw context + partial intent
-  -> typed intake state
-  -> deterministic compile dry-run
-  -> publishable challenge spec
+rough context + files
+  -> typed authoring IR
+  -> deterministic compile + dry-run
+  -> challenge spec candidate
+  -> explicit publish confirmation
 ```
 
-The LLM is used for interpretation and gap-finding. Deterministic compile remains authoritative.
+The LLM helps interpret intent and identify gaps. Deterministic compile remains
+authoritative.
 
-## Target flow
+## Current Session Flow
 
 ```mermaid
 flowchart LR
-    A["Poster context + artifacts + partial intent"] --> B["submit"]
-    B --> C["LLM assessor"]
-    C --> D["deterministic compile dry-run"]
-    D --> E{"compile result"}
-    E -- "ready" --> F["publishable draft"]
-    E -- "needs input" --> G["specific follow-up questions"]
-    E -- "rejected" --> H["explicit rejection reasons"]
-```
-
-Happy path:
-
-```text
-submit -> publish
+    A["summary/messages/files"] --> B["POST /api/authoring/sessions"]
+    B --> C["authoring IR"]
+    C --> D["deterministic compile + dry-run"]
+    D --> E{"result"}
+    E -- "ready" --> F["compiled challenge spec"]
+    E -- "awaiting_input" --> G["typed follow-up questions"]
+    E -- "rejected" --> H["explicit unsupported/rejection reasons"]
 ```
 
 Conversational path:
 
 ```text
-submit -> answer returned questions -> submit -> publish
+create session -> answer questions -> respond -> ready -> publish
 ```
 
-There is no separate `clarify` endpoint and no separate `compile` endpoint in the target model.
+There is no separate public `compile` endpoint and no legacy helper response
+surface anymore.
 
-## Universal submit gate
+## What The IR Must Capture
 
-The public assisted-authoring surface should converge on:
+The IR is the durable typed interpretation of the session so far. It must
+answer:
 
-- `POST /api/authoring/drafts/submit`
-- `POST /api/authoring/drafts/:id/publish`
-
-Partner wrappers such as Beach may still exist for auth and normalization, but they should call the same intake workflow internally.
-
-## What the IR must capture
-
-The authoring IR is the durable state of the conversation, not a bag of heuristics.
-
-It must answer:
-
-- what problem the poster is trying to solve
+- what problem the creator is trying to solve
 - what solvers are expected to submit
 - how winning is measured
 - which artifacts are public vs hidden
-- which supported Gems runtime family fits
+- which supported runtime family fits
 - what information is still missing
+- why Agora rejected the task if it cannot be compiled into a valid challenge
 
-## Minimal IR shape
+## Conceptual Shape
 
-The live schema may evolve, but the stable conceptual shape is:
+The persisted schema may evolve, but the stable structure is:
 
 ```ts
-type AuthoringIntakeState = {
-  version: 1;
-  source: {
+type ChallengeAuthoringIr = {
+  version: 3;
+  origin: {
     provider: "direct" | "beach_science";
     external_id?: string | null;
     external_url?: string | null;
+    ingested_at: string;
     raw_context?: Record<string, unknown> | null;
+  };
+  source: {
+    title?: string | null;
+    poster_messages: Array<{
+      id: string;
+      role: "poster" | "participant" | "system";
+      content: string;
+      created_at: string;
+    }>;
+    uploaded_artifact_ids: string[];
   };
   intent: {
     current: PartialChallengeIntent;
     missing_fields: string[];
   };
-  artifacts: {
-    uploaded_ids: string[];
-    assignments: Array<{
-      artifact_id: string;
-      role: string;
-      visibility: "public" | "private";
-    }>;
+  assessment: {
+    input_hash: string | null;
+    outcome: "ready" | "awaiting_input" | "rejected" | null;
+    reason_codes: string[];
+    warnings: string[];
+    missing_fields: string[];
   };
   evaluation: {
     runtime_family: string | null;
     metric: string | null;
+    artifact_assignments: Array<{
+      artifact_id: string;
+      artifact_index: number;
+      role: string;
+      visibility: "public" | "private";
+    }>;
     rejection_reasons: string[];
     compile_error_codes: string[];
     compile_error_message: string | null;
   };
   questions: {
-    pending: Array<{
-      id: string;
-      field: string;
-      kind: string;
-      prompt: string;
-      why: string | null;
-      reason_codes: string[];
-    }>;
+    pending: AuthoringQuestion[];
   };
 };
 ```
 
-## What the LLM does
+## Outcome Model
 
-The LLM should:
+The IR and compile pipeline collapse to three meaningful authoring outcomes:
 
-- read poster context and artifact metadata
-- propose the most likely Gems runtime family
+- `ready`
+- `awaiting_input`
+- `rejected`
+
+Public session state then adds the lifecycle terminals:
+
+- `published`
+- `expired`
+
+Internal transient `created` exists only briefly at insert time and is not part
+of the public contract.
+
+## What The LLM Does
+
+The LLM may:
+
+- read rough context and artifact metadata
+- propose the most likely supported runtime family
 - propose the most likely metric
-- assign artifact roles when possible
-- surface exactly what is missing
+- identify missing required fields
+- suggest artifact roles
 
-The LLM should **not**:
+The LLM may not:
 
-- publish directly from prose
 - invent unsupported runtime families
-- invent metrics outside the runtime catalog
-- write scorer code
+- invent unsupported metrics
+- skip deterministic compile
+- publish directly from prose
 
-## What compile does
+## What Deterministic Compile Does
 
-Deterministic compile dry-run decides the real outcome.
+Deterministic compile decides whether Agora can produce a valid challenge spec.
 
 It validates:
 
@@ -149,21 +165,19 @@ It validates:
 - metric validity
 - artifact-role completeness
 - submission contract shape
-- scoreability under the current managed Gems families
+- scorer transparency inputs
+- dry-run viability
 
-Compile output should collapse to three operational states:
+Compile output is the authoritative source for:
 
-- `ready`
-- `needs_input`
-- `failed`
+- whether the session is `ready`
+- which questions remain blocking
+- what the final compilation object contains
+- whether the task must be `rejected`
 
-That is the truth surface the rest of the system should read.
+## Runtime-Family Selection
 
-## Runtime-family selection
-
-The scorer catalog in [runtime-families.ts](../packages/common/src/runtime-families.ts) is the source of truth for what the assisted authoring flow can target.
-
-The assisted flow currently targets supported Gems families only:
+Managed authoring only targets supported Agora runtime families:
 
 - `reproducibility`
 - `tabular_regression`
@@ -171,62 +185,17 @@ The assisted flow currently targets supported Gems families only:
 - `ranking`
 - `docking`
 
-If a challenge needs a different evaluator model, it should fail clearly and point the poster toward the explicit custom scorer workflow rather than pretending the assisted flow can compile it.
+If a task needs a different evaluator model, Agora should reject it clearly and
+point the creator toward the explicit custom scorer workflow rather than
+pretending it can compile it.
 
-## Question model
+## Bottom Line
 
-Question generation should be compiler-driven.
-
-That means:
-
-- the LLM proposes candidate structure
-- compile says what is still missing or invalid
-- the system turns those errors into the next specific questions
-
-Examples:
-
-- "Which column is the target variable?"
-- "Should solvers predict a numeric value or a class label?"
-- "Is this file the hidden evaluation set or the public training data?"
-
-## State model
-
-Managed drafts should stay simple:
-
-- `draft`
-- `compiling`
-- `ready`
-- `needs_input`
-- `published`
-- `failed`
-
-There is no review queue state in the assisted intake model anymore.
-
-## Current implementation direction
-
-The repo is converging on this shape:
-
-- external Beach/OpenClaw flow already uses `submit + publish`
-- direct managed authoring is being collapsed onto the same `submit + publish` model
-- deterministic compile remains in [managed-authoring.ts](../apps/api/src/lib/managed-authoring.ts)
-- stale split-path and review-era paths are being removed
-
-The next architectural step is not "more heuristics." It is one universal intake workflow backed by a structured LLM assessor and a deterministic compiler.
-
-## Non-goals
-
-- arbitrary scorer-code generation
-- keeping separate Beach-only intake semantics
-- reintroducing review queue states for normal assisted posting
-- mixing assisted Gems intake with the explicit custom scorer workflow
-
-## Bottom line
-
-The correct abstraction is:
+The right abstraction is:
 
 ```text
-submit = interpret + validate + compile dry-run
-publish = irreversible on-chain creation
+create/respond = interpret + validate + compile dry-run
+publish = explicit irreversible creation path
 ```
 
-Everything else is transport detail.
+Everything else is transport.

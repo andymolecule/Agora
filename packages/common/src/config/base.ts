@@ -75,9 +75,6 @@ export const configSchema = z.object({
       z.number().int().positive(),
     )
     .default(30_000),
-  AGORA_AUTHORING_PARTNER_KEYS: z.string().optional(),
-  AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS: z.string().optional(),
-  AGORA_AUTHORING_PARTNER_RETURN_ORIGINS: z.string().optional(),
   AGORA_AUTHORING_OPERATOR_TOKEN: z.string().min(1).optional(),
   AGORA_AUTHORING_SPONSOR_PRIVATE_KEY: z
     .string()

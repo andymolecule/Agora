@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {
-  buildChallengeSpecDraft,
+  buildChallengeSpecCandidate,
   defaultMinimumScoreForChallengeType,
   defaultMinimumScoreForEvaluation,
   defaultRuntimeFamilyForChallengeType,
@@ -12,8 +12,8 @@ import {
 const predictionTemplate = getChallengeTypeTemplate("prediction");
 assert.equal(predictionTemplate.defaultRuntimeFamily, "tabular_regression");
 
-const reproducibilitySpec = buildChallengeSpecDraft({
-  id: "draft-001",
+const reproducibilitySpec = buildChallengeSpecCandidate({
+  id: "challenge-spec-001",
   title: "Reproduce assay summary",
   domain: "omics",
   type: "reproducibility",
@@ -46,8 +46,8 @@ assert.equal(reproducibilitySpec.schema_version, 3);
 assert.equal(reproducibilitySpec.evaluation.runtime_family, "reproducibility");
 assert.equal(reproducibilitySpec.submission_contract.kind, "csv_table");
 
-const dockingSpec = buildChallengeSpecDraft({
-  id: "draft-003",
+const dockingSpec = buildChallengeSpecCandidate({
+  id: "challenge-spec-003",
   title: "Rank ligands against a kinase pocket",
   domain: "drug_discovery",
   type: "docking",
@@ -85,8 +85,8 @@ assert.equal(dockingSpec.submission_contract.kind, "csv_table");
 assert.equal(dockingSpec.submission_contract.columns.id, "ligand_id");
 assert.equal(dockingSpec.submission_contract.columns.value, "docking_score");
 
-const customSpec = buildChallengeSpecDraft({
-  id: "draft-002",
+const customSpec = buildChallengeSpecCandidate({
+  id: "challenge-spec-002",
   title: "Custom protocol",
   domain: "other",
   type: "custom",
@@ -115,8 +115,8 @@ const customSpec = buildChallengeSpecDraft({
 
 assert.equal(customSpec.submission_contract.kind, "opaque_file");
 
-const semiCustomSpec = buildChallengeSpecDraft({
-  id: "draft-004",
+const semiCustomSpec = buildChallengeSpecCandidate({
+  id: "challenge-spec-004",
   title: "Deterministic JSON report judge",
   domain: "other",
   type: "custom",

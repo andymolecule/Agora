@@ -2,6 +2,7 @@
 
 import type {
   AuthoringQuestionOutput,
+  AuthoringSessionQuestionOutput,
   CompilationResultOutput,
 } from "@agora/common";
 
@@ -11,6 +12,6 @@ export interface ChatMessage {
   content: string;
   files?: { name: string; status: "uploading" | "ready" | "error" }[];
   card?: CompilationResultOutput;
-  questions?: AuthoringQuestionOutput[];
+  questions?: Array<AuthoringQuestionOutput | AuthoringSessionQuestionOutput>;
   timestamp: Date;
 }

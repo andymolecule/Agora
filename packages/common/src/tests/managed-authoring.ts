@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
-import { createAuthoringSourceDraftRequestSchema } from "../schemas/authoring-source.js";
+import { authoringSourceSessionInputSchema } from "../schemas/authoring-source.js";
 import {
-  authoringDraftSchema,
   challengeAuthoringIrSchema,
-  submitManagedAuthoringDraftRequestSchema,
+  submitManagedAuthoringSessionRequestSchema,
 } from "../schemas/managed-authoring.js";
 
 const baseIntent = {
@@ -33,7 +32,7 @@ const baseArtifacts = [
   },
 ];
 
-const validSubmitRequest = submitManagedAuthoringDraftRequestSchema.parse({
+const validSubmitRequest = submitManagedAuthoringSessionRequestSchema.parse({
   poster_address: "0x00000000000000000000000000000000000000aa",
   intent: baseIntent,
   uploaded_artifacts: baseArtifacts,
@@ -42,7 +41,7 @@ const validSubmitRequest = submitManagedAuthoringDraftRequestSchema.parse({
 assert.equal(validSubmitRequest.uploaded_artifacts?.length, 2);
 assert.equal(validSubmitRequest.intent?.dispute_window_hours, 168);
 
-const duplicateUri = submitManagedAuthoringDraftRequestSchema.safeParse({
+const duplicateUri = submitManagedAuthoringSessionRequestSchema.safeParse({
   poster_address: "0x00000000000000000000000000000000000000aa",
   intent: baseIntent,
   uploaded_artifacts: [
@@ -61,7 +60,7 @@ assert.equal(
   "managed authoring should reject duplicate artifact URIs",
 );
 
-const unsupportedUri = submitManagedAuthoringDraftRequestSchema.safeParse({
+const unsupportedUri = submitManagedAuthoringSessionRequestSchema.safeParse({
   intent: baseIntent,
   uploaded_artifacts: [
     {
@@ -78,7 +77,7 @@ assert.equal(
   "managed authoring should only accept pinned or hosted artifact URIs",
 );
 
-const tooManyArtifacts = submitManagedAuthoringDraftRequestSchema.safeParse({
+const tooManyArtifacts = submitManagedAuthoringSessionRequestSchema.safeParse({
   intent: baseIntent,
   uploaded_artifacts: Array.from({ length: 13 }, (_value, index) => ({
     id: `artifact-${index}`,
@@ -90,10 +89,10 @@ const tooManyArtifacts = submitManagedAuthoringDraftRequestSchema.safeParse({
 assert.equal(
   tooManyArtifacts.success,
   false,
-  "managed authoring should cap uploaded artifacts per draft",
+  "managed authoring should cap uploaded artifacts per session",
 );
 
-const tooManyTags = submitManagedAuthoringDraftRequestSchema.safeParse({
+const tooManyTags = submitManagedAuthoringSessionRequestSchema.safeParse({
   intent: {
     ...baseIntent,
     tags: Array.from({ length: 13 }, (_value, index) => `tag-${index}`),
@@ -104,7 +103,7 @@ const tooManyTags = submitManagedAuthoringDraftRequestSchema.safeParse({
 assert.equal(
   tooManyTags.success,
   false,
-  "managed authoring should cap tag count per draft",
+  "managed authoring should cap tag count per session",
 );
 
 const authoringIr = challengeAuthoringIrSchema.parse({
@@ -134,7 +133,7 @@ const authoringIr = challengeAuthoringIrSchema.parse({
   },
   assessment: {
     input_hash: null,
-    outcome: "ready",
+    outcome: "awaiting_input",
     reason_codes: [],
     warnings: [],
     missing_fields: [],
@@ -158,46 +157,21 @@ const authoringIr = challengeAuthoringIrSchema.parse({
     ],
     rejection_reasons: [],
     compile_error_codes: [],
-    compile_error_message: "none",
+    compile_error_message: null,
   },
   questions: {
     pending: [],
   },
 });
 
-const authoringDraft = authoringDraftSchema.parse({
-  id: "f5567c15-8e0b-4afe-8d0c-7f511b592c05",
-  state: "needs_input",
-  intent: null,
-  authoring_ir: authoringIr,
-  uploaded_artifacts: baseArtifacts,
-  questions: [
-    {
-      id: "hidden-labels",
-      field: "artifact_roles",
-      kind: "artifact_role_map",
-      label: "Artifact roles",
-      prompt: "Which file contains the hidden docking scores?",
-      why: "Agora needs the evaluation files mapped before it can compile.",
-      required: true,
-      blocking: true,
-      options: [],
-      artifact_options: [],
-      artifact_roles: [],
-      reason_codes: ["artifact_roles_missing"],
-    },
-  ],
-  expires_at: "2026-12-31T00:00:00.000Z",
-});
-
 assert.equal(
-  authoringDraft.authoring_ir?.evaluation.runtime_family,
-  "docking",
-  "authoring drafts should accept persisted intake state",
+  authoringIr.assessment.outcome,
+  "awaiting_input",
+  "authoring IR should persist canonical session outcomes",
 );
 
-const sourceDraft = createAuthoringSourceDraftRequestSchema.parse({
-  title: "Beach-originated draft",
+const sourceSessionInput = authoringSourceSessionInputSchema.parse({
+  title: "Beach-originated session",
   external_id: "thread-42",
   external_url: "https://beach.science/thread/42",
   messages: [
@@ -218,13 +192,13 @@ const sourceDraft = createAuthoringSourceDraftRequestSchema.parse({
   ],
 });
 
-assert.equal(sourceDraft.messages.length, 1);
-assert.equal(sourceDraft.artifacts.length, 1);
-assert.equal(sourceDraft.external_id, "thread-42");
+assert.equal(sourceSessionInput.messages.length, 1);
+assert.equal(sourceSessionInput.artifacts.length, 1);
+assert.equal(sourceSessionInput.external_id, "thread-42");
 
 assert.equal(
-  createAuthoringSourceDraftRequestSchema.safeParse({
-    title: "Insecure host draft",
+  authoringSourceSessionInputSchema.safeParse({
+    title: "Insecure host session",
     external_url: "http://beach.science/thread/42",
     messages: [
       {
@@ -235,5 +209,7 @@ assert.equal(
     ],
   }).success,
   false,
-  "external draft URLs must stay on https origins",
+  "external session URLs must stay on https origins",
 );
+
+console.log("managed authoring schemas validation passed");

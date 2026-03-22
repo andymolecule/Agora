@@ -10,14 +10,12 @@ Documentation index and reading order for the Agora repository.
 | 2 | [Principles](principles.md) | What properties must Agora preserve? | Founders, engineers, reviewers |
 | 3 | [Architecture](architecture.md) | How does the system fit together? | Engineers, reviewers |
 | 4 | [Challenge Authoring IR](challenge-authoring-ir.md) | What typed contract should posting converge toward before compile/publish? | Product, frontend, backend |
-| 5 | [Beach Integration Guide](beach-integration.md) | How does Beach wire into Agora step by step? | Integrations, backend, product engineering |
-| 6 | [Authoring Callbacks](authoring-callbacks.md) | How do external hosts verify and process authoring lifecycle callbacks safely? | Integrations, backend |
-| 7 | [Authoring Rollout](authoring-rollout.md) | How do I cut over the new authoring/draft/submission model safely? | Operators, DevOps |
-| 8 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
-| 9 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
-| 10 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
-| 11 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
-| 12 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
+| 5 | [Authoring Session API Spec](specs/authoring-session-api.md) | What is the locked session-first authoring contract? | Product, frontend, backend |
+| 6 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
+| 7 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
+| 8 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
+| 9 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
+| 10 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
 
 ## Start Here
 
@@ -25,9 +23,7 @@ Documentation index and reading order for the Agora repository.
 - **Need the high-level north star?** Read [Principles](principles.md).
 - **Building features?** Read [Architecture](architecture.md), then the relevant layer doc.
 - **Working on posting or challenge onboarding?** Read [Challenge Authoring IR](challenge-authoring-ir.md).
-- **Building the Beach host integration?** Read [Beach Integration Guide](beach-integration.md).
-- **Building or reviewing external host integrations?** Read [Authoring Callbacks](authoring-callbacks.md).
-- **Rolling out the new authoring/draft/submission changes?** Read [Authoring Rollout](authoring-rollout.md).
+- **Working on the new authoring flow?** Read [Authoring Session API Spec](specs/authoring-session-api.md).
 - **Working on contracts or settlement?** Read [Protocol](protocol.md).
 - **Working on submission privacy or sealing?** Read [Submission Privacy](submission-privacy.md).
 - **Debugging data issues?** Read [Data and Indexing](data-and-indexing.md).
@@ -49,9 +45,7 @@ Documentation index and reading order for the Agora repository.
 | Product principles, trust-model language, positioning guardrails | [principles.md](principles.md) |
 | System topology, component boundaries | [architecture.md](architecture.md) |
 | Open-ended challenge authoring contract | [challenge-authoring-ir.md](challenge-authoring-ir.md) |
-| Beach-specific host setup and Agora handoff flow | [beach-integration.md](beach-integration.md) |
-| External host callback verification and replay rules | [authoring-callbacks.md](authoring-callbacks.md) |
-| Authoring/draft/submission rollout migrations and env cutover | [authoring-rollout.md](authoring-rollout.md) |
+| Locked authoring session API contract | [specs/authoring-session-api.md](specs/authoring-session-api.md) |
 | Submission sealing, privacy boundary, key model | [submission-privacy.md](submission-privacy.md) |
 | Contract lifecycle, settlement, YAML schema | [protocol.md](protocol.md) |
 | DB schema, projections, indexer behavior | [data-and-indexing.md](data-and-indexing.md) |
@@ -71,9 +65,9 @@ Documentation index and reading order for the Agora repository.
 - **[testing.md](testing.md)** — Test layers, verification scripts, and E2E test configuration
 - **[glossary.md](glossary.md)** — Key terms used across Agora documentation and code
 - **[challenge-authoring-ir.md](challenge-authoring-ir.md)** — Target typed contract between poster language and final challenge spec
-- **[beach-integration.md](beach-integration.md)** — Beach-side setup, import flow, callbacks, and Agora-hosted handoff
-- **[authoring-callbacks.md](authoring-callbacks.md)** — Callback contract, replay window, idempotency, and host verification rules
-- **[authoring-rollout.md](authoring-rollout.md)** — Migrations, env vars, Railway cutover, and Beach smoke checks for the authoring rollout
+- **[specs/authoring-session-api.md](specs/authoring-session-api.md)** — Locked session-first authoring contract
+- **[specs/authoring-session-api-audit.md](specs/authoring-session-api-audit.md)** — Spec-vs-code audit and cutover matrix
+- **[specs/authoring-session-cutover-checklist.md](specs/authoring-session-cutover-checklist.md)** — Execution checklist for the session cutover
 
 ## Support Docs
 

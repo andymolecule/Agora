@@ -58,19 +58,19 @@ export const safePublicHttpsUrlSchema = z
     "URL must be an HTTPS URL on a public host. Next step: provide a publicly reachable HTTPS URL and retry.",
   );
 
-// Includes "direct" for persisted IR origin; partner auth excludes "direct".
+// Includes "direct" for local/web-created sessions; hosted sources exclude "direct".
 export const EXTERNAL_SOURCE_PROVIDER_VALUES = [
   "direct",
   "beach_science",
 ] as const;
 
-export const AUTHORING_PARTNER_PROVIDER_VALUES = ["beach_science"] as const;
+export const HOSTED_SOURCE_PROVIDER_VALUES = ["beach_science"] as const;
 
 export const externalSourceProviderSchema = z.enum(
   EXTERNAL_SOURCE_PROVIDER_VALUES,
 );
-export const authoringPartnerProviderSchema = z.enum(
-  AUTHORING_PARTNER_PROVIDER_VALUES,
+export const hostedSourceProviderSchema = z.enum(
+  HOSTED_SOURCE_PROVIDER_VALUES,
 );
 
 export const externalSourceMessageSchema = z.object({
@@ -126,7 +126,7 @@ export const authoringSourceRawContextSchema = z
     }
   }, `Authoring source raw_context must stay under ${AUTHORING_SOURCE_MAX_RAW_CONTEXT_BYTES} bytes. Next step: trim provider debug payloads and retry.`);
 
-export const authoringSourceDraftFieldsSchema = z.object({
+export const authoringSourceSessionFieldsSchema = z.object({
   title: z
     .string()
     .trim()
@@ -152,8 +152,8 @@ export const authoringSourceDraftFieldsSchema = z.object({
     .default([]),
 });
 
-export const createAuthoringSourceDraftRequestSchema =
-  authoringSourceDraftFieldsSchema.superRefine((value, ctx) => {
+export const authoringSourceSessionInputSchema =
+  authoringSourceSessionFieldsSchema.superRefine((value, ctx) => {
     const seenUrls = new Set<string>();
     for (const artifact of value.artifacts) {
       if (seenUrls.has(artifact.source_url)) {
@@ -172,8 +172,8 @@ export const createAuthoringSourceDraftRequestSchema =
 export type ExternalSourceProviderOutput = z.output<
   typeof externalSourceProviderSchema
 >;
-export type AuthoringPartnerProviderOutput = z.output<
-  typeof authoringPartnerProviderSchema
+export type HostedSourceProviderOutput = z.output<
+  typeof hostedSourceProviderSchema
 >;
 export type ExternalSourceMessageOutput = z.output<
   typeof externalSourceMessageSchema
@@ -181,6 +181,6 @@ export type ExternalSourceMessageOutput = z.output<
 export type ExternalSourceArtifactRefOutput = z.output<
   typeof externalSourceArtifactRefSchema
 >;
-export type CreateAuthoringSourceDraftRequestOutput = z.output<
-  typeof createAuthoringSourceDraftRequestSchema
+export type AuthoringSourceSessionInputOutput = z.output<
+  typeof authoringSourceSessionInputSchema
 >;

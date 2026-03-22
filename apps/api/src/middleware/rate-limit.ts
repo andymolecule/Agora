@@ -4,6 +4,11 @@ import { consumeWriteQuota } from "../lib/rate-limit.js";
 import type { ApiEnv } from "../types.js";
 
 function getRequesterKey(c: Context<ApiEnv>) {
+  const agentId = c.get("agentId");
+  if (typeof agentId === "string" && agentId.length > 0) {
+    return `agent:${agentId}`;
+  }
+
   const sessionAddress = c.get("sessionAddress");
   if (typeof sessionAddress === "string" && sessionAddress.length > 0) {
     return `session:${sessionAddress.toLowerCase()}`;

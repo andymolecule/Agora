@@ -3,7 +3,7 @@ import test from "node:test";
 import { questionHelperText } from "../src/app/post/guided-copy";
 import {
   type UploadedArtifact,
-  questionTargetFromQuestions,
+  questionPromptTargetFromQuestions,
   createInitialGuidedState,
   guidedComposerReducer,
 } from "../src/app/post/guided-state";
@@ -18,7 +18,7 @@ function readyUpload(): UploadedArtifact {
 }
 
 test("questions route unsupported thresholds back to winning condition", () => {
-  const target = questionTargetFromQuestions([
+  const target = questionPromptTargetFromQuestions([
     {
       id: "threshold-policy",
       field: "payout_condition",
@@ -41,7 +41,7 @@ test("questions route unsupported thresholds back to winning condition", () => {
 
 test("questions route missing or ambiguous artifacts back to uploads", () => {
   assert.equal(
-    questionTargetFromQuestions([
+    questionPromptTargetFromQuestions([
       {
         id: "missing-artifacts",
         field: "artifact_roles",
@@ -60,7 +60,7 @@ test("questions route missing or ambiguous artifacts back to uploads", () => {
     "uploads",
   );
   assert.equal(
-    questionTargetFromQuestions([
+    questionPromptTargetFromQuestions([
       {
         id: "artifact-roles",
         field: "artifact_roles",
@@ -108,7 +108,7 @@ test("apply questions reopens the targeted prompt and resets later state", () =>
   });
 
   assert.equal(state.activePromptId, "uploads");
-  assert.equal(state.compileState, "needs_input");
+  assert.equal(state.compileState, "awaiting_input");
   assert.equal(state.uploadsStatus, "collecting");
   assert.equal(state.fields.winningCondition.status, "suggested");
   assert.equal(state.fields.rewardTotal.status, "suggested");

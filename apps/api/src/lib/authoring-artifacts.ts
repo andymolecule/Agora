@@ -5,7 +5,7 @@ import path from "node:path";
 import {
   AgoraError,
   type AuthoringArtifactOutput,
-  type CreateAuthoringSourceDraftRequestOutput,
+  type AuthoringSourceSessionInputOutput,
   SUBMISSION_LIMITS,
 } from "@agora/common";
 import { pinFile, unpinCid } from "@agora/ipfs";
@@ -143,7 +143,7 @@ async function readResponseBytes(input: {
 
 async function fetchExternalArtifact(input: {
   artifact: NonNullable<
-    CreateAuthoringSourceDraftRequestOutput["artifacts"]
+    AuthoringSourceSessionInputOutput["artifacts"]
   >[number];
   fetchImpl?: typeof fetch;
   fetchTimeoutMs?: number;
@@ -184,7 +184,7 @@ async function fetchExternalArtifact(input: {
       retriable: response.status >= 500 || response.status === 429,
       message:
         response.status >= 500 || response.status === 429
-          ? "Fetching the external artifact failed upstream. Next step: retry, then inspect the partner source host if the error persists."
+          ? "Fetching the external artifact failed upstream. Next step: retry, then inspect the source host if the error persists."
           : "External artifact URL could not be fetched. Next step: verify the source URL is correct and publicly reachable, then retry.",
       details: {
         source_url: input.artifact.source_url,
@@ -264,7 +264,7 @@ async function rollbackPinnedArtifacts(
 }
 
 export async function normalizeExternalArtifactsForDraft(input: {
-  artifacts: CreateAuthoringSourceDraftRequestOutput["artifacts"];
+  artifacts: AuthoringSourceSessionInputOutput["artifacts"];
   fetchImpl?: typeof fetch;
   pinFileImpl?: typeof pinFile;
   unpinCidImpl?: typeof unpinCid;

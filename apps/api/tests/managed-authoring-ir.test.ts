@@ -101,7 +101,7 @@ test("managed authoring intake state persists canonical pending questions", () =
         reasonCodes: ["MANAGED_ARTIFACTS_AMBIGUOUS"],
       }),
     ],
-    assessmentOutcome: "needs_input",
+    assessmentOutcome: "awaiting_input",
     missingFields: ["artifact_roles"],
   });
 

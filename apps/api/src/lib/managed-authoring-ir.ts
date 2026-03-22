@@ -88,7 +88,7 @@ export function buildManagedAuthoringIr(input: {
   } | null;
   rejectionReasons?: string[];
   assessmentInputHash?: string | null;
-  assessmentOutcome?: "ready" | "needs_input" | "failed" | null;
+  assessmentOutcome?: "ready" | "awaiting_input" | "rejected" | null;
   assessmentReasonCodes?: string[];
   assessmentWarnings?: string[];
   missingFields?: AuthoringQuestionFieldOutput[];

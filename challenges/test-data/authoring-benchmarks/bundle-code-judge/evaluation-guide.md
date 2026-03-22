@@ -1,7 +1,7 @@
 # Evaluation Guide
 
 Expected compile outcome:
-- state: `failed`
+- state: `rejected`
 - no managed runtime family is chosen
 - the submission contract stays conceptually opaque `.zip` bundle oriented
 - the failure points the poster toward the explicit custom scorer workflow

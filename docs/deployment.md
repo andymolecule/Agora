@@ -13,7 +13,7 @@ Operators and engineers responsible for deploying Agora to testnet or production
 - [Architecture](architecture.md) — system overview
 - [Protocol](protocol.md) — contract lifecycle and settlement rules
 - [Operations](operations.md) — day-to-day operations, monitoring, and incident response
-- [Authoring Rollout](authoring-rollout.md) — latest authoring/draft/submission migration window and env cutover
+- [specs/authoring-session-api.md](specs/authoring-session-api.md) — locked session-first authoring contract
 
 ## Source of truth
 
@@ -32,7 +32,7 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 
 1. Merge latest `main` and deploy from `main` only.
 2. Set all required environment variables in your host platform.
-3. For a clean contract generation: reset the testnet Supabase schema and apply all current Supabase migrations.
+3. For a clean contract generation: reset the testnet Supabase schema and apply [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql).
 4. Deploy a fresh `v2` factory. `scripts/deploy.sh` requires explicit `AGORA_ORACLE_ADDRESS` and `AGORA_TREASURY_ADDRESS`.
 5. Set `AGORA_INDEXER_START_BLOCK` to the factory deployment block before restarting the indexer.
 6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker orchestrator, CLI, and web env.
@@ -60,7 +60,7 @@ Notes:
 - `pnpm scorers:verify` requires a running Docker daemon.
 - It verifies the production invariant, not just digest resolution: official scorer images must be anonymously resolvable from GHCR and anonymously pullable with Docker.
 - The shipped official runtime-family catalog is intentionally narrow: `reproducibility`, `tabular_regression`, `tabular_classification`, `docking`, and `ranking`. Placeholder families should not be reintroduced unless a real published scorer artifact exists for them.
-- If you are upgrading an existing environment onto the latest authoring, strict submission, sponsor-budget reservation, evaluation-plan model, chain-scoped worker claims, and atomic payout replacement instead of resetting from scratch, follow [Authoring Rollout](authoring-rollout.md) and apply the `017` through `033` migration window before redeploying services.
+- This repo now ships a single rebased Supabase baseline. Reset the schema and apply [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql) instead of attempting an incremental migration chain.
 
 Railway deployment checks before production cutover:
 
@@ -99,7 +99,7 @@ Rollback if any of these occur:
 ```mermaid
 flowchart TB
     A["1. Merge to main"] --> B["2. pnpm install && pnpm turbo build"]
-    B --> C["3. Reset Supabase schema<br/>(apply all migrations)"]
+    B --> C["3. Reset Supabase schema<br/>(apply 001_baseline.sql)"]
     C --> D["4. Deploy fresh v2 factory<br/>(scripts/deploy.sh)"]
     D --> E["5. Update canonical tuple everywhere<br/>(chain_id, factory, USDC)"]
     E --> F["6. Set AGORA_INDEXER_START_BLOCK<br/>to factory deploy block"]
@@ -121,7 +121,7 @@ flowchart TB
 Clean v2 cutover:
 
 1. Run one active factory generation at a time.
-2. Reset Supabase, apply all migrations.
+2. Reset Supabase, apply [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql).
 3. Deploy fresh `v2` factory.
 4. Update canonical `(chain id, factory address, USDC address)` tuple everywhere.
 5. Set `AGORA_INDEXER_START_BLOCK` and reindex from zero.
@@ -165,7 +165,7 @@ This section covers non-code work for deployment across hosted systems.
 
 ### Chain Cutover
 
-- Reset testnet DB, apply baseline migration.
+- Reset testnet DB, apply [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql).
 - Deploy fresh `v2` factory.
 - Update all runtime addresses together:
   - `AGORA_FACTORY_ADDRESS`, `AGORA_USDC_ADDRESS`, `AGORA_CHAIN_ID`, `AGORA_RPC_URL`

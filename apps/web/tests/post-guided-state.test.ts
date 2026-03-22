@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   type UploadedArtifact,
-  clearGuidedDraft,
+  clearGuidedSessionState,
   createInitialGuidedState,
   getPromptStatus,
   guidedComposerReducer,
   isReadyToCompile,
-  loadGuidedDraft,
-  saveGuidedDraft,
+  loadGuidedSessionState,
+  saveGuidedSessionState,
 } from "../src/app/post/guided-state";
 
 function readyUpload(id = "artifact-1"): UploadedArtifact {
@@ -21,7 +21,7 @@ function readyUpload(id = "artifact-1"): UploadedArtifact {
   };
 }
 
-function buildCompletedDraft() {
+function buildCompletedSessionState() {
   let state = createInitialGuidedState("UTC");
   state = guidedComposerReducer(state, {
     type: "answer_prompt",
@@ -62,7 +62,7 @@ function buildCompletedDraft() {
 }
 
 test("guided reducer advances through the prompt order and becomes compile-ready", () => {
-  const state = buildCompletedDraft();
+  const state = buildCompletedSessionState();
 
   assert.equal(state.activePromptId, "solverInstructions");
   assert.equal(isReadyToCompile(state), true);
@@ -74,7 +74,7 @@ test("guided reducer advances through the prompt order and becomes compile-ready
 });
 
 test("editing an earlier answer downgrades downstream confirmation state", () => {
-  let state = buildCompletedDraft();
+  let state = buildCompletedSessionState();
   state = guidedComposerReducer(state, {
     type: "edit_prompt",
     field: "problem",
@@ -90,7 +90,7 @@ test("editing an earlier answer downgrades downstream confirmation state", () =>
 });
 
 test("clearing a manual title restores the suggested title", () => {
-  let state = buildCompletedDraft();
+  let state = buildCompletedSessionState();
   state = guidedComposerReducer(state, {
     type: "set_title",
     value: "Custom assay bounty",
@@ -112,8 +112,8 @@ test("clearing a manual title restores the suggested title", () => {
   assert.equal(isReadyToCompile(state), true);
 });
 
-test("guided drafts persist to and from session storage", () => {
-  const state = buildCompletedDraft();
+test("guided session state persists to and from session storage", () => {
+  const state = buildCompletedSessionState();
   const storage = new Map<string, string>();
   const mockStorage = {
     setItem(key: string, value: string) {
@@ -127,17 +127,17 @@ test("guided drafts persist to and from session storage", () => {
     },
   };
 
-  saveGuidedDraft(state, mockStorage);
-  const restored = loadGuidedDraft(mockStorage);
+  saveGuidedSessionState(state, mockStorage);
+  const restored = loadGuidedSessionState(mockStorage);
   assert.ok(restored);
   assert.equal(restored?.fields.problem.value, state.fields.problem.value);
   assert.equal(restored?.uploads[0]?.uri, "ipfs://artifact-1");
 
-  clearGuidedDraft(mockStorage);
-  assert.equal(loadGuidedDraft(mockStorage), null);
+  clearGuidedSessionState(mockStorage);
+  assert.equal(loadGuidedSessionState(mockStorage), null);
 });
 
-test("guided drafts reject malformed persisted state", () => {
+test("guided session state rejects malformed persisted state", () => {
   const storage = new Map<string, string>();
   const mockStorage = {
     setItem(key: string, value: string) {
@@ -152,7 +152,7 @@ test("guided drafts reject malformed persisted state", () => {
   };
 
   mockStorage.setItem(
-    "agora-post-guided-draft",
+    "agora-post-guided-session",
     JSON.stringify({
       fields: {
         problem: {
@@ -175,5 +175,5 @@ test("guided drafts reject malformed persisted state", () => {
     }),
   );
 
-  assert.equal(loadGuidedDraft(mockStorage), null);
+  assert.equal(loadGuidedSessionState(mockStorage), null);
 });

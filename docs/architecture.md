@@ -660,19 +660,17 @@ erDiagram
 | `GET` | `/api/stats` | — | — | Aggregate counts |
 | `GET` | `/api/indexer-health` | — | — | Indexer lag monitoring |
 | `GET` | `/api/worker-health` | — | — | Worker readiness + runtime alignment |
-| `GET` | `/api/authoring/health` | — | — | Managed authoring backlog health |
-| `POST` | `/api/authoring/drafts/submit` | Rate limit | — | Upsert and compile a managed authoring draft in one call |
-| `POST` | `/api/authoring/drafts/:id/publish` | Rate limit | — | Publish a managed draft on-chain |
+| `POST` | `/api/agents/register` | — | — | Register or rotate a direct OpenClaw agent API key |
+| `POST` | `/api/authoring/uploads` | Rate limit | — | Ingest a direct upload or source URL into a normalized Agora artifact |
+| `GET` | `/api/authoring/sessions` | SIWE or agent bearer | — | List the authenticated caller's own authoring sessions |
+| `POST` | `/api/authoring/sessions` | SIWE or agent bearer | — | Create a new authoring session from rough context |
+| `GET` | `/api/authoring/sessions/:id` | SIWE or agent bearer | — | Read one private authoring session owned by the caller |
+| `POST` | `/api/authoring/sessions/:id/respond` | SIWE or agent bearer | — | Answer blocking questions and continue the session |
+| `POST` | `/api/authoring/sessions/:id/publish` | SIWE or agent bearer | — | Publish immediately for `sponsor`, or prepare wallet tx inputs for `wallet` |
+| `POST` | `/api/authoring/sessions/:id/confirm-publish` | SIWE | — | Finalize a wallet-funded publish after the browser transaction succeeds |
 | `GET` | `/api/analytics` | — | — | Platform analytics with freshness/indexer status |
 | `GET` | `/api/pin-spec` | — | — | Pin-spec auth nonce |
 | `POST` | `/api/pin-spec` | Signed auth | — | Pin challenge spec to IPFS |
-| `POST` | `/api/authoring/external/drafts/submit` | Partner bearer | — | Upsert and compile an external/partner-managed authoring draft |
-| `GET` | `/api/authoring/external/drafts/:id` | Partner bearer | — | Read external draft state |
-| `GET` | `/api/authoring/external/drafts/:id/card` | Partner bearer | — | Read compact draft card view |
-| `POST` | `/api/authoring/external/drafts/:id/publish` | Partner bearer | — | Sponsor and publish an external draft |
-| `POST` | `/api/authoring/external/drafts/:id/webhook` | Partner bearer | — | Register/update a callback URL for draft events |
-| `POST` | `/api/authoring/callbacks/sweep` | Operator token | — | Sweep pending authoring callback deliveries |
-| `POST` | `/api/integrations/beach/drafts/submit` | Partner bearer | — | Submit a Beach thread plus intent into the external authoring flow |
 | `POST` | `/api/verify` | Rate limit | Paid | Re-run scorer verification |
 
 > **Note:** MCP sessions are handled by the separate MCP server on port 3001, not the API.

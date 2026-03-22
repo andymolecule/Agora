@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AuthoringDraftRow } from "@agora/db";
+import type { AuthoringSessionRow } from "@agora/db";
 import { enforceAuthoringSponsorMonthlyBudget } from "../src/lib/authoring-sponsored-publish.js";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 
-function createDraft(): AuthoringDraftRow {
+function createSession(): AuthoringSessionRow {
   return {
     id: "68dff5c6-336a-47fa-a4de-41e6386bd2e4",
     poster_address: null,
+    creator_type: "agent",
+    creator_agent_id: "agent-abc",
     state: "ready",
     intent_json: {
       title: "Drug response challenge",
@@ -59,8 +61,7 @@ function createDraft(): AuthoringDraftRow {
     published_challenge_id: null,
     published_spec_json: null,
     published_spec_cid: null,
-    source_callback_url: "https://hooks.beach.science/agora",
-    source_callback_registered_at: "2026-03-18T00:05:00.000Z",
+    published_at: null,
     failure_message: null,
     expires_at: "2026-03-25T00:00:00.000Z",
     created_at: "2026-03-18T00:00:00.000Z",
@@ -71,7 +72,7 @@ function createDraft(): AuthoringDraftRow {
 function createSpec() {
   return {
     schema_version: 3 as const,
-    id: "draft-1",
+    id: "challenge-spec-1",
     title: "Drug response challenge",
     description: "Predict held-out drug response values.",
     domain: "other" as const,
@@ -103,11 +104,11 @@ function createSpec() {
   };
 }
 
-test("enforceAuthoringSponsorMonthlyBudget allows publishes within the partner cap", async () => {
+test("enforceAuthoringSponsorMonthlyBudget allows publishes within the source budget", async () => {
   await assert.doesNotReject(() =>
     enforceAuthoringSponsorMonthlyBudget({
       db: {} as never,
-      draft: createDraft(),
+      session: createSession(),
       spec: createSpec(),
       sponsorMonthlyBudgetUsdc: 500,
       sumRewardAmountForSourceProviderImpl: async () => 100,
@@ -115,12 +116,12 @@ test("enforceAuthoringSponsorMonthlyBudget allows publishes within the partner c
   );
 });
 
-test("enforceAuthoringSponsorMonthlyBudget rejects publishes that exceed the partner cap", async () => {
+test("enforceAuthoringSponsorMonthlyBudget rejects publishes that exceed the source budget", async () => {
   await assert.rejects(
     () =>
       enforceAuthoringSponsorMonthlyBudget({
         db: {} as never,
-        draft: createDraft(),
+        session: createSession(),
         spec: createSpec(),
         sponsorMonthlyBudgetUsdc: 100,
         sumRewardAmountForSourceProviderImpl: async () => 95,

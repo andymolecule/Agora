@@ -69,7 +69,7 @@ await assert.rejects(
       "challenge-1",
       payoutRows,
     ),
-  /033_atomic_replace_challenge_payouts\.sql/,
+  /001_baseline\.sql/,
 );
 
 console.log("challenge payout replacement query checks passed");

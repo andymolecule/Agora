@@ -19,6 +19,13 @@ test("openapi document is served from well-known path", async () => {
   assert.ok(
     "post" in (body.paths["/api/challenges"] as Record<string, unknown>),
   );
+  assert.ok("/api/agents/register" in body.paths);
+  assert.ok("/api/authoring/uploads" in body.paths);
+  assert.ok("/api/authoring/sessions" in body.paths);
+  assert.ok("/api/authoring/sessions/{id}" in body.paths);
+  assert.ok("/api/authoring/sessions/{id}/respond" in body.paths);
+  assert.ok("/api/authoring/sessions/{id}/publish" in body.paths);
+  assert.ok("/api/authoring/sessions/{id}/confirm-publish" in body.paths);
   assert.ok("/api/submissions/upload" in body.paths);
   assert.ok("/api/submissions/{id}/status" in body.paths);
   assert.ok("/api/submissions" in body.paths);

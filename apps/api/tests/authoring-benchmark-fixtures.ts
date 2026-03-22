@@ -7,7 +7,7 @@ const BENCHMARK_ROOT = path.resolve(
   "challenges/test-data/authoring-benchmarks",
 );
 
-type BenchmarkCompileState = "ready" | "needs_input";
+type BenchmarkCompileState = "ready" | "awaiting_input";
 
 type BenchmarkJson = {
   id: string;

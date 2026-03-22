@@ -32,7 +32,7 @@ export default function PostError({
               </h1>
             </div>
             <p className="max-w-2xl text-sm leading-6 text-warm-700">
-              The local draft is still available. Next step: retry this screen
+              The local session is still available. Next step: retry this screen
               or restart the posting flow if the error keeps happening.
             </p>
             <div className="flex flex-wrap gap-3">

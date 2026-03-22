@@ -1,9 +1,9 @@
 "use client";
 
-import type { questionTargetFromQuestions } from "./guided-state";
+import type { questionPromptTargetFromQuestions } from "./guided-state";
 
 export function questionHelperText(
-  target: ReturnType<typeof questionTargetFromQuestions>,
+  target: ReturnType<typeof questionPromptTargetFromQuestions>,
 ) {
   switch (target) {
     case "winningCondition":

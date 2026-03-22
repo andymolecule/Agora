@@ -1,6 +1,6 @@
 import {
-  AUTHORING_PARTNER_PROVIDER_VALUES,
-  type AuthoringPartnerProviderOutput,
+  HOSTED_SOURCE_PROVIDER_VALUES,
+  type HostedSourceProviderOutput,
 } from "../schemas/authoring-source.js";
 import {
   configSchema,
@@ -21,12 +21,6 @@ const authoringOperatorRuntimeConfigSchema = configSchema.pick({
   AGORA_AUTHORING_OPERATOR_TOKEN: true,
 });
 
-const authoringPartnerRuntimeConfigSchema = configSchema.pick({
-  AGORA_AUTHORING_PARTNER_KEYS: true,
-  AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS: true,
-  AGORA_AUTHORING_PARTNER_RETURN_ORIGINS: true,
-});
-
 const authoringSponsorRuntimeConfigSchema = configSchema.pick({
   AGORA_AUTHORING_SPONSOR_PRIVATE_KEY: true,
   AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: true,
@@ -45,128 +39,9 @@ export interface AgoraAuthoringOperatorRuntimeConfig {
   token?: string;
 }
 
-export interface AgoraAuthoringPartnerRuntimeConfig {
-  partnerKeys: Partial<Record<AuthoringPartnerProviderOutput, string>>;
-  callbackSecrets: Partial<Record<AuthoringPartnerProviderOutput, string>>;
-  returnOrigins: Partial<Record<AuthoringPartnerProviderOutput, string[]>>;
-}
-
 export interface AgoraAuthoringSponsorRuntimeConfig {
   privateKey?: `0x${string}`;
-  monthlyBudgetsUsdc: Partial<Record<AuthoringPartnerProviderOutput, number>>;
-}
-
-function parseAuthoringPartnerKeys(
-  raw?: string,
-): Partial<Record<AuthoringPartnerProviderOutput, string>> {
-  if (!raw || raw.trim().length === 0) {
-    return {};
-  }
-
-  const entries = raw
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-  const partnerKeys: Partial<Record<AuthoringPartnerProviderOutput, string>> =
-    {};
-
-  for (const entry of entries) {
-    const delimiterIndex = entry.indexOf(":");
-    if (delimiterIndex <= 0 || delimiterIndex === entry.length - 1) {
-      throw new Error(
-        "Invalid AGORA_AUTHORING_PARTNER_KEYS entry. Next step: use provider:key pairs such as beach_science:secret-key.",
-      );
-    }
-
-    const provider = entry.slice(0, delimiterIndex).trim();
-    const key = entry.slice(delimiterIndex + 1).trim();
-    if (!AUTHORING_PARTNER_PROVIDER_VALUES.includes(provider as never)) {
-      throw new Error(
-        `Invalid AGORA_AUTHORING_PARTNER_KEYS provider "${provider}". Next step: use one of ${AUTHORING_PARTNER_PROVIDER_VALUES.join(", ")}.`,
-      );
-    }
-    if (key.length === 0) {
-      throw new Error(
-        `Invalid AGORA_AUTHORING_PARTNER_KEYS key for ${provider}. Next step: provide a non-empty bearer key.`,
-      );
-    }
-    if (partnerKeys[provider as AuthoringPartnerProviderOutput]) {
-      throw new Error(
-        `Duplicate AGORA_AUTHORING_PARTNER_KEYS provider "${provider}". Next step: keep only one key per partner.`,
-      );
-    }
-    partnerKeys[provider as AuthoringPartnerProviderOutput] = key;
-  }
-
-  return partnerKeys;
-}
-
-function parseAuthoringPartnerReturnOrigins(
-  raw?: string,
-): Partial<Record<AuthoringPartnerProviderOutput, string[]>> {
-  if (!raw || raw.trim().length === 0) {
-    return {};
-  }
-
-  const entries = raw
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-  const returnOrigins: Partial<
-    Record<AuthoringPartnerProviderOutput, string[]>
-  > = {};
-
-  for (const entry of entries) {
-    const delimiterIndex = entry.indexOf(":");
-    if (delimiterIndex <= 0 || delimiterIndex === entry.length - 1) {
-      throw new Error(
-        "Invalid AGORA_AUTHORING_PARTNER_RETURN_ORIGINS entry. Next step: use provider:url pairs such as beach_science:https://beach.science.",
-      );
-    }
-
-    const provider = entry.slice(0, delimiterIndex).trim();
-    const rawOrigins = entry.slice(delimiterIndex + 1).trim();
-    if (!AUTHORING_PARTNER_PROVIDER_VALUES.includes(provider as never)) {
-      throw new Error(
-        `Invalid AGORA_AUTHORING_PARTNER_RETURN_ORIGINS provider "${provider}". Next step: use one of ${AUTHORING_PARTNER_PROVIDER_VALUES.join(", ")}.`,
-      );
-    }
-    if (returnOrigins[provider as AuthoringPartnerProviderOutput]) {
-      throw new Error(
-        `Duplicate AGORA_AUTHORING_PARTNER_RETURN_ORIGINS provider "${provider}". Next step: keep only one origin list per partner.`,
-      );
-    }
-
-    const normalizedOrigins = [...new Set(rawOrigins.split("|"))]
-      .map((origin) => origin.trim())
-      .filter((origin) => origin.length > 0)
-      .map((origin) => {
-        try {
-          const parsed = new URL(origin);
-          if (parsed.protocol !== "https:") {
-            throw new Error(
-              `Invalid AGORA_AUTHORING_PARTNER_RETURN_ORIGINS URL "${origin}" for ${provider}. Next step: provide HTTPS origins such as https://beach.science.`,
-            );
-          }
-          return parsed.origin;
-        } catch {
-          throw new Error(
-            `Invalid AGORA_AUTHORING_PARTNER_RETURN_ORIGINS URL "${origin}" for ${provider}. Next step: provide valid HTTPS origins such as https://beach.science.`,
-          );
-        }
-      });
-
-    if (normalizedOrigins.length === 0) {
-      throw new Error(
-        `Invalid AGORA_AUTHORING_PARTNER_RETURN_ORIGINS origin list for ${provider}. Next step: provide at least one allowed return origin.`,
-      );
-    }
-
-    returnOrigins[provider as AuthoringPartnerProviderOutput] =
-      normalizedOrigins;
-  }
-
-  return returnOrigins;
+  monthlyBudgetsUsdc: Partial<Record<HostedSourceProviderOutput, number>>;
 }
 
 export function readManagedAuthoringRuntimeConfig(
@@ -207,40 +82,17 @@ export function readAuthoringOperatorRuntimeConfig(
   };
 }
 
-export function readAuthoringPartnerRuntimeConfig(
-  env: Record<string, string | undefined> = process.env,
-): AgoraAuthoringPartnerRuntimeConfig {
-  const parsed = parseConfigSection(authoringPartnerRuntimeConfigSchema, env);
-  const partnerKeys = parseAuthoringPartnerKeys(
-    parsed.AGORA_AUTHORING_PARTNER_KEYS,
-  );
-  const callbackSecrets = parseAuthoringPartnerKeys(
-    parsed.AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS,
-  );
-  const returnOrigins = parseAuthoringPartnerReturnOrigins(
-    parsed.AGORA_AUTHORING_PARTNER_RETURN_ORIGINS,
-  );
-  return {
-    partnerKeys,
-    callbackSecrets: {
-      ...partnerKeys,
-      ...callbackSecrets,
-    },
-    returnOrigins,
-  };
-}
-
 export function readAuthoringSponsorRuntimeConfig(
   env: Record<string, string | undefined> = process.env,
 ): AgoraAuthoringSponsorRuntimeConfig {
   function parseMonthlyBudgets(
     raw?: string,
-  ): Partial<Record<AuthoringPartnerProviderOutput, number>> {
+  ): Partial<Record<HostedSourceProviderOutput, number>> {
     if (!raw || raw.trim().length === 0) {
       return {};
     }
 
-    const budgets: Partial<Record<AuthoringPartnerProviderOutput, number>> = {};
+    const budgets: Partial<Record<HostedSourceProviderOutput, number>> = {};
     for (const entry of raw.split(",")) {
       const trimmed = entry.trim();
       if (trimmed.length === 0) {
@@ -249,14 +101,14 @@ export function readAuthoringSponsorRuntimeConfig(
       const delimiterIndex = trimmed.indexOf(":");
       if (delimiterIndex <= 0 || delimiterIndex === trimmed.length - 1) {
         throw new Error(
-          "Invalid AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS entry. Next step: use provider:amount pairs such as beach_science:500.",
+          "Invalid AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS entry. Next step: use source_provider:amount pairs such as beach_science:500.",
         );
       }
       const provider = trimmed.slice(0, delimiterIndex).trim();
       const rawAmount = trimmed.slice(delimiterIndex + 1).trim();
-      if (!AUTHORING_PARTNER_PROVIDER_VALUES.includes(provider as never)) {
+      if (!HOSTED_SOURCE_PROVIDER_VALUES.includes(provider as never)) {
         throw new Error(
-          `Invalid AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS provider "${provider}". Next step: use one of ${AUTHORING_PARTNER_PROVIDER_VALUES.join(", ")}.`,
+          `Invalid AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS source provider "${provider}". Next step: use one of ${HOSTED_SOURCE_PROVIDER_VALUES.join(", ")}.`,
         );
       }
       const amount = Number(rawAmount);
@@ -265,7 +117,7 @@ export function readAuthoringSponsorRuntimeConfig(
           `Invalid AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS amount "${rawAmount}" for ${provider}. Next step: provide a positive USDC budget such as 500.`,
         );
       }
-      budgets[provider as AuthoringPartnerProviderOutput] = amount;
+      budgets[provider as HostedSourceProviderOutput] = amount;
     }
     return budgets;
   }

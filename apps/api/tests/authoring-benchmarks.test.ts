@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compileManagedAuthoringDraftOutcome } from "../src/lib/managed-authoring.js";
+import { compileManagedAuthoringSessionOutcome } from "../src/lib/managed-authoring.js";
 import {
   buildAuthoringBenchmarkDependencies,
   loadAuthoringBenchmarkCases,
@@ -45,7 +45,7 @@ for (const benchmarkCase of benchmarkCases) {
       "https://api.anthropic.test/v1";
 
     try {
-      const result = await compileManagedAuthoringDraftOutcome(
+      const result = await compileManagedAuthoringSessionOutcome(
         {
           intent: benchmarkCase.intent,
           uploadedArtifacts: benchmarkCase.uploadedArtifacts,
@@ -81,8 +81,8 @@ for (const benchmarkCase of benchmarkCases) {
       ) {
         assert.equal(
           result.state,
-          "failed",
-          `${benchmarkLabel} should fail cleanly into the explicit custom workflow path`,
+          "rejected",
+          `${benchmarkLabel} should reject cleanly into the explicit custom workflow path`,
         );
         assert.equal(
           result.compilation,

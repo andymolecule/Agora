@@ -1,5 +1,5 @@
--- Agora baseline schema after pre-launch testnet reset.
--- Historical incremental migrations were intentionally squashed into this file.
+-- Agora baseline schema after the session-first reset.
+-- This file is the only active Supabase migration for fresh environments.
 
 create extension if not exists "pgcrypto";
 
@@ -30,6 +30,10 @@ create table challenges (
   status text not null,
   winning_on_chain_sub_id bigint,
   winner_solver_address text,
+  source_provider text,
+  source_external_id text,
+  source_external_url text,
+  source_agent_handle text,
   created_at timestamptz not null default now(),
   tx_hash text not null,
   constraint challenges_status_check
@@ -97,21 +101,52 @@ create index idx_challenges_poster
 create index idx_challenges_runtime_family
   on challenges(runtime_family);
 
+create index idx_challenges_source_provider_created_at
+  on challenges(source_provider, created_at desc);
+
+create table submission_intents (
+  id uuid primary key default gen_random_uuid(),
+  challenge_id uuid not null references challenges(id) on delete cascade,
+  solver_address text not null,
+  result_hash text not null,
+  result_cid text not null,
+  result_format text not null default 'plain_v0',
+  expires_at timestamptz not null,
+  trace_id text,
+  created_at timestamptz not null default now(),
+  constraint submission_intents_result_format_check
+    check (result_format in ('plain_v0', 'sealed_submission_v2')),
+  constraint submission_intents_solver_address_lowercase_check
+    check (solver_address = lower(solver_address))
+);
+
+create unique index idx_submission_intents_unique_match
+  on submission_intents(challenge_id, solver_address, result_hash);
+
+create index idx_submission_intents_expires_created
+  on submission_intents(expires_at, created_at);
+
+create index idx_submission_intents_trace_id
+  on submission_intents(trace_id)
+  where trace_id is not null;
+
 create table submissions (
   id uuid primary key default gen_random_uuid(),
+  submission_intent_id uuid not null unique references submission_intents(id) on delete cascade,
   challenge_id uuid not null references challenges(id) on delete cascade,
   on_chain_sub_id bigint not null,
   solver_address text not null,
   result_hash text not null,
-  result_cid text,
+  result_cid text not null,
   result_format text not null default 'plain_v0',
   proof_bundle_cid text,
-  proof_bundle_hash text,
+  proof_bundle_hash text not null,
   score numeric,
   scored boolean not null default false,
   submitted_at timestamptz not null,
   scored_at timestamptz,
   tx_hash text not null,
+  trace_id text,
   constraint submissions_result_format_check
     check (result_format in ('plain_v0', 'sealed_submission_v2')),
   constraint submissions_solver_address_lowercase_check
@@ -129,6 +164,10 @@ create index idx_submissions_challenge_solver
 
 create index idx_submissions_solver_submitted_at
   on submissions(solver_address, submitted_at desc);
+
+create index idx_submissions_trace_id
+  on submissions(trace_id)
+  where trace_id is not null;
 
 create table proof_bundles (
   id uuid primary key default gen_random_uuid(),
@@ -207,11 +246,13 @@ create table score_jobs (
   status text not null default 'queued',
   attempts integer not null default 0,
   max_attempts integer not null default 5,
+  next_attempt_at timestamptz not null default now(),
   locked_at timestamptz,
   run_started_at timestamptz,
   locked_by text,
   last_error text,
   score_tx_hash text,
+  trace_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint score_jobs_status_check
@@ -225,10 +266,18 @@ create table score_jobs (
 create index idx_score_jobs_status
   on score_jobs(status);
 
+create index idx_score_jobs_status_next_attempt_at
+  on score_jobs(status, next_attempt_at);
+
+create index idx_score_jobs_trace_id
+  on score_jobs(trace_id)
+  where trace_id is not null;
+
 create table worker_runtime_state (
   worker_id text primary key,
   worker_type text not null,
   host text,
+  runtime_version text not null default 'unknown',
   ready boolean not null default false,
   executor_ready boolean not null default false,
   seal_enabled boolean not null default false,
@@ -245,6 +294,14 @@ create table worker_runtime_state (
 
 create index idx_worker_runtime_state_type_heartbeat
   on worker_runtime_state(worker_type, last_heartbeat_at desc);
+
+create table worker_runtime_control (
+  worker_type text primary key,
+  active_runtime_version text not null,
+  updated_at timestamptz not null default now(),
+  constraint worker_runtime_control_worker_type_check
+    check (worker_type in ('scoring'))
+);
 
 create table auth_nonces (
   nonce text primary key,
@@ -281,15 +338,119 @@ create index idx_auth_sessions_address
 create index idx_auth_sessions_expires
   on auth_sessions(expires_at desc);
 
+create table auth_agents (
+  id uuid primary key default gen_random_uuid(),
+  telegram_bot_id text not null unique,
+  agent_name text,
+  description text,
+  api_key_hash text not null unique,
+  last_rotated_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index idx_auth_agents_api_key_hash
+  on auth_agents(api_key_hash);
+
+create table authoring_sessions (
+  id uuid primary key default gen_random_uuid(),
+  poster_address text,
+  creator_type text,
+  creator_agent_id uuid references auth_agents(id),
+  state text not null,
+  intent_json jsonb,
+  authoring_ir_json jsonb,
+  uploaded_artifacts_json jsonb not null default '[]'::jsonb,
+  compilation_json jsonb,
+  published_challenge_id uuid references challenges(id) on delete set null,
+  published_spec_json jsonb,
+  published_spec_cid text,
+  published_at timestamptz,
+  failure_message text,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint authoring_sessions_state_check
+    check (
+      state in (
+        'created',
+        'awaiting_input',
+        'ready',
+        'published',
+        'rejected',
+        'expired'
+      )
+    ),
+  constraint authoring_sessions_poster_address_lowercase_check
+    check (
+      poster_address is null
+      or poster_address = lower(poster_address)
+    ),
+  constraint authoring_sessions_creator_type_check
+    check (creator_type is null or creator_type in ('web', 'agent'))
+);
+
+create index idx_authoring_sessions_state
+  on authoring_sessions(state);
+
+create index idx_authoring_sessions_expires_at
+  on authoring_sessions(expires_at);
+
+create index idx_authoring_sessions_poster
+  on authoring_sessions(poster_address);
+
+create index idx_authoring_sessions_published_challenge
+  on authoring_sessions(published_challenge_id);
+
+create index idx_authoring_sessions_creator_type
+  on authoring_sessions(creator_type);
+
+create index idx_authoring_sessions_creator_agent_id
+  on authoring_sessions(creator_agent_id);
+
+create table authoring_sponsor_budget_reservations (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null unique references authoring_sessions(id) on delete cascade,
+  provider text not null,
+  period_start timestamptz not null,
+  period_end timestamptz not null,
+  amount_usdc numeric(20, 6) not null,
+  status text not null default 'reserved',
+  tx_hash text,
+  challenge_id uuid references challenges(id) on delete set null,
+  reserved_at timestamptz not null default now(),
+  released_at timestamptz,
+  consumed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint authoring_sponsor_budget_reservations_status_check
+    check (status in ('reserved', 'consumed', 'released')),
+  constraint authoring_sponsor_budget_reservations_amount_check
+    check (amount_usdc > 0),
+  constraint authoring_sponsor_budget_reservations_provider_check
+    check (length(btrim(provider)) > 0),
+  constraint authoring_sponsor_budget_reservations_period_check
+    check (period_end > period_start)
+);
+
+create index idx_authoring_sponsor_budget_reservations_period
+  on authoring_sponsor_budget_reservations(provider, period_start, period_end, status);
+
+create index idx_authoring_sponsor_budget_reservations_tx_hash
+  on authoring_sponsor_budget_reservations(tx_hash);
+
+alter table submission_intents enable row level security;
 alter table submissions enable row level security;
 alter table proof_bundles enable row level security;
 alter table verifications enable row level security;
 alter table score_jobs enable row level security;
 alter table worker_runtime_state enable row level security;
+alter table worker_runtime_control enable row level security;
 
 create or replace function claim_next_score_job(
   p_worker_id text,
-  p_lease_ms integer default 3600000
+  p_lease_ms integer default 3600000,
+  p_chain_id integer default null
 )
 returns table (
   id uuid,
@@ -298,6 +459,7 @@ returns table (
   status text,
   attempts integer,
   max_attempts integer,
+  next_attempt_at timestamptz,
   locked_at timestamptz,
   run_started_at timestamptz,
   locked_by text,
@@ -311,14 +473,36 @@ as $$
 declare
   v_stale_cutoff timestamptz := now() - (p_lease_ms || ' milliseconds')::interval;
   v_job_id uuid;
+  v_active_runtime_version text;
+  v_worker_runtime_version text;
 begin
+  select wrc.active_runtime_version
+    into v_active_runtime_version
+  from worker_runtime_control wrc
+  where wrc.worker_type = 'scoring'
+  limit 1;
+
+  select wrs.runtime_version
+    into v_worker_runtime_version
+  from worker_runtime_state wrs
+  where wrs.worker_id = p_worker_id
+    and wrs.worker_type = 'scoring'
+  limit 1;
+
+  if v_active_runtime_version is not null
+     and v_worker_runtime_version is distinct from v_active_runtime_version then
+    return;
+  end if;
+
   select sj.id into v_job_id
   from score_jobs sj
+  join challenges c on c.id = sj.challenge_id
   where sj.status = 'running'
     and sj.locked_at < v_stale_cutoff
+    and (p_chain_id is null or c.chain_id = p_chain_id)
   order by sj.locked_at asc
   limit 1
-  for update skip locked;
+  for update of sj skip locked;
 
   if v_job_id is null then
     select sj.id into v_job_id
@@ -326,7 +510,9 @@ begin
     join challenges c on c.id = sj.challenge_id
     where sj.status = 'queued'
       and c.status = 'scoring'
-    order by sj.created_at asc
+      and sj.next_attempt_at <= now()
+      and (p_chain_id is null or c.chain_id = p_chain_id)
+    order by sj.next_attempt_at asc, sj.created_at asc
     limit 1
     for update of sj skip locked;
   end if;
@@ -352,6 +538,7 @@ begin
     sj.status,
     sj.attempts,
     sj.max_attempts,
+    sj.next_attempt_at,
     sj.locked_at,
     sj.run_started_at,
     sj.locked_by,
@@ -359,5 +546,175 @@ begin
     sj.score_tx_hash,
     sj.created_at,
     sj.updated_at;
+end;
+$$;
+
+create or replace function replace_challenge_payouts(
+  p_challenge_id uuid,
+  p_payouts jsonb default '[]'::jsonb
+)
+returns table (
+  challenge_id uuid,
+  solver_address text,
+  winning_on_chain_sub_id bigint,
+  rank integer,
+  amount numeric(20, 6),
+  claimed_at timestamptz,
+  claim_tx_hash text,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+as $$
+begin
+  delete from challenge_payouts
+  where challenge_id = p_challenge_id;
+
+  if p_payouts is null
+     or jsonb_typeof(p_payouts) <> 'array'
+     or jsonb_array_length(p_payouts) = 0 then
+    return;
+  end if;
+
+  return query
+  insert into challenge_payouts (
+    challenge_id,
+    solver_address,
+    winning_on_chain_sub_id,
+    rank,
+    amount,
+    claimed_at,
+    claim_tx_hash
+  )
+  select
+    p_challenge_id,
+    lower(row_payload.solver_address),
+    row_payload.winning_on_chain_sub_id,
+    row_payload.rank,
+    row_payload.amount,
+    row_payload.claimed_at,
+    row_payload.claim_tx_hash
+  from jsonb_to_recordset(p_payouts) as row_payload(
+    solver_address text,
+    winning_on_chain_sub_id bigint,
+    rank integer,
+    amount numeric(20, 6),
+    claimed_at timestamptz,
+    claim_tx_hash text
+  )
+  returning
+    challenge_payouts.challenge_id,
+    challenge_payouts.solver_address,
+    challenge_payouts.winning_on_chain_sub_id,
+    challenge_payouts.rank,
+    challenge_payouts.amount,
+    challenge_payouts.claimed_at,
+    challenge_payouts.claim_tx_hash,
+    challenge_payouts.created_at,
+    challenge_payouts.updated_at;
+end;
+$$;
+
+create or replace function reserve_authoring_sponsor_budget(
+  p_session_id uuid,
+  p_provider text,
+  p_period_start timestamptz,
+  p_period_end timestamptz,
+  p_amount_usdc numeric,
+  p_budget_limit_usdc numeric
+)
+returns authoring_sponsor_budget_reservations
+language plpgsql
+as $$
+declare
+  v_reservation authoring_sponsor_budget_reservations;
+  v_consumed numeric(20, 6);
+  v_reserved numeric(20, 6);
+begin
+  if p_amount_usdc is null or p_amount_usdc <= 0 then
+    raise exception
+      'Authoring sponsor budget reservation amount must be positive.'
+      using errcode = '22003';
+  end if;
+
+  if p_budget_limit_usdc is null or p_budget_limit_usdc <= 0 then
+    raise exception
+      'Authoring sponsor budget limit must be positive.'
+      using errcode = '22003';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended(
+      lower(coalesce(p_provider, '')) || '|' || p_period_start::text || '|' || p_period_end::text,
+      0
+    )
+  );
+
+  select *
+  into v_reservation
+  from authoring_sponsor_budget_reservations
+  where session_id = p_session_id
+  for update;
+
+  if found and v_reservation.status = 'consumed' then
+    return v_reservation;
+  end if;
+
+  if found then
+    update authoring_sponsor_budget_reservations
+    set
+      provider = p_provider,
+      period_start = p_period_start,
+      period_end = p_period_end,
+      amount_usdc = p_amount_usdc,
+      status = 'reserved',
+      released_at = null,
+      updated_at = now()
+    where session_id = p_session_id
+    returning * into v_reservation;
+  else
+    insert into authoring_sponsor_budget_reservations (
+      session_id,
+      provider,
+      period_start,
+      period_end,
+      amount_usdc,
+      status
+    )
+    values (
+      p_session_id,
+      p_provider,
+      p_period_start,
+      p_period_end,
+      p_amount_usdc,
+      'reserved'
+    )
+    returning * into v_reservation;
+  end if;
+
+  select coalesce(sum(reward_amount), 0)
+  into v_consumed
+  from challenges
+  where source_provider = p_provider
+    and created_at >= p_period_start
+    and created_at < p_period_end;
+
+  select coalesce(sum(amount_usdc), 0)
+  into v_reserved
+  from authoring_sponsor_budget_reservations
+  where provider = p_provider
+    and period_start = p_period_start
+    and period_end = p_period_end
+    and status = 'reserved'
+    and session_id <> p_session_id;
+
+  if v_consumed + v_reserved + v_reservation.amount_usdc > p_budget_limit_usdc then
+    raise exception
+      'Agora sponsor budget for provider % would be exceeded. Next step: lower the reward, wait for the next budget window, or raise the sponsor cap and retry.',
+      p_provider
+      using errcode = 'P0001';
+  end if;
+
+  return v_reservation;
 end;
 $$;

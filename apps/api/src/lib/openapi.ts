@@ -742,9 +742,712 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
         },
       },
+      "/api/agents/register": {
+        post: {
+          operationId: "registerAgent",
+          summary: "Register or rotate a direct Agora agent API key",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/AgentRegisterRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Agent registration or rotation result.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/AgentRegisterResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/authoring/uploads": {
+        post: {
+          operationId: "uploadAuthoringArtifact",
+          summary:
+            "Upload a local file or ingest a source URL into a normalized Agora artifact",
+          requestBody: {
+            required: true,
+            content: {
+              "multipart/form-data": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    file: { type: "string", format: "binary" },
+                  },
+                  required: ["file"],
+                },
+              },
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/AuthoringUploadUrlRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Normalized authoring artifact.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/AuthoringArtifact",
+                  },
+                },
+              },
+            },
+            "400": {
+              description: "Invalid upload payload.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/AuthoringSessionErrorEnvelope",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/authoring/sessions": {
+        get: {
+          operationId: "listAuthoringSessions",
+          summary: "List the authenticated caller's private authoring sessions",
+          responses: {
+            "200": {
+              description: "Session list.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/AuthoringSessionListResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+        post: {
+          operationId: "createAuthoringSession",
+          summary: "Create a new authoring session from rough context",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/AuthoringSessionCreateRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Canonical authoring session state.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/AuthoringSession" },
+                },
+              },
+            },
+            "400": {
+              description: "Invalid session create request.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/AuthoringSessionErrorEnvelope",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/authoring/sessions/{id}": {
+        get: {
+          operationId: "getAuthoringSession",
+          summary: "Read one private authoring session owned by the caller",
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: uuidSchema(),
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Canonical authoring session state.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/AuthoringSession" },
+                },
+              },
+            },
+            "404": {
+              description: "Session does not exist for this caller.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/AuthoringSessionErrorEnvelope",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/authoring/sessions/{id}/respond": {
+        post: {
+          operationId: "respondToAuthoringSession",
+          summary: "Answer questions and continue an authoring session",
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: uuidSchema(),
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/AuthoringSessionRespondRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Canonical authoring session state.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/AuthoringSession" },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/authoring/sessions/{id}/publish": {
+        post: {
+          operationId: "publishAuthoringSession",
+          summary:
+            "Publish immediately for sponsor funding, or prepare wallet transaction inputs for wallet funding",
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: uuidSchema(),
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/AuthoringSessionPublishRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description:
+                "Published session for sponsor funding, or wallet preparation bundle for wallet funding.",
+              content: {
+                "application/json": {
+                  schema: {
+                    oneOf: [
+                      { $ref: "#/components/schemas/AuthoringSession" },
+                      {
+                        $ref: "#/components/schemas/WalletPublishPreparation",
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/authoring/sessions/{id}/confirm-publish": {
+        post: {
+          operationId: "confirmAuthoringSessionPublish",
+          summary:
+            "Confirm a wallet-funded publish after the browser transaction succeeds",
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: uuidSchema(),
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/AuthoringSessionConfirmPublishRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Published session.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/AuthoringSession" },
+                },
+              },
+            },
+          },
+        },
+      },
     },
     components: {
       schemas: {
+        AuthoringSessionErrorEnvelope: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                code: {
+                  type: "string",
+                  enum: [
+                    "unauthorized",
+                    "not_found",
+                    "invalid_request",
+                    "session_expired",
+                    "unsupported_task",
+                  ],
+                },
+                message: { type: "string" },
+                next_action: { type: "string" },
+                state: {
+                  type: "string",
+                  enum: [
+                    "awaiting_input",
+                    "ready",
+                    "published",
+                    "rejected",
+                    "expired",
+                  ],
+                  nullable: true,
+                },
+              },
+              required: ["code", "message", "next_action"],
+            },
+          },
+          required: ["error"],
+        },
+        AgentRegisterRequest: {
+          type: "object",
+          properties: {
+            telegram_bot_id: { type: "string" },
+            agent_name: { type: "string" },
+            description: { type: "string" },
+          },
+          required: ["telegram_bot_id"],
+        },
+        AgentRegisterResponse: {
+          type: "object",
+          properties: {
+            agent_id: uuidSchema(),
+            api_key: { type: "string" },
+            status: { type: "string", enum: ["created", "rotated"] },
+          },
+          required: ["agent_id", "api_key", "status"],
+        },
+        AuthoringFileInput: {
+          oneOf: [
+            {
+              type: "object",
+              properties: {
+                type: { type: "string", enum: ["url"] },
+                url: { type: "string", format: "uri" },
+              },
+              required: ["type", "url"],
+            },
+            {
+              type: "object",
+              properties: {
+                type: { type: "string", enum: ["artifact"] },
+                artifact_id: { type: "string" },
+              },
+              required: ["type", "artifact_id"],
+            },
+          ],
+        },
+        AuthoringSessionCreator: {
+          oneOf: [
+            {
+              type: "object",
+              properties: {
+                type: { type: "string", enum: ["agent"] },
+                agent_id: uuidSchema(),
+              },
+              required: ["type", "agent_id"],
+            },
+            {
+              type: "object",
+              properties: {
+                type: { type: "string", enum: ["web"] },
+                address: addressSchema(),
+              },
+              required: ["type", "address"],
+            },
+          ],
+        },
+        AuthoringSessionQuestion: {
+          oneOf: [
+            {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                text: { type: "string" },
+                reason: { type: "string" },
+                kind: { type: "string", enum: ["text"] },
+              },
+              required: ["id", "text", "reason", "kind"],
+            },
+            {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                text: { type: "string" },
+                reason: { type: "string" },
+                kind: { type: "string", enum: ["select"] },
+                options: { type: "array", items: { type: "string" } },
+              },
+              required: ["id", "text", "reason", "kind", "options"],
+            },
+            {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                text: { type: "string" },
+                reason: { type: "string" },
+                kind: { type: "string", enum: ["file"] },
+              },
+              required: ["id", "text", "reason", "kind"],
+            },
+          ],
+        },
+        AuthoringArtifact: {
+          type: "object",
+          properties: {
+            artifact_id: { type: "string" },
+            uri: { type: "string" },
+            file_name: { type: "string" },
+            role: { type: "string", nullable: true },
+            source_url: { type: "string", format: "uri", nullable: true },
+          },
+          required: ["artifact_id", "uri", "file_name", "role", "source_url"],
+        },
+        AuthoringSessionProvenance: {
+          type: "object",
+          properties: {
+            source: { type: "string" },
+            external_id: { type: "string", nullable: true },
+            source_url: { type: "string", format: "uri", nullable: true },
+          },
+          required: ["source", "external_id", "source_url"],
+        },
+        AuthoringSessionBlockedBy: {
+          type: "object",
+          properties: {
+            layer: { type: "integer", enum: [2, 3] },
+            code: { type: "string" },
+            message: { type: "string" },
+          },
+          required: ["layer", "code", "message"],
+        },
+        AuthoringSessionChecklist: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            domain: { type: "string" },
+            type: { type: "string" },
+            reward: { type: "string" },
+            distribution: { type: "string" },
+            deadline: isoDateTimeSchema(),
+            runtime_family: { type: "string" },
+            metric: { type: "string" },
+            objective: { type: "string", enum: ["maximize", "minimize"] },
+            artifacts_count: { type: "integer", minimum: 0 },
+          },
+          required: [
+            "title",
+            "domain",
+            "type",
+            "reward",
+            "distribution",
+            "deadline",
+            "runtime_family",
+            "metric",
+            "objective",
+            "artifacts_count",
+          ],
+        },
+        AuthoringSessionCompilation: {
+          type: "object",
+          properties: {
+            runtime_family: { type: "string" },
+            metric: { type: "string" },
+            objective: { type: "string", enum: ["maximize", "minimize"] },
+            scorer_image: { type: "string" },
+            submission_contract: { type: "object" },
+            resource_limits: { type: "object" },
+            reward: { type: "object" },
+            deadline: isoDateTimeSchema(),
+            dispute_window_hours: { type: "integer", minimum: 0 },
+            minimum_score: { type: "number", nullable: true },
+          },
+          required: [
+            "runtime_family",
+            "metric",
+            "objective",
+            "scorer_image",
+            "submission_contract",
+            "resource_limits",
+            "reward",
+            "deadline",
+            "dispute_window_hours",
+            "minimum_score",
+          ],
+        },
+        AuthoringSessionListItem: {
+          type: "object",
+          properties: {
+            id: uuidSchema(),
+            state: {
+              type: "string",
+              enum: [
+                "awaiting_input",
+                "ready",
+                "published",
+                "rejected",
+                "expired",
+              ],
+            },
+            summary: { type: "string", nullable: true },
+            created_at: isoDateTimeSchema(),
+            updated_at: isoDateTimeSchema(),
+            expires_at: isoDateTimeSchema(),
+          },
+          required: [
+            "id",
+            "state",
+            "summary",
+            "created_at",
+            "updated_at",
+            "expires_at",
+          ],
+        },
+        AuthoringSession: {
+          type: "object",
+          properties: {
+            id: uuidSchema(),
+            state: {
+              type: "string",
+              enum: [
+                "awaiting_input",
+                "ready",
+                "published",
+                "rejected",
+                "expired",
+              ],
+            },
+            creator: {
+              $ref: "#/components/schemas/AuthoringSessionCreator",
+            },
+            summary: { type: "string", nullable: true },
+            questions: {
+              type: "array",
+              items: { $ref: "#/components/schemas/AuthoringSessionQuestion" },
+            },
+            blocked_by: {
+              allOf: [
+                { $ref: "#/components/schemas/AuthoringSessionBlockedBy" },
+              ],
+              nullable: true,
+            },
+            checklist: {
+              allOf: [
+                { $ref: "#/components/schemas/AuthoringSessionChecklist" },
+              ],
+              nullable: true,
+            },
+            compilation: {
+              allOf: [
+                { $ref: "#/components/schemas/AuthoringSessionCompilation" },
+              ],
+              nullable: true,
+            },
+            artifacts: {
+              type: "array",
+              items: { $ref: "#/components/schemas/AuthoringArtifact" },
+            },
+            provenance: {
+              allOf: [
+                { $ref: "#/components/schemas/AuthoringSessionProvenance" },
+              ],
+              nullable: true,
+            },
+            challenge_id: { ...uuidSchema(), nullable: true },
+            contract_address: { ...addressSchema(), nullable: true },
+            spec_cid: { type: "string", nullable: true },
+            tx_hash: { type: "string", nullable: true },
+            created_at: isoDateTimeSchema(),
+            updated_at: isoDateTimeSchema(),
+            expires_at: isoDateTimeSchema(),
+          },
+          required: [
+            "id",
+            "state",
+            "creator",
+            "summary",
+            "questions",
+            "blocked_by",
+            "checklist",
+            "compilation",
+            "artifacts",
+            "provenance",
+            "challenge_id",
+            "contract_address",
+            "spec_cid",
+            "tx_hash",
+            "created_at",
+            "updated_at",
+            "expires_at",
+          ],
+        },
+        AuthoringSessionListResponse: {
+          type: "object",
+          properties: {
+            sessions: {
+              type: "array",
+              items: {
+                $ref: "#/components/schemas/AuthoringSessionListItem",
+              },
+            },
+          },
+          required: ["sessions"],
+        },
+        AuthoringSessionCreateRequest: {
+          type: "object",
+          properties: {
+            summary: { type: "string" },
+            messages: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  text: { type: "string" },
+                },
+                required: ["text"],
+              },
+            },
+            files: {
+              type: "array",
+              items: { $ref: "#/components/schemas/AuthoringFileInput" },
+            },
+            provenance: {
+              $ref: "#/components/schemas/AuthoringSessionProvenance",
+            },
+          },
+        },
+        AuthoringSessionRespondRequest: {
+          type: "object",
+          properties: {
+            answers: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  question_id: { type: "string" },
+                  value: {
+                    oneOf: [
+                      { type: "string" },
+                      { $ref: "#/components/schemas/AuthoringFileInput" },
+                    ],
+                  },
+                },
+                required: ["question_id", "value"],
+              },
+            },
+            context: { type: "string" },
+            files: {
+              type: "array",
+              items: { $ref: "#/components/schemas/AuthoringFileInput" },
+            },
+          },
+        },
+        AuthoringSessionPublishRequest: {
+          type: "object",
+          properties: {
+            confirm_publish: { type: "boolean", enum: [true] },
+            funding: { type: "string", enum: ["wallet", "sponsor"] },
+          },
+          required: ["confirm_publish", "funding"],
+        },
+        AuthoringSessionConfirmPublishRequest: {
+          type: "object",
+          properties: {
+            tx_hash: { type: "string" },
+          },
+          required: ["tx_hash"],
+        },
+        AuthoringUploadUrlRequest: {
+          type: "object",
+          properties: {
+            url: { type: "string", format: "uri" },
+          },
+          required: ["url"],
+        },
+        WalletPublishPreparation: {
+          type: "object",
+          properties: {
+            spec_cid: { type: "string" },
+            factory_address: addressSchema(),
+            usdc_address: addressSchema(),
+            reward_units: { type: "string" },
+            deadline_seconds: { type: "integer", minimum: 0 },
+            dispute_window_hours: { type: "integer", minimum: 0 },
+            minimum_score_wad: { type: "string" },
+            distribution_type: { type: "integer", minimum: 0 },
+            lab_tba: addressSchema(),
+            max_submissions_total: { type: "integer", minimum: 1 },
+            max_submissions_per_solver: { type: "integer", minimum: 1 },
+          },
+          required: [
+            "spec_cid",
+            "factory_address",
+            "usdc_address",
+            "reward_units",
+            "deadline_seconds",
+            "dispute_window_hours",
+            "minimum_score_wad",
+            "distribution_type",
+            "lab_tba",
+            "max_submissions_total",
+            "max_submissions_per_solver",
+          ],
+        },
         Error: {
           type: "object",
           properties: {

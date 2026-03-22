@@ -1,1 +1,0 @@
--- No-op after legacy challenge runtime caches were removed.

@@ -1,9 +1,6 @@
 "use client";
 
-import type {
-  AuthoringDraftOutput,
-  AuthoringQuestionOutput,
-} from "@agora/common";
+import type { AuthoringQuestionOutput } from "@agora/common";
 import { z } from "zod";
 import { formatSubmissionWindowLabel } from "../../lib/post-submission-window";
 import { GUIDED_PROMPT_ORDER, GUIDED_SELECT_DEFAULTS } from "./guided-prompts";
@@ -36,7 +33,7 @@ export type GuidedFieldKey =
 
 export type GuidedFieldStatus = "empty" | "collecting" | "suggested" | "locked";
 
-export type GuidedDraftField<T> = {
+export type GuidedSessionField<T> = {
   value: T | null;
   status: GuidedFieldStatus;
   source?: "user" | "system" | "compile";
@@ -54,27 +51,27 @@ export type GuidedCompileState =
   | "idle"
   | "ready_to_compile"
   | "compiling"
-  | "needs_input"
+  | "awaiting_input"
   | "ready";
 
-export type GuidedComposerState = {
+export type GuidedSessionState = {
   fields: {
-    problem: GuidedDraftField<string>;
-    title: GuidedDraftField<string>;
-    winningCondition: GuidedDraftField<string>;
-    rewardTotal: GuidedDraftField<string>;
-    distribution: GuidedDraftField<
+    problem: GuidedSessionField<string>;
+    title: GuidedSessionField<string>;
+    winningCondition: GuidedSessionField<string>;
+    rewardTotal: GuidedSessionField<string>;
+    distribution: GuidedSessionField<
       "winner_take_all" | "top_3" | "proportional"
     >;
-    deadline: GuidedDraftField<string>;
-    disputeWindow: GuidedDraftField<string>;
-    solverInstructions: GuidedDraftField<string>;
+    deadline: GuidedSessionField<string>;
+    disputeWindow: GuidedSessionField<string>;
+    solverInstructions: GuidedSessionField<string>;
   };
   uploads: UploadedArtifact[];
   uploadsStatus: GuidedFieldStatus;
   activePromptId: Exclude<GuidedFieldKey, "title"> | null;
   compileState: GuidedCompileState;
-  draftId: string | null;
+  sessionId: string | null;
   timezone: string;
 };
 
@@ -124,8 +121,8 @@ type GuidedAnswerAction =
       compileState: GuidedCompileState;
     }
   | {
-      type: "set_draft_id";
-      draftId: string | null;
+      type: "set_session_id";
+      sessionId: string | null;
     }
   | {
       type: "apply_questions";
@@ -133,14 +130,14 @@ type GuidedAnswerAction =
     }
   | {
       type: "hydrate";
-      state: GuidedComposerState;
+      state: GuidedSessionState;
     }
   | {
       type: "reset";
       timezone?: string;
     };
 
-const STORAGE_KEY = "agora-post-guided-draft";
+const STORAGE_KEY = "agora-post-guided-session";
 
 const REQUIRED_PROMPTS = [
   "problem",
@@ -169,7 +166,7 @@ const guidedCompileStateSchema = z.enum([
   "idle",
   "ready_to_compile",
   "compiling",
-  "needs_input",
+  "awaiting_input",
   "ready",
 ]);
 const distributionValueSchema = z.enum([
@@ -178,13 +175,13 @@ const distributionValueSchema = z.enum([
   "proportional",
 ]);
 
-const textDraftFieldSchema = z.object({
+const textSessionFieldSchema = z.object({
   value: z.string().nullable().optional(),
   status: guidedFieldStatusSchema.optional(),
   source: guidedFieldSourceSchema.optional(),
 });
 
-const distributionDraftFieldSchema = z.object({
+const distributionSessionFieldSchema = z.object({
   value: distributionValueSchema.nullable().optional(),
   status: guidedFieldStatusSchema.optional(),
   source: guidedFieldSourceSchema.optional(),
@@ -204,21 +201,21 @@ const uploadedArtifactSchema = z.object({
 const storedGuidedStateSchema = z.object({
   fields: z
     .object({
-      problem: textDraftFieldSchema.optional(),
-      title: textDraftFieldSchema.optional(),
-      winningCondition: textDraftFieldSchema.optional(),
-      rewardTotal: textDraftFieldSchema.optional(),
-      distribution: distributionDraftFieldSchema.optional(),
-      deadline: textDraftFieldSchema.optional(),
-      disputeWindow: textDraftFieldSchema.optional(),
-      solverInstructions: textDraftFieldSchema.optional(),
+      problem: textSessionFieldSchema.optional(),
+      title: textSessionFieldSchema.optional(),
+      winningCondition: textSessionFieldSchema.optional(),
+      rewardTotal: textSessionFieldSchema.optional(),
+      distribution: distributionSessionFieldSchema.optional(),
+      deadline: textSessionFieldSchema.optional(),
+      disputeWindow: textSessionFieldSchema.optional(),
+      solverInstructions: textSessionFieldSchema.optional(),
     })
     .partial(),
   uploads: z.array(uploadedArtifactSchema).optional(),
   uploadsStatus: guidedFieldStatusSchema.optional(),
   activePromptId: z.enum(GUIDED_PROMPT_ORDER).nullable().optional(),
   compileState: guidedCompileStateSchema.optional(),
-  draftId: z.string().nullable().optional(),
+  sessionId: z.string().nullable().optional(),
   timezone: z.string().optional(),
 });
 type StoredGuidedState = z.infer<typeof storedGuidedStateSchema>;
@@ -240,7 +237,7 @@ function promptIndex(field: Exclude<GuidedFieldKey, "title">) {
 }
 
 export function getPromptStatus(
-  state: GuidedComposerState,
+  state: GuidedSessionState,
   field: Exclude<GuidedFieldKey, "title">,
 ): GuidedFieldStatus {
   if (field === "uploads") {
@@ -266,7 +263,7 @@ export function getPromptStatus(
 }
 
 function setPromptStatus(
-  state: GuidedComposerState,
+  state: GuidedSessionState,
   field: Exclude<GuidedFieldKey, "title">,
   status: GuidedFieldStatus,
 ) {
@@ -301,7 +298,7 @@ function setPromptStatus(
 }
 
 export function answerSummaryForPrompt(
-  state: GuidedComposerState,
+  state: GuidedSessionState,
   field: Exclude<GuidedFieldKey, "title">,
 ) {
   if (field === "uploads") {
@@ -357,7 +354,7 @@ export function answerSummaryForPrompt(
   }
 }
 
-export function getLastVisitedPromptIndex(state: GuidedComposerState) {
+export function getLastVisitedPromptIndex(state: GuidedSessionState) {
   let index = state.activePromptId ? promptIndex(state.activePromptId) : -1;
   for (const promptId of GUIDED_PROMPT_ORDER) {
     const status = getPromptStatus(state, promptId);
@@ -369,7 +366,7 @@ export function getLastVisitedPromptIndex(state: GuidedComposerState) {
 }
 
 function nextIncompletePrompt(
-  state: GuidedComposerState,
+  state: GuidedSessionState,
   startIndex = 0,
 ): Exclude<GuidedFieldKey, "title"> | null {
   for (const promptId of GUIDED_PROMPT_ORDER.slice(startIndex)) {
@@ -397,7 +394,7 @@ export function buildSuggestedTitle(problem: string) {
 
 function buildSuggestedTitleField(
   problem: string | null | undefined,
-): GuidedDraftField<string> {
+): GuidedSessionField<string> {
   const suggestion = buildSuggestedTitle(trimText(problem));
   if (!suggestion) {
     return { value: null, status: "empty" };
@@ -413,7 +410,7 @@ function buildSuggestedTitleField(
 function buildManualTitleField(
   problem: string | null | undefined,
   title: string,
-): GuidedDraftField<string> {
+): GuidedSessionField<string> {
   const trimmedTitle = trimText(title);
   if (!trimmedTitle) {
     return buildSuggestedTitleField(problem);
@@ -426,10 +423,10 @@ function buildManualTitleField(
   };
 }
 
-function cloneDraftField<T>(
-  field: Partial<GuidedDraftField<T>> | undefined,
-  fallback: GuidedDraftField<T>,
-): GuidedDraftField<T> {
+function cloneSessionField<T>(
+  field: Partial<GuidedSessionField<T>> | undefined,
+  fallback: GuidedSessionField<T>,
+): GuidedSessionField<T> {
   return {
     value: field?.value ?? fallback.value,
     status: field?.status ?? fallback.status,
@@ -439,72 +436,40 @@ function cloneDraftField<T>(
 
 function buildInitialFields() {
   return {
-    problem: { value: null, status: "collecting" } as GuidedDraftField<string>,
-    title: { value: null, status: "empty" } as GuidedDraftField<string>,
+    problem: { value: null, status: "collecting" } as GuidedSessionField<string>,
+    title: { value: null, status: "empty" } as GuidedSessionField<string>,
     winningCondition: {
       value: null,
       status: "empty",
-    } as GuidedDraftField<string>,
+    } as GuidedSessionField<string>,
     rewardTotal: {
       value: "500",
       status: "suggested",
       source: "system",
-    } as GuidedDraftField<string>,
+    } as GuidedSessionField<string>,
     distribution: {
       value: GUIDED_SELECT_DEFAULTS.distribution,
       status: "suggested",
       source: "system",
-    } as GuidedDraftField<"winner_take_all" | "top_3" | "proportional">,
+    } as GuidedSessionField<"winner_take_all" | "top_3" | "proportional">,
     deadline: {
       value: GUIDED_SELECT_DEFAULTS.deadline,
       status: "suggested",
       source: "system",
-    } as GuidedDraftField<string>,
+    } as GuidedSessionField<string>,
     disputeWindow: {
       value: GUIDED_SELECT_DEFAULTS.disputeWindow,
       status: "suggested",
       source: "system",
-    } as GuidedDraftField<string>,
+    } as GuidedSessionField<string>,
     solverInstructions: {
       value: null,
       status: "empty",
-    } as GuidedDraftField<string>,
+    } as GuidedSessionField<string>,
   };
 }
 
-function inferSubmissionWindowValue(
-  deadlineIso: string | null | undefined,
-  nowMs = Date.now(),
-) {
-  const normalizedDeadline = deadlineIso?.trim() ?? "";
-  if (normalizedDeadline.length === 0) {
-    return GUIDED_SELECT_DEFAULTS.deadline;
-  }
-
-  const deadlineMs = Date.parse(normalizedDeadline);
-  if (Number.isNaN(deadlineMs)) {
-    return GUIDED_SELECT_DEFAULTS.deadline;
-  }
-
-  const remainingMinutes = Math.max(
-    0,
-    Math.round((deadlineMs - nowMs) / 60_000),
-  );
-  if (remainingMinutes <= 20) {
-    return "15m";
-  }
-  if (remainingMinutes <= 45) {
-    return "0";
-  }
-
-  const remainingDays = Math.max(
-    1,
-    Math.round((deadlineMs - nowMs) / (24 * 60 * 60 * 1000)),
-  );
-  return String(remainingDays);
-}
-
-function normalizeGuidedState(state: StoredGuidedState): GuidedComposerState {
+function normalizeGuidedState(state: StoredGuidedState): GuidedSessionState {
   const timezone =
     typeof state.timezone === "string" && state.timezone.trim().length > 0
       ? state.timezone
@@ -521,26 +486,29 @@ function normalizeGuidedState(state: StoredGuidedState): GuidedComposerState {
         ? state.activePromptId
         : "problem";
   const fields = {
-    problem: cloneDraftField(state.fields?.problem, initialFields.problem),
-    title: cloneDraftField(state.fields?.title, initialFields.title),
-    winningCondition: cloneDraftField(
+    problem: cloneSessionField(state.fields?.problem, initialFields.problem),
+    title: cloneSessionField(state.fields?.title, initialFields.title),
+    winningCondition: cloneSessionField(
       state.fields?.winningCondition,
       initialFields.winningCondition,
     ),
-    rewardTotal: cloneDraftField(
+    rewardTotal: cloneSessionField(
       state.fields?.rewardTotal,
       initialFields.rewardTotal,
     ),
-    distribution: cloneDraftField(
+    distribution: cloneSessionField(
       state.fields?.distribution,
       initialFields.distribution,
     ),
-    deadline: cloneDraftField(state.fields?.deadline, initialFields.deadline),
-    disputeWindow: cloneDraftField(
+    deadline: cloneSessionField(
+      state.fields?.deadline,
+      initialFields.deadline,
+    ),
+    disputeWindow: cloneSessionField(
       state.fields?.disputeWindow,
       initialFields.disputeWindow,
     ),
-    solverInstructions: cloneDraftField(
+    solverInstructions: cloneSessionField(
       state.fields?.solverInstructions,
       initialFields.solverInstructions,
     ),
@@ -557,12 +525,12 @@ function normalizeGuidedState(state: StoredGuidedState): GuidedComposerState {
       state.uploadsStatus ?? (uploads.length > 0 ? "collecting" : "empty"),
     activePromptId,
     compileState: state.compileState ?? "idle",
-    draftId: typeof state.draftId === "string" ? state.draftId : null,
+    sessionId: typeof state.sessionId === "string" ? state.sessionId : null,
     timezone,
   };
 }
 
-function updateCompileReadiness(state: GuidedComposerState) {
+function updateCompileReadiness(state: GuidedSessionState) {
   if (state.compileState === "compiling") {
     return;
   }
@@ -571,7 +539,7 @@ function updateCompileReadiness(state: GuidedComposerState) {
 }
 
 function invalidateFromPrompt(
-  state: GuidedComposerState,
+  state: GuidedSessionState,
   field: Exclude<GuidedFieldKey, "title">,
 ) {
   const currentIndex = promptIndex(field);
@@ -600,7 +568,7 @@ function invalidateFromPrompt(
 }
 
 export function getFieldValue(
-  state: GuidedComposerState,
+  state: GuidedSessionState,
   field: Exclude<GuidedFieldKey, "title" | "uploads">,
 ) {
   switch (field) {
@@ -622,7 +590,7 @@ export function getFieldValue(
 }
 
 function setFieldValue(
-  state: GuidedComposerState,
+  state: GuidedSessionState,
   field: GuidedNonUploadPromptKey,
   value: string | "winner_take_all" | "top_3" | "proportional",
   status: GuidedFieldStatus,
@@ -686,20 +654,20 @@ function setFieldValue(
 
 export function createInitialGuidedState(
   timezone = resolveBrowserTimezone(),
-): GuidedComposerState {
+): GuidedSessionState {
   return {
     fields: buildInitialFields(),
     uploads: [],
     uploadsStatus: "empty",
     activePromptId: "problem",
     compileState: "idle",
-    draftId: null,
+    sessionId: null,
     timezone,
   };
 }
 
 export function guidedComposerReducer(
-  state: GuidedComposerState,
+  state: GuidedSessionState,
   action: GuidedAnswerAction,
 ) {
   if (action.type === "hydrate") {
@@ -766,20 +734,20 @@ export function guidedComposerReducer(
       nextState.compileState = action.compileState;
       return nextState;
     }
-    case "set_draft_id": {
-      nextState.draftId = action.draftId;
+    case "set_session_id": {
+      nextState.sessionId = action.sessionId;
       return nextState;
     }
     case "apply_questions": {
       invalidateFromPrompt(nextState, action.field);
-      nextState.compileState = "needs_input";
+      nextState.compileState = "awaiting_input";
       return nextState;
     }
   }
 }
 
 export function buildManagedIntentFromGuidedState(
-  state: GuidedComposerState,
+  state: GuidedSessionState,
 ): ManagedIntentState {
   return {
     title:
@@ -796,92 +764,6 @@ export function buildManagedIntentFromGuidedState(
     solverInstructions: trimText(state.fields.solverInstructions.value),
     timezone: state.timezone || "UTC",
   };
-}
-
-export function hydrateGuidedStateFromAuthoringDraft(
-  draft: AuthoringDraftOutput,
-  nowMs = Date.now(),
-): GuidedComposerState {
-  const timezone = draft.intent?.timezone?.trim() || resolveBrowserTimezone();
-  const nextState = createInitialGuidedState(timezone);
-  const intent = draft.intent ?? null;
-
-  if (intent) {
-    setFieldValue(nextState, "problem", intent.description, "locked");
-    nextState.fields.title = buildManualTitleField(
-      intent.description,
-      intent.title,
-    );
-    setFieldValue(
-      nextState,
-      "winningCondition",
-      intent.payout_condition,
-      "locked",
-    );
-    setFieldValue(nextState, "rewardTotal", intent.reward_total, "locked");
-    setFieldValue(nextState, "distribution", intent.distribution, "locked");
-    setFieldValue(
-      nextState,
-      "deadline",
-      inferSubmissionWindowValue(intent.deadline, nowMs),
-      "locked",
-    );
-    setFieldValue(
-      nextState,
-      "disputeWindow",
-      String(
-        intent.dispute_window_hours ??
-          Number(GUIDED_SELECT_DEFAULTS.disputeWindow),
-      ),
-      "locked",
-    );
-    if (hasTextValue(intent.solver_instructions)) {
-      setFieldValue(
-        nextState,
-        "solverInstructions",
-        intent.solver_instructions ?? "",
-        "locked",
-      );
-    }
-  }
-
-  nextState.uploads = draft.uploaded_artifacts.map((artifact) => ({
-    id: artifact.id ?? artifact.uri,
-    uri: artifact.uri,
-    file_name: artifact.file_name ?? artifact.id ?? "uploaded-artifact",
-    mime_type: artifact.mime_type ?? undefined,
-    size_bytes: artifact.size_bytes ?? undefined,
-    detected_columns: artifact.detected_columns ?? undefined,
-    status: "ready" as const,
-  }));
-  nextState.uploadsStatus = nextState.uploads.length > 0 ? "locked" : "empty";
-  nextState.draftId = draft.id;
-
-  switch (draft.state) {
-    case "ready":
-    case "published":
-      nextState.compileState = "ready";
-      nextState.activePromptId = null;
-      break;
-    case "needs_input":
-      nextState.compileState = "needs_input";
-      nextState.activePromptId = questionTargetFromQuestions(
-        draft.questions ?? [],
-      );
-      break;
-    case "compiling":
-      nextState.compileState = "compiling";
-      nextState.activePromptId = null;
-      break;
-    default:
-      nextState.compileState = isReadyToCompile(nextState)
-        ? "ready_to_compile"
-        : "idle";
-      nextState.activePromptId = nextIncompletePrompt(nextState, 0);
-      break;
-  }
-
-  return nextState;
 }
 
 export function buildPostingArtifactsFromGuidedState(
@@ -902,7 +784,7 @@ export function buildPostingArtifactsFromGuidedState(
     }));
 }
 
-export function isReadyToCompile(state: GuidedComposerState) {
+export function isReadyToCompile(state: GuidedSessionState) {
   const readyUploads = state.uploads.filter(
     (artifact) => artifact.status === "ready",
   );
@@ -920,7 +802,7 @@ export function isReadyToCompile(state: GuidedComposerState) {
   );
 }
 
-export function listReadinessIssues(state: GuidedComposerState) {
+export function listReadinessIssues(state: GuidedSessionState) {
   const issues: string[] = [];
 
   if (!trimText(state.fields.problem.value)) {
@@ -964,8 +846,8 @@ export function listReadinessIssues(state: GuidedComposerState) {
   return issues;
 }
 
-export function saveGuidedDraft(
-  state: GuidedComposerState,
+export function saveGuidedSessionState(
+  state: GuidedSessionState,
   storage = window.sessionStorage,
 ) {
   storage.setItem(
@@ -985,7 +867,7 @@ export function saveGuidedDraft(
   );
 }
 
-export function loadGuidedDraft(storage = window.sessionStorage) {
+export function loadGuidedSessionState(storage = window.sessionStorage) {
   const raw = storage.getItem(STORAGE_KEY);
   if (!raw) {
     return null;
@@ -1003,11 +885,11 @@ export function loadGuidedDraft(storage = window.sessionStorage) {
   }
 }
 
-export function clearGuidedDraft(storage = window.sessionStorage) {
+export function clearGuidedSessionState(storage = window.sessionStorage) {
   storage.removeItem(STORAGE_KEY);
 }
 
-export function questionTargetFromQuestions(
+export function questionPromptTargetFromQuestions(
   questions: AuthoringQuestionOutput[],
 ) {
   for (const question of questions) {

@@ -12,7 +12,7 @@ Engineers writing or running tests. Operators validating deployments.
 
 - [Architecture](architecture.md) — system overview
 - [Operations](operations.md) — day-to-day service operations
-- [Authoring Rollout](authoring-rollout.md) — rollout-specific migration and smoke-test checks
+- [specs/authoring-session-api.md](specs/authoring-session-api.md) — locked session-first authoring contract
 
 ## Source of truth
 
@@ -101,8 +101,7 @@ Useful focused API regression slices:
 
 ```bash
 cd apps/api
-node --import tsx --test tests/authoring-drafts-route.test.ts tests/authoring-sources.test.ts tests/authoring-drafts.test.ts tests/integrations-beach.test.ts
-node --import tsx --test tests/authoring-benchmarks.test.ts tests/managed-authoring-ir.test.ts tests/managed-authoring.test.ts
+node --import tsx --test tests/authoring-sessions-route.test.ts tests/authoring-artifacts.test.ts tests/authoring-sponsored-publish.test.ts tests/managed-authoring-ir.test.ts tests/managed-authoring.test.ts
 ```
 
 ---

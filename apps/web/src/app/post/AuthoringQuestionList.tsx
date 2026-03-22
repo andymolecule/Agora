@@ -1,8 +1,34 @@
 "use client";
 
-import type { AuthoringQuestionOutput } from "@agora/common";
+import type {
+  AuthoringQuestionOutput,
+  AuthoringSessionQuestionOutput,
+} from "@agora/common";
 
-function fieldHint(question: AuthoringQuestionOutput) {
+type RenderableQuestion =
+  | AuthoringQuestionOutput
+  | AuthoringSessionQuestionOutput;
+
+function isLegacyQuestion(
+  question: RenderableQuestion,
+): question is AuthoringQuestionOutput {
+  return "prompt" in question;
+}
+
+function fieldHint(question: RenderableQuestion) {
+  if (!isLegacyQuestion(question)) {
+    switch (question.kind) {
+      case "select":
+        return question.options.length > 0
+          ? "Choose one of the supported options below."
+          : null;
+      case "file":
+        return "Attach or reference the file Agora should use.";
+      default:
+        return "Answer in one concrete sentence.";
+    }
+  }
+
   switch (question.kind) {
     case "currency_amount":
       return "Answer with a total USDC amount.";
@@ -21,7 +47,7 @@ export function AuthoringQuestionList({
   questions,
   tone = "amber",
 }: {
-  questions: AuthoringQuestionOutput[];
+  questions: RenderableQuestion[];
   tone?: "amber" | "warm";
 }) {
   if (questions.length === 0) {
@@ -46,19 +72,34 @@ export function AuthoringQuestionList({
       <div className="mt-3 space-y-3">
         {questions.map((question) => {
           const hint = fieldHint(question);
+          const title = isLegacyQuestion(question) ? question.prompt : question.text;
+          const reason = isLegacyQuestion(question)
+            ? question.why
+            : question.reason;
+          const selectOptions = isLegacyQuestion(question)
+            ? question.options.map((option) => ({
+                id: option.id,
+                label: option.label,
+              }))
+            : question.kind === "select"
+              ? question.options.map((option: string) => ({
+                  id: option,
+                  label: option,
+                }))
+              : [];
           return (
             <div key={question.id} className="space-y-1.5">
-              <div className="font-medium">{question.prompt}</div>
-              {question.why ? (
-                <div className={hintClass}>{question.why}</div>
+              <div className="font-medium">{title}</div>
+              {reason ? (
+                <div className={hintClass}>{reason}</div>
               ) : null}
               {hint ? (
                 <div className={`text-xs ${hintClass}`}>{hint}</div>
               ) : null}
 
-              {question.options.length > 0 ? (
+              {selectOptions.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 pt-1">
-                  {question.options.map((option) => (
+                  {selectOptions.map((option) => (
                     <span
                       key={option.id}
                       className={`rounded-[2px] border px-2 py-1 font-mono text-[11px] ${optionClass}`}
@@ -69,7 +110,8 @@ export function AuthoringQuestionList({
                 </div>
               ) : null}
 
-              {question.kind === "artifact_role_map" &&
+              {isLegacyQuestion(question) &&
+              question.kind === "artifact_role_map" &&
               question.artifact_roles.length > 0 ? (
                 <div className="space-y-1 pt-1 text-xs">
                   {question.artifact_roles.map((role) => (
@@ -85,7 +127,8 @@ export function AuthoringQuestionList({
                 </div>
               ) : null}
 
-              {question.kind === "artifact_role_map" &&
+              {isLegacyQuestion(question) &&
+              question.kind === "artifact_role_map" &&
               question.artifact_options.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {question.artifact_options.map((artifact) => (

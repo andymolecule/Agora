@@ -4,7 +4,7 @@ import {
   authoringQuestionSchema,
 } from "../authoring/intake-questions.js";
 import {
-  authoringSourceDraftFieldsSchema,
+  authoringSourceSessionFieldsSchema,
   authoringSourceRawContextSchema,
   externalSourceArtifactRefSchema,
   externalSourceMessageSchema,
@@ -254,7 +254,7 @@ export const challengeAuthoringIrSchema = z.object({
   }),
   assessment: z.object({
     input_hash: z.string().trim().min(1).nullable(),
-    outcome: z.enum(["ready", "needs_input", "failed"]).nullable(),
+    outcome: z.enum(["ready", "awaiting_input", "rejected"]).nullable(),
     reason_codes: z.array(z.string().trim().min(1)).default([]),
     warnings: z.array(z.string().trim().min(1)).default([]),
     missing_fields: z.array(authoringQuestionFieldSchema).default([]),
@@ -279,8 +279,8 @@ export const challengeAuthoringIrSchema = z.object({
   }),
 });
 
-export const submitAuthoringSourceDraftRequestSchema =
-  authoringSourceDraftFieldsSchema
+export const submitAuthoringSourceSessionRequestSchema =
+  authoringSourceSessionFieldsSchema
     .extend({
       intent: partialChallengeIntentSchema.optional(),
     })
@@ -299,27 +299,6 @@ export const submitAuthoringSourceDraftRequestSchema =
         seenUrls.add(artifact.source_url);
       }
     });
-
-export const registerAuthoringDraftWebhookRequestSchema = z.object({
-  callback_url: safePublicHttpsUrlSchema,
-});
-
-export const publishExternalAuthoringDraftRequestSchema = z.object({
-  return_to: safePublicHttpsUrlSchema.optional(),
-});
-
-export const authoringDraftAssessmentSchema = z.object({
-  feasible: z.boolean(),
-  publishable: z.boolean(),
-  runtime_family: z.string().trim().min(1).nullable(),
-  metric: z.string().trim().min(1).nullable(),
-  evaluator_archetype: z.string().trim().min(1).nullable(),
-  reason_codes: z.array(z.string().trim().min(1)).default([]),
-  missing: z.array(z.string().trim().min(1)).default([]),
-  suggestions: z.array(z.string().trim().min(1)).default([]),
-  proposed_reward: z.string().trim().min(1).nullable(),
-  proposed_deadline: z.string().datetime({ offset: true }).nullable(),
-});
 
 export const dryRunPreviewSchema = z.object({
   status: z.enum(["validated", "skipped", "failed"]),
@@ -340,156 +319,9 @@ export const compilationResultSchema = z.object({
   challenge_spec: challengeSpecSchema,
 });
 
-export const AUTHORING_DRAFT_STATES = [
-  "draft",
-  "compiling",
-  "ready",
-  "needs_input",
-  "published",
-  "failed",
-] as const;
-
-export const authoringDraftStateSchema = z.enum(AUTHORING_DRAFT_STATES);
-
-export const authoringDraftCardSchema = z.object({
-  draft_id: z.string().uuid(),
-  provider: externalSourceProviderSchema,
-  state: authoringDraftStateSchema,
-  title: z.string().trim().min(1).nullable(),
-  summary: z.string().trim().min(1).nullable(),
-  reward_total: z.string().trim().min(1).nullable(),
-  distribution: distributionSchema.nullable(),
-  submission_deadline: z.string().datetime({ offset: true }).nullable(),
-  routing_mode: authoringRoutingModeSchema.nullable(),
-  ambiguity_classes: z.array(authoringAmbiguityClassSchema),
-  question_count: z.number().int().nonnegative(),
-  next_question: authoringQuestionSchema.nullable(),
-  published_challenge_id: z.string().uuid().nullable(),
-  published_spec_cid: z.string().trim().min(1).nullable(),
-  callback_registered: z.boolean(),
-  expires_at: z.string().datetime({ offset: true }),
-  updated_at: z.string().datetime({ offset: true }),
-});
-
-const authoringDraftLifecycleEventTypeSchema = z.enum([
-  "draft_updated",
-  "draft_compiled",
-  "draft_compile_failed",
-  "draft_published",
-]);
-
-export const authoringDraftLifecycleEventSchema = z.object({
-  event: authoringDraftLifecycleEventTypeSchema,
-  occurred_at: z.string().datetime({ offset: true }),
-  draft_id: z.string().uuid(),
-  provider: externalSourceProviderSchema,
-  state: authoringDraftStateSchema,
-  card: authoringDraftCardSchema,
-});
-
-const challengeLifecycleEventTypeSchema = z.enum([
-  "challenge_created",
-  "challenge_finalized",
-]);
-
-export const authoringCallbackChallengeSchema = z.object({
-  challenge_id: z.string().uuid(),
-  contract_address: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
-  factory_challenge_id: z.number().int().nonnegative().nullable(),
-  status: z.string().trim().min(1),
-  deadline: z.string().datetime({ offset: true }),
-  reward_total: z.string().trim().min(1),
-  tx_hash: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{64}$/)
-    .nullable(),
-  winner_solver_address: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{40}$/)
-    .nullable(),
-});
-
-export const challengeLifecycleEventSchema = z.object({
-  event: challengeLifecycleEventTypeSchema,
-  occurred_at: z.string().datetime({ offset: true }),
-  draft_id: z.string().uuid(),
-  provider: externalSourceProviderSchema,
-  challenge: authoringCallbackChallengeSchema,
-});
-
-export const authoringCallbackEventSchema = z.union([
-  authoringDraftLifecycleEventSchema,
-  challengeLifecycleEventSchema,
-]);
-
-export const authoringDraftStateCountsSchema = z.object({
-  draft: z.number().int().nonnegative(),
-  compiling: z.number().int().nonnegative(),
-  ready: z.number().int().nonnegative(),
-  needs_input: z.number().int().nonnegative(),
-  published: z.number().int().nonnegative(),
-  failed: z.number().int().nonnegative(),
-});
-
-export const authoringDraftHealthSchema = z.object({
-  status: z.enum(["ok", "warning", "critical"]),
-  checked_at: z.string().datetime({ offset: true }),
-  message: z.string().trim().min(1),
-  drafts: z.object({
-    counts: authoringDraftStateCountsSchema,
-    expired: z.number().int().nonnegative(),
-    stale_compiling: z.number().int().nonnegative(),
-  }),
-  thresholds: z.object({
-    stale_compiling_ms: z.number().int().positive(),
-  }),
-});
-
-export const authoringDraftSweepResultSchema = z.object({
-  checked_at: z.string().datetime({ offset: true }),
-  deleted_count: z.number().int().nonnegative(),
-  deleted_state_counts: authoringDraftStateCountsSchema,
-});
-
-export const authoringDraftSchema = z
+export const submitManagedAuthoringSessionRequestSchema = z
   .object({
-    id: z.string().uuid(),
-    poster_address: z.string().trim().min(1).nullable().optional(),
-    state: authoringDraftStateSchema,
-    intent: challengeIntentSchema.nullable().optional(),
-    authoring_ir: challengeAuthoringIrSchema.nullable().optional(),
-    uploaded_artifacts: z
-      .array(authoringArtifactSchema)
-      .max(AUTHORING_MAX_ARTIFACTS)
-      .default([]),
-    compilation: compilationResultSchema.nullable().optional(),
-    questions: z.array(authoringQuestionSchema).default([]),
-    approved_confirmation: confirmationContractSchema.nullable().optional(),
-    published_challenge_id: z.string().uuid().nullable().optional(),
-    published_spec_cid: z.string().trim().min(1).nullable().optional(),
-    published_spec: challengeSpecSchema.nullable().optional(),
-    failure_message: z.string().trim().min(1).nullable().optional(),
-    expires_at: z.string().datetime({ offset: true }),
-    created_at: z.string().datetime({ offset: true }).optional(),
-    updated_at: z.string().datetime({ offset: true }).optional(),
-  })
-  .superRefine((value, ctx) => {
-    const duplicate = findDuplicateAuthoringArtifacts(value.uploaded_artifacts);
-    if (duplicate) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["uploaded_artifacts"],
-        message:
-          duplicate.kind === "id"
-            ? `Duplicate uploaded artifact id "${duplicate.value}" is not allowed. Next step: remove the duplicate and retry.`
-            : `Duplicate uploaded artifact uri "${duplicate.value}" is not allowed. Next step: remove the duplicate and retry.`,
-      });
-    }
-  });
-
-export const submitManagedAuthoringDraftRequestSchema = z
-  .object({
-    draft_id: z.string().uuid().optional(),
+    session_id: z.string().uuid().optional(),
     poster_address: z
       .string()
       .regex(/^0x[a-fA-F0-9]{40}$/)
@@ -516,16 +348,6 @@ export const submitManagedAuthoringDraftRequestSchema = z
     }
   });
 
-export const publishManagedAuthoringDraftRequestSchema = z.object({
-  auth: z.object({
-    address: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
-    nonce: z.string().min(8).max(128),
-    signature: z.string().regex(/^0x(?:[0-9a-fA-F]{2})+$/),
-    specHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
-  }),
-  return_to: safePublicHttpsUrlSchema.optional(),
-});
-
 export type ChallengeIntentInput = z.input<typeof challengeIntentSchema>;
 export type ChallengeIntentOutput = z.output<typeof challengeIntentSchema>;
 export type PartialChallengeIntentInput = z.input<
@@ -550,56 +372,15 @@ export type ConfirmationContractOutput = z.output<
 >;
 export type DryRunPreviewOutput = z.output<typeof dryRunPreviewSchema>;
 export type CompilationResultOutput = z.output<typeof compilationResultSchema>;
-export type SubmitAuthoringSourceDraftRequestInput = z.input<
-  typeof submitAuthoringSourceDraftRequestSchema
+export type SubmitAuthoringSourceSessionRequestInput = z.input<
+  typeof submitAuthoringSourceSessionRequestSchema
 >;
-export type SubmitAuthoringSourceDraftRequestOutput = z.output<
-  typeof submitAuthoringSourceDraftRequestSchema
+export type SubmitAuthoringSourceSessionRequestOutput = z.output<
+  typeof submitAuthoringSourceSessionRequestSchema
 >;
-export type SubmitManagedAuthoringDraftRequestInput = z.input<
-  typeof submitManagedAuthoringDraftRequestSchema
+export type SubmitManagedAuthoringSessionRequestInput = z.input<
+  typeof submitManagedAuthoringSessionRequestSchema
 >;
-export type SubmitManagedAuthoringDraftRequestOutput = z.output<
-  typeof submitManagedAuthoringDraftRequestSchema
->;
-export type RegisterAuthoringDraftWebhookRequestInput = z.input<
-  typeof registerAuthoringDraftWebhookRequestSchema
->;
-export type RegisterAuthoringDraftWebhookRequestOutput = z.output<
-  typeof registerAuthoringDraftWebhookRequestSchema
->;
-export type PublishExternalAuthoringDraftRequestInput = z.input<
-  typeof publishExternalAuthoringDraftRequestSchema
->;
-export type PublishExternalAuthoringDraftRequestOutput = z.output<
-  typeof publishExternalAuthoringDraftRequestSchema
->;
-export type AuthoringDraftAssessmentOutput = z.output<
-  typeof authoringDraftAssessmentSchema
->;
-export type AuthoringDraftCardOutput = z.output<
-  typeof authoringDraftCardSchema
->;
-export type AuthoringDraftLifecycleEventOutput = z.output<
-  typeof authoringDraftLifecycleEventSchema
->;
-export type ChallengeLifecycleEventOutput = z.output<
-  typeof challengeLifecycleEventSchema
->;
-export type AuthoringCallbackChallengeOutput = z.output<
-  typeof authoringCallbackChallengeSchema
->;
-export type AuthoringCallbackEventOutput = z.output<
-  typeof authoringCallbackEventSchema
->;
-export type AuthoringDraftState = z.output<typeof authoringDraftStateSchema>;
-export type AuthoringDraftStateCountsOutput = z.output<
-  typeof authoringDraftStateCountsSchema
->;
-export type AuthoringDraftOutput = z.output<typeof authoringDraftSchema>;
-export type AuthoringDraftHealthOutput = z.output<
-  typeof authoringDraftHealthSchema
->;
-export type AuthoringDraftSweepResultOutput = z.output<
-  typeof authoringDraftSweepResultSchema
+export type SubmitManagedAuthoringSessionRequestOutput = z.output<
+  typeof submitManagedAuthoringSessionRequestSchema
 >;

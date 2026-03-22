@@ -26,8 +26,8 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 - Fairness-sensitive visibility checks use chain `status()` rather than projected status
 - Public leaderboard, win rate, and earned USDC derive from finalized `challenge_payouts` rows
 - Worker scoring reads canonical `evaluation_plan_json` from the DB; it is the single cached execution contract for scorer image, mount, env, submission contract, evaluation contract, and runtime policies
-- Authoring state now uses one canonical `authoring_drafts` aggregate, with `authoring_source_links` for stable external source identity, `authoring_callback_deliveries` for callback retry, and `authoring_sponsor_budget_reservations` for sponsor-capacity accounting
-- Published challenges can now carry external-source attribution (`source_provider`, `source_external_id`, `source_external_url`, `source_agent_handle`) for Beach/OpenClaw lineage and sponsor-budget accounting
+- Authoring state now uses one canonical `authoring_sessions` aggregate, with `authoring_sponsor_budget_reservations` for sponsor-capacity accounting and `auth_agents` for direct agent identity
+- Published challenges may carry source attribution (`source_provider`, `source_external_id`, `source_external_url`, `source_agent_handle`) for provenance and sponsor-budget accounting
 
 ---
 
@@ -210,20 +210,19 @@ erDiagram
         timestamp created_at
     }
 
-    authoring_drafts {
+    authoring_sessions {
         uuid id PK
         string poster_address
+        string creator_type
+        uuid creator_agent_id FK
         string state
         jsonb intent_json
         jsonb authoring_ir_json
         jsonb uploaded_artifacts_json
         jsonb compilation_json
-        string source_callback_url
-        timestamp source_callback_registered_at
         uuid published_challenge_id FK
         jsonb published_spec_json
         string published_spec_cid
-        string published_return_to
         timestamp published_at
         string failure_message
         timestamp expires_at
@@ -231,18 +230,9 @@ erDiagram
         timestamp updated_at
     }
 
-    authoring_source_links {
-        string provider PK
-        string external_id PK
-        uuid draft_id FK
-        string external_url
-        timestamp created_at
-        timestamp updated_at
-    }
-
     authoring_sponsor_budget_reservations {
         uuid id PK
-        uuid draft_id FK
+        uuid session_id FK
         string provider
         timestamp period_start
         timestamp period_end
@@ -257,17 +247,13 @@ erDiagram
         timestamp updated_at
     }
 
-    authoring_callback_deliveries {
+    auth_agents {
         uuid id PK
-        uuid draft_id FK
-        string provider
-        string event
-        string callback_url
-        jsonb payload_json
-        int attempts
-        timestamp next_attempt_at
-        timestamp delivered_at
-        string last_error
+        string telegram_bot_id
+        string agent_name
+        string description
+        string api_key_hash
+        timestamp last_rotated_at
         timestamp created_at
         timestamp updated_at
     }
@@ -297,10 +283,9 @@ erDiagram
     challenges ||--o{ score_jobs : has
     challenges ||--o{ submission_intents : stages
     submission_intents ||--o| submissions : registers
-    authoring_drafts ||--o| authoring_source_links : linked_from
-    challenges ||--o{ authoring_drafts : published_from
-    authoring_drafts ||--o{ authoring_sponsor_budget_reservations : reserves_budget_for
-    authoring_drafts ||--o{ authoring_callback_deliveries : retries
+    auth_agents ||--o{ authoring_sessions : creates
+    challenges ||--o{ authoring_sessions : published_from
+    authoring_sessions ||--o{ authoring_sponsor_budget_reservations : reserves_budget_for
     challenges ||--o{ authoring_sponsor_budget_reservations : consumes_budget_for
 ```
 
@@ -322,11 +307,10 @@ erDiagram
 
 - **worker_runtime_state** — Worker heartbeat and readiness table. Each scoring worker publishes `worker_id`, `host`, `runtime_version`, scorer-backend readiness, sealing readiness, and `last_error`. The `executor_ready` column means “the configured scorer execution backend is ready,” regardless of whether that backend is local Docker in dev or the remote executor in production. The API reads this table for `/api/worker-health` and runtime-mismatch detection.
 - **worker_runtime_control** — Active scoring-runtime control row. The API upserts the active runtime version on startup, and score-job claims are fenced against it so older workers cannot keep claiming jobs after a deploy.
-- **authoring_drafts** — Canonical draft aggregate for guided posting and external source imports. Stores poster identity, raw `intent_json`, interpreted `authoring_ir_json` (including source provider/origin), normalized artifact metadata, current compilation state, callback registration metadata, publish outcome metadata, failure state, and expiry timestamps.
-- **authoring_source_links** — Canonical source-identity index for external imports. Maps `(provider, external_id)` to the current draft so repeated Beach/OpenClaw imports refresh the same draft instead of creating duplicates.
-- **authoring_sponsor_budget_reservations** — Reservation ledger for sponsor-budget enforcement during authoring publishes. Rows move from `reserved` to `consumed` once the publish is projected, or to `released` when the publish never submitted a challenge transaction. This keeps budget enforcement atomic without requiring the chain to know about off-chain draft ids.
-- **authoring_callback_deliveries** — Durable callback outbox for external authoring hosts. Stores signed payloads, retry timing, attempt counts, terminal delivery timestamp, and last error for sweep-based retries.
-- **challenges.source_* columns** — Optional attribution copied from the published challenge spec. These fields preserve the originating external host/provider identity and agent handle for reporting, callback correlation, and sponsor-budget enforcement.
+- **authoring_sessions** — Canonical private authoring aggregate for web posters and direct OpenClaw agents. Stores creator identity, raw `intent_json`, interpreted `authoring_ir_json` (including optional provenance/source metadata), normalized artifact metadata, current compilation state, publish outcome metadata, failure state, and expiry timestamps.
+- **authoring_sponsor_budget_reservations** — Reservation ledger for sponsor-budget enforcement during sponsor-funded authoring publishes. Rows move from `reserved` to `consumed` once the publish is projected, or to `released` when the publish never submitted a challenge transaction. This keeps budget enforcement atomic without requiring the chain to know about off-chain session ids.
+- **auth_agents** — Direct agent-auth table. Each row binds a stable `telegram_bot_id` to one Agora `agent_id`, the active API key hash, optional metadata, and the last rotation timestamp.
+- **challenges.source_* columns** — Optional attribution copied from the published challenge spec. These fields preserve originating source provenance and agent handle for reporting and sponsor-budget accounting.
 
 - **verifications** — Records independent re-runs of the scorer. Links a proof_bundle to a verifier address, the computed score, whether it matches the original, and an optional log CID. Created by `agora verify`. `agora verify-public` is read-only and does not insert verification rows.
 

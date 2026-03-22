@@ -196,7 +196,7 @@ export function ExpertModePanel() {
           <div className="mt-3 space-y-3 text-sm leading-6 text-warm-700">
             <p>Custom scorer image or runtime settings.</p>
             <p>
-              Managed authoring cannot confidently map the draft onto a
+              Managed authoring cannot confidently map the session onto a
               supported Gems runtime.
             </p>
             <p>

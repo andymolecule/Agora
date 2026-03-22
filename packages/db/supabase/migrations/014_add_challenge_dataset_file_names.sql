@@ -1,2 +1,0 @@
--- No-op after the clean-slate managed authoring reset.
--- Public artifact metadata now lives in challenges.artifacts_json.

@@ -9,7 +9,7 @@ import {
 
 const reservationRow = {
   id: "reservation-1",
-  draft_id: "draft-1",
+  session_id: "session-1",
   provider: "beach_science",
   period_start: "2026-03-01T00:00:00.000Z",
   period_end: "2026-04-01T00:00:00.000Z",
@@ -34,16 +34,16 @@ const rpcDb = {
 } as never;
 
 const reserved = await reserveAuthoringSponsorBudget(rpcDb, {
-  draftId: "draft-1",
+  sessionId: "session-1",
   provider: "beach_science",
   periodStart: "2026-03-01T00:00:00.000Z",
   periodEnd: "2026-04-01T00:00:00.000Z",
   amountUsdc: 10,
   budgetLimitUsdc: 500,
 });
-assert.equal(reserved?.draft_id, "draft-1");
+assert.equal(reserved?.session_id, "session-1");
 assert.deepEqual(capturedRpcArgs, {
-  p_draft_id: "draft-1",
+  p_session_id: "session-1",
   p_provider: "beach_science",
   p_period_start: "2026-03-01T00:00:00.000Z",
   p_period_end: "2026-04-01T00:00:00.000Z",
@@ -93,14 +93,14 @@ const updateDb = {
 } as never;
 
 await attachAuthoringSponsorBudgetReservationTx(updateDb, {
-  draftId: "draft-1",
+  sessionId: "session-1",
   txHash: "0xhash",
 });
 assert.equal(capturedUpdateTable, "authoring_sponsor_budget_reservations");
 assert.equal(capturedUpdatePayload?.["tx_hash"], "0xhash");
 
 await consumeAuthoringSponsorBudgetReservation(updateDb, {
-  draftId: "draft-1",
+  sessionId: "session-1",
   challengeId: "challenge-1",
   txHash: "0xhash",
 });
@@ -108,7 +108,7 @@ assert.equal(capturedUpdatePayload?.["status"], "consumed");
 assert.equal(capturedUpdatePayload?.["challenge_id"], "challenge-1");
 
 await releaseAuthoringSponsorBudgetReservation(updateDb, {
-  draftId: "draft-1",
+  sessionId: "session-1",
 });
 assert.equal(capturedUpdatePayload?.["status"], "released");
 

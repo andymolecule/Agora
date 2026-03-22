@@ -206,7 +206,7 @@ export function buildSubmissionContractForChallengeType(
   }
 }
 
-export interface ChallengeSpecDraftInput {
+export interface ChallengeSpecCandidateInput {
   id: string;
   title: string;
   domain: ChallengeDomain;
@@ -230,8 +230,8 @@ export interface ChallengeSpecDraftInput {
   evaluatorContract?: SemiCustomEvaluatorContractOutput;
 }
 
-export function buildChallengeSpecDraft(
-  input: ChallengeSpecDraftInput,
+export function buildChallengeSpecCandidate(
+  input: ChallengeSpecCandidateInput,
 ): ChallengeSpec {
   const template = getChallengeTypeTemplate(input.type);
   const runtimeFamily =

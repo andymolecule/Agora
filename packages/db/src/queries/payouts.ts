@@ -32,7 +32,7 @@ export async function replaceChallengePayouts(
   if (error) {
     if (error.message.includes("replace_challenge_payouts")) {
       throw new Error(
-        "Failed to replace challenge payouts: runtime schema is missing the atomic payout replacement function. Next step: apply migration 033_atomic_replace_challenge_payouts.sql, reload the PostgREST schema cache, and retry.",
+        "Failed to replace challenge payouts: runtime schema is missing the atomic payout replacement function. Next step: reset the Supabase schema or apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, and retry.",
       );
     }
     throw new Error(`Failed to replace challenge payouts: ${error.message}`);

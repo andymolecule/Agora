@@ -1,14 +1,10 @@
-import { CHALLENGE_STATUS, challengeLifecycleEventSchema } from "@agora/common";
+import { CHALLENGE_STATUS } from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
 };
 import {
   clearChallengeSettlement,
-  createAuthoringCallbackDelivery,
   deleteChallengeById,
-  getAuthoringDraftById,
-  getChallengeById,
-  getPublishedDraftMetadataByChallengeId,
   markChallengePayoutClaimed,
   replaceChallengePayouts,
   setChallengeFinalized,
@@ -59,82 +55,6 @@ function payoutAmountUsdc(amount: bigint) {
 
 function payoutAmountMicros(amount: string | number) {
   return BigInt(Math.round(Number(amount) * 1_000_000));
-}
-
-export async function enqueueChallengeFinalizedCallback(input: {
-  db: DbClient;
-  challengeId: string;
-  contractAddress: string;
-  getPublishedDraftMetadataByChallengeIdImpl?: typeof getPublishedDraftMetadataByChallengeId;
-  getAuthoringDraftByIdImpl?: typeof getAuthoringDraftById;
-  getChallengeByIdImpl?: typeof getChallengeById;
-  createAuthoringCallbackDeliveryImpl?: typeof createAuthoringCallbackDelivery;
-}) {
-  const link = await (
-    input.getPublishedDraftMetadataByChallengeIdImpl ??
-    getPublishedDraftMetadataByChallengeId
-  )(input.db, input.challengeId);
-  if (!link?.draft_id) {
-    return;
-  }
-
-  const draft = await (
-    input.getAuthoringDraftByIdImpl ?? getAuthoringDraftById
-  )(input.db, link.draft_id);
-  if (!draft?.source_callback_url) {
-    return;
-  }
-
-  const provider = draft.authoring_ir_json?.origin.provider ?? "direct";
-  if (provider === "direct") {
-    return;
-  }
-
-  const challenge = await (input.getChallengeByIdImpl ?? getChallengeById)(
-    input.db,
-    input.challengeId,
-  );
-  const payload = challengeLifecycleEventSchema.parse({
-    event: "challenge_finalized",
-    occurred_at: new Date().toISOString(),
-    draft_id: draft.id,
-    provider,
-    challenge: {
-      challenge_id: challenge.id,
-      contract_address: input.contractAddress,
-      factory_challenge_id:
-        typeof challenge.factory_challenge_id === "number"
-          ? challenge.factory_challenge_id
-          : challenge.factory_challenge_id == null
-            ? null
-            : Number(challenge.factory_challenge_id),
-      status: challenge.status,
-      deadline: challenge.deadline,
-      reward_total: String(challenge.reward_amount),
-      tx_hash:
-        typeof challenge.tx_hash === "string" &&
-        /^0x[a-fA-F0-9]{64}$/.test(challenge.tx_hash)
-          ? challenge.tx_hash
-          : null,
-      winner_solver_address: challenge.winner_solver_address ?? null,
-    },
-  });
-
-  await (
-    input.createAuthoringCallbackDeliveryImpl ?? createAuthoringCallbackDelivery
-  )(input.db, {
-    draft_id: draft.id,
-    provider,
-    callback_url: draft.source_callback_url,
-    event: payload.event,
-    payload_json: payload,
-    status: "pending",
-    attempts: 0,
-    max_attempts: 5,
-    next_attempt_at: new Date().toISOString(),
-    delivered_at: null,
-    last_error: null,
-  });
 }
 
 async function listExistingChallengePayoutRows(
@@ -433,11 +353,6 @@ export async function handleSettlementFinalizedEvent(input: {
     Number(winningSubmissionId),
     winnerSolver,
   );
-  await enqueueChallengeFinalizedCallback({
-    db: input.db,
-    challengeId: input.challenge.id,
-    contractAddress: input.challenge.contract_address,
-  });
 }
 
 export async function handlePayoutAllocatedEvent(input: {

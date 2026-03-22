@@ -1,1 +1,0 @@
--- No-op after evaluation_plan_json became the single challenge runtime cache.

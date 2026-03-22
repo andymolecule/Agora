@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  compileManagedAuthoringDraftOutcome,
+  compileManagedAuthoringSessionOutcome,
   compileManagedAuthoringSession,
 } from "../src/lib/managed-authoring.js";
 
@@ -326,7 +326,7 @@ test("managed authoring compiles a supported docking challenge", async () => {
 
 test("managed authoring returns canonical questions when Anthropic needs more input", async () => {
   await withCompilerEnv(async () => {
-    const result = await compileManagedAuthoringDraftOutcome(
+    const result = await compileManagedAuthoringSessionOutcome(
       {
         intent: {
           ...baseIntent,
@@ -337,7 +337,7 @@ test("managed authoring returns canonical questions when Anthropic needs more in
       {
         fetchImpl: async () =>
           buildAnthropicToolResponse({
-            outcome: "needs_input",
+            outcome: "awaiting_input",
             runtime_family: null,
             metric: null,
             reason_codes: ["missing_metric_definition"],
@@ -348,7 +348,7 @@ test("managed authoring returns canonical questions when Anthropic needs more in
       },
     );
 
-    assert.equal(result.state, "needs_input");
+    assert.equal(result.state, "awaiting_input");
     assert.equal(result.questions?.length, 1);
     assert.equal(result.questions?.[0]?.id, "winning-definition");
     assert.equal(result.questions?.[0]?.field, "payout_condition");
@@ -361,7 +361,7 @@ test("managed authoring returns canonical questions when Anthropic needs more in
 
 test("managed authoring fails cleanly when no supported Gems scorer fits", async () => {
   await withCompilerEnv(async () => {
-    const result = await compileManagedAuthoringDraftOutcome(
+    const result = await compileManagedAuthoringSessionOutcome(
       {
         intent: {
           ...baseIntent,
@@ -386,7 +386,7 @@ test("managed authoring fails cleanly when no supported Gems scorer fits", async
       },
     );
 
-    assert.equal(result.state, "failed");
+    assert.equal(result.state, "rejected");
     assert.equal(
       result.authoringIr.evaluation.rejection_reasons[0],
       "no_supported_runtime_fit",

@@ -11,15 +11,14 @@ Operators and engineers responsible for running Agora in testnet or production e
 ## Read this after
 
 - [Architecture](architecture.md) — system overview
-- [Authoring Callbacks](authoring-callbacks.md) — external host callback verification and retry contract
-- [Authoring Rollout](authoring-rollout.md) — authoring/draft/submission cutover specifics
+- [specs/authoring-session-api.md](specs/authoring-session-api.md) — locked session-first authoring contract
 - [Protocol](protocol.md) — contract lifecycle and settlement rules
 - [Data and Indexing](data-and-indexing.md) — DB schema and indexer behavior
 - [Deployment](deployment.md) — deploy, cutover, and rollback procedures
 
 ## Source of truth
 
-This doc is authoritative for: service startup, monitoring, incident response, scoring limits, indexer operations, and operator-triggered callback recovery. It is NOT authoritative for: deployment procedures, cutover checklists (see [Deployment](deployment.md)), smart contract logic, sealed submission format internals, or database schema. For the privacy model itself, see [Submission Privacy](submission-privacy.md).
+This doc is authoritative for: service startup, monitoring, incident response, scoring limits, indexer operations, and runtime recovery. It is NOT authoritative for: deployment procedures, cutover checklists (see [Deployment](deployment.md)), smart contract logic, sealed submission format internals, or database schema. For the privacy model itself, see [Submission Privacy](submission-privacy.md).
 
 ## Summary
 
@@ -202,18 +201,14 @@ Expected results:
 - `/healthz` returns `{"ok":true,"service":"api","runtimeVersion":"..."}` for API liveness plus deployed version.
 - API responses include `x-request-id`; if you pass one in the request header, the API preserves it for end-to-end correlation.
 - `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and `sealing.workerReady=true` for the active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
-- `/api/authoring/health` returns `status: ok|warning|critical` and exposes managed-authoring backlog metrics such as expired drafts and stale compiling drafts.
+- `/api/authoring/health` returns `status: ok|warning|critical` and exposes authoring backlog metrics such as expired sessions and stale ready/awaiting-input sessions.
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"` whenever sealing is configured successfully.
 
 Existing testnet DBs:
 
-- Fresh environments should apply all migrations.
-- Existing environments that still contain `result_format='sealed_v1'` must apply `002_align_sealed_submission_result_format.sql` before accepting new sealed submissions.
-- Existing environments should also apply `004_add_score_job_backoff.sql` so delayed no-penalty worker retries and queue eligibility work correctly.
-- Existing environments should also apply `005_add_submission_intents.sql` so pre-registered submission metadata exists before the later strict intent-first migration window.
-- Existing environments should also apply `006_add_worker_runtime_version.sql` so worker/runtime alignment is visible in health checks.
-- Existing environments should also apply `011_rename_worker_runtime_executor_ready.sql` so worker readiness reflects the new orchestrator/executor naming in runtime checks.
-- Existing environments rolling onto the latest authoring and strict-submission model should also follow [Authoring Rollout](authoring-rollout.md) and apply the `017` through `033` migration window in order.
+- Fresh environments should reset the schema and apply [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql).
+- Existing environments are expected to reset cleanly. This repo no longer carries a supported incremental Supabase upgrade chain.
+- The supported path is: wipe the schema, apply [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql), reload the PostgREST schema cache, then restart services.
 
 Operational privacy boundary:
 
@@ -338,7 +333,7 @@ Check every 15-30 minutes during first launch window:
 3. `indexed_events` block number continues advancing.
 4. `agora doctor` passes all required checks.
 5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version. If `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`, this also implies the executor passed the worker readiness checks.
-6. Managed authoring health: `curl <API_URL>/api/authoring/health` stays `ok` during normal operation. `warning` or `critical` means expired drafts or stale compiling drafts need attention.
+6. Authoring health: `curl <API_URL>/api/authoring/health` stays `ok` during normal operation. `warning` or `critical` means expired sessions or stale authoring work need attention.
 7. Web proxy health: `curl <WEB_URL>/api/healthz` and `curl <WEB_URL>/api/worker-health` succeed without the `AGORA_API_URL` proxy-misconfiguration error.
 8. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
 
@@ -356,7 +351,7 @@ Expected results:
 
 - API health returns `{"ok":true,"runtimeVersion":"..."}`.
 - Indexer health is `ok` or `warning`, not `critical`.
-- Authoring draft health is `ok` during steady state. If it moves to `warning` or `critical`, inspect expired drafts and stale compiling drafts.
+- Authoring session health is `ok` during steady state. If it moves to `warning` or `critical`, inspect expired sessions and stale ready/awaiting-input sessions.
 - `agora doctor` passes RPC/Supabase/factory checks.
 - If sealing is enabled, `/api/submissions/public-key` returns `sealed_submission_v2` whenever the public sealing key is configured.
 - If active scoring challenges use official Agora scorer images and those GHCR images are not pullable, the worker should stay alive but report `ready=false`, a `latestError`, and zero healthy workers for the active runtime version.
@@ -442,7 +437,7 @@ sequenceDiagram
     participant Idx as Indexer
     participant Chain as Base Sepolia
 
-    Op->>DB: Reset schema (apply all migrations)
+    Op->>DB: Reset schema (apply 001_baseline.sql)
     Op->>Op: Set AGORA_INDEXER_START_BLOCK
     Op->>Op: Set AGORA_FACTORY_ADDRESS (new v2)
     Op->>Idx: Restart indexer process
@@ -531,74 +526,10 @@ agora reindex --from-block <block_number>
 ### Managed Authoring Backlog
 
 1. Check `GET /api/authoring/health`.
-2. If `drafts.expired > 0`, confirm they are abandoned sessions. The current submit flow recreates or refreshes drafts on the next poster or agent submit, so there is no separate review sweep route anymore.
-3. If `drafts.stale_compiling > 0`, inspect recent API logs for interrupted compile requests, then ask the poster or agent to resubmit the draft through `POST /api/authoring/drafts/submit` or `POST /api/authoring/external/drafts/submit`.
-4. If drafts are stuck after sponsor-funded publish attempts, run `pnpm recover:authoring-publishes -- --stale-minutes=30` before retrying the publish flow.
-
-### Authoring Callback Backlog
-
-Use this when an external host such as Beach stops reflecting draft state transitions even though drafts are still changing in Agora.
-
-1. Confirm the host callback contract first:
-   - host endpoint is still reachable over public HTTPS
-   - the registered callback URL on the draft is correct
-   - the host is verifying `x-agora-signature`, `x-agora-timestamp`, and `x-agora-event-id` as documented in [Authoring Callbacks](authoring-callbacks.md)
-2. Check API logs for:
-   - `authoring.callback.delivery_failed`
-   - `authoring.callback.enqueued`
-   - `authoring.callback.enqueue_failed`
-   - `authoring.callback.direct_provider_ignored`
-3. If callbacks were enqueued during a host outage, run the durable sweep:
-
-```bash
-curl -X POST \
-  -H "x-agora-operator-token: <token>" \
-  "<API_URL>/api/authoring/callbacks/sweep?limit=25"
-```
-
-4. Expected response shape:
-
-```json
-{
-  "data": {
-    "due": 3,
-    "claimed": 3,
-    "delivered": 2,
-    "rescheduled": 1,
-    "exhausted": 0,
-    "conflicted": 0
-  }
-}
-```
-
-5. Interpretation:
-   - `delivered > 0`: host recovered and accepted retried callbacks
-   - `rescheduled > 0`: host is still failing; the outbox kept the events for another retry
-   - `exhausted > 0`: manual intervention is now required; inspect the host endpoint and refresh host state from `GET /api/authoring/external/drafts/:id/card`
-   - `conflicted > 0`: another sweep or operator already claimed some deliveries; rerun only if backlog remains
-6. Recommended operator cadence:
-   - normal: run every minute from an internal scheduler or cron
-   - outage recovery: run manually after the host endpoint is restored
-7. Minimal cron example:
-
-```bash
-* * * * * curl -fsS -X POST \
-  -H "x-agora-operator-token: ${AGORA_AUTHORING_OPERATOR_TOKEN}" \
-  "https://api.example.com/api/authoring/callbacks/sweep?limit=25" \
-  >/dev/null
-```
-
-Use an internal network path or secret manager-backed environment where possible; do not hardcode the operator token in a checked-in crontab.
-8. If the sweep route returns `401` or `503`, verify `AGORA_AUTHORING_OPERATOR_TOKEN` is configured consistently on the API and the caller.
-9. If the host remains stale after successful callback delivery, force a host-side pull refresh from:
-   - `GET /api/authoring/external/drafts/:id/card` for draft state
-   - `GET /api/authoring/external/drafts/:id` for fuller draft context
-
-Operational rule:
-- callbacks are push signals
-- draft/card endpoints are pull truth
-
-Do not try to reconstruct canonical draft state purely from callback history.
+2. If `sessions.expired > 0`, confirm they are abandoned private workspaces. Sessions do not refresh in place; the caller starts a new session if they need to continue after expiry.
+3. If `sessions.stale_ready > 0` or `sessions.stale_awaiting_input > 0`, inspect recent API logs for interrupted authoring requests and confirm the caller is still polling `GET /api/authoring/sessions/:id`.
+4. If sponsor-funded publishes are stuck around reservation state after an API/indexer interruption, run `pnpm recover:authoring-publishes -- --stale-minutes=30` before retrying the publish flow.
+5. There is no push-delivery recovery path in the current authoring model. Session clients use direct mutation responses plus authenticated polling.
 
 ### Oracle Key Issue
 

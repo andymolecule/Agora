@@ -3,6 +3,56 @@ import fs from "node:fs/promises";
 import test from "node:test";
 import { AgoraError } from "@agora/common";
 import { normalizeExternalArtifactsForDraft } from "../src/lib/authoring-artifacts.js";
+import {
+  decodeAuthoringSessionArtifactId,
+  encodeAuthoringSessionArtifactId,
+  toAuthoringSessionArtifactPayload,
+  toStoredAuthoringSessionArtifact,
+} from "../src/lib/authoring-session-artifacts.js";
+
+test("authoring session artifact IDs round-trip encoded file metadata", () => {
+  const artifactId = encodeAuthoringSessionArtifactId({
+    uri: "ipfs://bafy-roundtrip",
+    file_name: "dataset.csv",
+    mime_type: "text/csv",
+    size_bytes: 42,
+    source_url: "https://example.com/dataset.csv",
+  });
+
+  const decoded = decodeAuthoringSessionArtifactId(artifactId);
+
+  assert.equal(decoded.id, artifactId);
+  assert.equal(decoded.uri, "ipfs://bafy-roundtrip");
+  assert.equal(decoded.file_name, "dataset.csv");
+  assert.equal(decoded.mime_type, "text/csv");
+  assert.equal(decoded.size_bytes, 42);
+  assert.equal(decoded.source_url, "https://example.com/dataset.csv");
+});
+
+test("decodeAuthoringSessionArtifactId rejects invalid prefixes", () => {
+  assert.throws(
+    () => decodeAuthoringSessionArtifactId("external-artifact-123"),
+    /Artifact reference is invalid/,
+  );
+});
+
+test("authoring session artifact payloads preserve source_url and default file_name", () => {
+  const storedArtifact = toStoredAuthoringSessionArtifact({
+    id: undefined,
+    uri: "ipfs://bafy-default-name",
+    file_name: undefined as unknown as string,
+    source_url: "https://example.com/default-name.csv",
+    role: null,
+  });
+
+  const payload = toAuthoringSessionArtifactPayload(storedArtifact);
+  const decoded = decodeAuthoringSessionArtifactId(payload.artifact_id);
+
+  assert.equal(payload.file_name, "artifact");
+  assert.equal(payload.source_url, "https://example.com/default-name.csv");
+  assert.equal(decoded.file_name, "artifact");
+  assert.equal(decoded.source_url, "https://example.com/default-name.csv");
+});
 
 test("normalizeExternalArtifactsForDraft fetches, pins, and returns pinned artifacts", async () => {
   let pinnedFileName: string | null = null;

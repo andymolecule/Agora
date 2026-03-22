@@ -43,7 +43,7 @@ Use this when you need:
 - a new user-facing challenge family
 - different posting defaults
 - a new default runtime family for a challenge family
-- shared draft construction used by the web posting flow
+- shared challenge spec candidate construction used by the web posting flow
 
 This file owns:
 
@@ -123,7 +123,7 @@ Use this path only when the user-facing posting flow genuinely differs.
 ## ELI5 file map
 
 - `packages/common/src/challenges/templates.ts`
-  - "If a new company posts challenge type X, what should the draft look like?"
+  - "If a new company posts challenge type X, what should the challenge spec candidate look like?"
 
 - `packages/common/src/runtime-families.ts`
   - "What container, resource limits, file layout, and submission kind does official scorer Y use?"
@@ -138,7 +138,7 @@ Use this path only when the user-facing posting flow genuinely differs.
   - "Score one queued submission and build a proof."
 
 - `apps/web/src/app/post/PostClient.tsx`
-  - "Render the form and call the shared draft builder."
+  - "Render the form and call the shared challenge-spec builder."
 
 ## What should stay unchanged
 

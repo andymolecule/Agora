@@ -27,7 +27,7 @@
       "mime": "application/json"
     }
   },
-  "acceptable_compile_states": ["failed"],
+  "acceptable_compile_states": ["rejected"],
   "disallowed_outcomes": {
     "runtime_families": [
       "tabular_regression",
@@ -42,7 +42,7 @@
     {
       "id": "direct-poster-brief",
       "file": "prompt-variants/direct-poster-brief.md",
-      "acceptable_compile_states": ["failed"],
+      "acceptable_compile_states": ["rejected"],
       "expected_follow_up_topics": [
         "scoring rubric",
         "required JSON fields",
@@ -53,7 +53,7 @@
     {
       "id": "thread-summary-brief",
       "file": "prompt-variants/thread-summary-brief.md",
-      "acceptable_compile_states": ["failed"],
+      "acceptable_compile_states": ["rejected"],
       "expected_follow_up_topics": [
         "what counts as a valid report",
         "what stays hidden",
@@ -63,7 +63,7 @@
     {
       "id": "minimal-ops-brief",
       "file": "prompt-variants/minimal-ops-brief.md",
-      "acceptable_compile_states": ["failed"],
+      "acceptable_compile_states": ["rejected"],
       "expected_follow_up_topics": [
         "JSON submission format",
         "deterministic judging rule",

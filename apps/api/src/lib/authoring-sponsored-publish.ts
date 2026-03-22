@@ -20,19 +20,19 @@ import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
   type: "json",
 };
 import {
-  type AuthoringDraftRow,
+  type AuthoringSessionRow,
   attachAuthoringSponsorBudgetReservationTx,
   buildChallengeInsert,
   consumeAuthoringSponsorBudgetReservation,
   reserveAuthoringSponsorBudget,
   releaseAuthoringSponsorBudgetReservation,
   sumRewardAmountForSourceProvider,
+  updateAuthoringSession,
   upsertChallenge,
 } from "@agora/db";
 import { type Abi, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { publishDraft } from "./authoring-draft-transitions.js";
-import { getAuthoringDraftSourceAttribution } from "./authoring-source-attribution.js";
+import { getAuthoringSessionSourceAttribution } from "./authoring-session-source-attribution.js";
 
 const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
 
@@ -56,7 +56,7 @@ function toUnixSeconds(iso: string) {
   const timestamp = new Date(iso).getTime();
   if (!Number.isFinite(timestamp)) {
     throw new Error(
-      "Challenge deadline is invalid. Next step: fix the draft deadline and retry publishing.",
+      "Challenge deadline is invalid. Next step: fix the session deadline and retry publishing.",
     );
   }
   return Math.floor(timestamp / 1000);
@@ -76,13 +76,13 @@ function resolveSponsorBudgetWindow(now = new Date()) {
 }
 
 export async function enforceAuthoringSponsorMonthlyBudget(input: {
-  db: Parameters<typeof publishDraft>[0]["db"];
-  draft: AuthoringDraftRow;
+  db: Parameters<typeof updateAuthoringSession>[0];
+  session: AuthoringSessionRow;
   spec: ChallengeSpecOutput;
   sponsorMonthlyBudgetUsdc?: number | null;
   sumRewardAmountForSourceProviderImpl?: typeof sumRewardAmountForSourceProvider;
 }) {
-  const sourceAttribution = getAuthoringDraftSourceAttribution(input.draft);
+  const sourceAttribution = getAuthoringSessionSourceAttribution(input.session);
   if (
     !sourceAttribution?.provider ||
     typeof input.sponsorMonthlyBudgetUsdc !== "number"
@@ -185,25 +185,19 @@ function assertCreationMatchesSpec(input: {
   }
 }
 
-export async function sponsorAndPublishAuthoringDraft(input: {
-  db: Parameters<typeof publishDraft>[0]["db"];
-  draft: AuthoringDraftRow;
+export async function sponsorAndPublishAuthoringSession(input: {
+  db: Parameters<typeof updateAuthoringSession>[0];
+  session: AuthoringSessionRow;
   spec: ChallengeSpecOutput;
   specCid: string;
   sponsorPrivateKey: `0x${string}`;
   sponsorMonthlyBudgetUsdc?: number | null;
-  returnTo?: string | null;
   expiresInMs: number;
-  updateAuthoringDraftImpl?: Parameters<
-    typeof publishDraft
-  >[0]["updateAuthoringDraftImpl"];
-  getAuthoringDraftByIdImpl?: Parameters<
-    typeof publishDraft
-  >[0]["getAuthoringDraftByIdImpl"];
+  updateAuthoringSessionImpl?: typeof updateAuthoringSession;
 }) {
-  if (!input.draft.compilation_json) {
+  if (!input.session.compilation_json) {
     throw new Error(
-      "Authoring draft compilation is missing. Next step: compile the draft successfully before publishing.",
+      "Authoring session compilation is missing. Next step: compile the session successfully before publishing.",
     );
   }
 
@@ -216,7 +210,7 @@ export async function sponsorAndPublishAuthoringDraft(input: {
   const sponsorAddress = sponsorAccount.address;
   const rewardAmount = parseRewardAmountUsdc(input.spec);
   const rewardUnits = parseUnits(String(input.spec.reward.total), 6);
-  const sourceAttribution = getAuthoringDraftSourceAttribution(input.draft);
+  const sourceAttribution = getAuthoringSessionSourceAttribution(input.session);
   let budgetReserved = false;
   let createTxHash: `0x${string}` | null = null;
   let challengeCreationConfirmed = false;
@@ -229,7 +223,7 @@ export async function sponsorAndPublishAuthoringDraft(input: {
     ) {
       const { periodStart, periodEnd } = resolveSponsorBudgetWindow();
       await reserveAuthoringSponsorBudget(input.db, {
-        draftId: input.draft.id,
+        sessionId: input.session.id,
         provider: sourceAttribution.provider,
         periodStart,
         periodEnd,
@@ -240,7 +234,7 @@ export async function sponsorAndPublishAuthoringDraft(input: {
     } else {
       await enforceAuthoringSponsorMonthlyBudget({
         db: input.db,
-        draft: input.draft,
+        session: input.session,
         spec: input.spec,
         sponsorMonthlyBudgetUsdc: input.sponsorMonthlyBudgetUsdc,
       });
@@ -334,7 +328,7 @@ export async function sponsorAndPublishAuthoringDraft(input: {
     }
     if (budgetReserved) {
       await attachAuthoringSponsorBudgetReservationTx(input.db, {
-        draftId: input.draft.id,
+        sessionId: input.session.id,
         txHash: createTxHash,
       });
     }
@@ -404,32 +398,32 @@ export async function sponsorAndPublishAuthoringDraft(input: {
     });
     challengeRow = await upsertChallenge(input.db, challengeInsert);
 
-    const publishedDraft = await publishDraft({
-      db: input.db,
-      session: input.draft,
-      posterAddress: sponsorAddress,
-      compilationJson: {
-        ...input.draft.compilation_json,
+    const publishedSession = await (input.updateAuthoringSessionImpl ??
+      updateAuthoringSession)(input.db, {
+      id: input.session.id,
+      poster_address: sponsorAddress,
+      state: "published",
+      compilation_json: {
+        ...input.session.compilation_json,
         challenge_spec: input.spec,
       },
-      publishedSpecJson: input.spec,
-      publishedSpecCid: input.specCid,
-      challengeId: challengeRow.id,
-      returnTo: input.returnTo ?? null,
-      expiresInMs: input.expiresInMs,
-      updateAuthoringDraftImpl: input.updateAuthoringDraftImpl,
-      getAuthoringDraftByIdImpl: input.getAuthoringDraftByIdImpl,
+      published_spec_json: input.spec,
+      published_spec_cid: input.specCid,
+      published_challenge_id: challengeRow.id,
+      published_at: new Date().toISOString(),
+      failure_message: null,
+      expires_at: new Date(Date.now() + input.expiresInMs).toISOString(),
     });
     if (budgetReserved) {
       await consumeAuthoringSponsorBudgetReservation(input.db, {
-        draftId: input.draft.id,
+        sessionId: input.session.id,
         challengeId: challengeRow.id,
         txHash: createTxHash,
       });
     }
 
     return {
-      draft: publishedDraft,
+      session: publishedSession,
       txHash: createTxHash,
       sponsorAddress,
       challenge: {
@@ -448,13 +442,13 @@ export async function sponsorAndPublishAuthoringDraft(input: {
     if (budgetReserved) {
       if (challengeRow?.id) {
         await consumeAuthoringSponsorBudgetReservation(input.db, {
-          draftId: input.draft.id,
+          sessionId: input.session.id,
           challengeId: challengeRow.id,
           txHash: createTxHash,
         }).catch(() => null);
       } else if (!challengeCreationConfirmed) {
         await releaseAuthoringSponsorBudgetReservation(input.db, {
-          draftId: input.draft.id,
+          sessionId: input.session.id,
         }).catch(() => null);
       }
     }

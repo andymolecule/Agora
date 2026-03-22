@@ -32,6 +32,32 @@ export interface AuthSessionRow {
   created_at: string;
 }
 
+export interface AuthAgentInsert {
+  telegramBotId: string;
+  apiKeyHash: string;
+  agentName?: string | null;
+  description?: string | null;
+}
+
+export interface AuthAgentRow {
+  id: string;
+  telegram_bot_id: string;
+  agent_name: string | null;
+  description: string | null;
+  api_key_hash: string;
+  last_rotated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function normalizeOptionalText(value?: string | null) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export async function createAuthNonce(
   db: AgoraDbClient,
   input: AuthNonceInsert,
@@ -148,4 +174,99 @@ export async function purgeExpiredAuthSessions(db: AgoraDbClient) {
   if (error) {
     throw new Error(`Failed to purge expired auth sessions: ${error.message}`);
   }
+}
+
+export async function createAuthAgent(
+  db: AgoraDbClient,
+  input: AuthAgentInsert,
+): Promise<AuthAgentRow> {
+  const now = new Date().toISOString();
+  const { data, error } = await db
+    .from("auth_agents")
+    .insert({
+      telegram_bot_id: input.telegramBotId,
+      agent_name: normalizeOptionalText(input.agentName),
+      description: normalizeOptionalText(input.description),
+      api_key_hash: input.apiKeyHash,
+      last_rotated_at: now,
+      updated_at: now,
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create auth agent: ${error.message}`);
+  }
+
+  return data as AuthAgentRow;
+}
+
+export async function getAuthAgentByTelegramBotId(
+  db: AgoraDbClient,
+  telegramBotId: string,
+): Promise<AuthAgentRow | null> {
+  const { data, error } = await db
+    .from("auth_agents")
+    .select("*")
+    .eq("telegram_bot_id", telegramBotId)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Failed to read auth agent: ${error.message}`);
+  }
+
+  return (data as AuthAgentRow | null) ?? null;
+}
+
+export async function getAuthAgentByApiKeyHash(
+  db: AgoraDbClient,
+  apiKeyHash: string,
+): Promise<AuthAgentRow | null> {
+  const { data, error } = await db
+    .from("auth_agents")
+    .select("*")
+    .eq("api_key_hash", apiKeyHash)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Failed to read auth agent by API key: ${error.message}`);
+  }
+
+  return (data as AuthAgentRow | null) ?? null;
+}
+
+export async function rotateAuthAgentApiKey(
+  db: AgoraDbClient,
+  input: {
+    id: string;
+    apiKeyHash: string;
+    agentName?: string | null;
+    description?: string | null;
+  },
+): Promise<AuthAgentRow> {
+  const patch: Record<string, unknown> = {
+    api_key_hash: input.apiKeyHash,
+    last_rotated_at: new Date().toISOString(),
+  };
+  patch.updated_at = patch.last_rotated_at;
+
+  if (input.agentName !== undefined) {
+    patch.agent_name = normalizeOptionalText(input.agentName);
+  }
+  if (input.description !== undefined) {
+    patch.description = normalizeOptionalText(input.description);
+  }
+
+  const { data, error } = await db
+    .from("auth_agents")
+    .update(patch)
+    .eq("id", input.id)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to rotate auth agent API key: ${error.message}`);
+  }
+
+  return data as AuthAgentRow;
 }
