@@ -83,9 +83,9 @@ const session = authoringSessionSchema.parse({
   contract_address: null,
   spec_cid: null,
   tx_hash: null,
-  created_at: "2026-03-22T00:00:00.000Z",
-  updated_at: "2026-03-22T00:00:00.000Z",
-  expires_at: "2026-03-23T00:00:00.000Z",
+  created_at: "2026-03-22T00:00:00+00:00",
+  updated_at: "2026-03-22T00:00:00+00:00",
+  expires_at: "2026-03-23T00:00:00+00:00",
 });
 assert.equal(session.creator.type, "agent");
 

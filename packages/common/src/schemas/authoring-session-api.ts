@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const isoDatetimeSchema = z.string().datetime({ offset: true });
+
 export const authoringSessionPublicStateSchema = z.enum([
   "awaiting_input",
   "ready",
@@ -170,7 +172,7 @@ export const authoringSessionCompilationSchema = z
     submission_contract: authoringSessionSubmissionContractSchema,
     resource_limits: authoringSessionResourceLimitsSchema,
     reward: authoringSessionRewardSchema,
-    deadline: z.string().datetime(),
+    deadline: isoDatetimeSchema,
     dispute_window_hours: z.number().int().nonnegative(),
     minimum_score: z.number().nullable(),
   })
@@ -183,7 +185,7 @@ export const authoringSessionChecklistSchema = z
     type: z.string().trim().min(1),
     reward: z.string().trim().min(1),
     distribution: z.string().trim().min(1),
-    deadline: z.string().datetime(),
+    deadline: isoDatetimeSchema,
     runtime_family: z.string().trim().min(1),
     metric: z.string().trim().min(1),
     objective: authoringSessionObjectiveSchema,
@@ -196,9 +198,9 @@ export const authoringSessionListItemSchema = z
     id: z.string().trim().min(1),
     state: authoringSessionPublicStateSchema,
     summary: z.string().nullable(),
-    created_at: z.string().datetime(),
-    updated_at: z.string().datetime(),
-    expires_at: z.string().datetime(),
+    created_at: isoDatetimeSchema,
+    updated_at: isoDatetimeSchema,
+    expires_at: isoDatetimeSchema,
   })
   .strict();
 
@@ -218,9 +220,9 @@ export const authoringSessionSchema = z
     contract_address: z.string().trim().min(1).nullable(),
     spec_cid: z.string().trim().min(1).nullable(),
     tx_hash: z.string().trim().min(1).nullable(),
-    created_at: z.string().datetime(),
-    updated_at: z.string().datetime(),
-    expires_at: z.string().datetime(),
+    created_at: isoDatetimeSchema,
+    updated_at: isoDatetimeSchema,
+    expires_at: isoDatetimeSchema,
   })
   .strict();
 
