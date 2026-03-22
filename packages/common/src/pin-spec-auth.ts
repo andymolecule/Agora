@@ -10,8 +10,28 @@ export const PIN_SPEC_AUTH_TYPES = {
   ],
 } as const;
 
+function normalizeJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeJsonValue(entry));
+  }
+
+  if (
+    value &&
+    typeof value === "object" &&
+    Object.getPrototypeOf(value) === Object.prototype
+  ) {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, normalizeJsonValue(entry)]),
+    );
+  }
+
+  return value;
+}
+
 export function computeSpecHash(spec: unknown): `0x${string}` {
-  return keccak256(toBytes(JSON.stringify(spec)));
+  return keccak256(toBytes(JSON.stringify(normalizeJsonValue(spec))));
 }
 
 export function getPinSpecAuthorizationTypedData(input: {

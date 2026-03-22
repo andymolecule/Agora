@@ -12,6 +12,16 @@ const spec = {
 const specHash = computeSpecHash(spec);
 assert.match(specHash, /^0x[0-9a-f]{64}$/);
 
+const reorderedSpecHash = computeSpecHash({
+  reward: {
+    distribution: "winner_take_all",
+    total: 10,
+  },
+  title: "Test challenge",
+});
+
+assert.equal(specHash, reorderedSpecHash);
+
 const typedData = getPinSpecAuthorizationTypedData({
   chainId: 84532,
   wallet: "0x123400000000000000000000000000000000abcd",
