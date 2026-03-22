@@ -359,6 +359,60 @@ test("managed authoring returns canonical questions when Anthropic needs more in
   });
 });
 
+test("managed authoring Anthropic tool schema avoids unsupported integer bounds", async () => {
+  await withCompilerEnv(async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+
+    await compileManagedAuthoringSessionOutcome(
+      {
+        intent: {
+          ...baseIntent,
+          payout_condition: "Highest score wins.",
+        },
+        uploadedArtifacts: regressionArtifacts,
+      },
+      {
+        fetchImpl: async (_input, init) => {
+          capturedBody = JSON.parse(String(init?.body ?? "{}")) as Record<
+            string,
+            unknown
+          >;
+          return buildAnthropicToolResponse({
+            outcome: "awaiting_input",
+            runtime_family: null,
+            metric: null,
+            reason_codes: ["missing_metric_definition"],
+            warnings: [],
+            missing_fields: ["payout_condition"],
+            artifact_assignments: [],
+          });
+        },
+      },
+    );
+
+    const tools = capturedBody?.tools;
+    assert.ok(Array.isArray(tools));
+    const tool = tools[0] as {
+      input_schema?: {
+        properties?: {
+          artifact_assignments?: {
+            items?: {
+              properties?: {
+                artifact_index?: Record<string, unknown>;
+              };
+            };
+          };
+        };
+      };
+    };
+    const artifactIndexSchema =
+      tool.input_schema?.properties?.artifact_assignments?.items?.properties
+        ?.artifact_index;
+
+    assert.deepEqual(artifactIndexSchema, { type: "integer" });
+  });
+});
+
 test("managed authoring fails cleanly when no supported Gems scorer fits", async () => {
   await withCompilerEnv(async () => {
     const result = await compileManagedAuthoringSessionOutcome(

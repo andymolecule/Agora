@@ -149,7 +149,9 @@ function buildToolDefinition() {
             type: "object",
             additionalProperties: false,
             properties: {
-              artifact_index: { type: "integer", minimum: 0 },
+              // Anthropic's custom tool schema rejects numeric bounds on integer.
+              // Keep transport schema simple and enforce non-negative indexes after parse.
+              artifact_index: { type: "integer" },
               role: { type: "string" },
               visibility: {
                 type: "string",
