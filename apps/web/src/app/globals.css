@@ -367,6 +367,30 @@ a:hover {
   background: var(--color-grey-300);
 }
 
+/* Auto-hide scrollbar — visible only while scrolling/hovering */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.3s;
+}
+.scrollbar-thin:hover {
+  scrollbar-color: var(--color-grey-200) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 2px;
+  transition: background 0.3s;
+}
+.scrollbar-thin:hover::-webkit-scrollbar-thumb {
+  background: var(--color-grey-200);
+}
+
 /* Skeleton shimmer animation */
 @keyframes shimmer {
   0% {

@@ -1,0 +1,200 @@
+"use client";
+
+import { ChevronDown } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+
+interface NavItem {
+  id: string;
+  label: string;
+}
+
+interface NavGroup {
+  group: string;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    group: "Getting Started",
+    items: [
+      { id: "overview", label: "Overview" },
+      { id: "bootstrap", label: "Agent Bootstrap" },
+    ],
+  },
+  {
+    group: "Direct Authoring",
+    items: [
+      { id: "register", label: "Register" },
+      { id: "create-session", label: "Create Session" },
+      { id: "respond", label: "Respond" },
+      { id: "upload", label: "Upload Files" },
+      { id: "publish", label: "Publish" },
+    ],
+  },
+  {
+    group: "Solver Path",
+    items: [
+      { id: "prerequisites", label: "Prerequisites" },
+      { id: "install", label: "Install" },
+      { id: "configure", label: "Configure" },
+      { id: "verify", label: "Verify Setup" },
+    ],
+  },
+  {
+    group: "Solver Walkthrough",
+    items: [
+      { id: "discover", label: "Discover" },
+      { id: "download", label: "Download" },
+      { id: "build", label: "Build" },
+      { id: "score-local", label: "Score Local" },
+      { id: "submit", label: "Submit" },
+      { id: "track-scoring", label: "Track Scoring" },
+      { id: "verify-finalize", label: "Verify & Finalize" },
+      { id: "claim", label: "Claim" },
+    ],
+  },
+  {
+    group: "Reference",
+    items: [
+      { id: "privacy", label: "Submission Privacy" },
+      { id: "mcp", label: "MCP" },
+      { id: "env-vars", label: "Environment Variables" },
+      { id: "cli-cheat-sheet", label: "CLI Cheat Sheet" },
+      { id: "lifecycle", label: "Challenge Lifecycle" },
+      { id: "troubleshooting", label: "Troubleshooting" },
+    ],
+  },
+];
+
+const NAV_IDS = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.id));
+
+function useActiveSection() {
+  const [activeId, setActiveId] = useState("overview");
+
+  useEffect(() => {
+    const sections = NAV_IDS.map((id) => document.getElementById(id)).filter(
+      (element): element is HTMLElement => element instanceof HTMLElement,
+    );
+
+    if (sections.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort(
+            (a, b) =>
+              Math.abs(a.boundingClientRect.top) - Math.abs(b.boundingClientRect.top),
+          );
+
+        const nextId = visible[0]?.target.id;
+        if (nextId) {
+          setActiveId(nextId);
+        }
+      },
+      {
+        rootMargin: "-96px 0px -60% 0px",
+        threshold: [0, 0.2, 0.5, 1],
+      },
+    );
+
+    for (const section of sections) {
+      observer.observe(section);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  return useMemo(() => ({ activeId, setActiveId }), [activeId]);
+}
+
+function SidebarNav({
+  activeId,
+  onNavigate,
+}: {
+  activeId: string;
+  onNavigate: (id: string) => void;
+}) {
+  return (
+    <nav className="space-y-6">
+      {NAV_GROUPS.map((group) => (
+        <div key={group.group}>
+          <p className="text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-warm-400 mb-2">
+            {group.group}
+          </p>
+          <ul className="space-y-0.5">
+            {group.items.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  onClick={() => onNavigate(item.id)}
+                  className={`block w-full text-left text-[13px] font-medium pl-3 py-1.5 rounded-[2px] transition-colors ${
+                    activeId === item.id
+                      ? "text-warm-900 bg-warm-100"
+                      : "text-warm-600 hover:text-warm-900"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </nav>
+  );
+}
+
+/* ─── Desktop Sidebar (used inside DocsLayout aside slot) ── */
+
+export function DocsSidebar() {
+  const { activeId, setActiveId } = useActiveSection();
+
+  const handleNavigate = (id: string) => {
+    setActiveId(id);
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  return <SidebarNav activeId={activeId} onNavigate={handleNavigate} />;
+}
+
+/* ─── Mobile "On this page" panel (rendered at top of content on <lg) ── */
+
+export function MobileSidebarPanel() {
+  const [open, setOpen] = useState(false);
+  const { activeId, setActiveId } = useActiveSection();
+
+  const handleNavigate = (id: string) => {
+    setActiveId(id);
+    setOpen(false);
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  return (
+    <div className="lg:hidden border border-warm-900/15 rounded-[2px] mb-8">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-warm-50 hover:bg-warm-100 transition-colors text-left"
+      >
+        <span className="text-sm font-semibold text-warm-900">
+          On this page
+        </span>
+        <ChevronDown
+          className={`w-4 h-4 text-warm-900/40 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <div className="px-4 py-4 border-t border-warm-900/10 bg-white">
+          <SidebarNav activeId={activeId} onNavigate={handleNavigate} />
+        </div>
+      )}
+    </div>
+  );
+}

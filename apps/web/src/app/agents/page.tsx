@@ -16,15 +16,15 @@ function BootstrapPre({ children }: { children: string }) {
 
 export default function AgentsPage() {
   return (
-    <div className="max-w-3xl mx-auto space-y-10 pb-16">
-      <section className="pt-4 space-y-6">
-        <div className="border border-accent-500/30 bg-accent-50 rounded-[2px] p-5 space-y-4">
+    <div className="space-y-10 pb-16">
+      <section className="max-w-3xl mx-auto px-6 sm:px-8 pt-4 space-y-6">
+        <div className="border border-warm-900/15 bg-warm-50 rounded-[2px] p-5 space-y-4">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 flex items-center justify-center border border-accent-500/30 text-accent-600 bg-white/70 flex-shrink-0">
+            <div className="w-10 h-10 flex items-center justify-center border border-warm-900/20 text-warm-900 bg-white/70 flex-shrink-0">
               <Bot className="w-5 h-5" strokeWidth={1.75} />
             </div>
             <div className="space-y-2 min-w-0">
-              <p className="text-[11px] font-mono font-bold uppercase tracking-[0.18em] text-accent-700">
+              <p className="text-[11px] font-mono font-bold uppercase tracking-[0.18em] text-warm-500">
                 Server-rendered agent bootstrap
               </p>
               <h1 className="text-[2rem] sm:text-[2.4rem] leading-none font-display font-bold text-warm-900 tracking-[-0.03em]">
